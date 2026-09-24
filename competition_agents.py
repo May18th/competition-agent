@@ -16,23 +16,30 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 
+# sanitize NO_PROXY for httpx2 compatibility (it crashes on "::1" and ";" separators)
+_no_proxy = os.environ.get("NO_PROXY", "")
+if _no_proxy:
+    os.environ["NO_PROXY"] = ",".join(x for x in _no_proxy.replace("::1", "").replace(";", ",").split(",") if x)
+
 # 默认用DeepSeek，速度快便宜
 llm = ChatDeepSeek(
     model="deepseek-chat",
     api_key=DEEPSEEK_API_KEY,
-    temperature=0.5,
-    max_tokens=6000
+    temperature=0.3,
+    max_tokens=6000,
+    request_timeout=60,
+    max_retries=3
 )
 
 # Claude模型（火山引擎）
-from langchain_openai import ChatOpenAI
-claude_llm = ChatOpenAI(
-    model="ep-20250923144558-7gqfz",
-    api_key=CLAUDE_API_KEY,
-    base_url="https://ark.cn-beijing.volces.com/api/v3",
-    temperature=0.5,
-    max_tokens=6000
-)
+# from langchain_openai import ChatOpenAI
+# claude_llm = ChatOpenAI(
+#     model="ep-20250923144558-7gqfz",
+#     api_key=CLAUDE_API_KEY,
+#     base_url="https://ark.cn-beijing.volces.com/api/v3",
+#     temperature=0.5,
+#     max_tokens=6000
+# )
 
 # GPT模型框架（后面加API key就能用，现在先注释掉）
 # GPT_API_KEY = ""
@@ -85,6 +92,7 @@ class CompetitionState(TypedDict):
     competition_name: str
     rule_content: str
     idea: str
+    proposal_draft: str
 
     # 中间结果
     parsed_rules: str
@@ -98,16 +106,18 @@ class CompetitionState(TypedDict):
     project_summary: str
     proposal: str
     judge_feedback: str
+    proposal_analysis: str
     defense_questions: str
     ppt_outline: str
     speech_script: str
     one_liner: str
+    idea_score: int
+    idea_feedback: str
     score: int
     approved: bool
 
     # 控制
     revision_count: int
-    approved: bool              # 是否通过
 
 
 # ============ 2. 四个 Agent ============
@@ -138,9 +148,8 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 输出格式清晰，分点列出。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["parsed_rules"] = response.content
     print(f"📋 规则解析 Agent：已提取评分标准")
-    return state
+    return {"parsed_rules": response.content}
 
 
 def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
@@ -158,9 +167,8 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 给出具体的改进建议。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["similarity_report"] = response.content
     print(f"🔍 同质化检测 Agent：已完成分析")
-    return state
+    return {"similarity_report": response.content}
 
 
 def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
@@ -193,12 +201,21 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     text = response.content
-    
-    # 直接把完整内容都存到 competitor_analysis 里，不拆分了
-    state["competitor_analysis"] = text
-    state["business_model"] = text  # 先都存同一个内容，避免报错
-    state["risk_analysis"] = text
-    state["tech_solution"] = text
+
+    # 按四个标题拆分，正确对应到四个字段
+    import re
+    parts = re.split(r"##\s*[一二三四]、", text)
+    if len(parts) >= 5:
+        state["competitor_analysis"] = parts[1].strip()
+        state["business_model"] = parts[2].strip()
+        state["risk_analysis"] = parts[3].strip()
+        state["tech_solution"] = parts[4].strip()
+    else:
+        # 兜底：模型没按标题输出时，整段放竞品分析，其余留空，避免错位
+        state["competitor_analysis"] = text.strip()
+        state["business_model"] = ""
+        state["risk_analysis"] = ""
+        state["tech_solution"] = ""
     
     print(f"📊 综合分析 Agent：已完成（竞品+商业模式+风险+技术）")
     return state
@@ -220,9 +237,9 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
 注意：你只负责竞品分析，不要写怎么赚钱、不要写技术实现、不要写风险。控制在1000字左右。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["competitor_analysis"] = response.content
+
     print(f"🏢 深度版竞品分析：已完成")
-    return state
+    return {"competitor_analysis": response.content}
 
 
 def deep_business_agent(state: CompetitionState) -> CompetitionState:
@@ -240,9 +257,9 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
 注意：你只负责商业模式，不要写竞品对比、不要写技术实现、不要写风险。控制在1000字左右。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["business_model"] = response.content
+
     print(f"💰 深度版商业模式：已完成")
-    return state
+    return {"business_model": response.content}
 
 
 def deep_risk_agent(state: CompetitionState) -> CompetitionState:
@@ -260,9 +277,9 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
 每个风险都要有具体的应对措施。注意：你只负责风险分析，不要写竞品、不要写商业模式、不要写技术架构。控制在1000字左右。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["risk_analysis"] = response.content
+
     print(f"⚠️ 深度版风险分析：已完成")
-    return state
+    return {"risk_analysis": response.content}
 
 
 def deep_tech_agent(state: CompetitionState) -> CompetitionState:
@@ -280,9 +297,9 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
 注意：你只负责技术方案，不要写怎么赚钱、不要写竞品、不要写风险。控制在1000字左右。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["tech_solution"] = response.content
+
     print(f"🔧 深度版技术方案：已完成")
-    return state
+    return {"tech_solution": response.content}
 
 
 def plan_agent(state: CompetitionState) -> CompetitionState:
@@ -348,10 +365,33 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 深度版申报书 Agent：写完整详细的申报书"""
-    prompt = f"""你是资深科创赛事申报书写作专家。
-注意：用户已经上传了一份现成的申报书草稿，你的任务是**优化这份申报书**，保留用户原来的内容和结构，不要从零开始重新写，只是把写得不好的地方改好，补充不足的内容，让它更符合比赛要求。
+    draft = state.get('proposal_draft', '')
+    has_draft = bool(draft.strip())
+    if has_draft:
+        task_line = "用户已经上传了一份现成的申报书草稿，你的任务是**优化这份申报书**：保留原来的内容和骨架，把写得简略的地方补足、把逻辑不顺的地方理顺、把缺失的评分点补上，不要从零推翻重写。"
+        source_label = '用户上传的申报书草稿'
+        source_text = draft
+    else:
+        task_line = "用户还没有成稿，只提供了项目创意，请根据下面的创意与前面的分析结果，从零写一份完整申报书。"
+        source_label = '用户的原始创意'
+        source_text = state['idea']
+    revise_block = ""
+    if state.get('revision_count', 0) > 0:
+        revise_block = f"""
 
-用户上传的申报书草稿：{state['idea']}
+【本轮是修改稿】必须针对评委意见逐条改写，不得照抄上一版。
+上一版申报书：
+{state.get('proposal','')}
+
+评委修改意见：
+{state.get('judge_feedback','')}
+"""
+
+    prompt = f"""你是资深科创赛事申报书写作专家。
+{task_line}
+
+{source_label}：{source_text}
+{revise_block}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -386,35 +426,44 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 简洁版申报书 Agent：写精简的申报书"""
+    draft = state.get('proposal_draft', '')
+    if draft.strip():
+        source = f"用户已上传申报书草稿，请保留原结构和内容做精简优化、补足缺失评分点，不要从零重写。\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）"
+    else:
+        source = f"项目创意：{state['idea']}"
     prompt = f"""你是科创赛事申报书写作专家。请根据以下分析结果，写一份精简的申报书。
 
 赛事：{state['competition_name']}
-项目创意：{state['idea']}
+{source}
 规则解析：{state['parsed_rules']}
 同质化分析：{state['similarity_report']}
-竞品分析：{state['competitor_analysis']}
-商业模式：{state['business_model']}
-风险分析：{state['risk_analysis']}
-技术方案：{state['tech_solution']}
+（本模式不做外部调研，请基于项目创意本身往下推演，不要虚构引用外部数据）
+一句话定位：{state.get('one_liner','')}
 
-请按以下结构写，总共500字左右，简洁明了：
+【写作硬性要求】
+1. 每一节都必须有实打实的内容：至少给出一个真实场景名称、或至少一个具体数字、或至少一个具体技术名词；禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述。
+2. 必须回应上面的规则解析：写清本项目针对哪几条评分点发力。
+3. 必须回应上面的同质化分析：写清与现有方案的具体差异在哪，不许只用「更智能、更便捷」这类形容词带过。
+4. 总字数 800-1000 字；每节宁可多给一个具体例子，也不要拔高喊口号。
+
+请按以下结构写：
 
 ## 项目简介
-（100字，一句话说清楚这个项目是做什么的）
+（150字左右，说清这个项目是做什么的、给谁用）
 
 ## 痛点分析
-（100字，现在这个领域有什么问题，用户有什么麻烦）
+（200字左右，写具体场景里的问题：谁在什么情况下遇到什么麻烦，现在是怎么解决的，差在哪）
 
 ## 解决方案
-（150字，我们的产品是什么，怎么解决这些问题）
+（250字左右，产品形态、核心功能、关键技术手段，各写具体）
 
 ## 核心创新点
-（100字，和现有方案比，我们好在哪里，有什么不一样）
+（200字左右，逐条写与现有方案的三处不同，每条都要有依据）
 
 ## 社会价值
-（50字，这个项目能带来什么好处，有什么意义）
+（100字左右，落到具体受益对象和可验证的效果）
 
-【简洁版要求】不要写商业模式、技术方案这些复杂内容，就写以上5部分，500字以内，快速出结果。
+【篇幅】全文 800-1000 字，不要用空话凑字数，也不要中途省略章节。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal"] = response.content
@@ -423,40 +472,136 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
+def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
+    """🔧 定向修订 Agent：只改评委指出的问题段落，不整篇重写"""
+    prompt = f"""你是科创赛事申报书修订专家。请根据评委意见，对下面的申报书做**定向修订**。
+
+要求：
+1. 只修改评委明确指出的问题段落，其他没问题的地方保持原文，不要整篇重写。
+2. 保留原申报书的结构和未涉及问题的内容。
+3. 修改后输出完整的申报书全文。
+
+当前申报书：
+{state.get('proposal', '')}
+
+评委意见：
+{state.get('judge_feedback', '')}
+"""
+    response = llm.invoke([HumanMessage(content=prompt)])
+    state["proposal"] = response.content
+    state["revision_count"] = (state.get("revision_count") or 0) + 1
+    print(f"🔧 定向修订：第 {state['revision_count']} 版")
+    return state
+
+
+def idea_evaluator(state: CompetitionState) -> CompetitionState:
+    """💡 创意评分 Agent：只评估原始创意本身的价值，不评申报书"""
+    prompt = f"""你是科创赛事评审专家。请对下面的项目创意本身打分（注意：只评创意，不评申报书写得好不好）。
+
+项目创意：
+{state['idea']}
+
+请严格按下面格式输出（每项 0-100 分，可带一位小数）：
+
+创新性：__分
+可行性：__分
+市场价值：__分
+技术壁垒：__分
+社会价值：__分
+
+然后给出：
+1. 创意亮点（至少2点）
+2. 主要风险/短板（至少2点）
+
+打分说明：
+- 创新性30%：点子是否新颖、与现有方案差异度
+- 可行性25%：技术/资源/落地是否可行
+- 市场价值20%：目标用户规模、商业前景
+- 技术壁垒15%：别人是否容易复制
+- 社会价值10%：社会意义
+"""
+    response = llm.invoke([HumanMessage(content=prompt)])
+
+    import re
+    def _pick(label):
+        m = re.search(label + r'[^0-9]*?(\d+(?:\.\d+)?)', response.content)
+        return float(m.group(1)) if m else None
+
+    sub = {
+        "创新性": _pick("创新性"),
+        "可行性": _pick("可行性"),
+        "市场价值": _pick("市场价值"),
+        "技术壁垒": _pick("技术壁垒"),
+        "社会价值": _pick("社会价值"),
+    }
+    weights = {"创新性": 0.30, "可行性": 0.25, "市场价值": 0.20, "技术壁垒": 0.15, "社会价值": 0.10}
+    if all(v is not None for v in sub.values()):
+        idea_score = int(round(sum(sub[k] * weights[k] for k in sub)))
+    else:
+        idea_score = 60
+    idea_score = max(0, min(100, idea_score))
+    print(f"💡 创意评分：{idea_score} 分")
+    return {"idea_score": idea_score, "idea_feedback": response.content}
+
+
 def judge_agent(state: CompetitionState) -> CompetitionState:
-    """⚖️ 模拟评委 Agent：打分提意见"""
-    prompt = f"""你是科创赛事资深评委。请给以下申报书打分并提修改意见。
+    """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
+    prompt = f"""你是科创赛事资深评委。请给下面的申报书文档打分（注意：只评文档质量，不评创意本身）。
 
-申报书：{state['proposal']}
+申报书：
+{state['proposal']}
 
-请输出：
-1. 总分（60-85分之间，不要打太低，正常大学生项目一般在这个区间）
-2. 主要优点（至少写3点）
-3. 需要改进的地方（至少写3点）
+请严格按下面格式输出（每项 0-100 分，可带一位小数）：
 
-打分标准：创新性30%，实用性25%，技术难度20%，完整性15%，商业价值10%。
-打分要客观合理，不要故意打低分，这是大学生项目，不要用职业项目的标准要求。
-根据申报书实际内容质量打分：
-- 如果申报书内容详细、有具体细节和数字，创新性强，打78-85分
-- 如果申报书内容一般，结构完整但细节不足，打70-77分
-- 如果申报书内容简略，只有核心要点，打65-72分
-不要固定分数，根据实际内容调整。
+结构完整性：__分
+逻辑清晰度：__分
+数据支撑：__分
+格式规范：__分
+说服力：__分
+
+然后给出：
+1. 主要优点（至少3点）
+2. 需要改进的地方（至少3点）
+
+打分说明：
+- 结构完整性30%：章节是否齐全、篇幅是否充实（内容单薄要明显扣分）
+- 逻辑清晰度25%：论证是否连贯、有无逻辑漏洞
+- 数据支撑20%：是否用了具体数字、案例、技术名词
+- 格式规范15%：是否符合申报书格式要求
+- 说服力10%：整体是否能让评委信服
+不要给所有文档打接近的分数，要拉开差距。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["judge_feedback"] = response.content
-    
-    # 简单提取分数
-    import re
-    match = re.search(r'(\d+)\s*分', response.content)
-    if match:
-        state["score"] = int(match.group(1))
-    else:
-        state["score"] = 60
-    
-    state["approved"] = state["score"] >= 70
-    print(f"⚖️ 评委 Agent：打分 {state['score']} 分")
-    return state
 
+    import re
+    def _pick(label):
+        m = re.search(label + r'[^0-9]*?(\d+(?:\.\d+)?)', response.content)
+        return float(m.group(1)) if m else None
+
+    sub = {
+        "结构完整性": _pick("结构完整性"),
+        "逻辑清晰度": _pick("逻辑清晰度"),
+        "数据支撑": _pick("数据支撑"),
+        "格式规范": _pick("格式规范"),
+        "说服力": _pick("说服力"),
+    }
+    weights = {"结构完整性": 0.30, "逻辑清晰度": 0.25, "数据支撑": 0.20, "格式规范": 0.15, "说服力": 0.10}
+
+    if all(v is not None for v in sub.values()):
+        state["score"] = int(round(sum(sub[k] * weights[k] for k in sub)))
+    else:
+        m2 = re.search(r'SCORE\s*[:：]\s*(\d{1,3})', response.content, re.IGNORECASE)
+        if m2:
+            state["score"] = max(0, min(100, int(m2.group(1))))
+        else:
+            m3 = re.search(r'(\d{1,3})\s*分', response.content)
+            state["score"] = int(m3.group(1)) if m3 else 60
+
+    state["score"] = max(0, min(100, state["score"]))
+    state["approved"] = state["score"] >= 70
+    print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
+    return state
 
 def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     """🎤 答辩问题预测 Agent：预测评委可能问什么"""
@@ -519,39 +664,68 @@ def one_liner_agent(state: CompetitionState) -> CompetitionState:
 直接输出一句话，不要解释。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["one_liner"] = response.content.strip()
     print(f"💡 一句话定位 Agent：已生成")
-    return state
+    return {"one_liner": response.content.strip()}
 
 
 # ============ 3. 路由 ============
-def should_iterate(state: CompetitionState) -> Literal["writer", "defense"]:
-    if state["approved"] or state["revision_count"] >= 1:
+def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
+    """申报书快速诊断 Agent：给出简明、有针对性的诊断"""
+    prompt = f"""你是科创赛事申报书评审专家。请对下面这份申报书做一份简明、有针对性的快速诊断。
+
+申报书：
+{state.get('proposal', '')}
+
+请严格针对这份申报书的具体内容，分四部分输出（每部分 1-2 句话，不要泛泛而谈）：
+1. 结构完整性
+2. 内容亮点
+3. 待优化点
+4. 评审建议
+"""
+    response = llm.invoke([HumanMessage(content=prompt)])
+    state["proposal_analysis"] = response.content
+    print("申报书快速诊断 Agent：完成")
+    return state
+
+
+def should_iterate(state: CompetitionState) -> Literal["revise", "defense"]:
+    if state["approved"] or (state.get("revision_count") or 0) >= 2:
         return "defense"
     else:
-        return "writer"
+        return "revise"
 
 
 # ============ 4. 构建工作流 ============
+# 简洁版刻意不做迭代（无 should_iterate 回边），保持快速出稿；需要返工请用深度版
 workflow = StateGraph(CompetitionState)
 
 workflow.add_node("rule_parser", rule_parser_agent)
 workflow.add_node("similarity_checker", similarity_checker_agent)
+workflow.add_node("idea_evaluator", idea_evaluator)
+workflow.add_node("one_liner", one_liner_agent)
 workflow.add_node("analysis", comprehensive_analysis_agent)
-workflow.add_node("plan", plan_agent)
-workflow.add_node("social", social_value_agent)
-workflow.add_node("summary", summary_agent)
 workflow.add_node("writer", proposal_writer_agent)
 workflow.add_node("judge", judge_agent)
+workflow.add_node("proposal_analysis", proposal_analysis_agent)
 workflow.add_node("defense", defense_questions_agent)
 workflow.add_node("ppt", ppt_outline_agent)
 workflow.add_node("speech", speech_agent)
 
 workflow.add_edge(START, "rule_parser")
-workflow.add_edge("rule_parser", "similarity_checker")
-workflow.add_edge("similarity_checker", "writer")
+workflow.add_edge(START, "similarity_checker")
+workflow.add_edge(START, "idea_evaluator")
+workflow.add_edge(START, "one_liner")
+workflow.add_edge("rule_parser", "analysis")
+workflow.add_edge("similarity_checker", "analysis")
+workflow.add_edge("idea_evaluator", "analysis")
+workflow.add_edge("one_liner", "analysis")
+workflow.add_edge("analysis", "writer")
 workflow.add_edge("writer", "judge")
-workflow.add_edge("judge", END)
+workflow.add_edge("judge", "proposal_analysis")
+workflow.add_edge("proposal_analysis", "defense")
+workflow.add_edge("defense", "ppt")
+workflow.add_edge("ppt", "speech")
+workflow.add_edge("speech", END)
 
 
 fast_app = workflow.compile()
@@ -560,38 +734,53 @@ fast_app = workflow.compile()
 deep_workflow = StateGraph(CompetitionState)
 deep_workflow.add_node("rule_parser", rule_parser_agent)
 deep_workflow.add_node("similarity_checker", similarity_checker_agent)
+deep_workflow.add_node("idea_evaluator", idea_evaluator)
+deep_workflow.add_node("one_liner", one_liner_agent)
 deep_workflow.add_node("competitor", deep_competitor_agent)
 deep_workflow.add_node("business", deep_business_agent)
 deep_workflow.add_node("risk", deep_risk_agent)
 deep_workflow.add_node("tech", deep_tech_agent)
+deep_workflow.add_node("revise", targeted_revise_agent)
 deep_workflow.add_node("plan", plan_agent)
 deep_workflow.add_node("social", social_value_agent)
 deep_workflow.add_node("summary", summary_agent)
 deep_workflow.add_node("writer", deep_writer_agent)
 deep_workflow.add_node("judge", judge_agent)
+deep_workflow.add_node("proposal_analysis", proposal_analysis_agent)
 deep_workflow.add_node("defense", defense_questions_agent)
 deep_workflow.add_node("ppt", ppt_outline_agent)
 deep_workflow.add_node("speech", speech_agent)
 
 deep_workflow.add_edge(START, "rule_parser")
-deep_workflow.add_edge("rule_parser", "similarity_checker")
-deep_workflow.add_edge("similarity_checker", "competitor")
-deep_workflow.add_edge("competitor", "business")
-deep_workflow.add_edge("business", "risk")
-deep_workflow.add_edge("risk", "tech")
+deep_workflow.add_edge(START, "similarity_checker")
+deep_workflow.add_edge(START, "idea_evaluator")
+deep_workflow.add_edge(START, "one_liner")
+deep_workflow.add_edge(START, "competitor")
+deep_workflow.add_edge(START, "business")
+deep_workflow.add_edge(START, "risk")
+deep_workflow.add_edge(START, "tech")
+deep_workflow.add_edge("rule_parser", "plan")
+deep_workflow.add_edge("similarity_checker", "plan")
+deep_workflow.add_edge("idea_evaluator", "plan")
+deep_workflow.add_edge("one_liner", "plan")
+deep_workflow.add_edge("competitor", "plan")
+deep_workflow.add_edge("business", "plan")
+deep_workflow.add_edge("risk", "plan")
 deep_workflow.add_edge("tech", "plan")
 deep_workflow.add_edge("plan", "social")
 deep_workflow.add_edge("social", "summary")
 deep_workflow.add_edge("summary", "writer")
 deep_workflow.add_edge("writer", "judge")
+deep_workflow.add_edge("judge", "proposal_analysis")
 deep_workflow.add_conditional_edges(
-    "judge",
+    "proposal_analysis",
     should_iterate,
     {
-        "writer": "writer",
+        "revise": "revise",
         "defense": "defense"
     }
 )
+deep_workflow.add_edge("revise", "judge")
 deep_workflow.add_edge("defense", "ppt")
 deep_workflow.add_edge("ppt", "speech")
 deep_workflow.add_edge("speech", END)
