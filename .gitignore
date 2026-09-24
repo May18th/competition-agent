@@ -1,0 +1,8 @@
+﻿.env
+__pycache__/
+*.pyc
+uploads/
+competition.db
+history.json
+error.log
+*.log
