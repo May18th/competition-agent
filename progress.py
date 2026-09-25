@@ -19,7 +19,8 @@ import threading
 import time
 
 from stage_reporter import STAGE_META, tasks, \
-    set_current_task, clear_current_task, report_stage
+    set_current_task, clear_current_task, report_stage, \
+    cancel_task as _sr_cancel, is_cancelled as _sr_is_cancelled, clear_cancel as _sr_clear_cancel
 
 # 兼容旧代码里用过的名字
 STAGE_MAP = STAGE_META
@@ -29,8 +30,6 @@ STAGE_ORDER = list(STAGE_META.keys())
 # 仅在这个被 Frankestein 的模块里存在的派生能力，很多 ^_^
 _workers_lock = threading.Lock()
 _workers = {"n": None}
-_cancelled = set()
-_cancel_lock = threading.Lock()
 
 _LIVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "progress_live.json")
 
@@ -139,26 +138,15 @@ def resolve_workers(default=8):
 
 # ---------------- 取消 ----------------
 def cancel(task_id):
-    with _cancel_lock:
-        _cancelled.add(task_id)
-    t = tasks.get(task_id)
-    if isinstance(t, dict):
-        t["status"] = "cancelled"
-        t["stage"] = "done"
-        t["updated_at"] = time.time()
-    return True
+    return _sr_cancel(task_id)
 
 
 def is_cancelled(task_id=None):
-    if not task_id:
-        return False
-    with _cancel_lock:
-        return task_id in _cancelled
+    return _sr_is_cancelled(task_id)
 
 
 def clear_cancel(task_id):
-    with _cancel_lock:
-        _cancelled.discard(task_id)
+    _sr_clear_cancel(task_id)
 
 
 # ---------------- live 快照 ----------------

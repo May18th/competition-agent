@@ -42,6 +42,13 @@ tasks = {}
 # 当前正在执行的任务 id（app.py 的 worker 线程内设置）
 _current_task_id = None
 
+# 已取消的任务 id 集合（单一真相源，progress.py 转发到这里）
+_cancelled = set()
+
+
+class TaskCancelled(Exception):
+    """生成被用户取消，用于中断 langgraph 节点循环。"""
+
 
 def set_current_task(task_id):
     """标记当前正在执行的任务（app.py 的 worker 线程调用）。"""
@@ -55,9 +62,31 @@ def clear_current_task():
     _current_task_id = None
 
 
+def cancel_task(task_id):
+    """标记取消：report_stage 会抛 TaskCancelled 中断生成。"""
+    _cancelled.add(task_id)
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "cancelled"
+        t["updated_at"] = time.time()
+
+
+def is_cancelled(task_id=None):
+    """检查任务是否已取消（不传则查当前任务）。"""
+    tid = task_id or _current_task_id
+    return bool(tid) and tid in _cancelled
+
+
+def clear_cancel(task_id):
+    """清除取消标记。"""
+    _cancelled.discard(task_id)
+
+
 def report_stage(stage):
     """上报当前阶段（competition_agents.py 的 Agent 节点调用）。"""
     tid = _current_task_id
+    if tid and tid in _cancelled:
+        raise TaskCancelled()
     t = tasks.get(tid) if tid else None
     if isinstance(t, dict):
         t["stage"] = stage

@@ -14,7 +14,8 @@ from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
 from stage_reporter import (tasks, set_current_task, clear_current_task,
-                            report_stage as _report_stage, stage_meta)
+                            report_stage as _report_stage, stage_meta, TaskCancelled)
+import progress
 
 
 app = Flask(__name__)
@@ -586,14 +587,18 @@ def generate():
 def generate_async():
     data = request.json or {}
     task_id = uuid.uuid4().hex
-    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time()}
+    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(),
+                      "mode": data.get("mode", "fast")}
 
     def worker():
         set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
         try:
             rd = _run_generation(data)
-            _report_stage("done")
-            tasks[task_id] = {"status": "done", "data": rd, "stage": "done", "updated_at": time.time()}
+            if progress.is_cancelled(task_id):
+                return
+            progress.mark_done(task_id, data=rd)
+        except TaskCancelled:
+            print(f"[generate_async] 任务 {task_id} 已取消")
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -604,6 +609,12 @@ def generate_async():
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"success": True, "task_id": task_id})
+
+
+@app.route('/api/cancel/<task_id>', methods=['POST'])
+def cancel_generation(task_id):
+    progress.cancel(task_id)
+    return jsonify({"success": True, "cancelled": True})
 
 
 @app.route('/api/status/<task_id>')

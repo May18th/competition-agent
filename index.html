@@ -35,6 +35,9 @@
     --warn-bg:rgba(251,191,36,.12);
     --warn-line:rgba(251,191,36,.38);
     --warn-text:#fde68a;
+    --err-bg:rgba(248,113,113,.12);
+    --err-line:rgba(248,113,113,.42);
+    --err-text:#fecaca;
     --radius:18px;
 }
 
@@ -52,6 +55,102 @@ body {
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
 }
+
+/* ---------- 服务状态指示器 ---------- */
+.health-dot {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--surface-solid);
+    border: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--text-dim);
+    pointer-events: none;
+}
+.health-dot .hd-inner {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-mute);
+    transition: all .3s;
+}
+.health-dot.ok .hd-inner { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.health-dot.err .hd-inner { background: #f87171; box-shadow: 0 0 8px #f87171; }
+
+/* ---------- 骨架屏 ---------- */
+.skeleton {
+    background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.4s ease-in-out infinite;
+    border-radius: 8px;
+}
+@keyframes sk-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ---------- 历史记录弹窗 ---------- */
+.history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px dashed var(--line);
+}
+.history-item:last-child { border-bottom: none; }
+.history-info { flex: 1; min-width: 0; }
+.history-title { color: var(--text); font-weight: 600; font-size: 14px; }
+.history-idea { color: var(--text-dim); font-size: 12.5px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { color: var(--text-mute); font-size: 11.5px; margin-top: 4px; }
+.history-del {
+    padding: 6px 10px;
+    background: var(--err-bg);
+    color: var(--err-text);
+    border: 1px solid var(--err-line);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    flex: 0 0 auto;
+}
+.history-del:hover { background: rgba(248,113,113,.22); }
+.history-search {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 13px;
+    margin-bottom: 10px;
+    outline: none;
+}
+.history-search:focus { border-color: var(--c-a); }
+.history-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+.history-pager button {
+    padding: 5px 12px;
+    background: var(--btn-ghost);
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.history-pager button:disabled { opacity: .4; cursor: not-allowed; }
 
 /* ---------- 动态背景层 ---------- */
 .wb-bg{
@@ -712,6 +811,11 @@ button:hover { transform: translateY(-1px); }
         <canvas id="wbParticles"></canvas>
     </div>
 
+    <div id="healthDot" class="health-dot">
+        <span class="hd-inner"></span>
+        <span id="healthText">服务检测中…</span>
+    </div>
+
     <div class="container">
         <!-- Hero -->
         <div class="hero">
@@ -863,6 +967,15 @@ button:hover { transform: translateY(-1px); }
         </div>
 
         <!-- 结果区域 -->
+        <div id="skeletonArea" class="card" style="display: none;">
+            <div class="skeleton" style="height: 96px; margin-bottom: 18px;"></div>
+            <div class="skeleton" style="height: 18px; margin-bottom: 12px;"></div>
+            <div class="skeleton" style="height: 18px; margin-bottom: 12px; width: 78%;"></div>
+            <div class="skeleton" style="height: 150px; margin-bottom: 18px;"></div>
+            <div class="skeleton" style="height: 18px; margin-bottom: 12px;"></div>
+            <div class="skeleton" style="height: 18px; width: 62%;"></div>
+        </div>
+
         <div id="resultArea" class="card" style="display: none;">
             <div class="result-hero">
                 <div class="score-number" id="scoreNum">86</div>
@@ -1072,9 +1185,11 @@ button:hover { transform: translateY(-1px); }
     <div id="historyModal" class="modal-overlay" onclick="closeHistory(event)">
         <div class="modal">
             <h2><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-history"/></svg> 历史记录</h2>
-            <div id="historyList">
+            <input id="historySearch" class="history-search" placeholder="搜索赛事名或创意关键词" oninput="loadHistory(0)">
+            <div id="historyList" style="max-height: 46vh; overflow-y: auto;">
                 <p style="color: var(--text-mute); text-align: center;">加载中...</p>
             </div>
+            <div id="historyPager" class="history-pager"></div>
         </div>
     </div>
 
@@ -1374,10 +1489,10 @@ button:hover { transform: translateY(-1px); }
             var miss = (comp && comp.missing) || [];
             if (!miss.length) { box.style.display = 'none'; return; }
             box.style.display = 'block';
-            box.style.background = 'var(--warn-bg)';
-            box.style.border = '1px solid rgba(251,191,36,.35)';
-            box.style.color = 'var(--warn-text)';
-            box.innerHTML = '<b>申报书可能缺少以下章节：</b>' + miss.map(_esc).join('、') +
+            box.style.background = 'var(--err-bg)';
+            box.style.border = '1px solid var(--err-line)';
+            box.style.color = 'var(--err-text)';
+            box.innerHTML = '<b>⚠ 申报书缺少以下章节：</b>' + miss.map(_esc).join('、') +
                 '<br><span style="color:var(--text-mute); font-size:12.5px;">可据此人工补写，或把草稿粘回输入框用深度版重跑一轮（当前正文 ' + (comp.chars || 0) + ' 字）</span>';
         }
 
@@ -1603,6 +1718,8 @@ button:hover { transform: translateY(-1px); }
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> AI正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
+            document.getElementById('skeletonArea').style.display = 'block';
+            document.getElementById('resultArea').style.display = 'none';
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
@@ -1666,6 +1783,7 @@ button:hover { transform: translateY(-1px); }
                     btn.disabled = false;
                     btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始' + (proposal_draft.length > 0 ? '优化' : '生成');
                     if (data.success) {
+                        document.getElementById('skeletonArea').style.display = 'none';
                         document.getElementById('resultArea').style.display = 'block';
                         // 填四个核心内容
                         document.getElementById('scoreNum').innerText = data.data.score;
@@ -1767,6 +1885,7 @@ button:hover { transform: translateY(-1px); }
             })
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
+                document.getElementById('skeletonArea').style.display = 'none';
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
                 var _net = String((err && err.message) || err || '');
@@ -1813,6 +1932,7 @@ button:hover { transform: translateY(-1px); }
 
         function showHistory() {
             document.getElementById('historyModal').style.display = 'flex';
+            loadHistory(0);
         }
 
         function closeHistory(event) {
@@ -1820,11 +1940,99 @@ button:hover { transform: translateY(-1px); }
                 document.getElementById('historyModal').style.display = 'none';
             }
         }
+
+        var _historyLimit = 10;
+        var _historyOffset = 0;
+        function loadHistory(offset) {
+            _historyOffset = offset;
+            var q = (document.getElementById('historySearch') || {}).value || '';
+            var list = document.getElementById('historyList');
+            list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">加载中...</p>';
+            fetch('/api/history?limit=' + _historyLimit + '&offset=' + offset + '&q=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d.success) { throw new Error(d.error || '加载失败'); }
+                    renderHistoryList(d);
+                })
+                .catch(function (e) {
+                    list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc((e && e.message) || e) + '</p>';
+                });
+        }
+        function renderHistoryList(d) {
+            var list = document.getElementById('historyList');
+            var items = d.history || [];
+            if (!items.length) {
+                list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">暂无历史记录</p>';
+            } else {
+                list.innerHTML = items.map(function (h) {
+                    return '<div class="history-item">' +
+                        '<div class="history-info">' +
+                            '<div class="history-title">' + _esc(h.competition_name || '') + '</div>' +
+                            '<div class="history-idea">' + _esc(h.idea || '') + '</div>' +
+                            '<div class="history-meta">' + _esc(h.time || '') + ' · 得分 ' + _esc(h.score == null ? '-' : h.score) + '</div>' +
+                        '</div>' +
+                        '<button class="history-del" onclick="deleteHistory(' + h.id + ')">删除</button>' +
+                    '</div>';
+                }).join('');
+            }
+            renderHistoryPager(d);
+        }
+        function renderHistoryPager(d) {
+            var pager = document.getElementById('historyPager');
+            var total = d.total || 0;
+            var limit = d.limit || _historyLimit;
+            var offset = d.offset || 0;
+            var page = Math.floor(offset / limit);
+            var totalPages = Math.max(1, Math.ceil(total / limit));
+            var html = '<button onclick="loadHistory(' + Math.max(0, offset - limit) + ')"' + (page <= 0 ? ' disabled' : '') + '>上一页</button>';
+            html += '<span>第 ' + (page + 1) + ' / ' + totalPages + ' 页 · 共 ' + total + ' 条</span>';
+            html += '<button onclick="loadHistory(' + (offset + limit) + ')"' + (page >= totalPages - 1 ? ' disabled' : '') + '>下一页</button>';
+            pager.innerHTML = html;
+        }
+        function deleteHistory(id) {
+            if (!window.confirm('确定删除这条历史记录？')) return;
+            fetch('/api/history/' + id, { method: 'DELETE' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.success) {
+                        wbToast('已删除', { type: 'ok' });
+                        loadHistory(_historyOffset);
+                    } else {
+                        wbToast(d.error || '删除失败', { type: 'error' });
+                    }
+                })
+                .catch(function (e) {
+                    wbToast('删除失败：' + ((e && e.message) || e), { type: 'error' });
+                });
+        }
+
+        function checkHealth() {
+            fetch('/api/health')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    var dot = document.getElementById('healthDot');
+                    var txt = document.getElementById('healthText');
+                    if (d && d.success && d.status === 'ok') {
+                        dot.className = 'health-dot ok';
+                        txt.innerText = '服务正常';
+                    } else {
+                        dot.className = 'health-dot err';
+                        txt.innerText = '服务异常';
+                    }
+                })
+                .catch(function () {
+                    var dot = document.getElementById('healthDot');
+                    dot.className = 'health-dot err';
+                    document.getElementById('healthText').innerText = '服务异常';
+                });
+        }
     
         
         
         // 页面加载后拉取一次知识库状态（失败也不影响主流程）
         loadKnowledgeStatus();
+        checkHealth();
+        setInterval(checkHealth, 30000);
 
 /* ===== WB UI 增强：粒子背景 + 滚动进场 ===== */
         (function () {
