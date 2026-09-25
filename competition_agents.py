@@ -6,7 +6,7 @@ from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import HumanMessage
-from stage_reporter import report_stage as _report_stage
+from stage_reporter import report_stage as _report_stage, set_partial_field
 
 
 # ============ 配置 ============
@@ -812,6 +812,29 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
+def _stream_llm(prompt, field, every=8):
+    """流式调用 LLM：边生成边把累积文本写进 partial，前端即可逐字看到内容。
+
+    这样做的原因：否则一个节点（如写申报书）要跑 40～60 秒才一次性吐出全文，
+    用户盯着占位符干等，就是所谓的「块状流动」。
+    失败兜底：已生成了较完整内容就用已有部分，否则退回一次性 invoke。
+    """
+    buf = []
+    try:
+        for i, ch in enumerate(llm.stream([HumanMessage(content=prompt)])):
+            buf.append(ch.content or "")
+            if i % every == 0:
+                set_partial_field(field, "".join(buf))
+        set_partial_field(field, "".join(buf))
+    except Exception as e:
+        partial_text = "".join(buf)
+        print(f"[stream] {field} 流式中断（{e}），已生成 {len(partial_text)} 字")
+        if len(partial_text) < 1500:      # 内容太少，残缺不可用，重跑一次
+            return llm.invoke([HumanMessage(content=prompt)]).content.strip()
+        return partial_text.strip()
+    return "".join(buf).strip()
+
+
 def _build_outline(state: CompetitionState) -> str:
     """Step 1 · 构思纲要：先论证站位与创新点、分配各章要点，再动笔写正文。"""
     prompt = f"""你是科创赛事申报书的主笔。在动笔写正文之前，先为下面这个项目构思一份**写作纲要**。
@@ -846,8 +869,7 @@ def _build_outline(state: CompetitionState) -> str:
 
 要求：只写纲要和论点，不要写正文段落；中文标点用全角。
 """
-    resp = llm.invoke([HumanMessage(content=prompt)])
-    return resp.content.strip()
+    return _stream_llm(prompt, "proposal_outline")
 
 
 def _parse_patch_list(text):
@@ -1029,8 +1051,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 {_PROPOSAL_SPEC}
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
-    proposal = response.content.strip()
+    proposal = _stream_llm(prompt, "proposal")
 
     # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
     proposal, patch_count = _selfcheck_proposal(state, proposal)
@@ -1098,9 +1119,8 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
 5. 中文标点用全角。
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
     proposal, n = _expand_to_length(
-        response.content, 1100,
+        _stream_llm(prompt, "proposal"), 1100,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1

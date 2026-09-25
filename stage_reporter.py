@@ -76,6 +76,23 @@ def set_partial(partial):
         tasks[tid]["updated_at"] = time.time()
 
 
+def set_partial_field(field, text):
+    """单字段增量写入 partial（合并式，不清掉其它字段）。
+
+    供 Agent 内部边生成边推送用：LLM 每吐出一批 token 就调一次，
+    前端轮询即可看到正文逐字增长，而不是等整个节点跑完才一次性出现。
+    """
+    tid = _current_task_id
+    if not tid or tid not in tasks or not text:
+        return
+    p = tasks[tid].get("partial")
+    if not isinstance(p, dict):
+        p = {}
+        tasks[tid]["partial"] = p
+    p[field] = text
+    tasks[tid]["updated_at"] = time.time()
+
+
 # 演讲稿流式缓冲区（task_id -> 已生成的文本，供前端实时预览）
 _speech_stream = {}
 
