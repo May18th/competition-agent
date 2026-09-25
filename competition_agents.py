@@ -427,7 +427,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 3. 这个比赛偏好什么样的项目
 4. 关键注意事项
 
-输出格式清晰，分点列出。
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     print(f"📋 规则解析 Agent：已提取评分标准")
@@ -448,6 +448,8 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 3. 如何差异化突出，避免同质化？
 
 给出具体的改进建议。
+
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     print(f"🔍 同质化检测 Agent：已完成分析")
@@ -614,6 +616,8 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
 4. 风险预案（如果延期了怎么办）
 
 控制在1000字左右，清晰有条理。
+
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["implementation_plan"] = response.content
@@ -635,6 +639,8 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
 4. 长期愿景（3-5年后想做成什么样）
 
 控制在1000字左右，要有高度，不要太商业化。
+
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["social_value"] = response.content
@@ -656,7 +662,7 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 3. 结尾讲价值和优势
 4. 语言正式，适合写申报书开头
 
-控制在300字左右。
+控制在300字左右，写成连贯的完整段落，不要用序号罗列。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["project_summary"] = response.content
@@ -876,6 +882,10 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 - 格式规范15%：是否符合申报书格式要求
 - 说服力10%：整体是否能让评委信服
 不要给所有文档打接近的分数，要拉开差距。
+
+【点评文字要求】
+1. 「主要优点」和「需要改进的地方」每点写成完整段落，有具体依据、有展开，不要只写一两个关键词
+2. 上面的打分字段（结构完整性：__分 等）保持原格式，不要改动
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["judge_feedback"] = response.content
@@ -1007,6 +1017,8 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 2. 内容亮点
 3. 待优化点
 4. 评审建议
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal_analysis"] = response.content
