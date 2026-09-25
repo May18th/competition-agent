@@ -62,6 +62,27 @@ def clear_current_task():
     _current_task_id = None
 
 
+def current_task_id():
+    """返回当前正在执行的任务 id（供 Agent 内部读取，用于流式缓冲区）。"""
+    return _current_task_id
+
+
+# 演讲稿流式缓冲区（task_id -> 已生成的文本，供前端实时预览）
+_speech_stream = {}
+
+
+def set_speech_stream(task_id, text):
+    _speech_stream[task_id] = text
+
+
+def get_speech_stream(task_id):
+    return _speech_stream.get(task_id, "")
+
+
+def clear_speech_stream(task_id):
+    _speech_stream.pop(task_id, None)
+
+
 def cancel_task(task_id):
     """标记取消：report_stage 会抛 TaskCancelled 中断生成。"""
     _cancelled.add(task_id)

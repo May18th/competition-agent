@@ -917,8 +917,21 @@ PPT大纲：{state['ppt_outline']}
 语言口语化，有感染力，照着念就行，不要太书面。
 控制在600字左右（3分钟语速）。
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
-    state["speech_script"] = response.content
+    # 流式生成，边生成边写入缓冲区，前端可实时预览，不再干等 20~40 秒
+    import stage_reporter as _sr
+    full_text = ""
+    try:
+        for chunk in llm.stream([HumanMessage(content=prompt)]):
+            piece = getattr(chunk, "content", "") or ""
+            if piece:
+                full_text += piece
+                _tid = _sr.current_task_id()
+                if _tid:
+                    _sr.set_speech_stream(_tid, full_text)
+    except Exception:
+        # 流式失败兜底：退回一次性生成
+        full_text = llm.invoke([HumanMessage(content=prompt)]).content
+    state["speech_script"] = full_text
     print(f"🎤 路演演讲稿：已生成")
     return state
 

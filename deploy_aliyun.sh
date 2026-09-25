@@ -66,6 +66,20 @@ EOF
 fi
 
 echo "===== [5/7] 写 systemd 服务（开机自启 + 崩了自动拉起）====="
+# 端口架构（2026-09-25 定稿）：
+#   有 nginx  → gunicorn 只听 127.0.0.1:$PORT，由 nginx 在 80 端口反代（推荐，阿里云安全组只放行 80）
+#   无 nginx  → gunicorn 直接听 0.0.0.0:$PORT（需自行在安全组放行 $PORT）
+HAS_NGINX=0
+if command -v nginx >/dev/null 2>&1; then HAS_NGINX=1; fi
+
+if [ "$HAS_NGINX" = "1" ]; then
+    BIND_ADDR="127.0.0.1"
+    echo ">>> 检测到 nginx，采用「nginx:80 → 反代 → 127.0.0.1:$PORT」架构"
+else
+    BIND_ADDR="0.0.0.0"
+    echo ">>> 未检测到 nginx，gunicorn 直接监听 0.0.0.0:$PORT（记得安全组放行 $PORT）"
+fi
+
 cat > /etc/systemd/system/comp-agent.service <<EOF
 [Unit]
 Description=科创赛事多智能体协同创作助手
@@ -75,7 +89,7 @@ After=network.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/.venv/bin/gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 600
+ExecStart=$APP_DIR/.venv/bin/gunicorn wsgi:app --bind $BIND_ADDR:$PORT --workers 1 --threads 4 --timeout 600
 Restart=always
 RestartSec=3
 
@@ -90,12 +104,53 @@ systemctl restart comp-agent
 sleep 4
 systemctl status comp-agent --no-pager | head -12 || true
 
-echo "===== [7/7] 放行端口（系统防火墙；阿里云安全组请自行在控制台放行 $PORT）====="
-need_cmd ufw && ufw allow "$PORT"/tcp || true
-if need_cmd firewall-cmd; then
-    firewall-cmd --permanent --add-port="$PORT"/tcp >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1 || true
+echo "===== [7/7] 放行端口（系统防火墙；阿里云安全组请自行在控制台放行）====="
+if [ "$HAS_NGINX" = "1" ]; then
+    need_cmd ufw && ufw allow 80/tcp || true
+    if need_cmd firewall-cmd; then
+        firewall-cmd --permanent --add-service=http >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1 || true
+    fi
+    # nginx 反代配置（长任务需要长超时，别用默认 60s）
+    cat > /etc/nginx/sites-available/comp-agent <<EOF
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 60;
+        proxy_send_timeout 600;
+        proxy_read_timeout 600;
+    }
+}
+EOF
+    ln -sf /etc/nginx/sites-available/comp-agent /etc/nginx/sites-enabled/comp-agent
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t && systemctl enable nginx && systemctl restart nginx
+    echo ">>> 请在阿里云安全组放行 **80** 端口（$PORT 只作上游，无需放行）"
+else
+    need_cmd ufw && ufw allow "$PORT"/tcp || true
+    if need_cmd firewall-cmd; then
+        firewall-cmd --permanent --add-port="$PORT"/tcp >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1 || true
+    fi
+    echo ">>> 请在阿里云安全组放行 **$PORT** 端口"
 fi
 
 echo ""
 echo "===== 自检 ====="
+echo "-- 直连 gunicorn --"
 curl -s -m 8 "http://127.0.0.1:$PORT/api/health" || echo "还没起来，用 journalctl -u comp-agent -f 看日志"
+echo ""
+if [ "$HAS_NGINX" = "1" ]; then
+    echo "-- 经 nginx(80) --"
+    curl -s -m 8 "http://127.0.0.1/api/health" || echo "nginx 反代失败，看 tail -50 /var/log/nginx/error.log"
+    echo ""
+fi
+echo "外网访问请用: http://<你的公网IP>$( [ "$HAS_NGINX" = "1" ] || echo ":$PORT" )"

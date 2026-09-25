@@ -14,7 +14,8 @@ from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
 from stage_reporter import (tasks, set_current_task, clear_current_task,
-                            report_stage as _report_stage, stage_meta, TaskCancelled)
+                            report_stage as _report_stage, stage_meta, TaskCancelled,
+                            get_speech_stream, clear_speech_stream)
 import progress
 
 
@@ -621,6 +622,7 @@ def generate_async():
             traceback.print_exc()
             progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
         finally:
+            clear_speech_stream(task_id)
             clear_current_task()
 
     threading.Thread(target=worker, daemon=True).start()
@@ -660,6 +662,12 @@ def get_task_status(task_id):
         resp["error"] = t["error"]
         resp["detail"] = t.get("detail")
     return jsonify(resp)
+
+
+@app.route('/api/speech_stream/<task_id>')
+def speech_stream(task_id):
+    """演讲稿流式预览：返回当前已生成的演讲稿片段。"""
+    return jsonify({"success": True, "text": get_speech_stream(task_id)})
 
 
 
