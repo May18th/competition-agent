@@ -58,6 +58,61 @@ def init_db():
 
 init_db()
 print("✅ SQLite数据库已初始化")
+
+
+def _seed_kb_if_needed():
+    """首次部署时自动灌入种子范文。
+
+    背景：competition.db 在 .gitignore 里，新环境 git pull 后 kb_samples 表是空的
+    （kb_samples 模块导入时会自动建表，所以不报错），结果是 RAG 静默失效——
+    界面正常、检索无报错，但永远命中不了任何范文。这里保证任何新环境起来就有基础范文。
+
+    幂等：用 kb_meta.seed_stamp 记录已导入的种子指纹，重复启动不会重复插入；
+    用户手动删光范文也不会被强行灌回。
+    """
+    try:
+        import json as _json
+        import hashlib
+        from kb_samples import add_sample
+
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "knowledge_base", "seed_samples.json")
+        if not os.path.exists(seed_path):
+            return
+        with open(seed_path, "rb") as f:
+            raw = f.read()
+        data = _json.loads(raw.decode("utf8"))
+        stamp = hashlib.md5(raw).hexdigest()[:8] + ":" + str(len(data))
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS kb_meta (k TEXT PRIMARY KEY, v TEXT)")
+        row = c.execute("SELECT v FROM kb_meta WHERE k='seed_stamp'").fetchone()
+        if row and row[0] == stamp:
+            conn.close()
+            return
+
+        n = 0
+        for it in data:
+            try:
+                add_sample(it["content"], ",".join(it.get("tags", [])),
+                           source=it.get("source", "种子"),
+                           score=it.get("score", 0),
+                           type="范文",
+                           summary=it.get("summary", ""))
+                n += 1
+            except Exception:
+                pass
+        c.execute("INSERT OR REPLACE INTO kb_meta (k, v) VALUES ('seed_stamp', ?)", (stamp,))
+        conn.commit()
+        conn.close()
+        print("🌱 范文库种子已导入 %d 段（stamp=%s）" % (n, stamp))
+    except Exception as e:
+        # 种子导入失败不能影响服务启动
+        print("⚠️ 范文库种子导入失败（不影响启动）: %s" % e)
+
+
+_seed_kb_if_needed()
 lock = threading.Lock()
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'

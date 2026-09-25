@@ -32,9 +32,11 @@ def phase1_data():
         return check("模块可导入", False, str(e))
     check("模块可导入", True)
 
-    sid = k.add_sample("【验收用范文】本项目为文旅数字化Web平台，4人学生团队开发，"
-                       "已完成原型并在1所高校试点，累计用户300人。",
-                       ["项目简介", "文化文旅", "web网站", "4人团队"])
+    # 注意：add_sample 返回的是 (id, is_new) 元组，不是 int
+    _ret = k.add_sample("【验收用范文】本项目为文旅数字化Web平台，4人学生团队开发，"
+                        "已完成原型并在1所高校试点，累计用户300人。",
+                        ["项目简介", "文化文旅", "web网站", "4人团队"])
+    sid = _ret[0] if isinstance(_ret, (tuple, list)) else _ret
     check("add_sample 返回 id", isinstance(sid, int) and sid > 0, "id=%s" % sid)
 
     items = k.list_samples()
