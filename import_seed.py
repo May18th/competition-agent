@@ -85,8 +85,13 @@ def main():
                 if exists:
                     skipped += 1
                     continue
+                # type 必须显式传「范文」：add_sample 默认是「材料」，
+                # 不传会导致同一批种子在新环境（app.py 自动初始化，传范文）
+                # 和本脚本（传材料）里类型不一致。虽然当前检索层 types=None 不过滤，
+                # 但一旦加上类型过滤就会分叉，故统一。
                 k.add_sample(content, tags,
-                             it.get("source", ""), it.get("score", 0))
+                             it.get("source", ""), it.get("score", 0),
+                             type="范文")
                 added += 1
             else:
                 ok = fallback_add(content, tags,

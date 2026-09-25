@@ -2826,13 +2826,31 @@ button:hover { transform: translateY(-1px); }
                     var html = '';
                     items.forEach(function (it) {
                         var tags = (it.tags || []).map(function (t) {
-                            return '<span style="padding:2px 8px;background:var(--c-a-soft);color:var(--c-a);border-radius:10px;font-size:11px;">' + t + '</span>';
+                            return '<span style="padding:2px 8px;background:var(--c-a-soft);color:var(--c-a);border-radius:10px;font-size:11px;">' + _esc(t) + '</span>';
                         }).join(' ');
+                        // type 徽章：范文=绿，其它（材料/模板）=灰
+                        var tname = it.type || '材料';
+                        var isFan = (tname === '范文');
+                        var badge = '<span style="padding:2px 8px;border-radius:10px;font-size:11px;' +
+                            (isFan ? 'background:rgba(34,197,94,.14);color:#22c55e;'
+                                   : 'background:var(--surface-2);color:var(--text-mute);') +
+                            '">' + _esc(tname) + '</span>';
+                        // 评分：>=75 加 ★（与后端"范文"判定线一致）
+                        var sc = (it.score === null || it.score === undefined) ? null : Number(it.score);
+                        var scoreTxt = '';
+                        if (sc !== null && !isNaN(sc)) {
+                            scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
+                                sc + ' 分' + (sc >= 75 ? ' ★' : '') + '</span>';
+                        }
+                        // 摘要优先，没有则回退正文前 60 字
+                        var brief = (it.summary && String(it.summary).trim())
+                            ? String(it.summary)
+                            : (it.content || '').slice(0, 60);
                         html += '<div style="padding:12px;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;">' +
                             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
                             '<div style="flex:1;min-width:0;">' +
-                            '<div style="margin-bottom:6px;">' + tags + '</div>' +
-                            '<div style="color:var(--text-dim);line-height:1.6;">' + (it.content || '').slice(0, 80) + '…</div>' +
+                            '<div style="margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + tags + badge + scoreTxt + '</div>' +
+                            '<div style="color:var(--text-dim);line-height:1.6;">' + _esc(brief) + '…</div>' +
                             '</div>' +
                             '<button onclick="kbDelete(' + it.id + ')" style="padding:4px 10px;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--line);border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;">删除</button>' +
                             '</div></div>';

@@ -231,23 +231,41 @@ def index():
     return resp
 
 
-def _summarize(text, max_len=60):
-    """用 LLM 给上传内容生成一句话摘要，失败返回截断预览。"""
+def _assess_and_summarize(text, max_len=4000):
+    """一次 LLM 调用：生成一句话摘要 + 质量评分 + 主要问题。返回 (summary, score, reason)。"""
+    import re
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
-        prompt = ("用一句话（不超过 %d 字）概括下面这段材料的核心内容，用于记忆库索引。\n\n%s"
-                  % (max_len, (text or "")[:3000]))
+        prompt = f"""请对下面这份材料做两件事，只输出一个 JSON（不要任何解释文字）：
+
+1. summary：用一句话（60字内）概括核心内容；
+2. score：质量分（0-100），判断是否达到「高分范文」水准。评分维度各25分：结构完整性（章节齐全、无空表格/占位）、数据支撑（有具体数字/来源/测算，不是"千亿级""显著提升"这种空话）、具体性（技术/功能/商业模式落到细节）、逻辑一致性（口径统一、无矛盾）；
+3. reason：一句话点出最需要改的问题（没问题就写"无明显硬伤"）。
+
+格式：{{"summary":"...","score":82,"reason":"..."}}
+
+材料：
+{(text or "")[:max_len]}
+"""
         resp = llm.invoke([HumanMessage(content=prompt)])
-        summary = (resp.content or "").strip()
-        return summary[:max_len] if summary else (text or "")[:max_len]
+        raw = (resp.content or "").strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if m:
+            import json as _json
+            d = _json.loads(m.group(0))
+            summary = str(d.get("summary", "")).strip()[:60]
+            score = max(0, min(100, int(d.get("score", 0))))
+            reason = str(d.get("reason", "")).strip()[:80]
+            return summary, score, reason
+        return (text or "")[:60], 0, "评估失败"
     except Exception as e:
-        print(f"[kb] 摘要生成失败，改用截断预览：{e}")
-        return ((text or "")[:max_len] + "…") if len(text or "") > max_len else (text or "")
+        print(f"[kb] 摘要与质量评估失败：{e}")
+        return ((text or "")[:60] + "…") if len(text or "") > 60 else (text or ""), 0, "评估失败"
 
 
 def _record_upload(text, source_name=""):
-    """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + LLM 摘要），失败静默降级。"""
+    """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + 质量评估 + 摘要）。"""
     if not text or not text.strip():
         return
     try:
@@ -260,10 +278,12 @@ def _record_upload(text, source_name=""):
         tags = extract_keywords(text)
         if not tags:
             tags = ["材料"]
-        summary = _summarize(text)
+        summary, score, reason = _assess_and_summarize(text)
+        # 质量门：≥75 分才归为「范文」，否则归「材料」
+        mem_type = "范文" if score >= 75 else "材料"
         sid, _ = add_sample(text.strip(), tags, source=source_name or "用户上传",
-                            type="材料", summary=summary)
-        print(f"[kb] 已记录上传内容 #{sid}，标签 {tags}，摘要 {summary}")
+                            type=mem_type, summary=summary, score=score)
+        print(f"[kb] 已记录上传 #{sid}，类型={mem_type}，质量={score}分，摘要={summary}，理由={reason}")
     except Exception as e:
         print(f"[kb] 记录上传失败（不影响主流程）：{e}")
 
@@ -973,14 +993,27 @@ def export_zip():
         mappings.append(("09_答辩问题预测.docx", "答辩问题预测", data['defense_questions']))
     if data.get('ppt_outline'):
         mappings.append(("10_PPT大纲.docx", "PPT大纲", data['ppt_outline']))
+    # 加固：内容全空时不能静默返回一个空 zip（22 字节）还告诉用户成功，
+    # 否则用户下载到空包毫不知情。这里明确报错。
+    valid = [m for m in mappings if m[2] and str(m[2]).strip()]
+    if not valid:
+        return jsonify({
+            "error": "没有可打包的内容：未收到任何正文数据，请先生成一次再打包。",
+            "hint": "该接口需要扁平字段（parsed_rules/proposal/ppt_outline 等），"
+                    "而非 /api/history 返回的列表摘要。"
+        }), 400
+    skipped = [m[0] for m in mappings if not (m[2] and str(m[2]).strip())]
+    if skipped:
+        print("[export_zip] 内容为空已跳过 %d 项：%s" % (len(skipped), ", ".join(skipped)))
+
     tmpdir = 'tmp_export'
     os.makedirs(tmpdir, exist_ok=True)
     zippath = os.path.join(tmpdir, '科创赛事项目材料包.zip')
-    
+
     def build_doc(title, text):
         dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
         return _build_docx(title, text, doc_type=dt)
-    
+
     with zipfile.ZipFile(zippath, 'w', zipfile.ZIP_DEFLATED) as zf:
         for filename, title, text in mappings:
             if not text or not text.strip(): continue
