@@ -935,6 +935,18 @@ button:hover { transform: translateY(-1px); }
     </div>
 
     <div class="container">
+        <!-- 微信 / QQ 内置浏览器提示：微信的 file 选择器只给「图片 / 视频」，选不到 PDF/Word -->
+        <div id="wxBanner" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--c-b); border-radius: 12px; font-size: 13px; color: var(--text); line-height: 1.75;">
+            <div style="font-weight: 600; color: var(--c-b); margin-bottom: 4px;">当前在微信内置浏览器里，上传只能选到图片和视频</div>
+            <div style="color: var(--text-dim);">这是微信的限制，改不了。要传 Word / PDF：<br>
+                ① 点右上角 <b>···</b> → <b>在 Safari 中打开</b>（推荐）；<br>
+                ② 或者把文字复制好，回来点「粘贴文本」直接粘到草稿框，不用传文件。</div>
+            <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <button onclick="wbCopyLink()" style="padding: 6px 12px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">复制网址</button>
+                <span id="wxLink" style="font-size: 12px; color: var(--text-mute); word-break: break-all;"></span>
+            </div>
+        </div>
+
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>科创赛事多智能体创作助手</h1>
@@ -953,6 +965,10 @@ button:hover { transform: translateY(-1px); }
             <div class="card-title">
                 <span class="step-badge">1</span>
                 填写赛事信息
+            </div>
+            <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; color: var(--text-dim); align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span id="wbRestoreText"></span>
+                <button onclick="wbClearForm()" style="padding: 4px 10px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清空重写</button>
             </div>
             <div style="display: grid; gap: 20px;">
                 <div class="form-group">
@@ -1002,7 +1018,7 @@ button:hover { transform: translateY(-1px); }
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
                     <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
-                        <button onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
+                        <button id="btnUploadDraft" onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
                             <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书草稿
                         </button>
                         <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
@@ -1497,21 +1513,59 @@ button:hover { transform: translateY(-1px); }
     </script>
     <script>
 
-        // 手机端上传提示：只在移动端展开；微信/QQ 内置浏览器额外加红字警告
+        // 手机端上传兼容
+        // 微信内置浏览器的 file 选择器只给「图片 / 视频」，选不到 PDF / Word（微信自身限制，改不了），
+        // 所以：微信里直接把上传按钮废掉并给明确指引，避免用户反复踩坑；普通手机浏览器展开说明。
+        var WB_IN_APP = false;
         (function () {
             var ua = navigator.userAgent || '';
+            WB_IN_APP = /MicroMessenger|QQ\//i.test(ua);
             var box = document.getElementById('mobileUploadTip');
-            if (!box) return;
-            if (!/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return;
-            box.style.display = 'block';
-            if (/MicroMessenger|QQ\//i.test(ua)) {
-                box.style.borderColor = 'var(--c-b)';
-                box.insertAdjacentHTML('afterbegin',
-                    '<div style="color: var(--c-b); font-weight: 600; margin-bottom: 6px;">' +
-                    '检测到你在微信/QQ 内置浏览器里，这里只能选到图片和视频。' +
-                    '请点右上角 ··· → 用 Safari 打开。</div>');
+            if (box && /iPhone|iPad|iPod|Android|Mobile/i.test(ua)) {
+                box.style.display = 'block';
+                if (WB_IN_APP) {
+                    box.style.borderColor = 'var(--c-b)';
+                    box.insertAdjacentHTML('afterbegin',
+                        '<div style="color: var(--c-b); font-weight: 600; margin-bottom: 6px;">' +
+                        '检测到你在微信/QQ 内置浏览器里，这里只能选到图片和视频。' +
+                        '请点右上角 ··· → 用 Safari 打开。</div>');
+                }
+            }
+            if (WB_IN_APP) {
+                var banner = document.getElementById('wxBanner');
+                if (banner) {
+                    banner.style.display = 'block';
+                    var lk = document.getElementById('wxLink');
+                    if (lk) lk.textContent = location.href;
+                }
+                var btn = document.getElementById('btnUploadDraft');
+                if (btn) {
+                    btn.style.background = 'var(--surface-2)';
+                    btn.style.color = 'var(--text-mute)';
+                    btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 微信里无法上传文件';
+                    btn.onclick = function () {
+                        wbToast('微信内置浏览器只能选图片和视频', {
+                            type: 'warn', ms: 4000,
+                            sub: '请点右上角 ··· → 用 Safari 打开；或直接复制文字点「粘贴文本」'
+                        });
+                    };
+                }
             }
         })();
+
+        // 复制网址：方便粘到系统浏览器里打开（微信里读不到文件，只能换浏览器）
+        function wbCopyLink() {
+            var url = location.href;
+            var okFn = function () { wbToast('网址已复制，粘到 Safari 里打开', { type: 'ok', ms: 3000 }); };
+            var badFn = function (e) { wbToast('复制失败，请长按上面的网址手动复制', { type: 'error' }); };
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(okFn, function () { _fallbackCopy(url, okFn, badFn); });
+                    return;
+                }
+            } catch (e) {}
+            _fallbackCopy(url, okFn, badFn);
+        }
 
         // 手机端最稳的上传路径：复制文本 → 粘贴（HTTPS 下 clipboard.readText 可用）
         async function wbPasteDraft() {
@@ -1659,6 +1713,79 @@ button:hover { transform: translateY(-1px); }
         }
         wbLoadMeta();
         wbRefreshKeepCard();
+
+        /* ---------- 表单自动保存：刷新 / 关掉再打开不丢 ---------- */
+        var WB_FORM_KEY = 'wbFormDraft';
+        var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft'];
+
+        var WB_SAVE_OFF = false;   // 清空表单期间抑制自动保存，否则刚删又被写回
+        function wbSaveForm() {
+            if (WB_SAVE_OFF) return;
+            try {
+                var d = { _t: Date.now() };
+                WB_FORM_IDS.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) d[id] = el.value;
+                });
+                var r = document.querySelector('input[name=mode]:checked');
+                if (r) d.mode = r.value;
+                localStorage.setItem(WB_FORM_KEY, JSON.stringify(d));
+            } catch (e) {}
+        }
+
+        function wbClearForm() {
+            WB_SAVE_OFF = true;   // 清空过程中触发的 change 不要再存一次
+            try { localStorage.removeItem(WB_FORM_KEY); } catch (e) {}
+            WB_FORM_IDS.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.value = ''; el.dispatchEvent(new Event('change')); }
+            });
+            WB_SAVE_OFF = false;
+            var box = document.getElementById('wbRestoreTip');
+            if (box) box.style.display = 'none';
+            wbToast('已清空表单和本地草稿', { type: 'ok', ms: 2200 });
+        }
+
+        function wbLoadForm() {
+            var d = null;
+            try { d = JSON.parse(localStorage.getItem(WB_FORM_KEY) || 'null'); } catch (e) {}
+            if (!d) return;
+            var hit = 0;
+            WB_FORM_IDS.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && d[id]) { el.value = d[id]; hit++; }
+            });
+            if (d.mode) {
+                var r = document.querySelector('input[name=mode][value="' + d.mode + '"]');
+                // 用 click 而不是只改 checked：内联 onclick 还要同步卡片高亮样式
+                if (r && !r.checked) r.click();
+            }
+            if (!hit) return;
+            try { onCompetitionChange(); } catch (e) {}
+            var box = document.getElementById('wbRestoreTip');
+            if (box) {
+                var mins = d._t ? Math.max(1, Math.round((Date.now() - d._t) / 60000)) : 0;
+                var ago = mins >= 60 ? (Math.round(mins / 60) + ' 小时前') : (mins + ' 分钟前');
+                var tx = document.getElementById('wbRestoreText');
+                if (tx) tx.textContent = '已恢复上次填写的内容（' + ago + '）：赛事名称、创意、关键词、草稿';
+                box.style.display = 'flex';
+            }
+        }
+
+        // 输入即存（防抖 400ms），切档位/选赛事立即存
+        (function () {
+            var t = null;
+            var ids = WB_FORM_IDS.concat(['wbSchool', 'wbTeam', 'wbAdvisor']);
+            ids.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', function () { clearTimeout(t); t = setTimeout(wbSaveForm, 400); });
+                el.addEventListener('change', wbSaveForm);
+            });
+            var radios = document.querySelectorAll('input[name=mode]');
+            for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', wbSaveForm);
+        })();
+        wbLoadForm();
 
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
