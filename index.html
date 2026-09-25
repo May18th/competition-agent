@@ -1766,7 +1766,7 @@ button:hover { transform: translateY(-1px); }
                 }, 500);
             })
             .catch(err => {
-                clearInterval(timer);
+                // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
                 var _net = String((err && err.message) || err || '');
