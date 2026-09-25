@@ -1095,6 +1095,35 @@ button:hover { transform: translateY(-1px); }
                                 <button onclick="exportOne('pptOutline', 'PPT大纲')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
                         </div>
+                        <!-- 封面信息：会印在导出 Word 的封面上，留空则自动省略该行 -->
+                        <div style="background: var(--surface-solid); border: 1px solid var(--c-a-soft); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+                            <div style="font-size: 13px; color: var(--c-a); font-weight: 600; margin-bottom: 10px;">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 封面信息（可留空）
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                                <input id="wbSchool" type="text" placeholder="学校名称" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
+                                <input id="wbTeam" type="text" placeholder="团队名称" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
+                                <input id="wbAdvisor" type="text" placeholder="指导老师" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
+                            </div>
+                        </div>
+                        <!-- 原格式导出：只在上传过 .docx 原文件时出现 -->
+                        <div id="wbKeepCard" style="display: none; background: var(--surface-solid); border: 1px solid var(--c-a-soft); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+                            <div style="font-size: 13px; color: var(--c-a); font-weight: 600; margin-bottom: 8px;">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 原格式申报书导出
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.6;">
+                                你上传过 <b id="wbKeepName" style="color: var(--text-soft);"></b>，可把优化后的内容写回原文件：
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-soft); margin-bottom: 12px;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="wbKeepMode" value="keep" checked> 保留原表格格式，只替换内容（推荐）
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                    <input type="radio" name="wbKeepMode" value="reformat"> 按标准格式重新排版
+                                </label>
+                            </div>
+                            <button onclick="exportOptimized()" style="width: 100%; padding: 11px; background: var(--c-a-soft); color: var(--c-a); border: 1px solid var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出优化后的申报书</button>
+                        </div>
                         <button onclick="exportAll()" style="width: 100%; padding: 16px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包下载全部 Word 材料 (.zip)</button>
                     </div>
                 </div>
@@ -1218,6 +1247,9 @@ button:hover { transform: translateY(-1px); }
         document.getElementById('ideaFile').addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
+            // 留住原始文件对象：只有 .docx 才能走「保留原格式只替换内容」的导出
+            window._draftFile = file;
+            wbRefreshKeepCard();
             document.getElementById('ideaFileName').innerText = '正在上传：' + file.name;
             const formData = new FormData();
             formData.append('file', file);
@@ -1255,16 +1287,98 @@ button:hover { transform: translateY(-1px); }
             techSolution: 'tech_solution', defenseQuestions: 'defense_questions',
             pptOutline: 'ppt_outline'
         };
+        // ===== 封面信息 / 原格式导出（WorkBuddy）=====
+        // 各导出项对应的文档档位：default=申报书 report=报告 analysis=分析 outline=大纲
+        var _DOC_TYPE = {
+            parsedRules: 'report', similarityReport: 'report', proposalText: 'default',
+            proposalAnalysis: 'analysis', judgeFeedback: 'analysis',
+            competitorAnalysis: 'analysis', businessModel: 'analysis',
+            riskAnalysis: 'analysis', defenseQuestions: 'analysis', pptOutline: 'outline'
+        };
+        function wbMeta() {
+            return {
+                school: (document.getElementById('wbSchool') || {}).value || '',
+                team: (document.getElementById('wbTeam') || {}).value || '',
+                advisor: (document.getElementById('wbAdvisor') || {}).value || ''
+            };
+        }
+        function wbSaveMeta() {
+            try { localStorage.setItem('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
+        }
+        function wbLoadMeta() {
+            try {
+                var m = JSON.parse(localStorage.getItem('wbDocMeta') || '{}');
+                if (m.school) document.getElementById('wbSchool').value = m.school;
+                if (m.team) document.getElementById('wbTeam').value = m.team;
+                if (m.advisor) document.getElementById('wbAdvisor').value = m.advisor;
+            } catch (e) {}
+        }
+        // 只有上传过 .docx 原文件时才显示「原格式导出」卡片（PDF/图片/文本没有版式可保留）
+        function wbRefreshKeepCard() {
+            var card = document.getElementById('wbKeepCard');
+            if (!card) return;
+            var f = window._draftFile;
+            if (f && /\.docx$/i.test(f.name)) {
+                document.getElementById('wbKeepName').textContent = f.name;
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        }
+        async function exportOptimized() {
+            var f = window._draftFile;
+            if (!f) { wbToast('没有上传过的原文件', { type: 'warn' }); return; }
+            var text = _txt('proposal', 'proposalText');
+            if (!text.trim()) { wbToast('还没有优化后的申报书内容，请先生成', { type: 'warn' }); return; }
+            var radio = document.querySelector('input[name=wbKeepMode]:checked');
+            var mode = (radio && radio.value) || 'keep';
+            var m = wbMeta();
+            var fd = new FormData();
+            fd.append('original_file', f);
+            fd.append('optimized_text', text);
+            fd.append('mode', mode);
+            fd.append('title', '项目申报书');
+            fd.append('school', m.school);
+            fd.append('team', m.team);
+            fd.append('advisor', m.advisor);
+            var btn = (window.event && window.event.target) || null;
+            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '导出中...'; }
+            try {
+                var res = await fetch('/api/export_original_format', { method: 'POST', body: fd });
+                if (!res.ok) {
+                    var msg = '导出失败';
+                    try { var j = await res.json(); msg = j.error || msg; } catch (e) {}
+                    wbToast(msg, { type: 'error' });
+                    return;
+                }
+                var blob = await res.blob();
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = (mode === 'reformat' ? '申报书_标准排版.docx' : '优化后的申报书.docx');
+                a.click();
+                wbToast('已开始下载', { type: 'ok', ms: 2600 });
+            } catch (e) {
+                wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
+            }
+        }
+        wbLoadMeta();
+        wbRefreshKeepCard();
+
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
             try {
+                var m = wbMeta();
                 const res = await fetch("/api/export_word", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({title: name, text: text})
+                    body: JSON.stringify({title: name, text: text,
+                        doc_type: _DOC_TYPE[id] || 'report',
+                        school: m.school, team: m.team, advisor: m.advisor})
                 });
                 if (!res.ok) {
                     var m = '导出失败';
@@ -1295,6 +1409,7 @@ button:hover { transform: translateY(-1px); }
         }
         async function exportAll() {
             var rd = window._lastData || {};
+            var _m = wbMeta();
             var deck = rd.rich_deck || null;
             var tk = (document.getElementById('deckTheme') || {}).value;
             var vk = (document.getElementById('deckVariant') || {}).value;
@@ -1316,7 +1431,8 @@ button:hover { transform: translateY(-1px); }
                 idea: rd.idea || (document.getElementById('idea') || {}).value || '',
                 // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
                 theme: tk || (deck && deck.theme) || null,
-                variant: vk || (deck && deck.variant) || null
+                variant: vk || (deck && deck.variant) || null,
+                school: _m.school, team: _m.team, advisor: _m.advisor
             };
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '打包中...'; }

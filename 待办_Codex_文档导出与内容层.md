@@ -13,6 +13,26 @@
 4. 改完必须跑 `python -m py_compile app.py`，再重启 Flask（本项目 `debug=False`，不热重载）。
 5. ⚠️ 改之前先 `netstat -ano | findstr :8080`，**只应有 1 行**；多个进程会让你的验证结果随机跳变。
 
+### ✅ 前端已就位（WorkBuddy 做完，你不用再写界面）
+
+`index.html` 已经改好并生效（页面是直接读文件返回的，改完刷新即生效，不用重启服务）。
+**你只要保证后端接得住这些字段，不要再造一套 UI。**
+
+| 前端已做 | 会发给你什么 |
+|---|---|
+| 导出中心新增「封面信息」三个输入框（学校名 / 团队名 / 指导老师，存 localStorage） | `/api/export_word` 和 `/api/export_zip` 的 JSON 里带 `school` / `team` / `advisor` |
+| 每个「单独下载」按内容自动带档位 | `/api/export_word` 的 JSON 里带 `doc_type`：申报书全文→`default`、PPT大纲→`outline`、规则/检测报告→`report`、其余分析类→`analysis` |
+| 上传 `.docx` 原文件后，导出中心出现「原格式申报书导出」卡片 + 两个单选 | `/api/export_original_format` 的 multipart 表单：`original_file`、`optimized_text`、`mode`（`keep` / `reformat`）、`title`、`school`、`team`、`advisor` |
+
+实跑验证（node 跑前端逻辑，非肉眼看代码）：
+```
+POST /api/export_word  {"title":"项目申报书全文","text":"...","doc_type":"default","school":"某某大学","team":"启明创新团队","advisor":"张三 教授"}
+POST /api/export_word  {"title":"PPT大纲","text":"...","doc_type":"outline","school":"...","team":"...","advisor":"..."}
+POST /api/export_original_format  FormData: original_file, optimized_text, mode=keep, title, school, team, advisor
+```
+
+> 注意：`exportOne` 在内容为空时会直接 `wbToast` 警告、**不发请求**，所以你调试时看不到请求是正常的，不是 bug。
+
 ---
 
 ## T0｜前置自检（5 分钟）
