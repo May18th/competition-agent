@@ -393,9 +393,16 @@ def _emit_partial(full_state):
 def _run_graph(app, state):
     """逐步执行 LangGraph 工作流，每步把已产出字段写进 partial；返回最终 state。"""
     result = None
-    for chunk in app.stream(state, stream_mode="values"):
-        result = chunk
-        _emit_partial(chunk)
+    try:
+        for chunk in app.stream(state, stream_mode="values"):
+            result = chunk
+            _emit_partial(chunk)
+    except Exception:
+        # 流式兜底：一个 chunk 都没拿到才退回 invoke（避免重复生成），否则直接上抛
+        if result is None:
+            result = app.invoke(state)
+        else:
+            raise
     return result
 
 
