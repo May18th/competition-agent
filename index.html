@@ -275,6 +275,13 @@ body {
     font-size: 11px; font-weight: 500; color: var(--c-a);
     background: var(--c-a-soft); border-radius: 4px; vertical-align: middle;
 }
+/* 简化版升级钩子：关键模块底部的浅色一行提示，指明深度版在此处能多给什么 */
+.deep-upsell{
+    margin-top: 12px; padding: 8px 12px;
+    font-size: 12px; color: var(--text-mute);
+    background: var(--surface-2); border-radius: 8px;
+}
+.deep-upsell b{ color: var(--c-a); font-weight: 600; }
 /* 产物字数标记 */
 .wb-count{
     margin-left: 8px; padding: 2px 8px; border-radius: 4px;
@@ -967,8 +974,10 @@ button:hover { transform: translateY(-1px); }
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 赛事规则解析<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 创意同质化检测<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书处理（有草稿→优化精简；无草稿→约1300字从零生成）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 评委打分与点评<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书：约1300字完整成稿（有草稿→优化精简）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 评委打分与点评 + 短板诊断<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 竞品 / 商业模式 / 风险 / 技术方案（各约1000字）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 答辩问题预测 + PPT大纲 + 演讲稿<br>
                             <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 优化内容，实测约40秒<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 从0生成，实测约50秒</div>
                             <b style="color: var(--c-a);">实测 40-50 秒出结果</b>
                         </div>
@@ -977,12 +986,11 @@ button:hover { transform: translateY(-1px); }
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 以上全部功能<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书升级：1300字精简版→5000字完整版/深度润色<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 竞品分析 + 商业模式 + 风险分析<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 技术方案 + 实施计划<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 答辩问题预测 + PPT大纲 + 演讲稿<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 可视化数据分析图表<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 以上全部功能，且每个模块深度扩写（约2-3倍篇幅）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书升级：1300字精简版→5000字完整版 / 12章<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：多专家模拟评审（逐条批注 + 优先改进清单）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：8张 AI 数据图表 + AI 路演 PPT（可下载 .pptx）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：实施计划 + 社会价值 + 项目简介<br>
                             <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 深度优化，实测约2分钟<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 完整生成，实测约2分半</div>
                             <b style="color: var(--c-b);">实测 2-2.5 分钟出结果</b>
                         </div>
@@ -1085,22 +1093,23 @@ button:hover { transform: translateY(-1px); }
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 同质化检测 <button onclick="copyText('similarityReport')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="similarityReport"></div>
                 </div>
-                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                <!-- 竞品/商业/风险/技术：简化版后台也产出（约1000-1400字），两档都展示，不再藏 -->
+                <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg> 竞品分析</h3>
                     <div class="content-block" id="competitorAnalysis"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
                 </div>
-                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-coin"/></svg> 商业模式</h3>
                     <div class="content-block" id="businessModel"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
                 </div>
-                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 风险分析</h3>
                     <div class="content-block" id="riskAnalysis"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
                 </div>
-                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-wrench"/></svg> 技术方案</h3>
                     <div class="content-block" id="techSolution"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
@@ -1257,7 +1266,8 @@ button:hover { transform: translateY(-1px); }
             </div>
 
             <div id="tab-defense" class="tab-content">
-                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                <!-- 答辩问题：简化版后台也产出（约600字），两档都展示 -->
+                <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩问题预测</h3>
                     <div class="content-block" id="defenseQuestions"></div>
                 </div>
@@ -2325,6 +2335,34 @@ button:hover { transform: translateY(-1px); }
                                 el.classList.remove('deep-hl');
                             }
                         });
+                        // auto-show 区块：简化版后台也产出的模块，有内容就显示（所见即所得）
+                        document.querySelectorAll('.auto-show').forEach(el => {
+                            const cb = el.querySelector('.content-block');
+                            el.style.display = (cb && cb.innerHTML.trim().length > 20) ? 'block' : 'none';
+                            if (cb && cb.innerHTML.trim().length > 20) deepN++;
+                        });
+                        // 答辩/PPT Tab：两档都显示（简化版同样生成答辩问题与 PPT 大纲）
+                        document.getElementById('defenseTab').style.display = 'block';
+                        // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
+                        if (!isDeep) {
+                            const UPSELL = [
+                                ['proposalText', '升级深度版：申报书扩写至 <b>约5000字 / 12章</b>，自动配数据图表'],
+                                ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
+                                ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
+                                ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>'],
+                            ];
+                            UPSELL.forEach(p => {
+                                const el = document.getElementById(p[0]);
+                                const box = el && el.parentElement;
+                                if (!box || box.querySelector('.deep-upsell')) return;
+                                const tip = document.createElement('div');
+                                tip.className = 'deep-upsell';
+                                tip.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> ' + p[1];
+                                box.appendChild(tip);
+                            });
+                        } else {
+                            document.querySelectorAll('.deep-upsell').forEach(el => el.remove());
+                        }
                         // T1 结果区顶部档位标识
                         const badge = document.getElementById('tierBadge');
                         if (badge) {
@@ -2339,7 +2377,6 @@ button:hover { transform: translateY(-1px); }
                          ['judgeFeedback', data.data.judge_feedback],
                          ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
                         document.getElementById('chartsTab').style.display = isDeep ? 'block' : 'none';
-                        document.getElementById('defenseTab').style.display = isDeep ? 'block' : 'none';
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
                         if (isDeep && !(data.data.rich_charts || []).length) {
                             setTimeout(() => {
