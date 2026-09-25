@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>科创赛事多智能体协同创作助手</title>
+    <title>科创赛事多智能体创作助手</title>
     <style>
 /* ===== WB-TECH-THEME v2 ===== */
 :root{
@@ -23,8 +23,10 @@
     --surface-3:rgba(255,255,255,.10);
     --surface-solid:#0d1330;
     --btn-ghost:rgba(255,255,255,.08);
-    --line:rgba(148,163,255,.18);
-    --line-strong:rgba(148,163,255,.38);
+    --line:rgba(148,163,255,.13);
+    --line-strong:rgba(148,163,255,.28);
+    /* 提示级文字：比正文更浅更小，用于拉开层级 */
+    --hint-size:12.5px;
     --track:rgba(148,163,255,.14);
     --ok:#34d399;
     --info:#22d3ee;
@@ -71,7 +73,13 @@ body {
     border: 1px solid var(--line);
     font-size: 12px;
     color: var(--text-dim);
-    pointer-events: none;
+    cursor: default;
+    transition: background .25s, border-color .25s, color .25s;
+}
+.health-dot:hover{
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+    color: var(--text-soft);
 }
 .health-dot .hd-inner {
     width: 8px;
@@ -160,19 +168,28 @@ body {
     pointer-events: none;
     overflow: hidden;
     background:
-        radial-gradient(1200px 700px at 12% -8%, rgba(34,211,238,.16), transparent 60%),
-        radial-gradient(900px 600px at 92% 4%, rgba(168,85,247,.16), transparent 62%),
-        radial-gradient(1000px 800px at 50% 108%, rgba(59,130,246,.14), transparent 60%),
+        /* 中心亮、四周暗的微弱径向渐变（内容区更聚焦） */
+        radial-gradient(1300px 900px at 50% 18%, rgba(255,255,255,.055), transparent 68%),
+        radial-gradient(1200px 700px at 12% -8%, rgba(34,211,238,.14), transparent 60%),
+        radial-gradient(900px 600px at 92% 4%, rgba(168,85,247,.13), transparent 62%),
+        radial-gradient(1000px 800px at 50% 108%, rgba(59,130,246,.12), transparent 60%),
         linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 55%, #070b1e 100%);
+}
+/* 四周压暗：中心亮、边缘暗，避免背景抢内容 */
+.wb-bg::after{
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 40%, rgba(3,5,14,.55) 100%);
+    pointer-events: none;
 }
 .wb-grid{
     position:absolute; inset:-2px;
     background-image:
-        linear-gradient(rgba(148,163,255,.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(148,163,255,.07) 1px, transparent 1px);
+        linear-gradient(rgba(148,163,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148,163,255,.045) 1px, transparent 1px);
     background-size: 48px 48px;
-    mask-image: radial-gradient(ellipse 90% 65% at 50% 32%, #000 25%, transparent 78%);
-    -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 32%, #000 25%, transparent 78%);
+    mask-image: radial-gradient(ellipse 92% 62% at 50% 28%, #000 20%, transparent 74%);
+    -webkit-mask-image: radial-gradient(ellipse 92% 62% at 50% 28%, #000 20%, transparent 74%);
     animation: wbGridDrift 26s linear infinite;
 }
 .wb-orb{ position:absolute; border-radius:50%; filter: blur(90px); opacity:.42; will-change: transform; }
@@ -208,11 +225,11 @@ body {
 .container { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
 
 /* ---------- Hero ---------- */
-.hero { text-align: center; padding: 48px 20px 34px; margin-bottom: 26px; }
+.hero { text-align: center; padding: 44px 20px 28px; margin-bottom: 22px; }
 .hero h1 {
-    font-size: clamp(26px, 4.6vw, 44px);
+    font-size: clamp(24px, 3.8vw, 38px);
     font-weight: 800;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     letter-spacing: .5px;
     line-height: 1.25;
     background: linear-gradient(92deg, #67e8f9 0%, #818cf8 42%, #e879f9 100%);
@@ -228,7 +245,55 @@ body {
     margin-right: 6px;
     animation: wbFloatIcon 3.2s ease-in-out infinite;
 }
-.hero p { font-size: 16px; color: var(--text-dim); line-height: 1.7; }
+.hero p { font-size: 14.5px; color: var(--text-dim); line-height: 1.75; }
+/* ---------- 档位标识 ---------- */
+.tier-tag{
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .3px;
+    border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text-dim);
+}
+.tier-tag-deep{
+    border-color: rgba(129,140,248,.42);
+    background: linear-gradient(120deg, rgba(34,211,238,.16), rgba(192,132,252,.16));
+    color: var(--text);
+}
+.tier-tag .wb-dot{ width: 6px; height: 6px; }
+/* 深度版专属板块：左侧主题色竖条 + 浅底，一眼看出是深度版才有 */
+.deep-only.deep-hl{
+    position: relative;
+    padding: 16px 0 16px 18px;
+    margin-left: -18px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(129,140,248,.10), rgba(129,140,248,.02) 62%, transparent);
+    box-shadow: inset 3px 0 0 0 var(--c-a);
+}
+.deep-only.deep-hl > h3::after{
+    content: '深度版专属';
+    display: inline-block; margin-left: 8px; padding: 2px 7px;
+    font-size: 11px; font-weight: 500; color: var(--c-a);
+    background: var(--c-a-soft); border-radius: 4px; vertical-align: middle;
+}
+/* 产物字数标记 */
+.wb-count{
+    margin-left: 8px; padding: 2px 8px; border-radius: 4px;
+    font-size: 11.5px; font-weight: 500;
+    color: var(--text-mute); background: var(--surface-2); border: 1px solid var(--line);
+    vertical-align: middle;
+}
+/* 通用提示文字：更浅更小，与正文拉开层级 */
+.hint-text { font-size: var(--hint-size); color: var(--text-mute); line-height: 1.7; }
+/* 信息提示条：用浅蓝而非黄色，避免被误读为「出错了」 */
+.wb-note{
+    padding: 10px 14px;
+    background: var(--info-bg-2);
+    border: 1px solid rgba(34,211,238,.22);
+    border-radius: 8px;
+    font-size: var(--hint-size);
+    color: var(--info-text);
+    line-height: 1.7;
+}
 
 /* 玻璃按钮 */
 .wb-glass-btn{
@@ -271,8 +336,8 @@ body {
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 32px;
-    margin-bottom: 24px;
+    padding: 28px;
+    margin-bottom: 20px;
     box-shadow: 0 14px 44px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.06);
     position: relative;
     overflow: hidden;
@@ -312,11 +377,11 @@ body {
     background-size: 200% 200%;
     animation: wbGradShift 8s ease infinite;
     color: #fff;
-    width: 30px; height: 30px;
+    width: 25px; height: 25px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 700;
-    box-shadow: 0 4px 16px rgba(99,102,241,.42);
+    font-size: 13px; font-weight: 700;
+    box-shadow: 0 3px 12px rgba(99,102,241,.34);
     flex: none;
 }
 
@@ -339,6 +404,8 @@ input, textarea, select {
     transition: border-color .25s, box-shadow .25s, background .25s;
 }
 input::placeholder, textarea::placeholder { color: var(--text-mute); }
+/* 下拉框：固定高度 + 上下等距内边距，保证文字垂直居中 */
+select { height: 46px; padding: 0 14px; }
 input:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
 input:focus, textarea:focus, select:focus {
     border-color: var(--c-a);
@@ -811,7 +878,7 @@ button:hover { transform: translateY(-1px); }
         <canvas id="wbParticles"></canvas>
     </div>
 
-    <div id="healthDot" class="health-dot">
+    <div id="healthDot" class="health-dot" title="正在检测系统服务…">
         <span class="hd-inner"></span>
         <span id="healthText">服务检测中…</span>
     </div>
@@ -819,9 +886,13 @@ button:hover { transform: translateY(-1px); }
     <div class="container">
         <!-- Hero -->
         <div class="hero">
-            <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>科创赛事多智能体协同创作助手</h1>
-            <p>多 Agent 协同工作，从规则解析到模拟答辩，一站式搞定科创竞赛申报</p>
-            <button class="wb-glass-btn" onclick="showHistory()">
+            <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>科创赛事多智能体创作助手</h1>
+            <p>多智能体（Agent）协同工作，从规则解析到模拟答辩，一站式搞定科创竞赛申报</p>
+        </div>
+
+        <!-- 历史记录：从标题下方下移，单独成行，与主标题拉开间距 -->
+        <div style="display: flex; justify-content: flex-end; margin: 0 4px 20px;">
+            <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
                 <span class="wb-dot"></span>历史记录
             </button>
         </div>
@@ -835,7 +906,7 @@ button:hover { transform: translateY(-1px); }
             <div style="display: grid; gap: 20px;">
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 赛事名称</label>
-                    <select id="competition" onchange="onCompetitionChange()" style="padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px;; background: var(--surface-2); color: var(--text);">
+                    <select id="competition" onchange="onCompetitionChange()" style="height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
                         <option value="iCAN大学生创新创业大赛">iCAN大学生创新创业大赛</option>
                         <option value="中国国际互联网+大学生创新创业大赛">中国国际"互联网+"大学生创新创业大赛</option>
                         <option value="挑战杯全国大学生课外学术科技作品竞赛">"挑战杯"全国大学生课外学术科技作品竞赛</option>
@@ -851,16 +922,16 @@ button:hover { transform: translateY(-1px); }
                 </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 赛事规则</label>
-                    <div style="padding: 12px; background: var(--info-bg-1); border-radius: 8px; font-size: 14px; color: var(--info-text);">
-                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 已内置比赛知识库，输入比赛名称后自动匹配评分标准，无需上传PDF
+                    <div class="wb-note">
+                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 内置赛事知识库，输入赛事名称自动匹配评分标准，无需上传PDF
                     </div>
                     <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
                     <div id="kbStatusBox" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font-size: 13px;">
-                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                             <span style="color: var(--text-dim);"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 知识库 <b id="kbCoverage" style="color: var(--c-a);">加载中…</b></span>
-                            <span onclick="toggleKbDetail()" style="color: var(--c-a); cursor: pointer; user-select: none; white-space:nowrap;">详情 <span id="kbArrow">▾</span></span>
+                            <span onclick="toggleKbDetail()" style="margin-left: auto; color: var(--c-a); cursor: pointer; user-select: none; white-space:nowrap;">详情 <span id="kbArrow">▾</span></span>
                         </div>
-                        <div id="kbCurrent" style="margin-top: 8px; color: var(--text-dim);"></div>
+                        <div id="kbCurrent" style="margin-top: 8px; color: var(--text-dim); font-size: 12.5px;"></div>
                     </div>
                     <div id="kbDetail" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); font-size: 12.5px; max-height: 320px; overflow: auto;"></div>
                     <textarea id="rules" style="display: none;"></textarea>
@@ -884,13 +955,6 @@ button:hover { transform: translateY(-1px); }
             </div>
         </div>
 
-                <!-- 历史记录按钮 -->
-        <div style="text-align: right; margin-bottom: 16px;">
-            <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
-                <span class="wb-dot"></span>历史记录
-            </button>
-        </div>
-
         <!-- 按钮 -->
         <div class="card">
             <div style="margin-bottom: 20px;">
@@ -903,8 +967,8 @@ button:hover { transform: translateY(-1px); }
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 创意同质化检测<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书处理（有草稿→优化精简；无草稿→约1300字从零生成）<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 评委打分与点评<br>
-                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 优化内容，约20秒<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 从0生成，约30秒</div>
-                            <b style="color: var(--c-a);">约30秒出结果</b>
+                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 优化内容，实测约40秒<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 从0生成，实测约50秒</div>
+                            <b style="color: var(--c-a);">实测 40-50 秒出结果</b>
                         </div>
                     </label>
                     <label class="version-card" style="display: block; padding: 16px; background: var(--surface-solid); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
@@ -917,8 +981,8 @@ button:hover { transform: translateY(-1px); }
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 技术方案 + 实施计划<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 答辩问题预测 + PPT大纲 + 演讲稿<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 可视化数据分析图表<br>
-                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 深度优化，约1分钟<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 完整生成，约1-2分钟</div>
-                            <b style="color: var(--c-b);">约1-2分钟出结果</b>
+                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 深度优化，实测约2分钟<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 完整生成，实测约2分半</div>
+                            <b style="color: var(--c-b);">实测 2-2.5 分钟出结果</b>
                         </div>
                     </label>
                 </div>
@@ -981,6 +1045,8 @@ button:hover { transform: translateY(-1px); }
         </div>
 
         <div id="resultArea" class="card" style="display: none;">
+            <!-- 档位标识：由 JS 按 mode 填充（简洁快速版 / 深度完整版 · 已生成 N 个模块） -->
+            <div id="tierBadge" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;"></div>
             <div class="result-hero">
                 <div class="score-number" id="scoreNum">86</div>
                 <div class="score-label">评委打分 / 100</div>
@@ -1161,8 +1227,8 @@ button:hover { transform: translateY(-1px); }
                     <div style="display: grid; grid-template-columns: 1fr; gap: 16px;" id="richTables"></div>
                 </div>
                 <div id="demoChartsWrap">
-                <div style="margin-bottom: 16px; padding: 10px 14px; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; font-size: 13px; color: var(--warn-text);">
-                    <svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以下图表使用通用示例数据绘制（预算占比、市场规模、时间节点均为占位数值），不来自你的项目内容，正式使用时请按实际情况替换。
+                <div class="wb-note" style="margin-bottom: 16px;">
+                    <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 以下图表为示例数据（预算占比、市场规模、时间节点均为占位数值），正式使用时请按项目实际情况替换。
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
                     <div>
@@ -1618,18 +1684,18 @@ button:hover { transform: translateY(-1px); }
             }
             var list = _kbHitList();
             var okN = list.filter(function (x) { return x.hit.length; }).length;
-            cov.textContent = okN + '/' + list.length + ' 个赛事有资料';
-            cov.style.color = okN === list.length ? 'var(--ok)' : (okN ? 'var(--warn-text)' : 'var(--c-b)');
+            cov.textContent = okN + '/' + list.length + ' 赛事已收录资料';
+            cov.style.color = okN === list.length ? 'var(--ok)' : 'var(--info-text)';
             var me = (document.getElementById('competition') || {}).value || '';
             var row = list.filter(function (x) { return x.comp === me; })[0] || {hit: []};
             if (row.hit.length) {
                 var f = _kbFileByName(row.hit[0]);
                 var tail = f.ok
                     ? '<span style="color:var(--ok);">资料格式完整（' + (f.chars || 0) + ' 字）</span>'
-                    : '<span style="color:var(--warn-text);">已收录但缺章节：' + (f.missing || []).map(_esc).join('、') + '</span>';
+                    : '<span style="color:var(--info-text);">已收录，部分章节待补充：' + (f.missing || []).map(_esc).join('、') + '</span>';
                 cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → 命中《' + _esc(row.hit[0]) + '》' + tail;
             } else {
-                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--warn-text);">暂无对应资料，AI 将按通用标准评审</span>';
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，AI 将按通用标准评审</span>';
             }
             renderKbDetail();
         }
@@ -1642,7 +1708,7 @@ button:hover { transform: translateY(-1px); }
                     var f = _kbFileByName(x.hit[0]);
                     badge = f.ok
                         ? '<span style="color:var(--ok);">完整</span>'
-                        : '<span style="color:var(--warn-text);">缺 ' + (f.missing || []).map(_esc).join('、') + '</span>';
+                        : '<span style="color:var(--info-text);">待补充 ' + (f.missing || []).map(_esc).join('、') + '</span>';
                     tip = '《' + _esc(x.hit[0]) + '》' + (f.chars || 0) + ' 字';
                 } else {
                     badge = '<span style="color:var(--text-mute);">未收录</span>';
@@ -1684,6 +1750,27 @@ button:hover { transform: translateY(-1px); }
             box.style.color = 'var(--err-text)';
             box.innerHTML = '<b>⚠ 申报书缺少以下章节：</b>' + miss.map(_esc).join('、') +
                 '<br><span style="color:var(--text-mute); font-size:12.5px;">可据此人工补写，或把草稿粘回输入框用深度版重跑一轮（当前正文 ' + (comp.chars || 0) + ' 字）</span>';
+        }
+
+        // ---- 字数统计：去掉 Markdown 标记后统计，避免符号把篇幅算虚高 ----
+        function plainLen(s) {
+            if (!s) return 0;
+            return String(s).replace(/[#*`\-\|>\[\]（）()\s]/g, '').length;
+        }
+        // 在产物标题（content-block 的前一个 h3）旁挂字数标签
+        function tagWordCount(divId, text) {
+            var box = document.getElementById(divId);
+            if (!box) return;
+            var h3 = box.previousElementSibling;
+            if (!h3 || h3.tagName !== 'H3') return;
+            var old = h3.querySelector('.wb-count');
+            if (old) old.remove();
+            var n = plainLen(text);
+            if (!n) return;
+            var sp = document.createElement('span');
+            sp.className = 'wb-count';
+            sp.textContent = n + ' 字';
+            h3.appendChild(sp);
         }
 
         // ---- AI 富媒体渲染：图表 / 表格 / PPT 预览 ----
@@ -2048,9 +2135,31 @@ button:hover { transform: translateY(-1px); }
                         renderCompleteness(data.data.completeness);
                         renderRich(data.data, isDeep);
                         initDeckThemeSelect();
+                        // T2 深度版专属板块：显示时加高亮（左侧主题色竖条 + 浅底 + 「深度版专属」标签）
+                        let deepN = 0;
                         document.querySelectorAll('.deep-only').forEach(el => {
                             el.style.display = isDeep ? 'block' : 'none';
+                            if (isDeep) {
+                                const cb = el.querySelector('.content-block');
+                                if (cb && cb.innerHTML.trim().length > 20) deepN++;
+                                el.classList.add('deep-hl');
+                            } else {
+                                el.classList.remove('deep-hl');
+                            }
                         });
+                        // T1 结果区顶部档位标识
+                        const badge = document.getElementById('tierBadge');
+                        if (badge) {
+                            badge.innerHTML = isDeep
+                                ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>深度完整版 · 已生成 ' + deepN + ' 个模块</span>'
+                                : '<span class="tier-tag">简洁快速版</span>';
+                        }
+                        // T3 共享产物标题旁标字数（去 Markdown 标记后统计，两档长短一眼可比）
+                        [['parsedRules', data.data.parsed_rules],
+                         ['similarityReport', data.data.similarity_report],
+                         ['proposalText', data.data.proposal],
+                         ['judgeFeedback', data.data.judge_feedback],
+                         ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
                         document.getElementById('chartsTab').style.display = isDeep ? 'block' : 'none';
                         document.getElementById('defenseTab').style.display = isDeep ? 'block' : 'none';
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
@@ -2289,15 +2398,18 @@ button:hover { transform: translateY(-1px); }
                     if (d && d.success && d.status === 'ok') {
                         dot.className = 'health-dot ok';
                         txt.innerText = '服务正常';
+                        dot.title = '系统服务正常';
                     } else {
                         dot.className = 'health-dot err';
                         txt.innerText = '服务异常';
+                        dot.title = '服务异常，请检查后端是否已启动';
                     }
                 })
                 .catch(function () {
                     var dot = document.getElementById('healthDot');
                     dot.className = 'health-dot err';
                     document.getElementById('healthText').innerText = '服务异常';
+                    dot.title = '服务异常，请检查后端是否已启动';
                 });
         }
     

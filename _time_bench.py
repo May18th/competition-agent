@@ -27,6 +27,12 @@ DRAFT = (
 )
 
 
+# 本机回环请求不走代理（环境里可能设了 HTTP_PROXY，会导致 127.0.0.1 请求 502）
+urllib.request.install_opener(
+    urllib.request.build_opener(urllib.request.ProxyHandler({}))
+)
+
+
 def post_json(path, payload):
     req = urllib.request.Request(
         BASE + path,
