@@ -42,8 +42,8 @@ if [ -d "$APP_DIR/.git" ]; then
 else
     # 私有仓库改这里：REPO=https://<你的token>@github.com/May18th/competition-agent.git
     git clone "$REPO" "$APP_DIR" \
-      || git clone "https://ghfast.top/$REPO" "$APP_DIR" \
       || git clone "https://gh-proxy.com/$REPO" "$APP_DIR" \
+      || git clone "https://ghfast.top/$REPO" "$APP_DIR" \
       || { echo "克隆失败：仓库若是私有，请换成带 token 的地址"; exit 1; }
 fi
 cd "$APP_DIR"
