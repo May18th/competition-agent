@@ -1782,8 +1782,15 @@ button:hover { transform: translateY(-1px); }
                 }
                 _currentTaskId = start.task_id;
                 const t0 = Date.now();
+                // 看门狗：轮询最多等 5 分钟，超时就停止并明确报错，绝不让页面无限转圈
+                const WATCHDOG_MS = 5 * 60 * 1000;
                 return new Promise((resolve, reject) => {
                     const tick = setInterval(() => {
+                        if (Date.now() - t0 > WATCHDOG_MS) {
+                            clearInterval(tick);
+                            reject(new Error('等待超时（5 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
+                            return;
+                        }
                         fetch('/api/status/' + start.task_id)
                             .then(r => r.json())
                             .then(res2 => {
@@ -1798,6 +1805,19 @@ button:hover { transform: translateY(-1px); }
                                         'AI正在' + (isOptimize ? '优化' : '生成') + '：'
                                         + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）'
                                         + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
+                                    // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
+                                    if (res2.stage === 'speech') {
+                                        fetch('/api/speech_stream/' + start.task_id)
+                                            .then(function (r) { return r.json(); })
+                                            .then(function (ss) {
+                                                if (ss && ss.success && ss.text) {
+                                                    _setBar(res2.pct || 0,
+                                                        '正在撰写演讲稿：已生成 ' + ss.text.length + ' 字（已用 ' + sec + 's）'
+                                                        + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
+                                                }
+                                            })
+                                            .catch(function () {});
+                                    }
                                     return;
                                 }
                                 clearInterval(tick);
