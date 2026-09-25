@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
-from stage_reporter import tasks, set_current_task, clear_current_task, report_stage as _report_stage
+from stage_reporter import tasks, set_current_task, clear_current_task, report_stage as _report_stage, stage_meta
 
 
 app = Flask(__name__)
@@ -610,7 +610,16 @@ def get_task_status(task_id):
     t = tasks.get(task_id)
     if not t:
         return jsonify({"success": False, "error": "任务不存在或已过期"})
-    resp = {"success": True, "status": t["status"], "stage": t.get("stage"), "updated_at": t["updated_at"]}
+    _stage = t.get("stage", "start")
+    _label, _pct = stage_meta(_stage)
+    resp = {
+        "success": True,
+        "status": t["status"],
+        "stage": _stage,
+        "stage_label": _label,
+        "pct": _pct,
+        "updated_at": t["updated_at"]
+    }
     if t["status"] == "done":
         resp["data"] = t["data"]
     elif t["status"] == "error":

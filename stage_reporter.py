@@ -6,6 +6,34 @@ app.py 与 competition_agents.py 互相 import 会循环导入，所以把「任
 - app.py：创建任务条目、标记当前任务 id、读取 tasks 返回给前端；
 - competition_agents.py：每个 Agent 节点调用 report_stage(stage) 上报阶段。
 """
+
+# ---- 阶段元数据表（中文文案 + 完成百分比）----
+# 代号与《协作_进度条stage约定.md》第四节**完全一致**，由这个文件统一维护。
+# 前端不要自己再写一份中文映射，直接用 /api/status 返回的 stage_label 和 pct。
+STAGE_META = {
+    "start":          ("正在启动",              2),
+    "parsing_rules":  ("解析赛事评分规则",       8),
+    "similarity":     ("检索同质化项目",        16),
+    "idea_scoring":   ("评估创意与一句话定位",  25),
+    "analysis":       ("综合分析赛题与方案",    36),
+    "rich_assets":    ("生成图表与 PPT 素材",   46),   # 仅深度版
+    "writing":        ("撰写申报书正文",        58),
+    "judging":        ("模拟评委打分",          70),
+    "diagnosis":      ("诊断申报书短板",        78),
+    "revision":       ("按意见定向改写",        84),   # 仅低分迭代时出现
+    "defense":        ("预测答辩问题",          90),
+    "ppt":            ("生成 PPT 大纲",         95),
+    "speech":         ("撰写路演演讲稿",        98),
+    "done":           ("全部完成",             100),
+    "error":          ("生成中断",              -1),
+}
+
+
+def stage_meta(stage):
+    """取 (中文文案, 百分比)。未登记的代号原样返回，前端自行降级显示。"""
+    return STAGE_META.get(stage, (stage, 0))
+
+
 import time
 
 # 所有异步任务的状态字典（key=task_id，value 结构见 app.py 的 generate_async）
