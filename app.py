@@ -150,54 +150,16 @@ _migrate_history_json()
 
 
 # ============ API ============
-def _build_docx(title, text):
-    """统一 docx 排版：微软雅黑、页边距、标题层级、正文缩进"""
-    from docx.shared import Pt, RGBColor, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    import re
-    doc = Document()
-    style = doc.styles['Normal']
-    style.font.name = '微软雅黑'
-    style.font.size = Pt(11)
-    for section in doc.sections:
-        section.top_margin = Cm(2.5)
-        section.bottom_margin = Cm(2.5)
-        section.left_margin = Cm(2.8)
-        section.right_margin = Cm(2.8)
-    h = doc.add_heading('', 0)
-    run = h.add_run(title)
-    run.font.name = '微软雅黑'
-    run.font.size = Pt(20)
-    run.font.bold = True
-    run.font.color.rgb = RGBColor(0x66, 0x7e, 0xea)
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph()
-    for line in text.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)
-        line = re.sub(r'\*(.*?)\*', r'\1', line)
-        line = re.sub(r'`([^`]+)`', r'\1', line)
-        if line.startswith('#'):
-            level = min(line.count('#'), 4)
-            clean_line = line.lstrip('#').strip()
-            p = doc.add_heading('', level=level)
-            run = p.add_run(clean_line)
-            run.font.name = '微软雅黑'
-            run.font.bold = True
-            run.font.color.rgb = RGBColor(0x4a, 0x55, 0xb8)
-            run.font.size = Pt(16 if level == 1 else (14 if level == 2 else 12))
-        elif line.startswith(('- ', '• ', '· ')):
-            p = doc.add_paragraph(line[2:], style='List Bullet')
-            p.paragraph_format.line_spacing = 1.5
-            p.paragraph_format.first_line_indent = Cm(0)
-        else:
-            p = doc.add_paragraph(line)
-            p.paragraph_format.line_spacing = 1.5
-            p.paragraph_format.first_line_indent = Cm(0.74)
-            p.paragraph_format.space_after = Pt(6)
-    return doc
+def _build_docx(title, text, doc_type='report', subtitle=None,
+                school=None, team=None, advisor=None):
+    """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
+    from docx_render import build_docx
+    return build_docx(
+        title, text,
+        subtitle=subtitle,
+        doc_type=doc_type,
+        school=school, team=team, advisor=advisor,
+    )
 
 
 @app.route('/')
@@ -258,60 +220,14 @@ def export_word():
     title = data.get('title', '导出文档')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    from docx.shared import Pt, RGBColor, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    doc = Document()
-    # 设置默认字体为微软雅黑
-    style = doc.styles['Normal']
-    style.font.name = '微软雅黑'
-    style.font.size = Pt(11)
-    # 页边距
-    for section in doc.sections:
-        section.top_margin = Cm(2.5)
-        section.bottom_margin = Cm(2.5)
-        section.left_margin = Cm(2.8)
-        section.right_margin = Cm(2.8)
-    # 大标题
-    h = doc.add_heading('', 0)
-    run = h.add_run(title)
-    run.font.name = '微软雅黑'
-    run.font.size = Pt(20)
-    run.font.bold = True
-    run.font.color.rgb = RGBColor(0x66, 0x7e, 0xea)
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph()
-    import re
-    lines = text.split('\n')
-    for line in lines:
-        line = line.strip()
-        if not line: continue
-        # 清理markdown符号
-        line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)
-        line = re.sub(r'\*(.*?)\*', r'\1', line)
-        line = re.sub(r'`([^`]+)`', r'\1', line)
-        if line.startswith('#'):
-            level = min(line.count('#'), 4)
-            clean_line = line.lstrip('#').strip()
-            p = doc.add_heading('', level=level)
-            run = p.add_run(clean_line)
-            run.font.name = '微软雅黑'
-            run.font.bold = True
-            run.font.color.rgb = RGBColor(0x4a, 0x55, 0xb8)
-            if level == 1:
-                run.font.size = Pt(16)
-            elif level == 2:
-                run.font.size = Pt(14)
-            else:
-                run.font.size = Pt(12)
-        elif line.startswith(('- ', '• ', '· ')):
-            p = doc.add_paragraph(line[2:], style='List Bullet')
-            p.paragraph_format.line_spacing = 1.5
-            p.paragraph_format.first_line_indent = Cm(0)
-        else:
-            p = doc.add_paragraph(line)
-            p.paragraph_format.line_spacing = 1.5
-            p.paragraph_format.first_line_indent = Cm(0.74)
-            p.paragraph_format.space_after = Pt(6)
+    doc = _build_docx(
+        title, text,
+        doc_type=data.get('doc_type', 'report'),
+        subtitle=data.get('competition_name'),
+        school=data.get('school'),
+        team=data.get('team'),
+        advisor=data.get('advisor'),
+    )
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
@@ -324,7 +240,7 @@ def export_defense():
     title = data.get('title', '答辩问题预测与答题思路')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    doc = _build_docx(title, text)
+    doc = _build_docx(title, text, doc_type='analysis')
     filepath = '答辩问题.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
@@ -337,7 +253,7 @@ def export_ppt():
     title = data.get('title', '路演 PPT 大纲')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    doc = _build_docx(title, text)
+    doc = _build_docx(title, text, doc_type='outline')
     filepath = 'PPT大纲.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
@@ -350,7 +266,7 @@ def export_competitor():
     title = data.get('title', '竞品分析报告')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    doc = _build_docx(title, text)
+    doc = _build_docx(title, text, doc_type='analysis')
     filepath = '竞品分析.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
@@ -363,7 +279,7 @@ def export_business():
     title = data.get('title', '商业模式分析报告')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    doc = _build_docx(title, text)
+    doc = _build_docx(title, text, doc_type='analysis')
     filepath = '商业模式.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
@@ -677,6 +593,7 @@ def speech_stream(task_id):
 def export_all():
     import zipfile
     import io
+    from docx_render import build_docx
     
     # 拿最新的历史记录
     history = load_history()
@@ -686,39 +603,26 @@ def export_all():
     latest = history[0]
     data = latest["data"]
     
-    # 要导出的文件列表（减少到 5 个核心文件，更快）
+    # 要导出的文件列表（减少到 5 个核心文件，更快）；第三个元素为 doc_type
     files_to_export = [
-        ("1_申报书全文.docx", data.get("proposal", "")),
-        ("2_竞品与商业模式.docx", data.get("competitor_analysis", "") + "\n\n" + data.get("business_model", "")),
-        ("3_风险分析与评委意见.docx", data.get("risk_analysis", "") + "\n\n" + data.get("judge_feedback", "")),
-        ("4_答辩问题预测.docx", data.get("defense_questions", "")),
-        ("5_PPT大纲.docx", data.get("ppt_outline", "")),
+        ("1_申报书全文.docx", data.get("proposal", ""), 'default'),
+        ("2_竞品与商业模式.docx", data.get("competitor_analysis", "") + "\n\n" + data.get("business_model", ""), 'analysis'),
+        ("3_风险分析与评委意见.docx", data.get("risk_analysis", "") + "\n\n" + data.get("judge_feedback", ""), 'analysis'),
+        ("4_答辩问题预测.docx", data.get("defense_questions", ""), 'analysis'),
+        ("5_PPT大纲.docx", data.get("ppt_outline", ""), 'outline'),
     ]
     
     # 直接在内存里打包，不写临时文件，速度快很多
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED) as zf:  # 不压缩，直接打包
-        for filename, text in files_to_export:
+        for filename, text, doc_type in files_to_export:
             if not text or not text.strip():
                 continue
             
-            # 快速生成 Word：直接加文本，不解析 Markdown
+            # 统一走 docx_render 渲染器（真表格 + 标准格式 + 封面目录页码）
+            title = filename.replace('.docx', '')
+            doc = build_docx(title, text, doc_type=doc_type)
             docx_buf = io.BytesIO()
-            doc = Document()
-            # 设置默认字体
-            from docx.shared import Pt
-            style = doc.styles['Normal']
-            style.font.name = '宋体'
-            style.font.size = Pt(12)
-            # 加标题
-            doc.add_heading(filename.replace('.docx', ''), 0)
-            # 按段落写，更美观
-            import re
-            clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-            clean_text = re.sub(r'^#+\s*', '', clean_text, flags=re.MULTILINE)
-            for para in clean_text.split('\n\n'):
-                if para.strip():
-                    doc.add_paragraph(para.strip())
             doc.save(docx_buf)
             docx_buf.seek(0)
             zf.writestr(filename, docx_buf.read())
@@ -728,39 +632,46 @@ def export_all():
 
 @app.route('/api/export_original_format', methods=['POST'])
 def export_original_format():
-    from docx import Document
-    import io
-    import re
-    
-    # 拿用户上传的原文件和优化后的内容
+    """B 链路：用户上传已有申报表 → AI 改内容 → 导出。
+    mode=keep     (默认) 保留原格式排版，只原位换字
+    mode=reformat        按申报书标准重新排版（用户主动勾选才走）
+    """
     original_file = request.files.get('original_file')
     optimized_text = request.form.get('optimized_text', '')
+    mode = request.form.get('mode', 'keep')
+    title = request.form.get('title', '项目申报书')
+    school = request.form.get('school')
+    team = request.form.get('team')
+    advisor = request.form.get('advisor')
     
     if not original_file:
         return jsonify({"success": False, "error": "没有原文件"})
+    if not optimized_text.strip():
+        return jsonify({"success": False, "error": "优化内容为空"})
     
     try:
-        doc = Document(io.BytesIO(original_file.read()))
-        
-        # 简单处理：替换段落里的文字，保留格式
-        paragraphs = optimized_text.split('\n')
-        para_idx = 0
-        for para in doc.paragraphs:
-            if para_idx < len(paragraphs) and paragraphs[para_idx].strip():
-                # 保留原来的样式，只改文字
-                for run in para.runs:
-                    run.text = ''
-                if para.runs:
-                    para.runs[0].text = paragraphs[para_idx].strip()
-                else:
-                    para.add_run(paragraphs[para_idx].strip())
-            para_idx += 1
-        
-        # 保存
-        buf = io.BytesIO()
-        doc.save(buf)
-        buf.seek(0)
-        return send_file(buf, as_attachment=True, download_name='优化后的申报书.docx', mimetype='application/docx')
+        original_bytes = original_file.read()
+        if mode == 'reformat':
+            # A 链路：按申报书标准重排（封面 + 目录 + 页码）
+            import io as _io
+            from docx_render import build_docx
+            doc = build_docx(title, optimized_text, doc_type='default',
+                             school=school, team=team, advisor=advisor)
+            buf = _io.BytesIO()
+            doc.save(buf)
+            buf.seek(0)
+            fname = '申报书_标准排版.docx'
+        else:
+            # B 链路：原位换字，格式排版一律不动
+            from docx_inplace import apply_content_keep_style
+            buf, report = apply_content_keep_style(original_bytes, optimized_text)
+            print('[export_original_format] 替换报告:', report)
+            fname = '优化后的申报书.docx'
+
+        return send_file(
+            buf, as_attachment=True, download_name=fname,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
     except Exception as e:
         return jsonify({"success": False, "error": f"导出失败：{str(e)}"})
 
@@ -863,47 +774,8 @@ def export_zip():
     zippath = os.path.join(tmpdir, '科创赛事项目材料包.zip')
     
     def build_doc(title, text):
-        doc = Document()
-        style = doc.styles['Normal']
-        style.font.name = '微软雅黑'
-        style.font.size = Pt(11)
-        for section in doc.sections:
-            section.top_margin = Cm(2.5)
-            section.bottom_margin = Cm(2.5)
-            section.left_margin = Cm(2.8)
-            section.right_margin = Cm(2.8)
-        h = doc.add_heading('', 0)
-        run = h.add_run(title)
-        run.font.name = '微软雅黑'
-        run.font.size = Pt(20)
-        run.font.bold = True
-        run.font.color.rgb = RGBColor(0x66, 0x7e, 0xea)
-        h.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph()
-        for line in text.split('\n'):
-            line = line.strip()
-            if not line: continue
-            line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)
-            line = re.sub(r'\*(.*?)\*', r'\1', line)
-            line = re.sub(r'`([^`]+)`', r'\1', line)
-            if line.startswith('#'):
-                level = min(line.count('#'), 4)
-                clean_line = line.lstrip('#').strip()
-                p = doc.add_heading('', level=level)
-                run = p.add_run(clean_line)
-                run.font.name = '微软雅黑'
-                run.font.bold = True
-                run.font.color.rgb = RGBColor(0x4a, 0x55, 0xb8)
-                run.font.size = Pt(16 if level == 1 else (14 if level == 2 else 12))
-            elif line.startswith(('- ', '• ', '· ')):
-                p = doc.add_paragraph(line[2:], style='List Bullet')
-                p.paragraph_format.line_spacing = 1.5
-            else:
-                p = doc.add_paragraph(line)
-                p.paragraph_format.line_spacing = 1.5
-                p.paragraph_format.first_line_indent = Cm(0.74)
-                p.paragraph_format.space_after = Pt(6)
-        return doc
+        dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
+        return _build_docx(title, text, doc_type=dt)
     
     with zipfile.ZipFile(zippath, 'w', zipfile.ZIP_DEFLATED) as zf:
         for filename, title, text in mappings:

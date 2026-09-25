@@ -360,6 +360,37 @@ class CompetitionState(TypedDict):
     iterate: bool
 
 
+# ============ 内容层：输出规格约束（统一提升各 Agent 输出质量）============
+
+_REPORT_SPEC = """【输出规格 —— 必须遵守】
+1. 使用 Markdown，最多三级标题（## / ###），一级用「一、二、三、」，二级用「（一）（二）」，三级用「1. 2. 3.」
+2. 三级标题必须是正式短语，不是完整句子
+3. 结构必须包含：摘要 / 背景 / 内容 / 分析 / 总结 / 展望
+4. 每个小节必须写成 150～400 字的完整段落，有论点、有展开、有依据；严禁一句话一段、严禁短句罗列
+5. 严禁整篇用序号罗列（不要「1. xxx  2. xxx」这种清单体），把要点串成连贯段落
+6. 需要逐条对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），不要用序号列表
+7. 全文中文标点用全角
+"""
+
+_ANALYSIS_SPEC = """【输出规格 —— 必须遵守】
+1. 必须分段阐述，不能只给结论清单
+2. 每个维度按「现状 → 原因 → 影响 → 应对」写成完整段落，不要一句话一行
+3. 需要对比时用标准 Markdown 表格
+4. 全文中文标点用全角
+"""
+
+_OUTLINE_SPEC = """【输出规格 —— 必须遵守】
+1. 只要层级清晰的条目，不要段落、不要大段阐述
+2. 每页/每条一行短语，不要写完整句子
+"""
+
+_OPTIMIZE_SPEC = """【优化输出规格 —— 必须遵守】
+1. 优化输出必须保持原申报表的条目结构一一对应：不合并条目、不拆分条目、不新增条目
+2. 不加 Markdown 标题符号，每一条只输出改写后的文字
+3. 每条优化后的文字长度与原条目大致相当（±30% 以内），宁可精炼也不要大幅膨胀，避免撑破原表格版式
+"""
+
+
 # ============ 2. 四个 Agent ============
 
 def rule_parser_agent(state: CompetitionState) -> CompetitionState:
@@ -450,7 +481,9 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
 2. 核心技术点
 3. 技术路线
 
-输出简洁，分点列出。
+每个部分都要写成完整段落（现状→原因→影响→应对），不要只列要点、不要一句话一行。
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     text = response.content
@@ -489,6 +522,8 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
 3. 我们的项目有什么差异化竞争优势，为什么能赢
 
 注意：你只负责竞品分析，不要写怎么赚钱、不要写技术实现、不要写风险。控制在1000字左右。
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -510,6 +545,8 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
 4. 3年财务预测（收入、成本、利润）
 
 注意：你只负责商业模式，不要写竞品对比、不要写技术实现、不要写风险。控制在1000字左右。
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -531,6 +568,8 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
 4. 团队和财务风险
 
 每个风险都要有具体的应对措施。注意：你只负责风险分析，不要写竞品、不要写商业模式、不要写技术架构。控制在1000字左右。
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -552,6 +591,8 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
 4. 关键技术选型（为什么选这个技术）
 
 注意：你只负责技术方案，不要写怎么赚钱、不要写竞品、不要写风险。控制在1000字左右。
+
+{_ANALYSIS_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -629,7 +670,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     draft = state.get('proposal_draft', '')
     has_draft = bool(draft.strip())
     if has_draft:
-        task_line = "用户已经上传了一份现成的申报书草稿，你的任务是**优化这份申报书**：保留原来的内容和骨架，把写得简略的地方补足、把逻辑不顺的地方理顺、把缺失的评分点补上，不要从零推翻重写。"
+        task_line = ("用户已经上传了一份现成的申报书草稿，你的任务是**优化这份申报书**："
+                     "保留原来的内容和骨架，把写得简略的地方补足、把逻辑不顺的地方理顺、"
+                     "把缺失的评分点补上，不要从零推翻重写。\n\n" + _OPTIMIZE_SPEC)
         source_label = '用户上传的申报书草稿'
         source_text = draft
     else:
@@ -661,22 +704,18 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 4. 加上比赛需要的评分点
 5. 前面分析的竞品、商业模式、风险、技术方案内容，融入到申报书里，补充用户草稿里不足的地方
 
-请写一份完整详细的申报书，总共2000字以上，每个章节都要展开写，不要简略，包含以下章节：
-1. 项目背景与痛点（300字，详细讲现在行业有什么问题，用户痛点有多严重，数据支撑）
-2. 解决方案（400字，详细讲我们的产品是什么，怎么解决这些问题，核心功能）
-3. 技术路线（400字，整合前面的技术方案，讲清楚技术架构、关键技术实现）
-4. 核心创新点（300字，和现有方案比，我们的3个核心创新点是什么，为什么别人做不到）
-5. 商业模式（300字，整合前面的商业模式，讲清楚怎么赚钱，目标用户）
-6. 风险与应对（200字，整合前面的风险分析，讲清楚我们怎么应对）
-7. 社会价值与应用前景（100字，讲这个项目的意义）
+请写一份完整详细的申报书，总共 2000 字以上，每个章节都要展开成完整段落，不要简略。
+用 Markdown 标题组织章节（最多三级标题），章节依次为：
 
-要求：内容详细，逻辑清晰，不要用markdown符号，直接写正文，每个章节展开写，不要太简略。
-5. 商业模式（整合前面的商业模式分析）
-6. 竞争优势（整合前面的竞品分析）
-7. 应用价值
-8. 风险与应对（整合前面的风险分析）
+## 一、项目背景与痛点
+## 二、解决方案
+## 三、技术路线
+## 四、核心创新点
+## 五、商业模式
+## 六、风险与应对
+## 七、社会价值与应用前景
 
-输出详细完整，不要重复前面已经说过的内容。
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal"] = response.content
@@ -690,7 +729,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     _report_stage("writing")
     draft = state.get('proposal_draft', '')
     if draft.strip():
-        source = f"用户已上传申报书草稿，请保留原结构和内容做精简优化、补足缺失评分点，不要从零重写。\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）"
+        source = f"用户已上传申报书草稿，请保留原结构和内容做精简优化、补足缺失评分点，不要从零重写。\n\n{_OPTIMIZE_SPEC}\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）"
     else:
         source = f"项目创意：{state['idea']}"
     prompt = f"""你是科创赛事申报书写作专家。请根据以下分析结果，写一份精简的申报书。
@@ -726,6 +765,8 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 （100字左右，落到具体受益对象和可验证的效果）
 
 【篇幅】全文 800-1000 字，不要用空话凑字数，也不要中途省略章节。
+
+{_REPORT_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal"] = response.content
@@ -893,6 +934,8 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 一句话定位：{state['one_liner']}
 
 输出每页的标题和要点。
+
+{_OUTLINE_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["ppt_outline"] = response.content
