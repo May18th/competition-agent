@@ -7,6 +7,11 @@
   - cpolar 是 Windows 服务，系统自己会重连，这里只顺带把最新公网地址写进「公网地址.txt」
 
 自身由注册表 Run 键开机自启。也可以手工运行（幂等：发现已有守护在跑就退出）。
+
+**2026-09-26 退役**：站点已迁到云上（https://kcwx.online），云上 comp-agent 由 systemd
+Restart=always 自动拉起，不需要本机再守一个 Flask。把 RETIRED 置 True 后，本脚本被
+计划任务/开机 Run 调起时只记一行日志就退出，不再拉进程、不再抢 8080。
+需要本机调试时：把 RETIRED 改回 False，或双击桌面 bat / `python run.py` 手动起。
 """
 import os
 import re
@@ -17,6 +22,9 @@ import time
 
 CHECK_INTERVAL = 20          # 探活间隔（秒）
 STARTUP_WAIT = 25            # 拉起后最多等它多久
+
+# 2026-09-26 置 True：站点在云上，本机守护退役（详见文件头说明）
+RETIRED = True
 
 PYW = r'C:\Users\34984\.conda\envs\rag-dev\pythonw.exe'
 PY = r'C:\Users\34984\.conda\envs\rag-dev\python.exe'
@@ -154,8 +162,9 @@ def already_running():
 
 
 # 2026-09-25：站点已部署到阿里云 ECS（固定公网 IP），cpolar 内网穿透停用。
+# 2026-09-26：域名 kcwx.online 已解析到该 ECS，对外统一用 https://kcwx.online/。
 # 直接返回云上地址；若哪天要重新启用 cpolar，把下面这行 return 注释掉即可。
-CLOUD_URL = 'http://8.149.236.90'
+CLOUD_URL = 'https://kcwx.online'
 
 
 def fetch_public_url():
@@ -255,6 +264,9 @@ def main():
 
 
 if __name__ == '__main__':
+    if RETIRED:
+        write_log('守护已退役（站点在 https://kcwx.online，云上 systemd 自动拉起），本次不做任何操作')
+        sys.exit(0)
     if already_running():
         write_log('已有守护进程在跑，本次退出（PID=%d）' % os.getpid())
         sys.exit(0)

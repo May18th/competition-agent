@@ -8,6 +8,9 @@
   3. 【已停用】从 cpolar 隧道日志抓地址 → 改为直接写云上地址「公网地址.txt」
 
 可以手工双击运行，也可以被计划任务调用。幂等：服务正常时什么都不做。
+
+**2026-09-26 退役**：站点在云上（https://kcwx.online），由 systemd Restart=always 自动拉起，
+本机守护不再需要。RETIRED 置 True 后，计划任务调起本脚本时只记日志即退出。
 """
 import os
 import re
@@ -20,7 +23,8 @@ PY_EXE = r'C:\Users\34984\.conda\envs\rag-dev\python.exe'
 PYW_EXE = r'C:\Users\34984\.conda\envs\rag-dev\pythonw.exe'
 CPOLAR_BIN = r'D:\cpolar'          # 无扩展名可执行文件
 CPOLAR_SVC = 'cpolar'              # 已注册为 Windows 服务（2026-09-25 已设为 Disabled，不再拉起）
-CLOUD_URL = 'http://8.149.236.90'   # 阿里云 ECS 固定公网地址
+CLOUD_URL = 'https://kcwx.online'   # 2026-09-26：域名已解析到阿里云 ECS，对外统一走 https
+RETIRED = True                      # 2026-09-26 置 True：本机守护退役（详见文件头说明）
 PROJECT_DIR = r'C:\Users\34984\Doubao\chats\2026-09-23\new-chat\科创赛事助手'
 CPOLAR_LOG_DIR = r'C:\Users\34984\.cpolar\logs'
 PUBLIC_URL_FILE = os.path.join(PROJECT_DIR, '公网地址.txt')
@@ -172,7 +176,7 @@ def main():
     # 3) 抓公网地址落盘
     url = fetch_public_url()
     if url:
-        # 云上目前是 http（还没配 HTTPS），别再强制转成 https，否则地址打不开
+        # 2026-09-26 已上域名 + HTTPS，直接用 https://kcwx.online
         write_url(url)
         log('公网地址已更新 → %s' % url)
     else:
@@ -187,4 +191,12 @@ def main():
 
 
 if __name__ == '__main__':
+    if RETIRED:
+        log('守护已退役（站点在 https://kcwx.online，云上 systemd 自动拉起），本次不做任何操作')
+        try:
+            with open(os.path.join(PROJECT_DIR, 'guardian.log'), 'a', encoding='utf-8') as f:
+                f.write('\n'.join(LOG) + '\n')
+        except Exception:
+            pass
+        sys.exit(0)
     main()

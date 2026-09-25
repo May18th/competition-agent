@@ -300,8 +300,11 @@ def upload_pdf():
     #   会变成 "pdf"，导致 endswith('.pdf') 判断失败 → 前端一直「上传失败」。
     #   改为：扩展名单独取，主体名过滤后兜底，再加时间戳防重名。
     ext = os.path.splitext(raw_name)[1].lower()
-    if ext not in ('.pdf', '.docx', '.txt'):
-        return jsonify({"success": False, "error": "不支持的文件格式，请上传 PDF / DOCX / TXT"})
+    # 手机端（尤其微信内置浏览器）容易只让选图片/视频，这里把提示写清楚，别只说"不支持"
+    if ext in ('.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.mp4', '.mov', '.avi'):
+        return jsonify({"success": False, "error": "图片/视频读不出文字：请在 Safari 里点「浏览」选文件 App 里的 PDF 或 Word，或把文字直接粘贴到草稿框"})
+    if ext not in ('.pdf', '.docx', '.txt', '.md'):
+        return jsonify({"success": False, "error": "不支持的文件格式（" + (ext or '无扩展名') + "），请上传 PDF / DOCX / TXT / MD"})
     base = secure_filename(os.path.splitext(raw_name)[0]) or 'upload'
     filename = base + '_' + str(int(time.time())) + ext
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -317,7 +320,7 @@ def upload_pdf():
             doc = Document(filepath)
             for para in doc.paragraphs:
                 text += para.text + "\n"
-        else:  # .txt
+        else:  # .txt / .md
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
                 text = f2.read()
     except Exception as e:

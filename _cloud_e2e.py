@@ -13,7 +13,7 @@ import sys
 import time
 import urllib.request
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://8.149.236.90'
+BASE = sys.argv[1] if len(sys.argv) > 1 else 'https://kcwx.online'   # 2026-09-26：改用域名
 
 
 def get(path, timeout=30):

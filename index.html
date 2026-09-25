@@ -1001,13 +1001,25 @@ button:hover { transform: translateY(-1px); }
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
-                    <div style="display: flex; gap: 10px; margin-top: 8px;">
+                    <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
                         <button onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
                             <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书草稿
                         </button>
-                        <input type="file" id="ideaFile" accept=".pdf,.txt,.docx,.jpg,.jpeg,.png" style="display: none;">
+                        <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 粘贴文本
+                        </button>
+                        <!-- accept 同时给扩展名和 MIME：只写扩展名时，部分手机（尤其 iOS/微信）
+                             会把选择器退化成「照片 / 视频」，选不到 PDF 和 Word -->
+                        <input type="file" id="ideaFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                     </div>
                     <div id="ideaFileName" style="font-size: 12px; color: var(--c-a); margin-top: 4px;"></div>
+                    <div id="mobileUploadTip" style="display: none; margin-top: 8px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; color: var(--text-dim); line-height: 1.75;">
+                        <b>手机上传说明</b>：支持 PDF / Word / TXT / Markdown。<br>
+                        ① 点上传只出现「照片 / 视频」——说明是在微信或 QQ 内置浏览器里，
+                        请点右上角 <b>···</b> → <b>用 Safari（或浏览器）打开</b> 后再传。<br>
+                        ② Safari 里选「<b>浏览</b>」→ 文件 App，就能选到 DOCX / PDF。<br>
+                        ③ 最省事：手机上长按复制文字，点上面的 <b>粘贴文本</b>。
+                    </div>
                 </div>
             </div>
         </div>
@@ -1485,9 +1497,50 @@ button:hover { transform: translateY(-1px); }
     </script>
     <script>
 
+        // 手机端上传提示：只在移动端展开；微信/QQ 内置浏览器额外加红字警告
+        (function () {
+            var ua = navigator.userAgent || '';
+            var box = document.getElementById('mobileUploadTip');
+            if (!box) return;
+            if (!/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return;
+            box.style.display = 'block';
+            if (/MicroMessenger|QQ\//i.test(ua)) {
+                box.style.borderColor = 'var(--c-b)';
+                box.insertAdjacentHTML('afterbegin',
+                    '<div style="color: var(--c-b); font-weight: 600; margin-bottom: 6px;">' +
+                    '检测到你在微信/QQ 内置浏览器里，这里只能选到图片和视频。' +
+                    '请点右上角 ··· → 用 Safari 打开。</div>');
+            }
+        })();
+
+        // 手机端最稳的上传路径：复制文本 → 粘贴（HTTPS 下 clipboard.readText 可用）
+        async function wbPasteDraft() {
+            var box = document.getElementById('proposal_draft');
+            try {
+                var txt = await navigator.clipboard.readText();
+                if (!txt || !txt.trim()) {
+                    wbToast('剪贴板是空的，请先长按复制文字', { type: 'error' });
+                    return;
+                }
+                box.value = (box.value ? box.value + '\n\n' : '') + txt;
+                wbToast('已粘贴 ' + txt.length + ' 字到草稿框');
+            } catch (err) {
+                box.focus();
+                wbToast('浏览器不让读剪贴板，请在草稿框里长按选择「粘贴」', { type: 'error' });
+            }
+        }
+
         document.getElementById('ideaFile').addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
+            // 前端先拦一道：手机容易误选到照片/视频，服务端也会拒，这里给更清楚的提示
+            var _n = (file.name || '').toLowerCase();
+            if (/\.(jpe?g|png|heic|gif|mp4|mov|avi|webp)$/.test(_n)) {
+                document.getElementById('ideaFileName').innerText =
+                    '选中的是图片/视频，暂时读不出文字：请在 Safari 里选「浏览」→ 文件 App 里的 PDF/Word，或直接粘贴文本';
+                wbToast('不支持图片/视频，请选 PDF / Word / TXT，或用「粘贴文本」', { type: 'error' });
+                return;
+            }
             // 留住原始文件对象：只有 .docx 才能走「保留原格式只替换内容」的导出
             window._draftFile = file;
             wbRefreshKeepCard();
