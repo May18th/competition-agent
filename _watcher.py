@@ -153,7 +153,14 @@ def already_running():
     return taken
 
 
+# 2026-09-25：站点已部署到阿里云 ECS（固定公网 IP），cpolar 内网穿透停用。
+# 直接返回云上地址；若哪天要重新启用 cpolar，把下面这行 return 注释掉即可。
+CLOUD_URL = 'http://8.149.236.90:8080'
+
+
 def fetch_public_url():
+    return CLOUD_URL
+    # 下面是原来读 cpolar 日志的逻辑，保留备用
     today = time.strftime('%Y%m%d')
     best = None
     pat = re.compile(r'https?://[A-Za-z0-9.-]+\.(?:cpolar\.(?:cn|top|io)|vip\.cpolar\.cn)')
