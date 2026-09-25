@@ -445,6 +445,7 @@ def _funnel(ax, data, S, t):
     mx = max(values) or 1
     ypos = list(range(len(labels)))[::-1]
     ax.set_xlim(0, 1.10)
+    ax.set_ylim(-0.55, len(labels) - 0.45)
     for i, (y, v, lab) in enumerate(zip(ypos, values, labels)):
         w = v / mx
         col = S[i % len(S)]
@@ -453,9 +454,20 @@ def _funnel(ax, data, S, t):
                                     facecolor=col, edgecolor="none", zorder=3))
         _grad_round(ax, 0.02, y - 0.26, w * 0.86, 0.52, col, 0.09,
                     lift=0.34, vertical=False, zorder=4)
-        ax.text(0.045, y, f"{lab}", va="center", fontsize=12.5, color="#0B1026",
-                fontweight="bold", zorder=6)
-        ax.text(0.02 + w * 0.86 + 0.025, y, f"{_fmt(v)}", va="center", fontsize=12,
+        bar_end = 0.02 + w * 0.86
+        # 标签放条内还是条外：按「标签估宽 + 余量」能否塞进条里判断，
+        # 否则窄条标签会溢出压到右侧数值（深字压深底也不可读）。
+        lab_w = 0.031 * len(lab)          # CJK 字符在当前坐标系下的估宽
+        if w * 0.86 >= lab_w + 0.05:
+            txt_col = "#0B1026" if _lum(col) > 0.55 else "#FFFFFF"
+            ax.text(0.045, y, lab, va="center", fontsize=12.5, color=txt_col,
+                    fontweight="bold", zorder=6)
+            val_x = bar_end + 0.025
+        else:
+            ax.text(bar_end + 0.022, y, lab, va="center", fontsize=12.5,
+                    color=FG, fontweight="bold", zorder=6)
+            val_x = bar_end + 0.030 + lab_w + 0.015
+        ax.text(val_x, y, f"{_fmt(v)}", va="center", fontsize=12,
                 color=FG, fontweight="bold", zorder=6)
     ax.set_yticks(ypos)
     ax.set_yticklabels([""] * len(labels))
