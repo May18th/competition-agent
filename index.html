@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -866,6 +866,8 @@ button:hover { transform: translateY(-1px); }
         <symbol id="wb-i-history" viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></symbol>
         <symbol id="wb-i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></symbol>
         <symbol id="wb-i-layers" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></symbol>
+        <symbol id="wb-i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="wb-i-quote" viewBox="0 0 24 24"><path d="M3 21c3 0 6-2 6-6V9H3v6h3c0 1.5-.5 2.5-1.5 3.5C4 19 3.5 20 3 21z"/><path d="M14 21c3 0 6-2 6-6V9h-6v6h3c0 1.5-.5 2.5-1.5 3.5C15 19 14.5 20 14 21z"/></symbol>
         </defs>
     </svg>
 
@@ -1124,9 +1126,12 @@ button:hover { transform: translateY(-1px); }
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 创意同质化检测报告.docx</span>
                                 <button onclick="exportOne('similarityReport', '创意同质化检测报告')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
-                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目申报书全文.docx</span>
-                                <button onclick="exportOne('proposalText', '项目申报书全文')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px; gap:8px;">
+                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目申报书全文</span>
+                                <div style="display:flex; gap:6px;">
+                                    <button onclick="exportOne('proposalText', '项目申报书全文')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">Word下载</button>
+                                    <button onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding:4px 12px; background:#fef3c7; color:#b45309; border:none; border-radius:4px; cursor:pointer; font-size:12px;">PDF下载</button>
+                                </div>
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书诊断分析.docx</span>
@@ -1214,6 +1219,10 @@ button:hover { transform: translateY(-1px); }
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
                     <div class="content-block" id="judgeFeedback"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上意见为AI模拟评委生成，仅供参考</div>
+                </div>
+                <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
+                    <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多专家模拟评审</h3>
+                    <div id="expertReviewContent" style="background:var(--surface-solid); border-radius:8px; padding:16px;"></div>
                 </div>
             </div>
 
@@ -1519,6 +1528,35 @@ button:hover { transform: translateY(-1px); }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
+        async function exportOnePDF(id, name) {
+            const text = _txt(_DOM_TO_KEY[id] || '', id);
+            if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
+            var btn = (window.event && window.event.target) || null;
+            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            try {
+                const res = await fetch('/api/export_pdf', {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({title: name, text: text})
+                });
+                if (!res.ok) {
+                    var m = 'PDF导出失败';
+                    try { var j = await res.json(); m = j.error || m; } catch (e) {}
+                    wbToast(m, { type: 'error' });
+                    return;
+                }
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name + ".pdf";
+                a.click();
+                wbToast('「' + name + '」PDF已开始下载', { type: 'ok', ms: 2600 });
+            } catch (e) {
+                wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
+            }
+        }
         // 取文本：优先用生成结果的原始数据（隐藏的 tab 用 innerText 会读到空串），DOM 仅兜底
         function _txt(key, domId) {
             var rd = window._lastData || {};
@@ -1773,6 +1811,142 @@ button:hover { transform: translateY(-1px); }
             h3.appendChild(sp);
         }
 
+        // ---- 多专家模拟评审面板（深度版专属，简洁版为空自动隐藏）----
+        function _erColor(s) {
+            s = Number(s) || 0;
+            if (s >= 85) return 'var(--ok)';
+            if (s >= 75) return 'var(--c-a)';
+            if (s >= 60) return 'var(--c-b)';
+            return 'var(--warn-text)';
+        }
+
+        function _erBar(score) {
+            var s = Math.max(0, Math.min(100, Number(score) || 0));
+            return '<span style="display:inline-block; width:74px; height:5px; border-radius:3px; ' +
+                'background:var(--line); vertical-align:middle; overflow:hidden;">' +
+                '<span style="display:block; width:' + s + '%; height:100%; border-radius:3px; background:' + _erColor(s) + ';"></span></span>';
+        }
+
+        function renderExpertReview(er) {
+            var panel = document.getElementById('expertReviewPanel');
+            var box = document.getElementById('expertReviewContent');
+            if (!panel || !box) return;
+
+            // 后端可能给 dict，也可能给 JSON 字符串（解析失败时是空串）
+            var d = null;
+            if (er && typeof er === 'object') d = er;
+            else if (typeof er === 'string' && er.trim()) {
+                try { d = JSON.parse(er); } catch (e) { d = null; }
+            }
+            if (!d || !Array.isArray(d.experts) || !d.experts.length) {
+                panel.style.display = 'none';
+                box.innerHTML = '';
+                return;
+            }
+
+            var h = '';
+            // 顶部：综合分 + 结论
+            h += '<div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:14px;">' +
+                 '<span style="font-size:30px; font-weight:800; color:' + _erColor(d.overall_score) + '; line-height:1;">' +
+                 _esc(d.overall_score) + '</span>' +
+                 '<span style="font-size:13px; color:var(--text-dim);">/ 100 综合分</span>' +
+                 (d.verdict ? '<span style="padding:3px 12px; border-radius:20px; font-size:12.5px; font-weight:600; ' +
+                  'background:var(--c-a-soft); color:var(--c-a);">' + _esc(d.verdict) + '</span>' : '') +
+                 '</div>';
+
+            // 三位专家卡片
+            h += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:12px;">';
+            (d.experts || []).forEach(function (exp) {
+                h += '<div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:var(--surface-2);">';
+                h += '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">' +
+                     '<b style="font-size:14.5px;">' + _esc(exp.role || '专家') + '</b>' +
+                     '<span style="font-size:16px; font-weight:700; color:' + _erColor(exp.score) + ';">' + _esc(exp.score) + '</span></div>';
+                if (exp.focus) h += '<div style="font-size:12px; color:var(--text-mute); margin:4px 0 10px;">关注：' + _esc(exp.focus) + '</div>';
+
+                // 分维度打分
+                var dims = exp.dimensions || [];
+                if (dims.length) {
+                    h += '<div style="margin-bottom:10px;">';
+                    dims.forEach(function (dm) {
+                        h += '<div style="margin-bottom:7px;">' +
+                             '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12.5px;">' +
+                             '<span>' + _esc(dm.name || '') + '</span>' +
+                             '<span style="display:flex; align-items:center; gap:6px;">' + _erBar(dm.score) +
+                             '<b style="color:' + _erColor(dm.score) + ';">' + _esc(dm.score) + '</b></span></div>' +
+                             (dm.comment ? '<div style="font-size:12px; color:var(--text-dim); line-height:1.55; margin-top:2px;">' + _esc(dm.comment) + '</div>' : '') +
+                             '</div>';
+                    });
+                    h += '</div>';
+                }
+
+                // 优点
+                var sts = exp.strengths || [];
+                if (sts.length) {
+                    h += '<div style="font-size:12.5px; margin-bottom:8px;"><b style="color:var(--ok);">优点</b>' +
+                         '<ul style="margin:4px 0 0 16px; color:var(--text-dim); line-height:1.6;">';
+                    sts.forEach(function (s) { h += '<li>' + _esc(s) + '</li>'; });
+                    h += '</ul></div>';
+                }
+
+                // 逐条批注
+                var iss = exp.issues || [];
+                if (iss.length) {
+                    h += '<div style="font-size:12.5px;"><b style="color:var(--warn-text);">待改进</b>';
+                    iss.forEach(function (it) {
+                        h += '<div style="margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--warn-text); background:var(--surface-solid); border-radius:0 6px 6px 0;">';
+                        if (it.quote) h += '<div style="font-size:12px; color:var(--text-mute); font-style:italic; margin-bottom:4px;">“' + _esc(it.quote) + '”</div>';
+                        if (it.problem) h += '<div style="color:var(--text-dim); line-height:1.6;">问题：' + _esc(it.problem) + '</div>';
+                        if (it.suggestion) h += '<div style="color:var(--text); line-height:1.6; margin-top:3px;">建议：' + _esc(it.suggestion) + '</div>';
+                        h += '</div>';
+                    });
+                    h += '</div>';
+                }
+                h += '</div>';
+            });
+            h += '</div>';
+
+            // 共识 / 分歧
+            var cons = d.consensus || [], dive = d.divergence || [];
+            if (cons.length || dive.length) {
+                h += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-top:14px;">';
+                if (cons.length) {
+                    h += '<div style="padding:12px; border-radius:8px; background:var(--info-bg-2);">' +
+                         '<b style="font-size:13px; color:var(--ok);">专家共识</b><ul style="margin:6px 0 0 16px; font-size:12.5px; color:var(--text-dim); line-height:1.65;">';
+                    cons.forEach(function (c) { h += '<li>' + _esc(c) + '</li>'; });
+                    h += '</ul></div>';
+                }
+                if (dive.length) {
+                    h += '<div style="padding:12px; border-radius:8px; background:var(--surface-2); border:1px solid var(--line);">' +
+                         '<b style="font-size:13px; color:var(--warn-text);">存在分歧</b><ul style="margin:6px 0 0 16px; font-size:12.5px; color:var(--text-dim); line-height:1.65;">';
+                    dive.forEach(function (c) { h += '<li>' + _esc(c) + '</li>'; });
+                    h += '</ul></div>';
+                }
+                h += '</div>';
+            }
+
+            // 优先改进清单（带理由）
+            var acts = d.priority_actions || [];
+            if (acts.length) {
+                h += '<div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">' +
+                     '<b style="font-size:13.5px;">优先改进清单</b>';
+                acts.slice().sort(function (a, b) { return (Number(a.priority) || 0) - (Number(b.priority) || 0); })
+                    .forEach(function (a, i) {
+                        h += '<div style="display:flex; gap:10px; margin-top:10px;">' +
+                             '<span style="flex:0 0 22px; height:22px; border-radius:50%; background:var(--c-a); color:#fff; ' +
+                             'font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;">' +
+                             _esc(a.priority || (i + 1)) + '</span>' +
+                             '<div style="font-size:12.5px; line-height:1.65;">' +
+                             '<div>' + _esc(a.action || '') + '</div>' +
+                             (a.reason ? '<div style="color:var(--text-mute); font-size:12px; margin-top:2px;">理由：' + _esc(a.reason) + '</div>' : '') +
+                             '</div></div>';
+                    });
+                h += '</div>';
+            }
+
+            box.innerHTML = h;
+            panel.style.display = 'block';
+        }
+
         // ---- AI 富媒体渲染：图表 / 表格 / PPT 预览 ----
         function renderRich(rd, isDeep) {
             var charts = rd.rich_charts || [];
@@ -1800,6 +1974,8 @@ button:hover { transform: translateY(-1px); }
                     '</div>' +
                     '<div style="margin-top:10px; font-size:13px; color:var(--text); font-weight:600;">' + _esc(c.title) + '</div>' +
                     (c.caption ? '<div style="font-size:12px; color:var(--text-mute); margin-top:3px;">' + _esc(c.caption) + '</div>' : '') +
+                    (c.source ? '<div style="font-size:11.5px; color:var(--text-mute); margin-top:6px; opacity:.85;">' +
+                        '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:11px;height:11px;vertical-align:-1px;"><use href="#wb-i-book"/></svg> 数据来源：' + _esc(c.source) + '</div>' : '') +
                     '</div>';
             }).join('');
             document.getElementById('richTables').innerHTML = tables.map(t => {
@@ -2118,6 +2294,8 @@ button:hover { transform: translateY(-1px); }
                         document.getElementById('similarityReport').innerHTML = marked.parse(data.data.similarity_report);
                         document.getElementById('proposalText').innerHTML = marked.parse(data.data.proposal);
                         document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback);
+                        // 渲染多专家模拟评审
+                        renderExpertReview(data.data.expert_review);
                         document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis);
                         // 填充深度版额外内容
                         if (data.data.competitor_analysis) document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis);
@@ -2165,13 +2343,17 @@ button:hover { transform: translateY(-1px); }
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
                         if (isDeep && !(data.data.rich_charts || []).length) {
                             setTimeout(() => {
+                                // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致
+                                const CA_BG = '#0F1535';
+                                const CA = ['#818CF8', '#22B8CF', '#C084FC', '#F59E0B', '#34D399', '#FB7185', '#A3E635'];
                                 // 预算构成饼图（重复生成时先销毁旧实例，避免叠加）
                                 const budgetEl = document.getElementById('budgetChart');
                                 const oldBudget = echarts.getInstanceByDom(budgetEl);
                                 if (oldBudget) oldBudget.dispose();
                                 const budgetChart = echarts.init(budgetEl);
                                 budgetChart.setOption({
-                                    backgroundColor: 'transparent',
+                                    backgroundColor: CA_BG,
+                                    color: CA,
                                     textStyle: { color: '#93a0c4' },
                                     tooltip: { trigger: 'item', backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
                                     legend: { bottom: 0, textStyle: { color: '#93a0c4' } },
@@ -2192,7 +2374,8 @@ button:hover { transform: translateY(-1px); }
                                 if (oldMarket) oldMarket.dispose();
                                 const marketChart = echarts.init(marketEl);
                                 marketChart.setOption({
-                                    backgroundColor: 'transparent',
+                                    backgroundColor: CA_BG,
+                                    color: CA,
                                     textStyle: { color: '#93a0c4' },
                                     tooltip: { backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
                                     xAxis: { data: ['2024', '2025', '2026', '2027', '2028'], axisLine: { lineStyle: { color: 'rgba(148,163,255,.35)' } }, axisLabel: { color: '#93a0c4' } },
@@ -2205,7 +2388,8 @@ button:hover { transform: translateY(-1px); }
                                 if (oldTimeline) oldTimeline.dispose();
                                 const timelineChart = echarts.init(timelineEl);
                                 timelineChart.setOption({
-                                    backgroundColor: 'transparent',
+                                    backgroundColor: CA_BG,
+                                    color: CA,
                                     textStyle: { color: '#93a0c4' },
                                     tooltip: { backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
                                     xAxis: { type: 'category', data: ['需求调研', '原型开发', '测试迭代', '上线运营', '推广拓展'], axisLine: { lineStyle: { color: 'rgba(148,163,255,.35)' } }, axisLabel: { color: '#93a0c4' } },
@@ -2514,3 +2698,7 @@ button:hover { transform: translateY(-1px); }
 
 </body>
 </html>
+
+
+
+
