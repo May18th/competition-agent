@@ -836,11 +836,36 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {state.get('judge_feedback','')}
 """
 
+    analysis_block = f"""
+【前面的深度分析结果 —— 必须融入申报书对应章节，不要照抄原文，而是提炼关键结论与数字】
+竞品分析：
+{state.get('competitor_analysis', '')[:2500]}
+
+商业模式：
+{state.get('business_model', '')[:2000]}
+
+风险分析：
+{state.get('risk_analysis', '')[:1500]}
+
+技术方案：
+{state.get('tech_solution', '')[:2500]}
+
+实施计划：
+{state.get('implementation_plan', '')[:1500]}
+
+社会价值：
+{state.get('social_value', '')[:1200]}
+
+项目简介：
+{state.get('project_summary', '')[:800]}
+"""
+
     prompt = f"""你是资深科创赛事申报书写作专家。
 {task_line}
 
 {source_label}：{source_text}
 {revise_block}
+{analysis_block}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写

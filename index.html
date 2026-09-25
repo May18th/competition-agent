@@ -1156,6 +1156,11 @@ button:hover { transform: translateY(-1px); }
                     <div class="content-block" id="techSolution"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
                 </div>
+                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                    <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 实施计划</h3>
+                    <div class="content-block" id="implementationPlan"></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                </div>
                 <div style="display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
@@ -2251,8 +2256,14 @@ button:hover { transform: translateY(-1px); }
         }
 
         // 生成开始时给每个区块铺「生成中…」占位，内容一到就替换
-        function streamPrepare() {
+        // 传 mode 是为了让深度版提前把 deep-only 区块露出来，
+        // 否则实施计划/社会价值/项目简介要等全部跑完才显示，流式阶段白等。
+        function streamPrepare(mode) {
             streamReset();
+            var _isDeep = mode === 'deep';
+            document.querySelectorAll('.deep-only').forEach(function (el) {
+                el.style.display = _isDeep ? 'block' : 'none';
+            });
             _STREAM_MAP.forEach(function (p) {
                 var el = document.getElementById(p[1]);
                 if (el) el.innerHTML = '<div class="stream-wait">AI 正在生成，内容将实时流出…</div>';
@@ -2346,7 +2357,7 @@ button:hover { transform: translateY(-1px); }
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
             _currentTaskId = null;
-            streamPrepare();   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
+            streamPrepare(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
@@ -2456,6 +2467,8 @@ button:hover { transform: translateY(-1px); }
                         if (data.data.business_model) document.getElementById('businessModel').innerHTML = marked.parse(data.data.business_model);
                         if (data.data.risk_analysis) document.getElementById('riskAnalysis').innerHTML = marked.parse(data.data.risk_analysis);
                         if (data.data.tech_solution) document.getElementById('techSolution').innerHTML = marked.parse(data.data.tech_solution);
+                        // 实施计划：深度版独立产出，之前前端缺展示块，内容白白浪费
+                        if (data.data.implementation_plan) document.getElementById('implementationPlan').innerHTML = marked.parse(data.data.implementation_plan);
                         // 社会价值 / 项目简介：后端已返回，之前漏了往这两个 div 写内容，导致一直空白
                         if (data.data.social_value) document.getElementById('socialValue').innerHTML = marked.parse(data.data.social_value);
                         if (data.data.project_summary) document.getElementById('projectSummary').innerHTML = marked.parse(data.data.project_summary);
