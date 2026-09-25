@@ -19,6 +19,7 @@ STAGE_META = {
     "rich_assets":    ("生成图表与 PPT 素材",   46),   # 仅深度版
     "writing":        ("撰写申报书正文",        58),
     "judging":        ("模拟评委打分",          70),
+    "expert_review":  ("多专家模拟评审",        74),   # 仅深度版
     "diagnosis":      ("诊断申报书短板",        78),
     "revision":       ("按意见定向改写",        84),   # 仅低分迭代时出现
     "defense":        ("预测答辩问题",          90),

@@ -1,4 +1,4 @@
-﻿"""
+"""
 科创赛事多智能体协同创作助手
 核心工作流：规则解析 → 同质化检测 → 文稿生成 → 模拟评委 → 迭代
 """
@@ -1302,6 +1302,7 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
     state["rich_media"] = response.content
     print("🎞️ 富媒体 Agent：已生成")
     return state
+
 
 def should_iterate(state: CompetitionState) -> Literal["revise", "defense"]:
     if state["approved"] or (state.get("revision_count") or 0) >= 2:

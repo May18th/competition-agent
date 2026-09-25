@@ -184,11 +184,14 @@ def _new_fig():
     return fig, ax
 
 
-def _save(fig, path, title=None, caption=None):
+def _save(fig, path, title=None, caption=None, source=None):
     if title:
         fig.suptitle(str(title)[:40], fontsize=17, color=FG, fontweight="bold", y=0.97)
     if caption:
-        fig.text(0.5, 0.028, str(caption)[:60], fontsize=10.5, color=C2, ha="center")
+        fig.text(0.5, 0.032, str(caption)[:60], fontsize=10.5, color=C2, ha="center")
+    if source:
+        fig.text(0.985, 0.012, "数据来源：" + str(source)[:32], fontsize=8.5,
+                 color=FG_DIM, ha="right", alpha=0.9)
     fig.tight_layout(rect=(0.02, 0.06, 0.98, 0.92))
     fig.savefig(path, facecolor=BG, dpi=_DPI)
     plt.close(fig)
@@ -213,6 +216,7 @@ def render(chart, out_dir, theme=None):
         data = chart.get("data") or {}
         title = chart.get("title")
         caption = chart.get("caption")
+        source = chart.get("source")
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"chart_{cid}.png")
 
@@ -234,7 +238,7 @@ def render(chart, out_dir, theme=None):
                 x.set_fontsize(11)
                 x.set_fontweight("bold")
             ax.axis("equal")
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype in ("bar", "column"):
             cats = [str(x) for x in (data.get("categories") or [])]
@@ -248,7 +252,7 @@ def render(chart, out_dir, theme=None):
                             textcoords="offset points", xytext=(0, 5),
                             ha="center", fontsize=10, color=FG, fontweight="bold")
             ax.set_ylabel(str(data.get("ylabel") or ""), color=FG_DIM, fontsize=10.5)
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype in ("line", "trend"):
             xs = [str(x) for x in (data.get("x") or [])]
@@ -267,7 +271,7 @@ def render(chart, out_dir, theme=None):
             ax.set_xticklabels(xs)
             ax.set_ylabel(str(data.get("ylabel") or ""), color=FG_DIM, fontsize=10.5)
             ax.legend(fontsize=10, frameon=False, labelcolor=FG_DIM)
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype == "radar":
             import math
@@ -296,7 +300,7 @@ def render(chart, out_dir, theme=None):
             ax.spines["polar"].set_color(AXIS)
             ax.legend(fontsize=10, frameon=False, labelcolor=FG_DIM,
                       loc="upper right", bbox_to_anchor=(1.18, 1.12))
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype in ("matrix", "quadrant"):
             pts = data.get("points") or []
@@ -317,7 +321,7 @@ def render(chart, out_dir, theme=None):
             ax.axvline((min(xs) + max(xs)) / 2, color=AXIS, linewidth=1, linestyle="--")
             ax.set_xlabel(str(data.get("xlabel") or ""), color=FG_DIM, fontsize=11)
             ax.set_ylabel(str(data.get("ylabel") or ""), color=FG_DIM, fontsize=11)
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype in ("timeline", "gantt"):
             stages = data.get("stages") or []
@@ -350,7 +354,7 @@ def render(chart, out_dir, theme=None):
                 ax.spines[s].set_color(AXIS)
             ax.xaxis.grid(True, color=AXIS, linewidth=0.7, linestyle="--", alpha=0.55)
             ax.set_axisbelow(True)
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype == "funnel":
             labels = [str(x) for x in (data.get("labels") or [])]
@@ -369,7 +373,7 @@ def render(chart, out_dir, theme=None):
             ax.set_yticks([])
             ax.set_xlim(0, 1.08)
             ax.axis("off")
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         if ctype in ("architecture", "arch"):
             layers = data.get("layers") or []
@@ -400,7 +404,7 @@ def render(chart, out_dir, theme=None):
                             fontsize=10, color=FG)
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            return _save(fig, path, title, caption)
+            return _save(fig, path, title, caption, source)
 
         # 未知类型：退化成柱状图（取 data 里能找到的第一组键值对）
         pairs = [(str(k), _f(v)) for k, v in (data or {}).items()
@@ -409,7 +413,7 @@ def render(chart, out_dir, theme=None):
             return None
         fig, ax = _new_fig()
         ax.bar([p[0][:8] for p in pairs[:8]], [p[1] for p in pairs[:8]], color=C1, width=0.55)
-        return _save(fig, path, title, caption)
+        return _save(fig, path, title, caption, source)
     except Exception as e:
         print(f"[chart_renderer] render 失败：{e}")
         return None
