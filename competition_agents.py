@@ -187,8 +187,8 @@ KNOWLEDGE_SECTIONS = {
 
 # 预期收录的赛事（用于提示还缺哪些）
 EXPECTED_COMPETITIONS = [
-    "互联网+", "挑战杯", "iCAN", "国创", "金砖", "数学建模", "电子设计",
-    "西门子", "计算机设计", "RoboMaster", "信息安全",
+    "互联网+", "挑战杯", "iCAN", "国创", "数学建模", "电子设计",
+    "蓝桥杯", "计算机设计", "广告艺术", "服务外包", "信息安全",
 ]
 
 
@@ -347,6 +347,7 @@ class CompetitionState(TypedDict):
     project_summary: str
     proposal: str
     judge_feedback: str
+    expert_review: str
     proposal_analysis: str
     defense_questions: str
     ppt_outline: str
@@ -370,6 +371,51 @@ class CompetitionState(TypedDict):
 
 # ============ 内容层：输出规格约束（统一提升各 Agent 输出质量）============
 
+_DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前(❌) → 改后(✅)」示范，照改后的写法来。】
+
+1. 去模板化开头：开头不要「随着……的发展」「在当今……背景下」「近年来……日益」这类套话，直接切入本项目要解决的问题。
+❌ 随着人工智能技术的迅猛发展，大学生创新创业竞赛的备赛压力日益增大。
+✅ 参赛团队最头疼的，是申报书、PPT、演讲稿一堆材料要写，还都要写好。
+
+2. 去机械排比：不要「首先/其次/最后」「第一/第二/第三」这种机械罗列，把要点串成自然的叙述。
+❌ 本平台首先生成快，其次内容全，最后质量高。
+✅ 创意填进去，几分钟拿到申报书初稿，答辩问题和 PPT 大纲也一并生成。
+
+3. 去万能连接词：不要「不仅……而且……」「一方面……另一方面……」这类万能连接，改用具体的关系。
+❌ 本平台不仅生成申报书，而且还能生成 PPT 和演讲稿。
+✅ 除了申报书，它把答辩问题、PPT 大纲、演讲稿一起生成，省得团队分开准备。
+
+4. 去空洞总结：结尾不要「综上所述」「总而言之」，用一句具体的话收尾。
+❌ 综上所述，本平台具有重要的实用价值。
+✅ 团队把创意填进去，几十分钟就能拿到一份能直接改的申报书初稿。
+
+5. 去过度修饰：不要「非常」「极其」「十分」「高度」「全面」这类空泛修饰。
+❌ 本平台具有极其先进的技术和非常强大的功能。
+✅ 它把规则解析、同质化检测、模拟评委这些环节串成一条流水线。
+
+6. 砍冗余副词：砍掉「显著地」「极大地」「有效地」「有力地」这类冗余副词，直接把结果写出来。
+❌ 该平台显著提升了申报书写作效率。
+✅ 原来要熬几天的申报书，现在几分钟出初稿。
+
+7. 被动改主动：尽量用主动句，少用「被……」，让主语明确。
+❌ 创意被输入后，申报书会被自动生成出来。
+✅ 你输入创意，平台自动生成申报书。
+
+8. 句子节奏：长短句交错，不要连续好几个句子长度都差不多。
+❌ 本平台采用多智能体架构。每个智能体负责一个环节。智能体之间协同工作。最终生成申报书。
+✅ 平台底层是一串智能体，有的解析规则，有的检测同质化，有的当模拟评委。它们接力跑完，输出一份完整申报书。
+
+9. 去 AI 式举例：不要「例如……」「比如……」这种泛泛列举，落到本项目的具体场景。
+❌ 本平台适用于多种场景，例如比赛、论文、报告等。
+✅ 它针对科创赛事设计，先覆盖 iCAN、挑战杯、互联网+ 这几类申报书。
+
+10. 术语一致性：同一个东西从头到尾用同一个词，不要一会儿「终端」、一会儿「设备」、一会儿「装置」。
+❌ 本平台的多智能体……该系统的模型……这个工具……
+✅ 全程统一叫「平台」，各环节统一叫「智能体」。
+
+11. 整体语气：像项目负责人在跟评委陈述自己的项目，自然、平实、有分寸，不要背范文、写八股、念新闻稿。
+"""
+
 _REPORT_SPEC = """【输出规格 —— 必须遵守】
 1. 使用 Markdown，最多三级标题（## / ###），一级用「一、二、三、」，二级用「（一）（二）」，三级用「1. 2. 3.」
 2. 三级标题必须是正式短语，不是完整句子
@@ -378,7 +424,7 @@ _REPORT_SPEC = """【输出规格 —— 必须遵守】
 5. 严禁整篇用序号罗列（不要「1. xxx  2. xxx」这种清单体），把要点串成连贯段落
 6. 需要逐条对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），不要用序号列表
 7. 全文中文标点用全角
-"""
+""" + _DE_AI_SPEC
 
 _PROPOSAL_SPEC = """【申报书输出规格 —— 优先级最高，覆盖上面所有通用规格】
 1. 篇幅：正文 3500～4500 字，低于 3000 字视为不合格。这是一份要提交给评委的完整申报书，不是提纲也不是摘要。
@@ -388,14 +434,14 @@ _PROPOSAL_SPEC = """【申报书输出规格 —— 优先级最高，覆盖上�
 5. 严禁通篇序号罗列；只有需要逐条对比时才用标准 Markdown 表格，且表格前后都必须有说明段落
 6. 每一节都要落到具体事实上：真实场景名称、具体数字（测算值要标明是测算）、具体技术名词与参数、具体执行步骤与时间点。禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述
 7. 全文中文标点用全角
-"""
+""" + _DE_AI_SPEC
 
 _ANALYSIS_SPEC = """【输出规格 —— 必须遵守】
 1. 必须分段阐述，不能只给结论清单
 2. 每个维度按「现状 → 原因 → 影响 → 应对」写成完整段落，不要一句话一行
 3. 需要对比时用标准 Markdown 表格
 4. 全文中文标点用全角
-"""
+""" + _DE_AI_SPEC
 
 _OUTLINE_SPEC = """【输出规格 —— 必须遵守】
 1. 只要层级清晰的条目，不要段落、不要大段阐述
@@ -417,7 +463,7 @@ _BRIEF_SPEC = """【精简档输出规格 —— 简洁快速版专用】
 2. 只要结论和关键依据，不展开推演过程，不写背景铺陈
 3. 严禁一句话一段、严禁空小节
 4. 中文标点用全角
-"""
+""" + _DE_AI_SPEC
 
 _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
 1. 每个二级小节 300～500 字，拆成 2～3 个自然段
@@ -425,7 +471,7 @@ _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
 3. 需要对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），表格前后各写一段说明
 4. 严禁一句话一段、严禁空小节
 5. 中文标点用全角
-"""
+""" + _DE_AI_SPEC
 
 _SPEC_BY_TIER = {"fast": _BRIEF_SPEC, "deep": _FULL_SPEC}
 
@@ -754,6 +800,8 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 4. 语言正式，适合写申报书开头
 
 控制在300字左右，写成连贯的完整段落，不要用序号罗列。
+
+{_DE_AI_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["project_summary"] = response.content
@@ -1061,6 +1109,56 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
     print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
     return state
 
+
+def expert_review_agent(state: CompetitionState) -> CompetitionState:
+    """🧑‍⚖️ MedPeer 式多专家模拟评审：技术/商业/综合三视角，分维度打分 + 逐条批注"""
+    _report_stage("expert_review")
+    prompt = f"""你是国家级科创赛事的评审委员会。请以「多专家视角」对下面这份申报书做一次模拟评审，就像专业同行评议（MedPeer 式）那样：不是只给一个总分，而是让不同专家从各自视角独立评审，给出分维度打分和能落地的逐条批注。
+
+赛事：{state['competition_name']}
+项目创意：{state.get('idea', '')}
+一句话定位：{state.get('one_liner', '')}
+单评委快评得分：{state.get('score', 0)}（仅供你参考，不是你的结论）
+
+【申报书全文】
+{state.get('proposal', '')[:6000]}
+
+请只输出一个 JSON 对象（不要任何解释文字、不要 markdown 代码块），结构严格如下：
+{{
+  "overall_score": 86,
+  "verdict": "修改后晋级",
+  "experts": [
+    {{"role":"技术专家","focus":"技术可行性、创新性、实现难度","score":88,
+      "dimensions":[{{"name":"创新性","score":90,"comment":"一句话点评"}},{{"name":"技术可行性","score":86,"comment":"一句话点评"}},{{"name":"实现难度","score":88,"comment":"一句话点评"}}],
+      "strengths":["具体优点1","具体优点2"],
+      "issues":[{{"quote":"申报书中的相关原文（10-30字）","problem":"这里的问题是什么","suggestion":"怎么改"}}]}},
+    {{"role":"商业专家","focus":"商业模式、市场空间、落地可行性","score":82,
+      "dimensions":[{{"name":"商业模式","score":80,"comment":"一句话点评"}},{{"name":"市场空间","score":84,"comment":"一句话点评"}},{{"name":"落地可行性","score":82,"comment":"一句话点评"}}],
+      "strengths":["具体优点1"],
+      "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}},
+    {{"role":"综合评审主席","focus":"整体完成度、逻辑闭环、晋级潜力","score":87,
+      "dimensions":[{{"name":"整体完成度","score":86,"comment":"一句话点评"}},{{"name":"逻辑闭环","score":88,"comment":"一句话点评"}},{{"name":"晋级潜力","score":87,"comment":"一句话点评"}}],
+      "strengths":["具体优点1"],
+      "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}}
+  ],
+  "consensus":["三位专家一致认可的结论，至少1条"],
+  "divergence":["专家之间存在分歧的点，至少1条；没有分歧就写\"无明显分歧\""],
+  "priority_actions":[{{"priority":1,"action":"最优先改的动作","reason":"为什么"}},{{"priority":2,"action":"次优先动作","reason":"为什么"}},{{"priority":3,"action":"第三优先动作","reason":"为什么"}}]
+}}
+
+硬性要求：
+1. 三位专家必须各自独立给分和点评，不能三份完全一样；overall_score 是三者按「主席权重略高」综合后的整数（0-100）。
+2. issues 里的 quote 必须从申报书里摘原句（体现「逐条批注」），problem 说清问题，suggestion 给出可执行的改法。
+3. 每个维度 comment 20-40 字，落到具体事实，禁止「表现不错」「有待提升」这类空话。
+4. 分数要拉开差距，不要都打 85-90 的近似分；明显薄弱处要敢于打低分。
+5. 中文标点用全角。
+"""
+    response = llm.invoke([HumanMessage(content=prompt)])
+    state["expert_review"] = response.content
+    print("🧑‍⚖️ 多专家模拟评审：已生成")
+    return state
+
+
 def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     """🎤 答辩问题预测 Agent：预测评委可能问什么"""
     _report_stage("defense")
@@ -1279,6 +1377,7 @@ deep_workflow.add_node("summary", summary_agent)
 deep_workflow.add_node("rich_media", rich_media_agent)
 deep_workflow.add_node("writer", deep_writer_agent)
 deep_workflow.add_node("judge", judge_agent)
+deep_workflow.add_node("expert_review", expert_review_agent)
 deep_workflow.add_node("proposal_analysis", proposal_analysis_agent)
 deep_workflow.add_node("defense", defense_questions_agent)
 deep_workflow.add_node("ppt", ppt_outline_agent)
@@ -1305,7 +1404,8 @@ deep_workflow.add_edge("social", "summary")
 deep_workflow.add_edge("summary", "rich_media")
 deep_workflow.add_edge("rich_media", "writer")
 deep_workflow.add_edge("writer", "judge")
-deep_workflow.add_edge("judge", "proposal_analysis")
+deep_workflow.add_edge("judge", "expert_review")
+deep_workflow.add_edge("expert_review", "proposal_analysis")
 deep_workflow.add_conditional_edges(
     "proposal_analysis",
     should_iterate,
