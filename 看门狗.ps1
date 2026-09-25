@@ -31,15 +31,8 @@ while ($true) {
         Start-Sleep -Seconds 8
     }
 
-    # 2) cpolar 挂了就重启
-    $tunnel = Get-Process -Name "cpolar" -ErrorAction SilentlyContinue
-    if (-not $tunnel) {
-        Write-Host "$(Get-Date) - cpolar 掉了，重启..."
-        # 命令行方式：cpolar http 8080
-        # 若用「命名隧道」，改成：-ArgumentList @("tunnel", "start", "<隧道名>")
-        Start-Process -FilePath $cpolarPath -ArgumentList @("http", $localPort) -WindowStyle Hidden
-        Start-Sleep -Seconds 8
-    }
+    # 2) cpolar 段 —— 2026-09-25 停用（站点已迁阿里云 ECS，固定公网 IP）
+    #    保留 Flask 守护，去掉 cpolar 自动重启，防止它复活。
 
     Start-Sleep -Seconds 30
 }

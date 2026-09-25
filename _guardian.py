@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""科创赛事助手 · 服务守护（Flask + cpolar 隧道）
+"""科创赛事助手 · 服务守护（只守本机 Flask；cpolar 已于 2026-09-25 停用）
 
 被 Windows 计划任务每 3 分钟调用一次：
   1. 探 Flask（直连 socket，绕开系统代理），不通则拉起（完全脱离控制台，不会被回收）
-  2. 探 cpolar 管理面板 9200，不在则拉起 cpolar
-  3. 从 cpolar 隧道日志抓取最新公网地址，写入「公网地址.txt」
+  2. 【已停用】探 cpolar 管理面板 9200，不在则拉起 cpolar
+     —— 站点已迁阿里云 ECS（固定公网 IP 8.149.236.90），穿透层不再需要
+  3. 【已停用】从 cpolar 隧道日志抓地址 → 改为直接写云上地址「公网地址.txt」
 
 可以手工双击运行，也可以被计划任务调用。幂等：服务正常时什么都不做。
 """
@@ -18,7 +19,8 @@ import time
 PY_EXE = r'C:\Users\34984\.conda\envs\rag-dev\python.exe'
 PYW_EXE = r'C:\Users\34984\.conda\envs\rag-dev\pythonw.exe'
 CPOLAR_BIN = r'D:\cpolar'          # 无扩展名可执行文件
-CPOLAR_SVC = 'cpolar'              # 已注册为 Windows 服务，会自动重连，无需自己拉起
+CPOLAR_SVC = 'cpolar'              # 已注册为 Windows 服务（2026-09-25 已设为 Disabled，不再拉起）
+CLOUD_URL = 'http://8.149.236.90:8080'   # 阿里云 ECS 固定公网地址
 PROJECT_DIR = r'C:\Users\34984\Doubao\chats\2026-09-23\new-chat\科创赛事助手'
 CPOLAR_LOG_DIR = r'C:\Users\34984\.cpolar\logs'
 PUBLIC_URL_FILE = os.path.join(PROJECT_DIR, '公网地址.txt')
@@ -100,6 +102,9 @@ def start_flask():
 
 
 def fetch_public_url():
+    # 2026-09-25：站点已迁阿里云 ECS（固定公网 IP），cpolar 停用，
+    # 不再解析 cpolar 日志。要回退就把下面这行 return 注释掉。
+    return CLOUD_URL
     """从 cpolar 今天的日志里抓最新的公网地址"""
     today = time.strftime('%Y%m%d')
     cand = []
@@ -159,31 +164,17 @@ def main():
             else:
                 log('Flask 启动后 20 秒仍未响应')
 
-    # 2) cpolar 状态（已注册为 Windows 服务，系统会自动拉起，这里只做观察与兜底）
-    try:
-        svc = subprocess.run(['sc', 'query', CPOLAR_SVC], capture_output=True,
-                             text=True, encoding='utf-8', errors='ignore').stdout
-        cpolar_running = 'RUNNING' in svc
-    except Exception:
-        cpolar_running = False
-
-    if cpolar_running:
-        log('cpolar 服务运行中')
-    else:
-        log('cpolar 服务未运行，尝试拉起...')
-        try:
-            subprocess.run(['sc', 'start', CPOLAR_SVC], capture_output=True,
-                           text=True, errors='ignore')
-            time.sleep(3)
-        except Exception as e:
-            log('cpolar 拉起失败: %r' % e)
+    # 2) cpolar —— 2026-09-25 停用：站点已迁阿里云 ECS（固定公网 IP），
+    #    穿透这层不再需要。这里改成「只观察不拉起」，避免任何脚本把 cpolar 复活。
+    #    （原逻辑：探到 cpolar 没运行就 sc start 拉起）
+    log('cpolar 已停用（站点走阿里云 ECS），跳过拉起')
 
     # 3) 抓公网地址落盘
     url = fetch_public_url()
     if url:
-        https = url.replace('http://', 'https://')
-        write_url(https)
-        log('公网地址已更新 → %s' % https)
+        # 云上目前是 http（还没配 HTTPS），别再强制转成 https，否则地址打不开
+        write_url(url)
+        log('公网地址已更新 → %s' % url)
     else:
         log('未取到公网地址')
 
