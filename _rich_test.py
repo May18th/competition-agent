@@ -22,8 +22,11 @@ IDEA = (
 COMP = "iCAN大学生创新创业大赛"
 
 
-def base_state():
+def base_state(mode='fast'):
+    # tier 必须显式传：共享 Agent（rule_parser/similarity/plan/social_value）靠它选规格，
+    # 缺失时 _spec_for() 缺省按 deep 处理，fast 档会跑偏。真实链路 app.py 是会传的。
     return {
+        "tier": mode,
         "competition_name": COMP, "rule_content": "", "idea": IDEA,
         "proposal_draft": "", "parsed_rules": "", "similarity_report": "",
         "competitor_analysis": "", "business_model": "", "risk_analysis": "",
@@ -44,7 +47,7 @@ def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else 'fast'
     graph = ca.fast_app if mode == 'fast' else ca.deep_app
     t0 = time.time()
-    res = graph.invoke(base_state())
+    res = graph.invoke(base_state(mode))
     p = res['proposal']
     heads = re.findall(r'^#{1,3} .*$', p, re.M)
     empty = []

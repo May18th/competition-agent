@@ -65,7 +65,7 @@ def _tag_weight(tag):
     return 1
 
 
-def search_samples(user_keywords, module_tag=None, top_k=3, max_chars=3000):
+def search_samples(user_keywords, module_tag=None, top_k=3, max_chars=3000, types=None):
     """按标签交集打分检索范文，返回格式化文本；无命中返回空串。"""
     try:
         samples = list_samples()
@@ -75,6 +75,8 @@ def search_samples(user_keywords, module_tag=None, top_k=3, max_chars=3000):
     kws = set(user_keywords or [])
     scored = []
     for s in samples:
+        if types and s.get("type") not in types:
+            continue
         tags = set(s.get("tags") or [])
         # 指定模块时，只取带该模块标签的范文（模块是硬匹配）
         if module_tag and module_tag not in tags:

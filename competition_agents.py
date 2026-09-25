@@ -830,7 +830,12 @@ def _ref_block(state: dict, module_tag: str) -> str:
     try:
         from kb_retrieve import extract_keywords, search_samples
         kws = extract_keywords(state.get("idea", "") + " " + state.get("user_keywords", ""))
-        ref = search_samples(kws, module_tag)
+        # 按档位决定注入量：简洁版轻量参考，深度版完整参考；只取「范文」不取「材料」
+        if (state or {}).get("tier") == "fast":
+            top_k, max_chars = 1, 1200
+        else:
+            top_k, max_chars = 3, 3000
+        ref = search_samples(kws, module_tag, top_k=top_k, max_chars=max_chars, types=["范文"])
         if ref:
             return f"【高分范文参考（务必学习其结构与表述风格，不要照抄内容）】\n{ref}\n"
         return ""
