@@ -14,7 +14,16 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 
-from chart_renderer import render as render_chart
+# 图表渲染器：默认走 Pro 版（国赛超精美）。
+# 出问题把环境变量 CHART_RENDERER=legacy 打开即可秒回退到旧渲染器，不改代码。
+try:
+    if os.getenv("CHART_RENDERER", "pro").strip().lower() == "legacy":
+        raise ImportError("force legacy via CHART_RENDERER=legacy")
+    from chart_renderer_pro import render as render_chart
+    print("[rich] 图表渲染器：chart_renderer_pro（国赛超精美版）")
+except Exception as _cre:
+    from chart_renderer import render as render_chart
+    print(f"[rich] 图表渲染器回退到 chart_renderer（原因：{_cre}）")
 
 GEN_DIR = os.path.join(os.path.dirname(__file__), "generated")
 
@@ -76,10 +85,37 @@ CHART_FORMAT = """
 - architecture/arch: {"layers":[{"name":"应用层","boxes":["用户端","管理后台"]},{"name":"模型层","boxes":["DeepSeek"]}]}
 - timeline/gantt: {"stages":[{"name":"需求调研","start":0,"end":2,"label":"第1-2月"}],"xlabel":"时间（月）"}
 - funnel: {"labels":["曝光","注册","付费"],"values":[1000,300,80]}
+每张 chart 顶层字段：id / type / title / caption / source / data。
+source 写「来源 + 统计年份」（如「教育部 2024」「中国信通院 2025」），
+材料里没有来源的测算值写「行业测算」，并在 caption 里点明是测算口径。
 """
 
 
-def _gen_assets(result, competition, idea):
+def _load_kb_industry_data(competition):
+    """从 data/*.txt 里找当前赛事的「行业数据」章节，喂给图表 LLM 引用真实数字。"""
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    if not os.path.isdir(data_dir):
+        return ""
+    comp = str(competition or "")
+    for fn in sorted(os.listdir(data_dir)):
+        if not fn.endswith(".txt"):
+            continue
+        name = fn[:-4]
+        if name in comp or comp in name or any(k in comp for k in
+                ["国创", "挑战杯", "互联网+", "iCAN", "数学建模", "电子设计",
+                 "蓝桥杯", "计算机设计", "广告艺术", "服务外包", "信息安全"]):
+            try:
+                with open(os.path.join(data_dir, fn), encoding="utf-8") as f:
+                    txt = f.read()
+            except Exception:
+                continue
+            m = re.search(r"##\s*行业数据[\s\S]*?(?=\n##\s|\Z)", txt)
+            if m:
+                return m.group(0).strip()
+    return ""
+
+
+def _gen_assets(result, competition, idea, kb_data=""):
     """第一步：让 LLM 设计图表 + 表格"""
     material = f"""
 项目：{idea}
@@ -91,19 +127,28 @@ def _gen_assets(result, competition, idea):
 技术方案：{result.get('tech_solution','')[:2000]}
 实施计划：{result.get('implementation_plan','')[:1500]}
 """
-    prompt = f"""你是路演数据可视化专家。根据以下项目材料，设计 3-5 张最有说服力的图表（charts）和 2-4 张关键表格（tables）。
+    kb_block = f"\n【可引用的行业真实数据】\n{kb_data}\n" if kb_data else ""
+    prompt = f"""你是国家级科创赛事的路演数据可视化专家。根据以下项目材料，设计 6-8 张最有说服力的图表（charts）和 2-4 张关键表格（tables），要达到「2026 国赛超精美图表 A」水准。
 
 {material}
+{kb_block}
+
+【图表 A 风格要求 —— 必须遵守】
+1. 数据墨水比优先：不要 3D、不要厚重边框；网格线只留极淡虚线；关键数据点要突出。
+2. 深色科技蓝底（#0F1535），高亮主色 #818CF8，系列色 #22B8CF / #C084FC / #F59E0B / #34D399 / #FB7185 / #A3E635。
+3. 每张图都要「结论式标题 + 一句话洞察 + 数据来源」：标题直接给结论（如「目标市场规模三年翻三倍」），caption 是 20 字内的洞察，source 写来源+年份。
+4. 数字必须来自材料或「可引用的行业真实数据」，优先引用上面给的真实数据并标注 source；测算值标「行业测算」并写清口径。
+5. 图表类型覆盖项目关键结论：预算用 donut、市场规模用 bar、增长用 line、竞品用 radar、竞争力定位用 matrix、转化用 funnel、实施用 timeline、技术用 architecture，按需选 6-8 种，不要重复。
 
 只能输出一个 JSON 对象，不要任何解释文字。格式：
 {{
- "charts":[{{"id":"c1","type":"bar","title":"图表标题","caption":"一句话洞察（20字内）","data":{{...}}}}],
+ "charts":[{{"id":"c1","type":"bar","title":"结论式标题","caption":"一句话洞察（20字内）","source":"来源+年份","data":{{...}}}}],
  "tables":[{{"id":"t1","title":"表格标题","header":["维度","我们","竞品A"],"rows":[["价格","99元","199元"]]}}]
 }}
 {CHART_FORMAT}
 要求：
-1. id 从 c1/t1 开始编号；type 从上面列表里选，架构图用 architecture，进度用 timeline，竞品对比用 radar 或 matrix
-2. 数字必须来自材料，材料没有的按行业常识合理估计
+1. id 从 c1/t1 开始编号；type 从上面列表里选
+2. 数字必须来自材料或行业真实数据，不能拍脑袋
 3. 每张表格 3-6 行、表头不超过 5 列；cells 内容不超过 14 字
 4. 图表要能在路演里"一眼看懂"，标题直接给结论（如"目标市场规模三年翻三倍"）"""
     return _invoke_json(prompt)
@@ -223,19 +268,22 @@ def build_rich_assets(result, competition="", idea="", theme=None):
     # ---- 1. 图表 + 表格 ----
     assets = {}
     try:
-        assets = _gen_assets(result, competition, idea) or {}
+        kb_data = _load_kb_industry_data(competition)
+        assets = _gen_assets(result, competition, idea, kb_data) or {}
     except Exception as e:
         print(f"[rich] 图表/表格设计失败，降级：{e}")
 
     charts, tables = [], []
-    for c in (assets.get("charts") or [])[:6]:
+    for c in (assets.get("charts") or [])[:8]:
         cid = str(c.get("id") or f"c{len(charts)+1}")
         path = render_chart(dict(c, id=cid), GEN_DIR, theme=theme)
         if path:
             safe = os.path.basename(path)
             charts.append({
                 "id": cid, "title": c.get("title", ""),
-                "caption": c.get("caption", ""), "url": f"/generated/{safe}",
+                "caption": c.get("caption", ""),
+                "source": c.get("source", ""),
+                "url": f"/generated/{safe}",
                 # 保留原始数值：PNG 不可 hover，前端要用 ECharts 重绘才支持「显示具体数值」
                 "spec": c,
             })
