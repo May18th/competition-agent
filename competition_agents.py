@@ -850,9 +850,47 @@ def _build_outline(state: CompetitionState) -> str:
     return resp.content.strip()
 
 
-def _selfcheck_proposal(state: CompetitionState, proposal: str) -> str:
-    """Step 3 · 自检修补：检查章节呼应/空泛表述/数字规范，只做定点修补，不整篇重写。"""
-    prompt = f"""你是科创赛事申报书的终审编辑。请对下面这份申报书做一次自检，并只做定点修补。
+def _parse_patch_list(text):
+    """解析自检补丁清单（JSON 数组）；失败返回空列表。"""
+    import json as _json
+    t = re.sub(r"```(?:json)?", "", text or "")
+    start = t.find("[")
+    if start < 0:
+        return []
+    depth = 0
+    for i in range(start, len(t)):
+        if t[i] == "[":
+            depth += 1
+        elif t[i] == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return _json.loads(t[start:i + 1])
+                except Exception:
+                    return []
+    return []
+
+
+def _apply_patches(proposal, patches):
+    """按 find→replace 逐条定点替换（只替换第一处），找不到就跳过。"""
+    n = 0
+    for p in (patches or []):
+        if not isinstance(p, dict):
+            continue
+        find = p.get("find") or ""
+        replace = p.get("replace") or ""
+        if find and find in proposal:
+            proposal = proposal.replace(find, replace, 1)
+            n += 1
+    return proposal, n
+
+
+def _selfcheck_proposal(state: CompetitionState, proposal: str):
+    """Step 3 · 轻量自检：只输出补丁清单并本地 apply，不重输出全文。
+
+    返回 (修补后的正文, 实际应用补丁数)。
+    """
+    prompt = f"""你是科创赛事申报书的终审编辑。请快速自检下面这份申报书，**只输出需要修补的补丁清单（JSON 数组），不要输出全文**。
 
 项目创意：{state.get('idea', '')}
 赛事：{state['competition_name']}
@@ -860,15 +898,20 @@ def _selfcheck_proposal(state: CompetitionState, proposal: str) -> str:
 【申报书全文】
 {proposal}
 
-请按以下三点检查：
-1. 章节呼应：目标 ↔ 内容 ↔ 方法 ↔ 成果是否一致，有无前后矛盾；
-2. 空泛表述：找出「显著提升」「广泛应用」「赋能」「前景广阔」这类无数据支撑的空话并改写；
-3. 数字规范：数字有无推算过程、有无编造引用来源、测算值是否标明。
+自检三点：① 章节呼应有无前后矛盾；② 空泛表述（「显著提升」「广泛应用」「赋能」「前景广阔」等无数据支撑）；③ 数字有无推算过程、有无编造引用。
 
-然后**只对有问题的地方做定点修补**，直接输出修补后的完整申报书全文（保持原有结构与 Markdown 标题层级不变，不要重写整篇、不要加任何说明）。
+只输出一个 JSON 数组（不要任何其它文字、不要 markdown 代码块），每个补丁形如：
+{{"find":"申报书里逐字存在的短句（20～60 字）","replace":"改后文字"}}
+
+要求：
+1. find 必须从申报书里逐字原样摘出，否则替换不上；
+2. 只列真正有问题的补丁，没问题就输出 []；
+3. 不要改动标题与结构，每处只做定点修补。
 """
     resp = llm.invoke([HumanMessage(content=prompt)])
-    return resp.content.strip()
+    patches = _parse_patch_list(resp.content)
+    proposal, n = _apply_patches(proposal, patches)
+    return proposal, n
 
 
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
@@ -989,9 +1032,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     response = llm.invoke([HumanMessage(content=prompt)])
     proposal = response.content.strip()
 
-    # Step 3 · 自检修补
-    proposal = _selfcheck_proposal(state, proposal)
-    state["proposal_selfcheck"] = "已完成自检：章节呼应 / 空泛表述 / 数字规范，并定点修补。"
+    # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
+    proposal, patch_count = _selfcheck_proposal(state, proposal)
+    state["proposal_selfcheck"] = f"已完成自检，定点修补 {patch_count} 处。"
 
     proposal, n = _expand_to_length(
         proposal, 3200,
