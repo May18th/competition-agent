@@ -1,4 +1,4 @@
-﻿.env
+.env
 __pycache__/
 *.pyc
 uploads/
@@ -19,3 +19,7 @@ _theme_demo/
 *.pptx
 *.orig
 *.rej
+
+# ---- 文档格式层：本地测试产物 ----
+_docx_test/
+_cover_preview/

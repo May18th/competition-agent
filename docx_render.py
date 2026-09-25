@@ -287,8 +287,42 @@ def _plain(text):
 
 # ============ 页面 ============
 
-def _setup_page(doc):
-    """A4 + 规范页边距 + 默认正文样式；封面页无页码。"""
+def _setup_heading_styles(doc, prof):
+    """把 Word 的 Heading 1~4 样式改成符合规范的字体字号。
+
+    关键：目录（TOC 域）只认「标题样式」的段落，认不出普通段落加粗。
+    所以标题必须挂上 Heading 样式，再改样式本身的外观，
+    这样目录才能自动对应到正文并生成正确页码。
+    """
+    for level in (1, 2, 3, 4):
+        try:
+            st = doc.styles['Heading %d' % level]
+        except KeyError:
+            continue
+        size, cn, bold = prof['headings'][level]
+        st.font.name = EN
+        st.font.size = Pt(size)
+        st.font.bold = bold
+        st.font.color.rgb = BLACK          # 去掉 Word 标题默认的主题蓝
+        st.font.italic = False
+        st.font.underline = False
+        rPr = st.element.get_or_add_rPr()
+        rFonts = rPr.get_or_add_rFonts()
+        rFonts.set(qn('w:ascii'), EN)
+        rFonts.set(qn('w:hAnsi'), EN)
+        rFonts.set(qn('w:eastAsia'), cn)
+        pf = st.paragraph_format
+        pf.space_before = Pt(14 if level == 1 else 10)
+        pf.space_after = Pt(6)
+        pf.line_spacing = 1.5
+        pf.keep_with_next = True
+        pf.left_indent = Cm(0)
+        pf.first_line_indent = Cm(0)
+
+
+def _setup_page(doc, prof=None):
+    """A4 + 规范页边距 + 默认正文样式 + 标题样式（供目录域抓取）；封面页无页码。"""
+    prof = prof or PROFILES['default']
     doc.sections[0].different_first_page_header_footer = True
 
     style = doc.styles['Normal']
@@ -312,6 +346,8 @@ def _setup_page(doc):
         sec.right_margin = Cm(2.5)
         sec.header_distance = Cm(1.5)
         sec.footer_distance = Cm(1.5)
+
+    _setup_heading_styles(doc, prof)
 
 
 def _page_number_footer(doc):
@@ -337,8 +373,18 @@ def _page_number_footer(doc):
 
 # ============ 封面 ============
 
-def _cover(doc, title, subtitle=None, org=None):
-    """封面：主标题黑体小初 / 副标题黑体二号 / 单位日期黑体小三，全部居中。"""
+def _header(doc, title):
+    """页眉：文档标题，宋体五号居中（无装饰线，符合「无特效」要求）。"""
+    header = doc.sections[0].header
+    p = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(0)
+    p.paragraph_format.line_spacing = 1.0
+    _font(p.add_run(title or ''), SZ_WU, CN_SONG)
+
+
+def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None):
+    """封面：主标题黑体小初 / 副标题黑体二号 / 学校·团队·指导老师·日期黑体小三，全部居中。"""
     # 把封面文字压到页面纵向约 1/3 处
     sp = doc.add_paragraph()
     sp.paragraph_format.space_before = Pt(150)
@@ -359,12 +405,20 @@ def _cover(doc, title, subtitle=None, org=None):
         p.paragraph_format.line_spacing = 1.3
         _font(p.add_run(subtitle), SZ_ER, CN_HEI)
 
-    if org:
+    # 学校 / 团队 / 指导老师：黑体小三居中（申报书封面必备信息）
+    info_lines = [x for x in (org, school, team, advisor) if x]
+    for line in info_lines:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(46)
+        p.paragraph_format.space_after = Pt(10)
         p.paragraph_format.line_spacing = 1.5
-        _font(p.add_run(org), SZ_XIAOSAN, CN_HEI)
+        _font(p.add_run(line), SZ_XIAOSAN, CN_HEI)
+
+    if info_lines:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(36)
+        p.paragraph_format.line_spacing = 1.0
+        _font(p.add_run(''), SZ_XIAOSAN)
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -373,32 +427,76 @@ def _cover(doc, title, subtitle=None, org=None):
           SZ_XIAOSAN, CN_HEI)
 
 
-def _add_toc(doc):
-    """目录页：插入 TOC 域，Word 打开时会提示更新（dirty=true）。"""
+def _add_bookmark(p, name, bid):
+    """给段落加书签，供目录的 PAGEREF 域取页码。"""
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), str(bid))
+    start.set(qn('w:name'), name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), str(bid))
+    p._p.insert(0, start)
+    p._p.append(end)
+
+
+def _add_toc(doc, headings):
+    """目录页：逐条列出真实标题 + PAGEREF 页码域。
+
+    不用 TOC 域的原因：TOC 域必须用户手动「更新域」才出页码，
+    很多人打开看到的是一片空白。这里改成直接写条目文字（一定可见），
+    页码用 PAGEREF 域（dirty=true，Word 打开时自动填真实页码）。
+    """
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_after = Pt(14)
+    p.paragraph_format.space_after = Pt(16)
     _font(p.add_run('目  录'), SZ_ER, CN_HEI, bold=True)
 
-    p = doc.add_paragraph()
-    fld = OxmlElement('w:fldSimple')
-    fld.set(qn('w:instr'), r'TOC \o "1-3" \h \z \u')
-    fld.set(qn('w:dirty'), 'true')
-    r = OxmlElement('w:r')
-    t = OxmlElement('w:t')
-    t.text = '（打开后若提示更新域，请选择“是”以生成目录页码）'
-    r.append(t)
-    fld.append(r)
-    p._p.append(fld)
+    for level, text, mark in headings:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.left_indent = Cm(0.0 if level == 1 else (0.6 if level == 2 else 1.2))
+        pf.space_after = Pt(3)
+        pf.line_spacing = 1.4
+
+        # 右对齐制表位 + 省略号前导符，页码落在行尾
+        pPr = p._p.get_or_add_pPr()
+        tabs = OxmlElement('w:tabs')
+        tab = OxmlElement('w:tab')
+        tab.set(qn('w:val'), 'right')
+        tab.set(qn('w:leader'), 'dot')
+        tab.set(qn('w:pos'), '9060')      # 可编辑区右边界 ≈16cm
+        tabs.append(tab)
+        pPr.append(tabs)
+
+        _font(p.add_run(_fullwidth(text)), SZ_XIAOSI,
+              CN_HEI if level == 1 else CN_SONG, bold=(level == 1))
+
+        # 制表符
+        tr = p.add_run()
+        tr._r.append(OxmlElement('w:tab'))
+
+        # PAGEREF 页码域
+        fld = OxmlElement('w:fldSimple')
+        fld.set(qn('w:instr'), 'PAGEREF %s \\h' % mark)
+        fld.set(qn('w:dirty'), 'true')
+        rr = OxmlElement('w:r')
+        tt = OxmlElement('w:t')
+        tt.text = '1'
+        rr.append(tt)
+        fld.append(rr)
+        p._p.append(fld)
 
 
 # ============ 各类块渲染 ============
 
-def _render_heading(doc, level, text, prof=None):
+def _render_heading(doc, level, text, prof=None, mark=None, bid=0):
     """标题：按文档类型档位取字号/字体（申报书=标准层级，大纲=小字号轻层级）。"""
     prof = prof or PROFILES['default']
     size, cn, bold = prof['headings'].get(level, prof['headings'][4])
-    p = doc.add_paragraph()
+    # 必须挂 Heading 样式，否则目录域抓不到这一行
+    try:
+        p = doc.add_paragraph(style='Heading %d' % level)
+    except KeyError:
+        p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     pf = p.paragraph_format
     pf.space_before = Pt(14 if level == 1 else 10)
@@ -406,6 +504,8 @@ def _render_heading(doc, level, text, prof=None):
     pf.line_spacing = 1.5
     pf.keep_with_next = True
     _font(p.add_run(_fullwidth(text)), size, cn, bold=bold)
+    if mark:
+        _add_bookmark(p, mark, bid)
 
 
 def _render_para(doc, lines, prof=None):
@@ -554,7 +654,8 @@ def _render_hr(doc):
 # ============ 主入口 ============
 
 def build_docx(title, text, subtitle=None, org=None, toc=None,
-               cover=None, cover_image=False, topic=None, doc_type='report'):
+               cover=None, cover_image=False, topic=None, doc_type='report',
+               school=None, team=None, advisor=None):
     """生成符合格式标准的 Word 文档。
 
     :param title:       文档主标题（封面黑体小初）
@@ -577,8 +678,9 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         toc = prof['toc']
 
     doc = Document()
-    _setup_page(doc)
-    _page_number_footer(doc)
+    _setup_page(doc, prof)
+    _page_number_footer(doc)     # 页脚：页码居中（封面因首页不同自动无页码）
+    _header(doc, title)          # 页眉：文档标题，宋体五号居中
 
     if cover:
         if cover_image:
@@ -588,18 +690,30 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
                 _cover_background(doc, path)
             except Exception as e:
                 print('[docx_render] 封面背景图失败，忽略：%r' % (e,))
-        _cover(doc, title, subtitle, org)
-        doc.add_page_break()
-
-    if toc:
-        _add_toc(doc)
+        _cover(doc, title, subtitle, org, school, team, advisor)
         doc.add_page_break()
 
     blocks = _blocks(text or '')
+    # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
+    headings, _bm_id = [], 0
+    for blk in blocks:
+        if blk[0] == 'h' and blk[1] <= 3:
+            _bm_id += 1
+            headings.append((blk[1], blk[2], '_toc_%d' % _bm_id))
+
+    if toc:
+        if headings:
+            _add_toc(doc, headings)
+        doc.add_page_break()
+
+    _bm_i = 0
     for i, blk in enumerate(blocks):
         kind = blk[0]
         if kind == 'h':
-            _render_heading(doc, blk[1], blk[2], prof)
+            _bm_i += 1
+            _render_heading(doc, blk[1], blk[2], prof,
+                            mark=('_toc_%d' % _bm_i if blk[1] <= 3 else None),
+                            bid=1000 + _bm_i)
         elif kind == 'p':
             # 形如「表 5-1 xxx」「图 3-2 xxx」且后面紧跟表格 → 按表题/图题渲染
             nxt = blocks[i + 1] if i + 1 < len(blocks) else None
