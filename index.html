@@ -98,6 +98,48 @@ body {
     animation: sk-shimmer 1.4s ease-in-out infinite;
     border-radius: 8px;
 }
+/* ---- 分块流式渲染：内容边生成边显示 ---- */
+/* 还没产出内容的区块占位 */
+.stream-wait {
+    color: var(--text-mute);
+    font-size: 13px;
+    padding: 14px 16px;
+    border: 1px dashed var(--line-1);
+    border-radius: 8px;
+    background: var(--surface-2);
+    animation: sk-fade 1.6s ease-in-out infinite;
+}
+@keyframes sk-fade { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+/* 正在流出内容的区块：末尾闪烁光标 + 左侧呼吸竖条 */
+.content-block.streaming {
+    border-left: 3px solid var(--c-a) !important;
+    padding-left: 12px !important;
+    transition: border-color .25s;
+}
+.content-block.streaming::after {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 15px;
+    margin-left: 3px;
+    vertical-align: text-bottom;
+    background: var(--c-a);
+    animation: sk-caret .9s step-end infinite;
+}
+@keyframes sk-caret { 0%,49% { opacity: 1; } 50%,100% { opacity: 0; } }
+/* Tab 上有新内容流入时的脉冲小圆点 */
+.tab.has-stream { position: relative; }
+.tab.has-stream::after {
+    content: '';
+    position: absolute; top: 6px; right: 6px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--c-a);
+    box-shadow: 0 0 0 0 var(--c-a);
+    animation: sk-pulse 1.3s ease-out infinite;
+}
+@keyframes sk-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.55); }
+    100% { box-shadow: 0 0 0 8px rgba(37,99,235,0); }
+}
 @keyframes sk-shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
@@ -2173,6 +2215,103 @@ button:hover { transform: translateY(-1px); }
             a.click();
         }
         // 开始生成
+        // ================= 分块流式渲染 =================
+        // 后端每跑完一个 LangGraph 节点就把产出的字段塞进 partial，
+        // /api/status 一起返回，这里把已有内容先渲染出来，用户不再干等进度条。
+        var _STREAM_MAP = [
+            ['parsed_rules',        'parsedRules',        'analysis'],
+            ['similarity_report',   'similarityReport',   'analysis'],
+            ['idea_feedback',       'ideaFeedback',       'analysis'],
+            ['competitor_analysis', 'competitorAnalysis', 'analysis'],
+            ['business_model',      'businessModel',      'analysis'],
+            ['risk_analysis',       'riskAnalysis',       'analysis'],
+            ['tech_solution',       'techSolution',       'analysis'],
+            ['implementation_plan', 'implementationPlan', 'analysis'],
+            ['social_value',        'socialValue',        'analysis'],
+            ['project_summary',     'projectSummary',     'analysis'],
+            ['proposal',            'proposalText',       'proposal'],
+            ['judge_feedback',      'judgeFeedback',      'proposal'],
+            ['proposal_analysis',   'proposalAnalysis',   'proposal'],
+            ['defense_questions',   'defenseQuestions',   'defense'],
+            ['ppt_outline',         'pptOutline',         'defense'],
+            ['speech_script',       'speechScript',       'defense']
+        ];
+        var _streamLen = {};          // 字段 -> 已渲染字数，用于判断是否有新增
+        var _streamShown = false;     // 结果区是否已因流式内容提前展开
+        var _streamTotal = 0;         // 已产出总字数（给进度条显示）
+
+        function streamReset() {
+            _streamLen = {}; _streamShown = false; _streamTotal = 0;
+            document.querySelectorAll('.content-block.streaming').forEach(function (el) {
+                el.classList.remove('streaming');
+            });
+            document.querySelectorAll('.tab.has-stream').forEach(function (el) {
+                el.classList.remove('has-stream');
+            });
+        }
+
+        // 生成开始时给每个区块铺「生成中…」占位，内容一到就替换
+        function streamPrepare() {
+            streamReset();
+            _STREAM_MAP.forEach(function (p) {
+                var el = document.getElementById(p[1]);
+                if (el) el.innerHTML = '<div class="stream-wait">AI 正在生成，内容将实时流出…</div>';
+            });
+            var ol = document.getElementById('oneLiner');
+            if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
+        }
+
+        // 把后端返回的 partial 渲染进页面；返回本次是否产出了新内容
+        function paintPartial(partial) {
+            if (!partial || typeof partial !== 'object' || !window.marked) return false;
+            var fresh = 0;
+            _STREAM_MAP.forEach(function (p) {
+                var key = p[0], id = p[1], tab = p[2];
+                var txt = partial[key];
+                if (!txt) return;
+                var el = document.getElementById(id);
+                if (!el) return;
+                var prev = _streamLen[key] || 0;
+                if (txt.length <= prev) return;      // 没有新增就别重渲染，省掉闪烁
+                _streamLen[key] = txt.length;
+                fresh += txt.length - prev;
+                el.innerHTML = marked.parse(txt);
+                el.classList.add('streaming');
+                // 该区块所属 Tab 打上脉冲点（提示用户在别的页签有内容流入）
+                var tb = document.querySelector('.tab[onclick*="' + tab + '"]');
+                if (tb) {
+                    if (tab === 'defense') tb.style.display = 'block';   // 答辩页签一有内容就露出
+                    if (!tb.classList.contains('active')) tb.classList.add('has-stream');
+                }
+            });
+            var olTxt = partial.one_liner;
+            if (olTxt) {
+                var ol = document.getElementById('oneLiner');
+                if (ol && ol.innerText !== olTxt) ol.innerText = olTxt;
+            }
+            if (fresh > 0) {
+                _streamTotal += fresh;
+                // 第一次有内容就把骨架屏换成真实结果区
+                if (!_streamShown) {
+                    _streamShown = true;
+                    document.getElementById('skeletonArea').style.display = 'none';
+                    document.getElementById('resultArea').style.display = 'block';
+                }
+            }
+            return fresh > 0;
+        }
+
+        // 生成结束：撤掉光标与脉冲点
+        function streamFinish() {
+            document.querySelectorAll('.content-block.streaming').forEach(function (el) {
+                el.classList.remove('streaming');
+            });
+            document.querySelectorAll('.tab.has-stream').forEach(function (el) {
+                el.classList.remove('has-stream');
+            });
+            document.querySelectorAll('.stream-wait').forEach(function (w) { w.remove(); });
+        }
+
         var _currentTaskId = null;
         function cancelGeneration() {
             if (!_currentTaskId) return;
@@ -2207,6 +2346,7 @@ button:hover { transform: translateY(-1px); }
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
             _currentTaskId = null;
+            streamPrepare();   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
@@ -2255,9 +2395,12 @@ button:hover { transform: translateY(-1px); }
                                 }
                                 if (res2.status === 'running') {
                                     const sec = Math.round((Date.now() - t0) / 1000);
+                                    // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
+                                    paintPartial(res2.partial);
                                     _setBar(res2.pct || 0,
                                         'AI正在' + (isOptimize ? '优化' : '生成') + '：'
                                         + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）'
+                                        + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
                                         + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
                                     // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
                                     if (res2.stage === 'speech') {
@@ -2288,6 +2431,7 @@ button:hover { transform: translateY(-1px); }
                 });
             })
             .then(data => {
+                streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
@@ -2479,6 +2623,7 @@ button:hover { transform: translateY(-1px); }
             })
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
+                streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
                 document.getElementById('skeletonArea').style.display = 'none';
                 document.getElementById('cancelWrap').style.display = 'none';
                 document.getElementById('progressSteps').style.display = 'none';
