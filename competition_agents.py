@@ -346,6 +346,8 @@ class CompetitionState(TypedDict):
     social_value: str
     project_summary: str
     proposal: str
+    proposal_outline: str
+    proposal_selfcheck: str
     judge_feedback: str
     expert_review: str
     proposal_analysis: str
@@ -514,7 +516,8 @@ def _expand_to_length(text, min_chars, topic, rounds=2):
             "下面是关于「%s」的一份科创赛事申报书，当前正文只有约 %d 字，"
             "而要求是不少于 %d 字，篇幅严重不足，评委会认定内容空洞。\n\n"
             "请在**不改变章节结构、不删减已有内容**的前提下做扩写：\n"
-            "1. 每一节补充更具体的场景、数据测算、技术参数、实施步骤与风险应对；\n"
+            "1. 每一节补充更具体的场景、数据测算、技术参数、实施步骤与风险应对，"
+            "只补充新论据/数据/案例，不许重复已述内容；\n"
             "2. 每个小节补充成一到两个完整的自然段，不要一句话一段；\n"
             "3. 任何标题下面都必须有正文，不允许出现空小节；\n"
             "4. 保持 Markdown 标题层级不变，中文标点用全角。\n\n"
@@ -809,8 +812,67 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
+def _build_outline(state: CompetitionState) -> str:
+    """Step 1 · 构思纲要：先论证站位与创新点、分配各章要点，再动笔写正文。"""
+    prompt = f"""你是科创赛事申报书的主笔。在动笔写正文之前，先为下面这个项目构思一份**写作纲要**。
+
+赛事：{state['competition_name']}
+项目创意：{state.get('idea', '')}
+一句话定位：{state.get('one_liner', '')}
+赛事评分规则：{state.get('parsed_rules', '')[:1200]}
+竞品分析：{state.get('competitor_analysis', '')[:1800]}
+技术方案：{state.get('tech_solution', '')[:1800]}
+商业模式：{state.get('business_model', '')[:1200]}
+社会价值：{state.get('social_value', '')[:1000]}
+
+请输出一份 Markdown 纲要（1200～1800 字），包含以下六部分：
+## 一、项目定位
+（赛道现状、同类方案空白、本项目站位，直接对接评审「创新性」）
+
+## 二、需求与痛点
+（真实场景、受益对象、痛点强度，对接「社会价值 / 实用性」）
+
+## 三、技术路线关键环节
+（3～5 个关键环节，来自技术方案，不许空泛）
+
+## 四、创新点论证（四维）
+必须逐条写清「技术 / 产品 / 模式 / 社会价值」四个维度的创新点，每条都要有具体内容支撑，禁止写「具有较强的创新性」这类空话。
+
+## 五、商业闭环与落地路径
+（来自商业模式与实施计划的关键结论）
+
+## 六、各章要点分配
+（下面 12 章每章写 2～3 句核心论点 + 必须用到的素材：一、项目概述 / 二、背景与痛点分析 / 三、目标用户与应用场景 / 四、解决方案与产品形态 / 五、技术方案与系统架构 / 六、核心创新点 / 七、竞品对比与差异化优势 / 八、商业模式与市场空间 / 九、风险分析与应对措施 / 十、团队分工与执行计划 / 十一、社会价值与应用前景 / 十二、结语）
+
+要求：只写纲要和论点，不要写正文段落；中文标点用全角。
+"""
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    return resp.content.strip()
+
+
+def _selfcheck_proposal(state: CompetitionState, proposal: str) -> str:
+    """Step 3 · 自检修补：检查章节呼应/空泛表述/数字规范，只做定点修补，不整篇重写。"""
+    prompt = f"""你是科创赛事申报书的终审编辑。请对下面这份申报书做一次自检，并只做定点修补。
+
+项目创意：{state.get('idea', '')}
+赛事：{state['competition_name']}
+
+【申报书全文】
+{proposal}
+
+请按以下三点检查：
+1. 章节呼应：目标 ↔ 内容 ↔ 方法 ↔ 成果是否一致，有无前后矛盾；
+2. 空泛表述：找出「显著提升」「广泛应用」「赋能」「前景广阔」这类无数据支撑的空话并改写；
+3. 数字规范：数字有无推算过程、有无编造引用来源、测算值是否标明。
+
+然后**只对有问题的地方做定点修补**，直接输出修补后的完整申报书全文（保持原有结构与 Markdown 标题层级不变，不要重写整篇、不要加任何说明）。
+"""
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    return resp.content.strip()
+
+
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
-    """✍️ 深度版申报书 Agent：写完整详细的申报书"""
+    """✍️ 深度版申报书 Agent：三段链式——构思纲要 → 正文写作 → 自检修补"""
     _report_stage("writing")
     draft = state.get('proposal_draft', '')
     has_draft = bool(draft.strip())
@@ -860,8 +922,15 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {state.get('project_summary', '')[:800]}
 """
 
+    # Step 1 · 构思纲要
+    outline = _build_outline(state)
+    state["proposal_outline"] = outline
+
     prompt = f"""你是资深科创赛事申报书写作专家。
 {task_line}
+
+【写作纲要 —— 各章必须按此纲要的核心论点与素材展开，不得与之冲突】
+{outline}
 
 {source_label}：{source_text}
 {revise_block}
@@ -876,7 +945,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 6. 每个二级小节至少 300 字，拆成 2～3 个自然段；任何标题下面都必须有正文，不允许空小节
 7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
 
-请写一份完整详实的申报书，全文 4500～6000 字，低于 3800 字判不合格，每个章节都要展开成完整段落，不要简略。
+请写一份完整详实的申报书，全文 4500～6000 字，低于 3200 字判不合格，每个章节都要展开成完整段落，不要简略。
 用 Markdown 标题组织章节（最多三级标题），章节依次为：
 
 ## 一、项目概述
@@ -918,8 +987,14 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_PROPOSAL_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
+    proposal = response.content.strip()
+
+    # Step 3 · 自检修补
+    proposal = _selfcheck_proposal(state, proposal)
+    state["proposal_selfcheck"] = "已完成自检：章节呼应 / 空泛表述 / 数字规范，并定点修补。"
+
     proposal, n = _expand_to_length(
-        response.content, 3800,
+        proposal, 3200,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1

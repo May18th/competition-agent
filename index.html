@@ -1261,10 +1261,16 @@ button:hover { transform: translateY(-1px); }
                     <div class="content-block" id="projectSummary"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上内容为AI生成，仅供参考</div>
                 </div>
+                <div style="margin-bottom: 24px; display:none;" class="deep-only">
+                    <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
+                    <div class="content-block" id="proposalOutline"></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 申报书正文按此纲要展开，如需调整可据此修改创意后重新生成</div>
+                </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="proposalText"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上内容为AI生成，仅供参考，请根据实际情况修改</div>
+                    <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
@@ -2234,6 +2240,7 @@ button:hover { transform: translateY(-1px); }
             ['implementation_plan', 'implementationPlan', 'analysis'],
             ['social_value',        'socialValue',        'analysis'],
             ['project_summary',     'projectSummary',     'analysis'],
+            ['proposal_outline',    'proposalOutline',    'proposal'],
             ['proposal',            'proposalText',       'proposal'],
             ['judge_feedback',      'judgeFeedback',      'proposal'],
             ['proposal_analysis',   'proposalAnalysis',   'proposal'],
@@ -2457,6 +2464,14 @@ button:hover { transform: translateY(-1px); }
                         document.getElementById('scoreNum').innerText = data.data.score;
                         document.getElementById('parsedRules').innerHTML = marked.parse(data.data.parsed_rules);
                         document.getElementById('similarityReport').innerHTML = marked.parse(data.data.similarity_report);
+                        if (data.data.proposal_outline) document.getElementById('proposalOutline').innerHTML = marked.parse(data.data.proposal_outline);
+                        (function () {
+                            var sc = document.getElementById('proposalSelfcheck');
+                            if (sc && data.data.proposal_selfcheck) {
+                                sc.textContent = data.data.proposal_selfcheck;
+                                sc.style.display = 'block';
+                            }
+                        })();
                         document.getElementById('proposalText').innerHTML = marked.parse(data.data.proposal);
                         document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback);
                         // 渲染多专家模拟评审
