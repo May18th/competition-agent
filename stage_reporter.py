@@ -68,37 +68,12 @@ def current_task_id():
     return _current_task_id
 
 
-# ---- 分块流式缓冲区（task_id -> {字段名: 已产出文本}）----
-# 用途：LangGraph 每跑完一个节点，app.py 就把该节点新产出的字段写进来；
-# /api/status 把 partial 一起返回，前端边跑边把内容渲染出来（不再干等进度条）。
-# 只存「纯文本且前端有对应展示区块」的字段，避免把大对象塞进轮询报文。
-PARTIAL_FIELDS = (
-    "parsed_rules", "similarity_report", "idea_feedback", "one_liner",
-    "competitor_analysis", "business_model", "risk_analysis", "tech_solution",
-    "implementation_plan", "social_value", "project_summary",
-    "proposal", "judge_feedback", "expert_review",
-    "defense_questions", "ppt_outline", "speech_script",
-)
-
-_partial = {}
-
-
-def set_partial(task_id, delta):
-    """把节点增量（dict）里属于 PARTIAL_FIELDS 的非空文本并入缓冲区。"""
-    if not task_id or not isinstance(delta, dict):
-        return
-    buf = _partial.setdefault(task_id, {})
-    for k, v in delta.items():
-        if k in PARTIAL_FIELDS and isinstance(v, str) and v.strip():
-            buf[k] = v
-
-
-def get_partial(task_id):
-    return _partial.get(task_id) or {}
-
-
-def clear_partial(task_id):
-    _partial.pop(task_id, None)
+def set_partial(partial):
+    """把当前任务的已产出字段写进 tasks['partial']，供 /api/status 流式下发。"""
+    tid = _current_task_id
+    if tid and tid in tasks:
+        tasks[tid]["partial"] = partial
+        tasks[tid]["updated_at"] = time.time()
 
 
 # 演讲稿流式缓冲区（task_id -> 已生成的文本，供前端实时预览）

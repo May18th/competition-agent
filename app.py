@@ -20,8 +20,7 @@ from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
 from stage_reporter import (tasks, set_current_task, clear_current_task,
                             report_stage as _report_stage, stage_meta, TaskCancelled,
-                            get_speech_stream, clear_speech_stream,
-                            current_task_id, set_partial, get_partial, clear_partial)
+                            get_speech_stream, clear_speech_stream, set_partial)
 import progress
 
 
@@ -372,6 +371,34 @@ def _parse_expert_review(text):
         return None
 
 
+# 前端「流动式输出」需要下发的字段：与 index.html 的 _STREAM_MAP 对齐
+_PARTIAL_FIELDS = [
+    "parsed_rules", "similarity_report", "idea_feedback",
+    "competitor_analysis", "business_model", "risk_analysis", "tech_solution",
+    "implementation_plan", "social_value", "project_summary",
+    "proposal", "judge_feedback", "proposal_analysis",
+    "defense_questions", "ppt_outline", "speech_script", "one_liner",
+]
+
+
+def _emit_partial(full_state):
+    """把已产出的字段写进当前任务的 partial，供 /api/status 流式下发。"""
+    if not isinstance(full_state, dict):
+        return
+    partial = {k: full_state[k] for k in _PARTIAL_FIELDS if full_state.get(k)}
+    if partial:
+        set_partial(partial)
+
+
+def _run_graph(app, state):
+    """逐步执行 LangGraph 工作流，每步把已产出字段写进 partial；返回最终 state。"""
+    result = None
+    for chunk in app.stream(state, stream_mode="values"):
+        result = chunk
+        _emit_partial(chunk)
+    return result
+
+
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -409,29 +436,8 @@ def _run_generation(data):
         }
 
         mode = data.get("mode", "fast")
-        _tid = current_task_id()
-        _app = deep_app if mode == "deep" else fast_app
-
-        # ★ 分块流式：LangGraph 每跑完一个节点就吐一次增量，写进 partial 缓冲区，
-        #   /api/status 顺带返回，前端就能边跑边渲染内容，而不是干等最后一次返回。
-        result = dict(state)
-        _got_chunk = False
-        try:
-            for _chunk in _app.stream(state, stream_mode="updates"):
-                if not isinstance(_chunk, dict):
-                    continue
-                _got_chunk = True
-                for _delta in _chunk.values():
-                    if isinstance(_delta, dict):
-                        result.update(_delta)
-                        set_partial(_tid, _delta)
-        except Exception as _se:
-            if _got_chunk:
-                raise          # 已跑过一部分，退回重跑代价太大，直接上抛
-            print(f"[stream] 分块流式不可用（{_se}），退回一次性生成")
-            result = _app.invoke(state)
-
         if mode == "deep":
+            result = _run_graph(deep_app, state)
             # 深度版追加：自动生成表格 / 图表 / 路演PPT（失败不阻断主流程）
             try:
                 from rich_pipeline import build_rich_assets
@@ -441,6 +447,8 @@ def _run_generation(data):
                 result["rich_deck"] = rich.get("deck")
             except Exception as e:
                 print(f"[rich] 富媒体生成失败（不影响正文）：{e}")
+        else:
+            result = _run_graph(fast_app, state)
 
         # ===== 富媒体解析（表格/图表/PPT）：三种来源统一归一，失败不阻断 =====
         # 来源1：rich_pipeline 直接写在 result 上的三个字段（当前主链路）
@@ -607,7 +615,6 @@ def generate_async():
             progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
         finally:
             clear_speech_stream(task_id)
-            clear_partial(task_id)
             clear_current_task()
 
     threading.Thread(target=worker, daemon=True).start()
@@ -639,11 +646,9 @@ def get_task_status(task_id):
         "stage": _stage,
         "stage_label": _label,
         "pct": _pct,
+        "partial": t.get("partial"),
         "updated_at": t["updated_at"]
     }
-    # 分块流式：running 期间把已完成模块的正文一起吐给前端，边跑边渲染
-    if t["status"] == "running":
-        resp["partial"] = get_partial(task_id)
     if t["status"] == "done":
         resp["data"] = t["data"]
     elif t["status"] == "error":
