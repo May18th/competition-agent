@@ -176,6 +176,43 @@ def index():
     return resp
 
 
+def _summarize(text, max_len=60):
+    """用 LLM 给上传内容生成一句话摘要，失败返回截断预览。"""
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = ("用一句话（不超过 %d 字）概括下面这段材料的核心内容，用于记忆库索引。\n\n%s"
+                  % (max_len, (text or "")[:3000]))
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        summary = (resp.content or "").strip()
+        return summary[:max_len] if summary else (text or "")[:max_len]
+    except Exception as e:
+        print(f"[kb] 摘要生成失败，改用截断预览：{e}")
+        return ((text or "")[:max_len] + "…") if len(text or "") > max_len else (text or "")
+
+
+def _record_upload(text, source_name=""):
+    """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + LLM 摘要），失败静默降级。"""
+    if not text or not text.strip():
+        return
+    try:
+        from kb_samples import find_by_content, add_sample
+        from kb_retrieve import extract_keywords
+        existing = find_by_content(text)
+        if existing is not None:
+            print(f"[kb] 跳过重复上传内容 #{existing}")
+            return
+        tags = extract_keywords(text)
+        if not tags:
+            tags = ["材料"]
+        summary = _summarize(text)
+        sid, _ = add_sample(text.strip(), tags, source=source_name or "用户上传",
+                            type="材料", summary=summary)
+        print(f"[kb] 已记录上传内容 #{sid}，标签 {tags}，摘要 {summary}")
+    except Exception as e:
+        print(f"[kb] 记录上传失败（不影响主流程）：{e}")
+
+
 @app.route('/api/upload_pdf', methods=['POST'])
 def upload_pdf():
     if 'file' not in request.files:
@@ -215,6 +252,7 @@ def upload_pdf():
     if not text:
         return jsonify({"success": False,
                         "error": "没能从文件里提取到文字（扫描版/图片型 PDF 提取不了），请直接把文字粘贴到草稿框"})
+    _record_upload(text, raw_name)
     return jsonify({"success": True, "text": text[:20000]})
 
 
@@ -849,6 +887,7 @@ def upload_file():
         import re
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
+        _record_upload(text, file.filename)
         return jsonify({"success": True, "text": text})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
@@ -1072,8 +1111,9 @@ def kb_add():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
         from kb_samples import add_sample
-        sid = add_sample(content, tags, source=data.get('source', ''), score=data.get('score', 0))
-        return jsonify({"success": True, "id": sid})
+        sid, is_new = add_sample(content, tags, source=data.get('source', ''),
+                                 score=data.get('score', 0), type=data.get('type', '材料'))
+        return jsonify({"success": True, "id": sid, "duplicate": not is_new})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

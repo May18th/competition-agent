@@ -14,16 +14,7 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 
-# 图表渲染器：默认走 Pro 版（国赛超精美）。
-# 出问题把环境变量 CHART_RENDERER=legacy 打开即可秒回退到旧渲染器，不改代码。
-try:
-    if os.getenv("CHART_RENDERER", "pro").strip().lower() == "legacy":
-        raise ImportError("force legacy via CHART_RENDERER=legacy")
-    from chart_renderer_pro import render as render_chart
-    print("[rich] 图表渲染器：chart_renderer_pro（国赛超精美版）")
-except Exception as _cre:
-    from chart_renderer import render as render_chart
-    print(f"[rich] 图表渲染器回退到 chart_renderer（原因：{_cre}）")
+from chart_renderer import render as render_chart
 
 GEN_DIR = os.path.join(os.path.dirname(__file__), "generated")
 
@@ -150,7 +141,8 @@ def _gen_assets(result, competition, idea, kb_data=""):
 1. id 从 c1/t1 开始编号；type 从上面列表里选
 2. 数字必须来自材料或行业真实数据，不能拍脑袋
 3. 每张表格 3-6 行、表头不超过 5 列；cells 内容不超过 14 字
-4. 图表要能在路演里"一眼看懂"，标题直接给结论（如"目标市场规模三年翻三倍"）"""
+4. 图表要能在路演里"一眼看懂"，标题直接给结论（如"目标市场规模三年翻三倍"）
+5. 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代"""
     return _invoke_json(prompt)
 
 
@@ -194,7 +186,8 @@ def _gen_deck(result, competition, idea, assets):
 3. 每条尽量写成 "**关键词**：具体说明" 的形式，关键词不超过 6 个字
 4. 至少 2 页用 chart（引用给定 id）、至少 1 页用 table（引用给定 id）、至少 1 页 metrics
 5. kicker 用"序号 / 章节名"格式，全篇编号连贯
-6. 每页可选加 "note"：演讲者备注，一句话讲这页想传达什么（导出后可在 PPT 备注栏看到）"""
+6. 每页可选加 "note"：演讲者备注，一句话讲这页想传达什么（导出后可在 PPT 备注栏看到）
+7. 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代"""
     return _invoke_json(prompt)
 
 
