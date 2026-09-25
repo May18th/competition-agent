@@ -901,7 +901,7 @@ button:hover { transform: translateY(-1px); }
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 赛事规则解析<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 创意同质化检测<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书处理（有草稿→优化精简；无草稿→500字从零生成）<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书处理（有草稿→优化精简；无草稿→约1300字从零生成）<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 评委打分与点评<br>
                             <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 优化内容，约20秒<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 从0生成，约30秒</div>
                             <b style="color: var(--c-a);">约30秒出结果</b>
@@ -912,7 +912,7 @@ button:hover { transform: translateY(-1px); }
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 以上全部功能<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书升级：500字精简版→2000字完整版/深度润色<br>
+                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书升级：1300字精简版→5000字完整版/深度润色<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 竞品分析 + 商业模式 + 风险分析<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 技术方案 + 实施计划<br>
                             <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 答辩问题预测 + PPT大纲 + 演讲稿<br>
@@ -1225,6 +1225,61 @@ button:hover { transform: translateY(-1px); }
             <div id="historyPager" class="history-pager"></div>
         </div>
     </div>
+
+    <!-- 图表放大查看弹窗：单击图表卡片即放大，不必再去缩放整张网页 -->
+    <div id="chartModal" class="modal-overlay" onclick="closeChartModal(event)" style="z-index: 3000;">
+        <div class="modal" style="max-width: 94vw; width: 94%; max-height: 94vh; padding: 18px 18px 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;">
+                <div style="min-width:0;">
+                    <h2 id="chartModalTitle" style="margin:0; font-size:16px; color:#fff;"></h2>
+                    <div id="chartModalCaption" style="font-size:12.5px; color:var(--text-mute); margin-top:4px;"></div>
+                </div>
+                <button onclick="event.stopPropagation(); closeChartModal();" title="关闭"
+                        style="flex:none; width:32px; height:32px; border-radius:8px; cursor:pointer;
+                               background:var(--surface-solid); border:1px solid var(--line);
+                               color:var(--text); font-size:18px; line-height:1;">&times;</button>
+            </div>
+            <div id="chartModalBody" style="display:flex; align-items:center; justify-content:center;
+                                            background:#fff; border-radius:10px; padding:14px; overflow:auto;">
+                <img id="chartModalImg" src="" alt=""
+                     style="max-width:100%; max-height:70vh; object-fit:contain; display:block;">
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-mute); text-align:center;">
+                点击空白处、按 Esc 或点右上角 × 关闭
+            </div>
+        </div>
+    </div>
+    <script>
+    /* ---------- 图表放大查看 ---------- */
+    function openChartModal(src, title, caption) {
+        if (!src) return;
+        document.getElementById('chartModalImg').src = src;
+        document.getElementById('chartModalTitle').textContent = title || '图表';
+        document.getElementById('chartModalCaption').textContent = caption || '';
+        document.getElementById('chartModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    /* 只有点到遮罩本身才关闭，点弹窗内部不关 */
+    function closeChartModal(ev) {
+        if (ev && ev.target !== document.getElementById('chartModal')) return;
+        var m = document.getElementById('chartModal');
+        if (!m) return;
+        m.style.display = 'none';
+        document.getElementById('chartModalImg').src = '';
+        document.body.style.overflow = '';
+    }
+
+    function openChartById(i) {
+        var c = (window.__chartItems || [])[i];
+        if (!c) return;
+        openChartModal(c.url, c.title, c.caption);
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeChartModal();
+    });
+    </script>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>window.marked || document.write('<script src="/static/marked.min.js"><\/script>');</script>
@@ -1644,12 +1699,22 @@ button:hover { transform: translateY(-1px); }
             } else {
                 rcw.style.display = 'none'; dcw.style.display = 'block';
             }
-            document.getElementById('richCharts').innerHTML = charts.map(c =>
-                '<div style="background: var(--surface-2); border-radius: 10px; padding: 14px; border: 1px solid var(--line);">' +
-                '<img src="' + _esc(c.url) + '" style="width:100%; border-radius:6px; background:#fff;" alt="' + _esc(c.title) + '">' +
-                '<div style="margin-top:10px; font-size:13px; color:var(--text); font-weight:600;">' + _esc(c.title) + '</div>' +
-                (c.caption ? '<div style="font-size:12px; color:var(--text-mute); margin-top:3px;">' + _esc(c.caption) + '</div>' : '') +
-                '</div>').join('');
+            // 存一份索引，放大弹窗按序号取原图，避免把 url 拼进 onclick 造成引号/转义问题
+            window.__chartItems = charts;
+            document.getElementById('richCharts').innerHTML = charts.map(function (c, i) {
+                return '<div style="background: var(--surface-2); border-radius: 10px; padding: 14px; border: 1px solid var(--line);">' +
+                    '<div style="position:relative;">' +
+                    '<img src="' + _esc(c.url) + '" data-ci="' + i + '" onclick="openChartById(this.dataset.ci)" ' +
+                    'title="点击放大查看" alt="' + _esc(c.title) + '" ' +
+                    'style="width:100%; border-radius:6px; background:#fff; cursor:zoom-in; display:block;">' +
+                    '<div style="position:absolute; right:8px; bottom:8px; padding:3px 8px; border-radius:6px; ' +
+                    'font-size:11px; background:rgba(3,6,20,.72); color:#e9eefc; pointer-events:none;">' +
+                    '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true" style="width:11px;height:11px;vertical-align:-1px;"><use href="#wb-i-search"/></svg> 点击放大</div>' +
+                    '</div>' +
+                    '<div style="margin-top:10px; font-size:13px; color:var(--text); font-weight:600;">' + _esc(c.title) + '</div>' +
+                    (c.caption ? '<div style="font-size:12px; color:var(--text-mute); margin-top:3px;">' + _esc(c.caption) + '</div>' : '') +
+                    '</div>';
+            }).join('');
             document.getElementById('richTables').innerHTML = tables.map(t => {
                 var th = '<thead><tr>' + (t.header || []).map(h => '<th>' + _esc(h) + '</th>').join('') + '</tr></thead>';
                 var trs = (t.rows || []).map(r =>
@@ -1972,6 +2037,9 @@ button:hover { transform: translateY(-1px); }
                         if (data.data.business_model) document.getElementById('businessModel').innerHTML = marked.parse(data.data.business_model);
                         if (data.data.risk_analysis) document.getElementById('riskAnalysis').innerHTML = marked.parse(data.data.risk_analysis);
                         if (data.data.tech_solution) document.getElementById('techSolution').innerHTML = marked.parse(data.data.tech_solution);
+                        // 社会价值 / 项目简介：后端已返回，之前漏了往这两个 div 写内容，导致一直空白
+                        if (data.data.social_value) document.getElementById('socialValue').innerHTML = marked.parse(data.data.social_value);
+                        if (data.data.project_summary) document.getElementById('projectSummary').innerHTML = marked.parse(data.data.project_summary);
                         if (data.data.defense_questions) document.getElementById('defenseQuestions').innerHTML = marked.parse(data.data.defense_questions);
                         if (data.data.ppt_outline) document.getElementById('pptOutline').innerHTML = marked.parse(data.data.ppt_outline);
                         // 简洁版隐藏深度版板块
@@ -2045,6 +2113,27 @@ button:hover { transform: translateY(-1px); }
                                         });
                                     });
                                 }
+                                // 示例图表同样支持单击放大：把 echarts 实例导出成高清图再塞进弹窗
+                                const demoChartTitles = {budgetChart: '预算构成', marketChart: '市场规模', timelineChart: '项目实施时间线'};
+                                ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
+                                    const el = document.getElementById(id);
+                                    if (!el || el.dataset.zoomBound) return;
+                                    el.dataset.zoomBound = '1';
+                                    el.style.cursor = 'zoom-in';
+                                    el.title = '点击放大查看';
+                                    el.addEventListener('click', () => {
+                                        const inst = echarts.getInstanceByDom(el);
+                                        if (!inst) return;
+                                        try {
+                                            openChartModal(
+                                                inst.getDataURL({pixelRatio: 2, backgroundColor: '#ffffff'}),
+                                                demoChartTitles[id] || '示例图表',
+                                                '示例数据绘制，正式使用请按实际情况替换');
+                                        } catch (err) {
+                                            /* 导出失败就不放大，不能影响主流程 */
+                                        }
+                                    });
+                                });
                             }, 100);
                         }
                         document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });

@@ -361,6 +361,11 @@ class CompetitionState(TypedDict):
     # 控制
     revision_count: int
     iterate: bool
+    # 档位：fast=简洁快速版 / deep=深度完整版
+    # 两个工作流共用同一批 Agent 函数（规则解析、评委、答辩、PPT、演讲稿…），
+    # 没有这个字段它们就分不清自己在哪一档，产物会长得一模一样。
+    # 由 app.py 的 _run_generation() 按 mode 写入；缺省按 deep 处理（宁详勿略）。
+    tier: str
 
 
 # ============ 内容层：输出规格约束（统一提升各 Agent 输出质量）============
@@ -403,6 +408,41 @@ _OPTIMIZE_SPEC = """【优化输出规格 —— 必须遵守】
 3. 每条优化后的文字长度与原条目大致相当（±30% 以内），宁可精炼也不要大幅膨胀，避免撑破原表格版式
 """
 
+# ---- 两档规格：简洁快速版 vs 深度完整版 ----
+# 两个工作流共用同一批 Agent 函数（规则解析 / 同质化检测 / 评委 / 诊断），
+# 它们靠 _spec_for() 按档位取规格，这是两档产物能真正拉开差距的关键。
+
+_BRIEF_SPEC = """【精简档输出规格 —— 简洁快速版专用】
+1. 每个小节 120～200 字，写成 1～2 个完整自然段
+2. 只要结论和关键依据，不展开推演过程，不写背景铺陈
+3. 严禁一句话一段、严禁空小节
+4. 中文标点用全角
+"""
+
+_FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
+1. 每个二级小节 300～500 字，拆成 2～3 个自然段
+2. 按「现状 → 原因 → 影响 → 应对」展开，要有推算过程和可验证依据
+3. 需要对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），表格前后各写一段说明
+4. 严禁一句话一段、严禁空小节
+5. 中文标点用全角
+"""
+
+_SPEC_BY_TIER = {"fast": _BRIEF_SPEC, "deep": _FULL_SPEC}
+
+
+def _spec_for(state):
+    """按档位取输出规格。state 里没有 tier 时按 deep 处理（宁详勿略）。"""
+    return _SPEC_BY_TIER.get((state or {}).get("tier"), _FULL_SPEC)
+
+
+def _tier_hint(state, brief, full):
+    """按档位返回二选一的提示文案：简洁版用 brief，深度版用 full。
+
+    用于那些有自己专属结构、不适合整段套 _spec_for 的 Agent
+    （评委 / 答辩 / PPT / 演讲稿 / 快速诊断）。
+    """
+    return brief if (state or {}).get("tier") == "fast" else full
+
 
 def _cjk_len(text):
     """统计正文有效字数：去掉空白和 Markdown 标记符号后再计数。
@@ -429,7 +469,7 @@ def _expand_to_length(text, min_chars, topic, rounds=2):
             "而要求是不少于 %d 字，篇幅严重不足，评委会认定内容空洞。\n\n"
             "请在**不改变章节结构、不删减已有内容**的前提下做扩写：\n"
             "1. 每一节补充更具体的场景、数据测算、技术参数、实施步骤与风险应对；\n"
-            "2. 每个二级小节扩写到 300 字以上，拆成 2～3 个自然段；\n"
+            "2. 每个小节补充成一到两个完整的自然段，不要一句话一段；\n"
             "3. 任何标题下面都必须有正文，不允许出现空小节；\n"
             "4. 保持 Markdown 标题层级不变，中文标点用全角。\n\n"
             "直接输出扩写后的完整申报书全文，不要加任何说明。\n\n"
@@ -478,7 +518,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 3. 这个比赛偏好什么样的项目
 4. 关键注意事项
 
-{_REPORT_SPEC}
+{_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     print(f"📋 规则解析 Agent：已提取评分标准")
@@ -500,7 +540,7 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 
 给出具体的改进建议。
 
-{_REPORT_SPEC}
+{_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     print(f"🔍 同质化检测 Agent：已完成分析")
@@ -668,7 +708,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
 
 控制在1000字左右，清晰有条理。
 
-{_REPORT_SPEC}
+{_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["implementation_plan"] = response.content
@@ -691,7 +731,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
 
 控制在1000字左右，要有高度，不要太商业化。
 
-{_REPORT_SPEC}
+{_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["social_value"] = response.content
@@ -815,73 +855,65 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 
 def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
-    """✍️ 快速版申报书 Agent：不做外部调研，但篇幅同样要求详实完整"""
+    """✍️ 简洁版申报书 Agent：写约 1300 字的精简申报书（对应前端「简洁快速版」卡片）
+
+    与深度版刻意拉开差距：这里只求「短而准」，五章、约 1300 字，
+    供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（约 5000 字）。
+    """
     _report_stage("writing")
     draft = state.get('proposal_draft', '')
     if draft.strip():
-        source = (f"用户已上传申报书草稿，请保留原结构和核心内容做扩写与优化、补足缺失评分点，"
-                  f"不要从零重写。\n\n{_PROPOSAL_SPEC}\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）")
+        source = (f"用户已上传申报书草稿，请做「优化精简」：保留原结构与核心内容，"
+                  f"收紧啰嗦表述、补足缺失的评分点，篇幅与原稿大致相当，不要大幅膨胀。\n\n"
+                  f"{_OPTIMIZE_SPEC}\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）")
     else:
         source = f"项目创意：{state['idea']}"
-    prompt = f"""你是科创赛事申报书写作专家。你写的内容会被直接排版成正式申报书提交给评委，
-必须是一份内容扎实、可以立刻交上去的完整文档，绝不能写成提纲、要点或寥寥数语。
+    prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
+
+这一档的定位是「短而准」：用尽量短的篇幅把项目讲清楚，供快速判断创意是否站得住脚。
+完整详实、可直接提交的申报书由深度版输出（约 5000 字、十二章），
+所以这里**刻意不展开成长篇**，写太长反而违背这一档的用途。
 
 赛事：{state['competition_name']}
 {source}
 规则解析：{state['parsed_rules']}
 同质化分析：{state['similarity_report']}
-（本模式不做外部调研，请基于项目创意本身往下推演；涉及数字时给出推算过程并标明是测算值，不要编造引用来源）
+（本模式不做外部调研，请基于项目创意本身往下推演；涉及数字时标明是测算值，不要编造引用来源）
 一句话定位：{state.get('one_liner','')}
 
-【写作硬性要求】
-1. 全文 3500～4500 字，低于 3000 字直接判不合格。
-2. 每一节都要落到具体事实上：真实场景名称、具体数字（附推算过程）、具体技术名词与参数、具体执行步骤与时间点。
-3. 必须回应上面的规则解析：逐条写清本项目针对哪几条评分点发力、怎么发力。
-4. 必须回应上面的同质化分析：写清与现有方案的具体差异在哪，不许只用「更智能、更便捷」这类形容词带过。
-5. 禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述。
-6. 每个二级小节至少 300 字，拆成 2～3 个自然段；任何标题下面都必须有正文，不允许空小节。
+【篇幅硬性要求】
+1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。
+2. 结构固定为以下五章，不要增删章节、不要中途省略：
 
-请严格按以下十章结构写，不要增删章节、不要中途省略：
+## 项目简介
+（约 200 字：做什么、给谁用、一句话定位如何落地）
 
-## 一、项目概述
-（300 字以上：项目是做什么的、给谁用、解决什么核心问题、一句话定位如何落地）
+## 痛点分析
+（约 300 字：谁在什么场景下遇到什么麻烦，现有办法差在哪）
 
-## 二、背景与痛点分析
-（450 字以上，下分 2 个二级小节：现实场景中的具体问题 / 现有解决方式的不足）
+## 解决方案
+（约 300 字：产品形态、核心功能、关键技术手段）
 
-## 三、解决方案与产品形态
-（450 字以上，下分 2 个二级小节：产品形态与核心功能 / 用户使用流程）
+## 核心创新点
+（约 300 字：与现有方案的两到三处具体差异，每处都要给依据）
 
-## 四、技术方案与实现路径
-（450 字以上，下分 2 个二级小节：关键技术选型与原理 / 分阶段实现路径）
+## 社会价值
+（约 200 字：落到具体受益对象和可验证的效果）
 
-## 五、核心创新点
-（450 字以上，逐条写与现有方案的三处以上不同，每条都要给出依据和可验证方式）
-
-## 六、竞品对比与差异化优势
-（400 字以上：先用标准 Markdown 表格对比 3～4 类现有方案，表格前后各写一段说明与分析）
-
-## 七、商业模式与市场空间
-（400 字以上：谁付费、怎么付费、市场规模如何测算、成长路径）
-
-## 八、风险分析与应对措施
-（350 字以上：技术风险、落地风险、团队风险各写一段，每段都必须给出应对措施）
-
-## 九、团队分工与执行计划
-（350 字以上：角色配置与分工、分阶段里程碑与时间点）
-
-## 十、社会价值与未来展望
-（300 字以上：具体受益对象、可验证的效果指标、后续演进方向）
-
-{_PROPOSAL_SPEC}
+【质量要求】
+1. 每章写成 1～2 个完整自然段，段内有论点、有展开、有依据；严禁一句话一段、严禁空小节。
+2. 每章都要有实打实的内容：真实场景名称、具体数字（附推算或标明测算）、具体技术名词。
+3. 禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述。
+4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
+5. 中文标点用全角。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     proposal, n = _expand_to_length(
-        response.content, 3000,
+        response.content, 1100,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
-    print(f"✍️ 快速版申报书：第 {state['revision_count']} 版，{n} 字")
+    print(f"✍️ 简洁版申报书：第 {state['revision_count']} 版，{n} 字")
     return state
 
 

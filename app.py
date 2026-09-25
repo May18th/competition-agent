@@ -358,7 +358,10 @@ def _run_generation(data):
             "idea_feedback": "",
             "score": 0,
             "approved": False,
-            "iterate": bool(data.get("iterate", False))
+            "iterate": bool(data.get("iterate", False)),
+            # 档位：共享 Agent（规则解析/同质化检测/评委/诊断/答辩/PPT/演讲稿）
+            # 靠这个字段选输出规格，否则两档产物长得一模一样
+            "tier": "deep" if data.get("mode", "fast") == "deep" else "fast",
         }
 
         mode = data.get("mode", "fast")
