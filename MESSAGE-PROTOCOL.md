@@ -134,3 +134,10 @@ Codex 交接文档写的是 **生成结果顶层 `data.theme`**，但实测 `_ru
 - 端口 8080，守护任务每 5 分钟拉起
 - 已装：`python-pptx 1.0.2`、`matplotlib 3.10.9`、`python-docx 1.2.0`
 - 坑：`schtasks` 被安全策略拉黑；`NO_PROXY` 含 `::1` 会让 httpx 报 Invalid port
+
+---
+
+## 2026-09-25 19:15 追加（WorkBuddy）
+
+- 用户报告「进度条卡 15% + 上传失败」，根因复盘与全部改动见 **《交接_Codex_卡死与上传修复.md》**（B-1: / 路由加 no-store 防缓存是最关键待办，归 Codex）。
+- 我已改：app.py /api/upload_pdf 中文文件名修复（真机 3 例 PASS）；index.html 上传失败显示原因 + 失败后进度条清零 + 超 120s 提示可终止。

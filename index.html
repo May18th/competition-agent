@@ -1214,12 +1214,15 @@ button:hover { transform: translateY(-1px); }
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('proposal_draft').value = data.text;
-                    document.getElementById('ideaFileName').innerText = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功';
+                    // 注意用 innerHTML：innerText 会把 SVG 图标当纯文本显示出来
+                    document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框';
                 } else {
-                    document.getElementById('ideaFileName').innerText = '上传失败';
+                    document.getElementById('ideaFileName').innerText = '上传失败：' + (data.error || '未知错误');
+                    wbToast('上传失败：' + (data.error || '未知错误'), { type: 'error' });
                 }
             } catch (err) {
-                document.getElementById('ideaFileName').innerText = '上传失败';
+                document.getElementById('ideaFileName').innerText = '上传失败：连不上服务';
+                wbToast('上传失败：连不上本地服务，请确认网站还在运行', { type: 'error' });
             }
         });
 
@@ -1781,7 +1784,8 @@ button:hover { transform: translateY(-1px); }
                                     const sec = Math.round((Date.now() - t0) / 1000);
                                     _setBar(res2.pct || 0,
                                         'AI正在' + (isOptimize ? '优化' : '生成') + '：'
-                                        + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）');
+                                        + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）'
+                                        + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
                                     return;
                                 }
                                 clearInterval(tick);
@@ -1911,6 +1915,9 @@ button:hover { transform: translateY(-1px); }
                 document.getElementById('skeletonArea').style.display = 'none';
                 document.getElementById('cancelWrap').style.display = 'none';
                 document.getElementById('progressSteps').style.display = 'none';
+                // 失败/取消后把残留进度条清零，避免下次进来还挂着旧百分比
+                document.getElementById('fastProgress').style.width = '0%';
+                document.getElementById('fastProgressText').innerText = '';
                 _currentTaskId = null;
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';

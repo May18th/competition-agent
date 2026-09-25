@@ -209,28 +209,40 @@ def upload_pdf():
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
-    if file.filename == '':
+    raw_name = file.filename or ''
+    if raw_name == '':
         return jsonify({"success": False, "error": "没有选择文件"})
-    filename = secure_filename(file.filename)
+    # ★ 坑：secure_filename 会把中文字符全部剔除，纯中文文件名《申报书草稿.pdf》
+    #   会变成 "pdf"，导致 endswith('.pdf') 判断失败 → 前端一直「上传失败」。
+    #   改为：扩展名单独取，主体名过滤后兜底，再加时间戳防重名。
+    ext = os.path.splitext(raw_name)[1].lower()
+    if ext not in ('.pdf', '.docx', '.txt'):
+        return jsonify({"success": False, "error": "不支持的文件格式，请上传 PDF / DOCX / TXT"})
+    base = secure_filename(os.path.splitext(raw_name)[0]) or 'upload'
+    filename = base + '_' + str(int(time.time())) + ext
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
     text = ""
-    if filename.lower().endswith('.pdf'):
-        reader = PdfReader(filepath)
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
-    elif filename.lower().endswith('.docx'):
-        from docx import Document
-        doc = Document(filepath)
-        for para in doc.paragraphs:
-            text += para.text + "\n"
-    elif filename.lower().endswith('.txt'):
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
-            text = f2.read()
-    else:
-        return jsonify({"success": False, "error": "不支持的文件格式，请上传PDF/DOCX/TXT"})
+    try:
+        if ext == '.pdf':
+            reader = PdfReader(filepath)
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+        elif ext == '.docx':
+            from docx import Document
+            doc = Document(filepath)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+        else:  # .txt
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
+                text = f2.read()
+    except Exception as e:
+        return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
     import re
     text = re.sub(r'\n\s*\n', '\n', text).strip()
+    if not text:
+        return jsonify({"success": False,
+                        "error": "没能从文件里提取到文字（扫描版/图片型 PDF 提取不了），请直接把文字粘贴到草稿框"})
     return jsonify({"success": True, "text": text[:20000]})
 
 
