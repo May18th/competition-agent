@@ -84,12 +84,14 @@ def mark_done(task_id, data=None, **kw):
     clear_current_task()
 
 
-def mark_error(task_id, error=None, **kw):
+def mark_error(task_id, error=None, detail=None, **kw):
     t = tasks.get(task_id)
     if isinstance(t, dict):
         t["status"] = "error"
         t["stage"] = "error"
         t["error"] = error
+        if detail is not None:
+            t["detail"] = detail
         t["updated_at"] = time.time()
     clear_current_task()
 

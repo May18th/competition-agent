@@ -8,7 +8,7 @@ import io
 import os
 import sqlite3
 from datetime import datetime
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
@@ -201,7 +201,11 @@ def _build_docx(title, text):
 
 @app.route('/')
 def index():
-    with open('index.html', 'r', encoding='utf-8') as f: return f.read()
+    with open('index.html', 'r', encoding='utf-8') as f:
+        resp = make_response(f.read())
+    # 防浏览器缓存旧版前端（本次「进度条卡死」的根治）
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
 
 
 @app.route('/api/upload_pdf', methods=['POST'])
@@ -576,10 +580,11 @@ def _friendly_error(e):
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
+    """⚠️ 已废弃：请改用 /api/generate_async + /api/status 轮询。保留仅为兼容旧前端。"""
     data = request.json or {}
     try:
         result_data = _run_generation(data)
-        return jsonify({"success": True, "data": result_data})
+        return jsonify({"success": True, "data": result_data, "deprecated": True})
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -614,8 +619,7 @@ def generate_async():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            tasks[task_id] = {"status": "error", "error": _friendly_error(e),
-                              "detail": str(e), "stage": "error", "updated_at": time.time()}
+            progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
         finally:
             clear_current_task()
 
@@ -626,7 +630,7 @@ def generate_async():
 @app.route('/api/cancel/<task_id>', methods=['POST'])
 def cancel_generation(task_id):
     progress.cancel(task_id)
-    return jsonify({"success": True, "cancelled": True})
+    return jsonify({"success": True, "cancelled": True, "eta_note": "最迟约 1 分钟内停止"})
 
 
 @app.route('/api/status/<task_id>')
@@ -634,6 +638,12 @@ def get_task_status(task_id):
     t = tasks.get(task_id)
     if not t:
         return jsonify({"success": False, "error": "任务不存在或已过期"})
+    # 兜底超时：running 且 10 分钟没任何更新，判定为卡死，避免前端无限等待
+    if t.get("status") == "running" and (time.time() - t.get("updated_at", 0)) > 600:
+        t["status"] = "error"
+        t["error"] = "任务超时，请重试"
+        t["stage"] = "error"
+        t["updated_at"] = time.time()
     _stage = t.get("stage", "start")
     _label, _pct = stage_meta(_stage)
     resp = {
@@ -751,8 +761,10 @@ def export_original_format():
 def upload_file():
     import os
     from werkzeug.utils import secure_filename
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
-    if not file:
+    if not file or not file.filename:
         return jsonify({"success": False, "error": "没有文件"})
     
     filename = secure_filename(file.filename)
@@ -776,19 +788,8 @@ def upload_file():
                     if page.images:
                         text += "\n[检测到页面含图片/图表]\n"
         elif ext in ['jpg', 'jpeg', 'png']:
-            # 图片直接用Claude多模态识别
-            import base64
-            from langchain_core.messages import HumanMessage
-            from competition_agents import claude_llm
-            
-            img_base64 = base64.b64encode(file.read()).decode('utf-8')
-            response = claude_llm.invoke([
-                HumanMessage(content=[
-                    {"type": "text", "text": "请详细描述这张图片里的所有内容，包括文字、图表数据、标题、关键数字，把图片里的信息都提取出来。"},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
-                ])
-            ])
-            text = response.content
+            # 多模态识别暂未接入（claude_llm 已注释），先明确提示而不是 ImportError
+            return jsonify({"success": False, "error": "暂不支持图片识别，请导出为 PDF 或文字后重试"})
         elif ext == 'txt':
             text = file.read().decode('utf-8')
         elif ext == 'docx':
@@ -821,7 +822,7 @@ if __name__ == '__main__':
     print("=" * 60)
     print("📱 浏览器打开: http://127.0.0.1:8080")
     print("=" * 60)
-    app.run(debug=True, port=8080)
+    app.run(debug=False, port=8080)
 
 
 @app.route('/api/export_zip', methods=['POST'])
