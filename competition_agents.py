@@ -966,6 +966,11 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
 - 市场价值20%：目标用户规模、商业前景
 - 技术壁垒15%：别人是否容易复制
 - 社会价值10%：社会意义
+
+{_tier_hint(state,
+"【精简档】创意亮点、主要风险各写 2 点，每点 40～60 字，点到为止。上面的打分字段保持原格式，不要改动。",
+"【完整档】创意亮点、主要风险各写 3～4 点，每点写成 100～150 字的完整段落，有具体依据。上面的打分字段保持原格式，不要改动。"
+)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
 
@@ -1019,9 +1024,10 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 - 说服力10%：整体是否能让评委信服
 不要给所有文档打接近的分数，要拉开差距。
 
-【点评文字要求】
-1. 「主要优点」和「需要改进的地方」每点写成完整段落，有具体依据、有展开，不要只写一两个关键词
-2. 上面的打分字段（结构完整性：__分 等）保持原格式，不要改动
+{_tier_hint(state,
+"【点评文字要求（精简档）】「主要优点」「需要改进的地方」各写 3 点，每点 40～60 字，点到为止。上面的打分字段保持原格式，不要改动。",
+"【点评文字要求（完整档）】「主要优点」「需要改进的地方」各写 4～5 点，每点写成 120～200 字的完整段落，有具体依据、有展开。上面的打分字段保持原格式，不要改动。"
+)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["judge_feedback"] = response.content
@@ -1058,12 +1064,15 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     """🎤 答辩问题预测 Agent：预测评委可能问什么"""
     _report_stage("defense")
-    prompt = f"""你是科创赛事答辩专家。请预测评委可能会问的 5 个问题，并给出答题思路。
+    prompt = f"""你是科创赛事答辩专家。请预测评委可能会问的问题，并给出答题思路。
 
 项目：{state['idea']}
 评委意见：{state['judge_feedback']}
 
-输出 5 个问题，每个问题附简短答题思路。
+{_tier_hint(state,
+"输出 5 个问题，每个问题附 60～80 字的答题思路，简洁点到为止。",
+"输出 10 个问题，每个问题附 150～200 字的答题思路，要有具体依据和应对策略。"
+)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["defense_questions"] = response.content
@@ -1074,14 +1083,15 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
 def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
     """📊 PPT 大纲 Agent：生成路演 PPT 大纲"""
     _report_stage("ppt")
-    prompt = f"""你是科创赛事路演 PPT 专家。请根据以下项目，生成 3 分钟路演 PPT 大纲（8-10页）。
+    prompt = f"""你是科创赛事路演 PPT 专家。请根据以下项目，生成路演 PPT 大纲。
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
 
-输出每页的标题和要点。
-
-{_OUTLINE_SPEC}
+{_tier_hint(state,
+"生成 3 分钟路演大纲（8～10 页），每页只写标题 + 2～3 个要点短语，不要写完整句子。",
+"生成 15～20 页路演大纲，每页写标题 + 要点 + 一段 50～80 字的讲解稿。"
+)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["ppt_outline"] = response.content
@@ -1092,19 +1102,22 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 def speech_agent(state: CompetitionState) -> CompetitionState:
     """🎤 路演演讲稿 Agent：生成3分钟路演讲稿"""
     _report_stage("speech")
-    prompt = f"""你是科创赛事路演专家。请根据以下项目，生成3分钟路演演讲稿。
+    prompt = f"""你是科创赛事路演专家。请根据以下项目，生成路演演讲稿。
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
 PPT大纲：{state['ppt_outline']}
 
 请写：
-1. 开场（30秒）：抓眼球，讲痛点
-2. 中间（2分钟）：讲解决方案、创新点、竞品对比
-3. 结尾（30秒）：讲价值、呼吁
+1. 开场：抓眼球，讲痛点
+2. 中间：讲解决方案、创新点、竞品对比
+3. 结尾：讲价值、呼吁
 
 语言口语化，有感染力，照着念就行，不要太书面。
-控制在600字左右（3分钟语速）。
+{_tier_hint(state,
+"控制在 800～1000 字左右（约 3 分钟语速）。",
+"控制在 2000～2500 字左右（约 8 分钟语速），每个部分讲得更深入、更有细节。"
+)}
 """
     # 流式生成，边生成边写入缓冲区，前端可实时预览，不再干等 20~40 秒
     import stage_reporter as _sr
@@ -1148,13 +1161,16 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 申报书：
 {state.get('proposal', '')}
 
-请严格针对这份申报书的具体内容，分四部分输出（每部分 1-2 句话，不要泛泛而谈）：
+请严格针对这份申报书的具体内容，分四部分输出：
 1. 结构完整性
 2. 内容亮点
 3. 待优化点
 4. 评审建议
 
-{_ANALYSIS_SPEC}
+{_tier_hint(state,
+"【精简档】每部分 1～2 句，全文 300～500 字，直接给结论，不要泛泛而谈。",
+"【完整档】每部分写成 200～350 字的完整段落，全文 1000～1500 字，按「现状→问题→影响→建议」展开，要有具体依据。"
+)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal_analysis"] = response.content

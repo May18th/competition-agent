@@ -737,16 +737,6 @@ def upload_file():
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
 
 
-# ============ 启动 ============
-if __name__ == '__main__':
-    print("=" * 60)
-    print("🚀 科创赛事多智能体协同创作助手 - Web 版")
-    print("=" * 60)
-    print("📱 浏览器打开: http://127.0.0.1:8080")
-    print("=" * 60)
-    app.run(debug=False, port=8080)
-
-
 @app.route('/api/export_zip', methods=['POST'])
 def export_zip():
     import zipfile, os, re
@@ -950,3 +940,16 @@ def export_pptx():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"PPT导出失败：{e}"}), 500
+
+
+# ============ 启动 ============
+# 注意：本块必须放在文件最末尾。app.run() 会阻塞，
+# 若放在中间，它之后定义的路由（export_zip / knowledge_status / quota / health 等）
+# 永远不会注册，表现为 /api/health 一直 404。
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🚀 科创赛事多智能体协同创作助手 - Web 版")
+    print("=" * 60)
+    print("📱 浏览器打开: http://127.0.0.1:8080")
+    print("=" * 60)
+    app.run(debug=False, port=8080)
