@@ -1201,6 +1201,18 @@ button:hover { transform: translateY(-1px); }
     <script>window.marked || document.write('<script src="/static/marked.min.js"><\/script>');</script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="/static/echarts.min.js"><\/script>');</script>
+    <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
+    <script>
+    if (typeof marked === 'undefined') {
+        window.marked = { parse: function (t) {
+            return '<pre style="white-space:pre-wrap">' + String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
+        } };
+    }
+    if (typeof echarts === 'undefined') {
+        var _noopChart = { setOption: function () {}, resize: function () {}, dispose: function () {} };
+        window.echarts = { init: function () { return _noopChart; }, getInstanceByDom: function () { return null; } };
+    }
+    </script>
     <script>
 
         document.getElementById('ideaFile').addEventListener('change', async function(e) {
