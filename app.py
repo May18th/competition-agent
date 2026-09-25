@@ -13,7 +13,8 @@ from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
-from stage_reporter import tasks, set_current_task, clear_current_task, report_stage as _report_stage, stage_meta
+from stage_reporter import (tasks, set_current_task, clear_current_task,
+                            report_stage as _report_stage, stage_meta)
 
 
 app = Flask(__name__)
@@ -511,7 +512,7 @@ def _run_generation(data):
 
     try:
         from competition_agents import check_proposal_completeness
-        completeness = check_proposal_completeness(result.get("proposal", ""))
+        completeness = check_proposal_completeness(result.get("proposal", ""), data.get("mode", "fast"))
     except Exception:
         completeness = {"ok": True, "missing": [], "detail": {}, "chars": 0}
 

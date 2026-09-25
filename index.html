@@ -1604,15 +1604,17 @@ button:hover { transform: translateY(-1px); }
             btn.innerHTML = '<span class="spinner"></span> AI正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
 
-            let progress = 0;
-            const timer = setInterval(() => {
-                progress += 5;
-                if (progress > 95) progress = 95;
-                document.getElementById('fastProgress').style.width = progress + '%';
-                document.getElementById('fastProgressText').innerText = 'AI正在' + (isOptimize ? '优化' : '生成') + '：' + progress + '%';
-            }, 500);
+            // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
+            // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
+            let _maxPct = 0;
+            const _setBar = (pct, label) => {
+                if (pct > _maxPct) _maxPct = pct;
+                document.getElementById('fastProgress').style.width = Math.max(_maxPct, 0) + '%';
+                document.getElementById('fastProgressText').innerText = label;
+            };
+            _setBar(2, '正在提交任务…');
 
-            fetch('/api/generate', {
+            fetch('/api/generate_async', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1624,8 +1626,40 @@ button:hover { transform: translateY(-1px); }
                 })
             })
             .then(res => res.json())
+            .then(start => {
+                if (!start.success || !start.task_id) {
+                    throw new Error(start.error || '任务创建失败');
+                }
+                const t0 = Date.now();
+                return new Promise((resolve, reject) => {
+                    const tick = setInterval(() => {
+                        fetch('/api/status/' + start.task_id)
+                            .then(r => r.json())
+                            .then(res2 => {
+                                if (!res2.success) {
+                                    clearInterval(tick);
+                                    reject(new Error(res2.error || '任务已失效'));
+                                    return;
+                                }
+                                if (res2.status === 'running') {
+                                    const sec = Math.round((Date.now() - t0) / 1000);
+                                    _setBar(res2.pct || 0,
+                                        'AI正在' + (isOptimize ? '优化' : '生成') + '：'
+                                        + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）');
+                                    return;
+                                }
+                                clearInterval(tick);
+                                if (res2.status === 'error') {
+                                    reject(new Error(res2.error || '生成失败'));
+                                } else {
+                                    resolve({ success: true, data: res2.data });
+                                }
+                            })
+                            .catch(e => { clearInterval(tick); reject(e); });
+                    }, 800);
+                });
+            })
             .then(data => {
-                clearInterval(timer);
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';

@@ -241,13 +241,27 @@ PROPOSAL_REQUIRED_SECTIONS = [
     ("社会价值", ["社会价值", "应用前景", "前景"]),
 ]
 
+# 简洁版只写 5 节（项目简介/痛点分析/解决方案/核心创新点/社会价值），
+# 不包含「技术路线」「商业模式」，所以用独立章节标准，避免误报缺章节。
+PROPOSAL_REQUIRED_SECTIONS_FAST = [
+    ("项目简介", ["项目简介", "简介"]),
+    ("痛点分析", ["痛点"]),
+    ("解决方案", ["解决方案", "方案"]),
+    ("核心创新点", ["创新"]),
+    ("社会价值", ["社会价值"]),
+]
 
-def check_proposal_completeness(proposal: str) -> dict:
-    """检查申报书是否覆盖核心章节，返回缺失项（提示性质，不阻断）"""
+
+def check_proposal_completeness(proposal: str, mode: str = "deep") -> dict:
+    """检查申报书是否覆盖核心章节，返回缺失项（提示性质，不阻断）。
+
+    mode='fast' 时按简洁版 5 节校验，否则按深度版 7 节校验。
+    """
     text = proposal or ""
+    sections = PROPOSAL_REQUIRED_SECTIONS_FAST if mode == "fast" else PROPOSAL_REQUIRED_SECTIONS
     missing = []
     detail = {}
-    for name, keywords in PROPOSAL_REQUIRED_SECTIONS:
+    for name, keywords in sections:
         ok = any(kw in text for kw in keywords)
         detail[name] = ok
         if not ok:

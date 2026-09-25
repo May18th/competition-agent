@@ -1,146 +1,130 @@
 # -*- coding: utf-8 -*-
-"""生成进度上报 / 任务取消 / 并发数（零依赖）。
+"""进度 / 取消 / 并发的统一出口（薄封装）。
 
-为什么单独拆一个文件：app.py 里有 `from competition_agents import ...`，
-如果 competition_agents 反过来 `from app import _report_stage` 就是**循环导入**，
-运行时要么 ImportError，要么拿到半初始化的对象。本模块不 import 本项目的任何代码，两边都能安全引用。
+背景：为了避开 app.py 与 competition_agents.py 的循环导入，任务字典与阶段上报
+下沉在 stage_reporter.py（零依赖，Codex 维护）。为避免出现两份互不一致的真相，
+本模块**不再自己持有任务字典**，只做三件补充：
 
-Codex 侧接入（competition_agents.py 的节点里）：
+1. 并发数：resolve_workers()，优先用本次任务设定值；
+2. 取消：cancel / is_cancelled，给前端「终止」按钮用；
+3. live 快照：每次上报后原子写 progress_live.json，便于实时监控 /api/status/live。
 
-    from progress import report, _workers_for, is_cancelled
-
-    def deep_competitor_agent(state):
-        report("four_analysis")
-        ...
-
-三者都可以独立使用：只用 report() 也能让真实进度跑到前端。
+阶段代号与中文文案以 stage_reporter.STAGE_META 为准（与《协作_进度条stage约定.md》一致），
+这里只做转发，不复制。
 """
 
 import os
+import json
 import threading
 import time
 
-# ---------------- 阶段表 ----------------
-# 前端不要再自己写中文映射，直接用这份数据里的 label。
-STAGES = [
-    ("parsing_rules", "解析评分规则", 5),
-    ("similarity",    "查重查新",     15),
-    ("idea_eval",     "评估创意",     24),
-    ("oneliner",      "提炼一句话方案", 32),
-    ("four_analysis", "并行四维分析",  40),
-    ("writing",       "撰写申报书",    58),
-    ("judging",       "模拟评委打分",  74),
-    ("revising",      "按意见定向改写", 80),
-    ("analysis",      "生成诊断建议",  88),
-    ("rich_media",    "生成图表与PPT", 93),
-    ("materials",     "生成答辩材料",  97),
-]
-STAGE_MAP = {k: {"label": l, "pct": p} for k, l, p in STAGES}
+from stage_reporter import STAGE_META, tasks, \
+    set_current_task, clear_current_task, report_stage
 
-# 前端顶部那排胶囊点，按模式给不同集合
-FAST_FLOW = ["parsing_rules", "similarity", "idea_eval", "oneliner",
-             "analysis", "writing", "judging", "materials"]
-DEEP_FLOW = ["parsing_rules", "similarity", "idea_eval", "oneliner", "four_analysis",
-             "analysis", "writing", "judging", "revising", "analysis", "rich_media", "materials"]
+# 兼容旧代码里用过的名字
+STAGE_MAP = STAGE_META
+# 阶段顺序直接由 STAGE_META 的声明顺序派生（dict 保序），不复制一份
+STAGE_ORDER = list(STAGE_META.keys())
+
+# 仅在这个被 Frankestein 的模块里存在的派生能力，很多 ^_^
+_workers_lock = threading.Lock()
+_workers = {"n": None}
+_cancelled = set()
+_cancel_lock = threading.Lock()
+
+_LIVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "progress_live.json")
 
 
-def stage_flow(mode="fast"):
-    """返回该模式的阶段顺序（给前端画胶囊点用）。"""
-    return DEEP_FLOW if mode == "deep" else FAST_FLOW
-
-
+# ---------------- 阶段元数据转发 ----------------
 def stage_meta(name):
-    return STAGE_MAP.get(name, {})
+    return STAGE_META.get(name, (name, 0))
 
 
-# ---------------- 订阅 ----------------
-_lock = threading.Lock()
-_handlers = []
-_task_id = None
-_stage = None
-_t0 = None
+# ---------------- 任务生命周期（写进共享 tasks 字典） ----------------
+def bind(task_id, mode=None, workers=None, **kw):
+    set_current_task(task_id)
+    if workers is not None:
+        set_workers(workers)
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["mode"] = mode or t.get("mode")
+        t["workers"] = workers if workers is not None else t.get("workers")
+        t.setdefault("events", [])
+        t.setdefault("t_log_path", None)
+    return t
 
 
-def subscribe(fn):
-    """注册回调 fn(stage_name)。app.py 用它把 stage 写进 tasks 字典。"""
-    with _lock:
-        _handlers.append(fn)
+def mark_running(task_id, **kw):
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "running"
+        t["updated_at"] = time.time()
+    return t
 
 
-def bind(task_id):
-    """任务开始时绑定，之后 report() 才知道往哪个任务写。"""
-    global _task_id, _stage, _t0
-    with _lock:
-        _task_id = task_id
-        _stage = "queued"
-        _t0 = time.time()
-    report("queued")
+def mark_stage(task_id, stage=None, **kw):
+    """更新阶段（登记在 STAGE_META 里的才认）。"""
+    t = tasks.get(task_id)
+    if not isinstance(t, dict) or stage is None:
+        return None
+    if stage not in STAGE_META:
+        return None
+    t["stage"] = stage
+    t["updated_at"] = time.time()
+    return t
 
 
-def release():
-    global _task_id
-    with _lock:
-        _task_id = None
+def mark_done(task_id, data=None, **kw):
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "done"
+        t["stage"] = "done"
+        if data is not None:
+            t["data"] = data
+        t["updated_at"] = time.time()
+    clear_current_task()
 
 
-def report(stage):
-    """上报当前阶段。重复上报同一个阶段会被去重（每阶段只触发一次）。"""
-    global _stage
-    with _lock:
-        if _stage == stage:
-            return
-        _stage = stage
-        hs = list(_handlers)
-    for fn in hs:
-        try:
-            fn(stage)
-        except Exception as e:
-            print("progress handler error:", e)
+def mark_error(task_id, error=None, **kw):
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "error"
+        t["stage"] = "error"
+        t["error"] = error
+        t["updated_at"] = time.time()
+    clear_current_task()
 
 
-def snapshot():
-    """给 /api/status 用的一次性取值，避免路由里到处加锁。"""
-    with _lock:
-        return _task_id, _stage, _t0
+def stage_snapshot(task_id):
+    """给路由用的统一 stage 视图：代号 / 中文 / 百分比 / 是否结束。"""
+    t = tasks.get(task_id)
+    if not isinstance(t, dict):
+        return None
+    stage = t.get("stage", "start")
+    label, pct = STAGE_META.get(stage, (stage, 0))
+    return {
+        "stage": stage,
+        "stage_label": label,
+        "pct": pct,
+        "status": t.get("status", "running"),
+        "done": t.get("status") in ("done", "error", "cancelled"),
+        "flow": STAGE_ORDER,
+        "updated_at": t.get("updated_at", time.time()),
+    }
 
 
-# ---------------- 任务取消 ----------------
-CANCELLED = set()
-
-
-def cancel(task_id):
-    with _lock:
-        CANCELLED.add(task_id)
-    return True
-
-
-def is_cancelled(task_id=None):
-    tid = task_id or _task_id
-    return bool(tid) and tid in CANCELLED
-
-
-def clear_cancel(task_id):
-    CANCELLED.discard(task_id)
-
-
-# ---------------- 并发数（用户可在界面上调，不要写死） ----------------
-_WORKERS = {"n": None}
-
-
+# ---------------- 并发数（可调，不写死） ----------------
 def set_workers(n):
-    """app.py 在启动任务时写入本次任务期望的并发数。"""
     try:
-        _WORKERS["n"] = int(n) if n else None
+        _workers["n"] = int(n) if n else None
     except (TypeError, ValueError):
-        _WORKERS["n"] = None
+        _workers["n"] = None
 
 
-def _workers_for(default=0):
-    """供 competition_agents 里 ThreadPoolExecutor(max_workers=...) 使用。
-
-    取值优先级：本次任务设定值 > 环境变量 > 调用方给的默认。
-    """
-    n = _WORKERS.get("n")
+def resolve_workers(default=8):
+    """给 ThreadPoolExecutor 用。优先级：本次设定 > 环境变量 DEEP_WORKERS > default。"""
+    with _workers_lock:
+        n = _workers["n"]
     if n and n > 0:
         return n
     for key in ("DEEP_WORKERS", "WORKERS"):
@@ -151,3 +135,43 @@ def _workers_for(default=0):
         except ValueError:
             continue
     return default
+
+
+# ---------------- 取消 ----------------
+def cancel(task_id):
+    with _cancel_lock:
+        _cancelled.add(task_id)
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "cancelled"
+        t["stage"] = "done"
+        t["updated_at"] = time.time()
+    return True
+
+
+def is_cancelled(task_id=None):
+    if not task_id:
+        return False
+    with _cancel_lock:
+        return task_id in _cancelled
+
+
+def clear_cancel(task_id):
+    with _cancel_lock:
+        _cancelled.discard(task_id)
+
+
+# ---------------- live 快照 ----------------
+def write_live(task_id):
+    t = tasks.get(task_id)
+    if not isinstance(t, dict):
+        return None
+    snap = {k: v for k, v in t.items() if k != "data"}
+    try:
+        tmp = _LIVE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _LIVE_PATH)
+    except Exception as e:
+        print("write_live error:", e)
+    return snap
