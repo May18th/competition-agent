@@ -1,6 +1,11 @@
-﻿"""
+"""
 科创赛事多智能体协同创作助手 - Flask Web 界面
 """
+# ⚠️ 启动入口约定（防回归，勿删）：
+# 本文件只定义 Flask app 与路由，【禁止】在文件中间或末尾写
+#   if __name__ == '__main__': app.run(...)
+# 本地启动用 run.py，云端用 gunicorn wsgi:app。
+# 一旦把启动块写回中间，其后的 @app.route 都不会被注册（本地直跑会 404）。
 import threading
 import uuid
 import time
@@ -218,6 +223,7 @@ def export_word():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     title = data.get('title', '导出文档')
+    charts = data.get('charts') or []
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
     doc = _build_docx(
@@ -228,9 +234,32 @@ def export_word():
         team=data.get('team'),
         advisor=data.get('advisor'),
     )
+    if charts:
+        try:
+            from docx_charts import inject_charts
+            inject_charts(doc, charts)
+        except Exception as e:
+            print(f"[export_word] 图表插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
     return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+
+
+@app.route('/api/export_pdf', methods=['POST'])
+def export_pdf():
+    """把申报书/说明书 Markdown 导出为 PDF（iCAN 提交用，A4 中文）"""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get('text', '')
+    title = data.get('title', '申报书')
+    if not text.strip():
+        return jsonify({"error": "内容为空"}), 400
+    try:
+        from pdf_render import render_markdown_to_pdf
+        filepath = 'tmp_export.pdf'
+        render_markdown_to_pdf(text, filepath, title=title)
+    except Exception as e:
+        return jsonify({"error": f"PDF 生成失败：{e}"}), 500
+    return send_file(filepath, as_attachment=True, download_name=title + '.pdf')
 
 
 @app.route('/api/export_defense')
@@ -326,6 +355,22 @@ def delete_history(history_id):
     return jsonify({"success": False, "error": "记录不存在"}), 404
 
 
+def _parse_expert_review(text):
+    """把 expert_review 的 JSON 字符串解析成 dict；失败返回 None"""
+    if not text:
+        return None
+    import json as _json
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t.lower().startswith("json"):
+            t = t[4:]
+    try:
+        return _json.loads(t)
+    except Exception:
+        return None
+
+
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -348,6 +393,7 @@ def _run_generation(data):
             "project_summary": "",
             "proposal": "",
             "judge_feedback": "",
+            "expert_review": "",
             "proposal_analysis": "",
             "defense_questions": "",
             "ppt_outline": "",
@@ -358,10 +404,7 @@ def _run_generation(data):
             "idea_feedback": "",
             "score": 0,
             "approved": False,
-            "iterate": bool(data.get("iterate", False)),
-            # 档位：共享 Agent（规则解析/同质化检测/评委/诊断/答辩/PPT/演讲稿）
-            # 靠这个字段选输出规格，否则两档产物长得一模一样
-            "tier": "deep" if data.get("mode", "fast") == "deep" else "fast",
+            "iterate": bool(data.get("iterate", False))
         }
 
         mode = data.get("mode", "fast")
@@ -432,6 +475,7 @@ def _run_generation(data):
                 "proposal_analysis": result.get("proposal_analysis", ""),
                 "proposal": result.get("proposal", ""),
                 "judge_feedback": result.get("judge_feedback", ""),
+                "expert_review": result.get("expert_review", ""),
                 "defense_questions": result.get("defense_questions", ""),
                 "ppt_outline": result.get("ppt_outline", ""),
                 "speech_script": result.get("speech_script", ""),
@@ -465,6 +509,7 @@ def _run_generation(data):
         "project_summary": result.get("project_summary", ""),
         "proposal": result.get("proposal", ""),
         "judge_feedback": result.get("judge_feedback", ""),
+        "expert_review": _parse_expert_review(result.get("expert_review", "")) or result.get("expert_review", ""),
         "proposal_analysis": result.get("proposal_analysis", ""),
         "defense_questions": result.get("defense_questions", ""),
         "ppt_outline": result.get("ppt_outline", ""),
@@ -940,16 +985,3 @@ def export_pptx():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"PPT导出失败：{e}"}), 500
-
-
-# ============ 启动 ============
-# 注意：本块必须放在文件最末尾。app.run() 会阻塞，
-# 若放在中间，它之后定义的路由（export_zip / knowledge_status / quota / health 等）
-# 永远不会注册，表现为 /api/health 一直 404。
-if __name__ == "__main__":
-    print("=" * 60)
-    print("🚀 科创赛事多智能体协同创作助手 - Web 版")
-    print("=" * 60)
-    print("📱 浏览器打开: http://127.0.0.1:8080")
-    print("=" * 60)
-    app.run(debug=False, port=8080)
