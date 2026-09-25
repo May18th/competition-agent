@@ -1188,7 +1188,12 @@ button:hover { transform: translateY(-1px); }
 
                     <div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
                         <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">添加范文</div>
-                        <textarea id="kbContent" rows="5" placeholder="粘贴高分申报书片段（300-600 字为宜）。写得越具体越好：带数字、有细节、敢写局限的片段，比空泛的范文更有参考价值。" style="min-height: 110px;"></textarea>
+                        <textarea id="kbContent" rows="5" oninput="kbContentHint()" placeholder="粘贴高分申报书片段（300-600 字为宜）。写得越具体越好：带数字、有细节、敢写局限的片段，比空泛的范文更有参考价值。" style="min-height: 110px;"></textarea>
+                        <div id="kbLenHint" style="font-size: 12px; color: var(--text-mute); margin-top: 6px;"></div>
+                        <div id="kbTagSuggestWrap" style="display: none; margin-top: 10px;">
+                            <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 6px;">根据内容建议的标签（点击添加）：</div>
+                            <div id="kbTagSuggest" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                        </div>
                         <input type="text" id="kbTags" placeholder="标签（逗号分隔）：如 项目简介, 文化文旅, web网站" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text); margin-top: 10px;">
                         <div style="font-size: 12px; color: var(--text-mute); margin: 10px 0 6px;">点击标签快速添加：</div>
                         <div id="kbChipWrap" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;"></div>
@@ -2775,6 +2780,57 @@ button:hover { transform: translateY(-1px); }
                 .catch(function () {});
         }
 
+        // 内容关键词 -> 建议标签（队友不一定熟悉标签体系，靠内容自动推荐降低打错标签的概率）
+        var KB_TAG_RULES = [
+            ['文化文旅', ['文旅', '苏轼', '景区', '文化旅游', '游客', '博物馆', '传统文化']],
+            ['非遗', ['非遗', '传承人', '刺绣', '苏绣', '绣娘', '手艺', '非物质文化']],
+            ['人工智能', ['AI', '人工智能', '识别', '模型', '算法', '深度学习', '视觉', '机器学习']],
+            ['web网站', ['网站', '网页', 'web', '小程序', '平台', '线上', 'APP', 'APP']],
+            ['校园服务', ['校园', '学生', '高校', '大学', '宿舍', '食堂', '图书馆', '同学']],
+            ['乡村振兴', ['乡村', '农业', '农户', '种植', '农村', '振兴', '县域', '农产品']],
+            ['项目简介', ['项目简介', '项目概述', '本项目', '我们做', '项目是']],
+            ['社会价值', ['社会价值', '社会意义', '公益', '带动', '文化自信']],
+            ['商业模式', ['商业模式', '收入', '盈利', '收费', '付费', '成本', '变现', '定价', '订阅']],
+            ['风险分析', ['风险', '局限', '不足', '挑战', '困难', '尚未', '误报']],
+            ['创新点', ['创新', '与众不同', '首次', '独特', '突破']],
+            ['实践过程', ['实践', '阶段', '进度', '实施', '落地', '试点', '下一步', '计划']]
+        ];
+
+        function kbContentHint() {
+            var el = document.getElementById('kbContent');
+            var hint = document.getElementById('kbLenHint');
+            if (!el || !hint) return;
+            var n = (el.value || '').trim().length;
+            var txt, color;
+            if (!n) { hint.innerHTML = ''; }
+            else if (n < 150) { txt = '偏短，建议补充到 300 字以上，太短的片段参考价值有限'; color = 'var(--c-warn, #d97706)'; }
+            else if (n < 300) { txt = '可以，但 300-600 字效果更好'; color = 'var(--text-mute)'; }
+            else if (n <= 700) { txt = '长度合适 ✓'; color = '#22c55e'; }
+            else if (n <= 1500) { txt = '偏长，建议按章节拆成多个片段分别入库'; color = 'var(--c-warn, #d97706)'; }
+            else { txt = '太长！建议拆成多个片段——检索到它会占满参考额度，反而挤掉其它范文'; color = '#ef4444'; }
+            hint.innerHTML = n ? ('<b>' + n + ' 字</b> · ' + txt) : '';
+            if (n && color) hint.style.color = color;
+
+            // 标签建议
+            var wrap = document.getElementById('kbTagSuggestWrap');
+            var box = document.getElementById('kbTagSuggest');
+            if (!wrap || !box) return;
+            var cur = (document.getElementById('kbTags') || {}).value || '';
+            var chosen = cur.split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean);
+            var sugg = [];
+            KB_TAG_RULES.forEach(function (r) {
+                if (chosen.indexOf(r[0]) >= 0) return;
+                var hit = false;
+                r[1].forEach(function (w) { if (el.value.indexOf(w) >= 0) hit = true; });
+                if (hit) sugg.push(r[0]);
+            });
+            if (!sugg.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            box.innerHTML = sugg.map(function (t) {
+                return '<span onclick="kbAddTag(\'' + t + '\')" style="cursor:pointer;padding:3px 10px;background:var(--c-a-soft);color:var(--c-a);border-radius:10px;font-size:11px;">+ ' + _esc(t) + '</span>';
+            }).join(' ');
+        }
+
         function kbAddTag(tag) {
             var el = document.getElementById('kbTags');
             if (!el) return;
@@ -2799,9 +2855,25 @@ button:hover { transform: translateY(-1px); }
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (d && d.success) {
-                    wbToast('已添加到范文库', { type: 'success' });
+                    var sc = d.score, tp = d.type || '材料';
+                    if (d.duplicate) {
+                        wbToast('库里已经有这段了（内容重复，未重复添加）', { type: 'warn', ms: 3500 });
+                    } else if (sc !== undefined && sc !== null) {
+                        // 后端已自动打分：>=75 归「范文」才会被生成采纳，要让队友看得见
+                        var msg = '已添加 · 评分 ' + sc + ' 分';
+                        if (sc >= 75) {
+                            msg += '，归为「范文」，生成时会作为参考';
+                            wbToast(msg, { type: 'success', ms: 4000 });
+                        } else {
+                            msg += '，未达 75 分归为「材料」，生成时不会采纳。建议补充数据化表述（具体数字、试点范围、真实局限）';
+                            wbToast(msg, { type: 'warn', ms: 6000 });
+                        }
+                    } else {
+                        wbToast('已添加到范文库', { type: 'success' });
+                    }
                     document.getElementById('kbContent').value = '';
                     document.getElementById('kbTags').value = '';
+                    kbContentHint();
                     kbList();
                 } else {
                     wbToast('添加失败：' + ((d && d.error) || '未知错误'), { type: 'error' });

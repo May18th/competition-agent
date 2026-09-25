@@ -1188,6 +1188,80 @@ def export_pptx():
 
 # ============ 范文库管理接口 ============
 
+# ---- 范文自动评分（队友上传场景）----
+_FILLER_WORDS = ["致力于", "旨在", "赋能", "打造生态", "全方位", "一体化",
+                 "深度融合", "着力", "积极推动", "显著提升"]
+_EVIDENCE_WORDS = ["试点", "问卷", "访谈", "注册", "用户", "留存", "转化", "付费",
+                   "成本", "收入", "准确率", "覆盖", "合作", "反馈", "测试"]
+_HONEST_WORDS = ["尚未", "仅", "局限", "不足", "风险", "待验证", "建议转人工",
+                 "暂未", "未实现", "难点"]
+_NUM_RE = None
+
+
+def _auto_score(content):
+    """给上传的范文自动打质量分（0-100），启发式，不调 LLM。
+
+    为什么需要：前端上传时不传 score，入库就是 0 分——列表显示「0 分」、
+    按 score DESC 排序永远垫底；一旦将来按「>=75 才算范文」过滤，
+    队友手工传的范文会全部失效（这才是最坏的情况）。
+
+    判据来自高分申报书的真实特征：
+      加分 = 数据化表述（核心）+ 具体证据 + 敢写局限 + 分点结构 + 长度适中
+      扣分 = 空话套话 + 过短/过长
+    """
+    global _NUM_RE
+    import re
+    if _NUM_RE is None:
+        _NUM_RE = re.compile(r'\d+(?:\.\d+)?\s*(?:%|％|人|次|万|元|个|天|月|年|'
+                             r'分|秒|家|所|台|条|张|款|名|户)')
+    text = (content or '').strip()
+    n = len(text)
+    # 基础 40 + 各项上限 53 = 93 封顶（对齐种子范文人工标的最高分 93，
+    # 避免高质量范文全挤在 100 分而失去排序意义）
+    score = 40.0
+
+    # 1) 长度：种子范文是 300-560 字，这是最合适的片段长度
+    if 300 <= n <= 700:
+        score += 15
+    elif (150 <= n < 300) or (700 < n <= 1200):
+        score += 8
+    elif n < 100:
+        score -= 20
+    elif n > 1500:
+        score -= 10
+
+    # 2) 数据化表述：高分稿最核心特征（"注册2431人"而非"用户很多"）
+    score += min(len(_NUM_RE.findall(text)), 6) * 3
+
+    # 3) 具体证据/细节
+    score += min(sum(1 for w in _EVIDENCE_WORDS if w in text), 5) * 2
+
+    # 4) 诚实：主动写局限是高分稿的标志，通篇吹牛反而像 AI
+    if any(w in text for w in _HONEST_WORDS):
+        score += 6
+
+    # 5) 空话套话
+    score -= min(sum(1 for w in _FILLER_WORDS if w in text), 3) * 5
+
+    # 6) 分点结构
+    if re.search(r'(第[一二三四五六七八九]|首先|其次|最后|其一|其二|[0-9][\.、])', text):
+        score += 4
+
+    return int(max(0, min(100, round(score))))
+
+
+def _auto_summary(content, limit=42):
+    """自动摘要：取首个完整句子，兜底截断。"""
+    text = (content or '').strip().replace('\n', ' ')
+    if not text:
+        return ''
+    for sep in ('。', '！', '？', '；'):
+        i = text.find(sep)
+        if 12 <= i <= limit + 20:
+            return text[:i + 1]
+    return text[:limit] + ('…' if len(text) > limit else '')
+
+
 @app.route('/api/kb/add', methods=['POST'])
 def kb_add():
     data = request.get_json(force=True, silent=True) or {}
@@ -1197,11 +1271,23 @@ def kb_add():
         tags = [t.strip() for t in tags.split(',') if t.strip()]
     if not content.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
+
+    # 未显式指定 score/type 时自动判定（队友手工上传的常规路径）
+    score = data.get('score')
+    stype = data.get('type')
+    auto_scored = score is None
+    if auto_scored:
+        score = _auto_score(content)
+    if not stype:
+        stype = '范文' if int(score or 0) >= 75 else '材料'
+    summary = data.get('summary') or _auto_summary(content)
+
     try:
         from kb_samples import add_sample
         sid, is_new = add_sample(content, tags, source=data.get('source', ''),
-                                 score=data.get('score', 0), type=data.get('type', '材料'))
-        return jsonify({"success": True, "id": sid, "duplicate": not is_new})
+                                 score=score, type=stype, summary=summary)
+        return jsonify({"success": True, "id": sid, "duplicate": not is_new,
+                        "score": score, "type": stype, "auto_scored": auto_scored})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
