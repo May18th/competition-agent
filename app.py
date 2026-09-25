@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
+from stage_reporter import tasks, set_current_task, clear_current_task, report_stage as _report_stage
 
 
 app = Flask(__name__)
@@ -390,9 +391,6 @@ def delete_history(history_id):
     return jsonify({"success": False, "error": "记录不存在"}), 404
 
 
-tasks = {}
-
-
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -579,17 +577,8 @@ def generate():
 # 调用方式（供 _run_generation / 各 Agent 内部使用）：
 #     from app import _report_stage
 #     _report_stage("parsing_rules")
-# 约定阶段名：parsing_rules / similarity / writing / judging / revision / rich_assets
-# 不调用也能正常工作，只是 stage 停留在 start。
-_CURRENT_TASK = {"id": None}
-
-
-def _report_stage(stage):
-    tid = _CURRENT_TASK.get("id")
-    t = tasks.get(tid) if tid else None
-    if isinstance(t, dict):
-        t["stage"] = stage
-        t["updated_at"] = time.time()
+# 约定阶段名见《协作_进度条stage约定.md》。
+# tasks / report_stage / set_current_task / clear_current_task 已下沉到 stage_reporter.py（零依赖）。
 
 
 @app.route('/api/generate_async', methods=['POST'])
@@ -599,7 +588,7 @@ def generate_async():
     tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time()}
 
     def worker():
-        _CURRENT_TASK["id"] = task_id          # 让 _report_stage 知道往哪个任务写
+        set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
         try:
             rd = _run_generation(data)
             _report_stage("done")
@@ -610,7 +599,7 @@ def generate_async():
             tasks[task_id] = {"status": "error", "error": _friendly_error(e),
                               "detail": str(e), "stage": "error", "updated_at": time.time()}
         finally:
-            _CURRENT_TASK["id"] = None
+            clear_current_task()
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"success": True, "task_id": task_id})

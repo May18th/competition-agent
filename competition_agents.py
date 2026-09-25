@@ -6,6 +6,7 @@ from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import HumanMessage
+from stage_reporter import report_stage as _report_stage
 
 
 # ============ 配置 ============
@@ -349,6 +350,7 @@ class CompetitionState(TypedDict):
 
 def rule_parser_agent(state: CompetitionState) -> CompetitionState:
     """📋 规则解析 Agent：提取评分标准"""
+    _report_stage("parsing_rules")
     # 先查知识库（结构化，缺失字段明确标注，避免模型瞎编）
     kb = get_competition_knowledge_structured(state['competition_name'])
     if kb.get("matched"):
@@ -389,6 +391,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 
 def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
     """🔍 同质化检测 Agent：检测创意相似度"""
+    _report_stage("similarity")
     prompt = f"""你是科创赛事资深评委，熟悉各类获奖项目。请检测以下创意与常见获奖项目的同质化程度。
 
 赛事：{state['competition_name']}
@@ -408,6 +411,7 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 
 def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
     """📊 综合分析 Agent：一次生成竞品、商业模式、风险、技术方案"""
+    _report_stage("analysis")
     prompt = f"""你是科创赛事分析专家。请根据以下项目，一次性完成所有分析。
 
 项目创意：{state['idea']}
@@ -460,6 +464,7 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
     """🏢 深度版竞品分析 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是资深市场分析专家。请只负责分析竞品情况，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
@@ -479,6 +484,7 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_business_agent(state: CompetitionState) -> CompetitionState:
     """💰 深度版商业模式 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是资深商业模式专家。请只负责设计商业模式，不要写竞品分析、技术方案等其他内容。
 
 项目创意：{state['idea']}
@@ -499,6 +505,7 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_risk_agent(state: CompetitionState) -> CompetitionState:
     """⚠️ 深度版风险分析 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是资深风险评估专家。请只负责分析风险，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
@@ -519,6 +526,7 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_tech_agent(state: CompetitionState) -> CompetitionState:
     """🔧 深度版技术方案 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是资深技术架构师。请只负责写技术方案，不要写竞品、商业模式、风险等其他内容。
 
 项目创意：{state['idea']}
@@ -539,6 +547,7 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
 
 def plan_agent(state: CompetitionState) -> CompetitionState:
     """🗓️ 项目实施计划 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是科创项目规划专家。请为以下项目制定详细的实施计划。
 
 项目创意：{state['idea']}
@@ -559,6 +568,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
 
 def social_value_agent(state: CompetitionState) -> CompetitionState:
     """🌍 社会价值 Agent"""
+    _report_stage("analysis")
     prompt = f"""你是科创项目价值分析专家。请分析这个项目的社会价值和应用前景。
 
 项目创意：{state['idea']}
@@ -579,6 +589,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
 
 def summary_agent(state: CompetitionState) -> CompetitionState:
     """📝 项目简介 Agent：生成300字项目摘要"""
+    _report_stage("analysis")
     prompt = f"""请根据以下项目，写一段300字左右的项目简介：
 
 项目创意：{state['idea']}
@@ -600,6 +611,7 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 深度版申报书 Agent：写完整详细的申报书"""
+    _report_stage("writing")
     draft = state.get('proposal_draft', '')
     has_draft = bool(draft.strip())
     if has_draft:
@@ -661,6 +673,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 简洁版申报书 Agent：写精简的申报书"""
+    _report_stage("writing")
     draft = state.get('proposal_draft', '')
     if draft.strip():
         source = f"用户已上传申报书草稿，请保留原结构和内容做精简优化、补足缺失评分点，不要从零重写。\n\n用户草稿：\n{draft}\n\n（原始创意：{state['idea']}）"
@@ -709,6 +722,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 
 def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
     """🔧 定向修订 Agent：只改评委指出的问题段落，不整篇重写"""
+    _report_stage("revision")
     prompt = f"""你是科创赛事申报书修订专家。请根据评委意见，对下面的申报书做**定向修订**。
 
 要求：
@@ -731,6 +745,7 @@ def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
 
 def idea_evaluator(state: CompetitionState) -> CompetitionState:
     """💡 创意评分 Agent：只评估原始创意本身的价值，不评申报书"""
+    _report_stage("idea_scoring")
     prompt = f"""你是科创赛事评审专家。请对下面的项目创意本身打分（注意：只评创意，不评申报书写得好不好）。
 
 项目创意：
@@ -781,6 +796,7 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
 
 def judge_agent(state: CompetitionState) -> CompetitionState:
     """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
+    _report_stage("judging")
     prompt = f"""你是科创赛事资深评委。请给下面的申报书文档打分（注意：只评文档质量，不评创意本身）。
 
 申报书：
@@ -840,6 +856,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 
 def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     """🎤 答辩问题预测 Agent：预测评委可能问什么"""
+    _report_stage("defense")
     prompt = f"""你是科创赛事答辩专家。请预测评委可能会问的 5 个问题，并给出答题思路。
 
 项目：{state['idea']}
@@ -855,6 +872,7 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
 
 def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
     """📊 PPT 大纲 Agent：生成路演 PPT 大纲"""
+    _report_stage("ppt")
     prompt = f"""你是科创赛事路演 PPT 专家。请根据以下项目，生成 3 分钟路演 PPT 大纲（8-10页）。
 
 项目：{state['idea']}
@@ -870,6 +888,7 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 
 def speech_agent(state: CompetitionState) -> CompetitionState:
     """🎤 路演演讲稿 Agent：生成3分钟路演讲稿"""
+    _report_stage("speech")
     prompt = f"""你是科创赛事路演专家。请根据以下项目，生成3分钟路演演讲稿。
 
 项目：{state['idea']}
@@ -892,6 +911,7 @@ PPT大纲：{state['ppt_outline']}
 
 def one_liner_agent(state: CompetitionState) -> CompetitionState:
     """💡 一句话定位 Agent：生成路演开场一句话"""
+    _report_stage("idea_scoring")
     prompt = f"""请用一句话（30字以内）概括这个项目，用来路演开场。
 
 项目：{state['idea']}
@@ -906,6 +926,7 @@ def one_liner_agent(state: CompetitionState) -> CompetitionState:
 # ============ 3. 路由 ============
 def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
     """申报书快速诊断 Agent：给出简明、有针对性的诊断"""
+    _report_stage("diagnosis")
     prompt = f"""你是科创赛事申报书评审专家。请对下面这份申报书做一份简明、有针对性的快速诊断。
 
 申报书：
@@ -925,6 +946,7 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 
 def rich_media_agent(state: CompetitionState) -> CompetitionState:
     """🎞️ 富媒体 Agent：生成结构化表格 + PPT 幻灯片结构"""
+    _report_stage("rich_assets")
     prompt = f"""你是路演材料制作专家。请根据下面的分析结果，生成结构化数据。
 
 项目创意：{state.get('idea', '')}
