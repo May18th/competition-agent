@@ -963,6 +963,10 @@ button:hover { transform: translateY(-1px); }
                         <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 大纲生成 Agent</span>
                     </div>
                 </div>
+                <!-- 终止生成 -->
+                <div id="cancelWrap" style="text-align: center; margin-top: 14px; display: none;">
+                    <button onclick="cancelGeneration()" style="padding: 8px 18px; background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-line); border-radius: 8px; cursor: pointer; font-size: 13px;">终止生成</button>
+                </div>
             </div>
         </div>
 
@@ -1700,6 +1704,18 @@ button:hover { transform: translateY(-1px); }
             a.click();
         }
         // 开始生成
+        var _currentTaskId = null;
+        function cancelGeneration() {
+            if (!_currentTaskId) return;
+            fetch('/api/cancel/' + _currentTaskId, { method: 'POST' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.success) {
+                        wbToast('已请求终止，正在停止…', { type: 'warn' });
+                    }
+                })
+                .catch(function () {});
+        }
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
@@ -1718,8 +1734,10 @@ button:hover { transform: translateY(-1px); }
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> AI正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
+            document.getElementById('cancelWrap').style.display = 'block';
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
+            _currentTaskId = null;
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
@@ -1747,6 +1765,7 @@ button:hover { transform: translateY(-1px); }
                 if (!start.success || !start.task_id) {
                     throw new Error(start.error || '任务创建失败');
                 }
+                _currentTaskId = start.task_id;
                 const t0 = Date.now();
                 return new Promise((resolve, reject) => {
                     const tick = setInterval(() => {
@@ -1768,6 +1787,8 @@ button:hover { transform: translateY(-1px); }
                                 clearInterval(tick);
                                 if (res2.status === 'error') {
                                     reject(new Error(res2.error || '生成失败'));
+                                } else if (res2.status === 'cancelled') {
+                                    reject({ cancelled: true });
                                 } else {
                                     resolve({ success: true, data: res2.data });
                                 }
@@ -1780,6 +1801,8 @@ button:hover { transform: translateY(-1px); }
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
+                    document.getElementById('cancelWrap').style.display = 'none';
+                    _currentTaskId = null;
                     btn.disabled = false;
                     btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始' + (proposal_draft.length > 0 ? '优化' : '生成');
                     if (data.success) {
@@ -1886,15 +1909,22 @@ button:hover { transform: translateY(-1px); }
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
                 document.getElementById('skeletonArea').style.display = 'none';
+                document.getElementById('cancelWrap').style.display = 'none';
+                document.getElementById('progressSteps').style.display = 'none';
+                _currentTaskId = null;
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
-                var _net = String((err && err.message) || err || '');
-                wbToast(_net.indexOf('Failed to fetch') >= 0
-                    ? '连不上本地服务，请确认网站还在运行'
-                    : '请求出错：' + _net, {
-                    type: 'error',
-                    sub: '若服务已停止，请双击桌面「科创助手-启动服务.bat」重新启动'
-                });
+                if (err && err.cancelled) {
+                    wbToast('已终止生成', { type: 'warn' });
+                } else {
+                    var _net = String((err && err.message) || err || '');
+                    wbToast(_net.indexOf('Failed to fetch') >= 0
+                        ? '连不上本地服务，请确认网站还在运行'
+                        : '请求出错：' + _net, {
+                        type: 'error',
+                        sub: '若服务已停止，请双击桌面「科创助手-启动服务.bat」重新启动'
+                    });
+                }
             });
         }
 
