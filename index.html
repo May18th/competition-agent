@@ -991,7 +991,13 @@ button:hover { transform: translateY(-1px); }
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
                     <textarea id="idea" placeholder="描述你的项目想法：要解决什么问题？核心功能是什么？" rows="3" style="min-height: 80px;"></textarea>
                 </div>
-                
+
+                <div class="form-group">
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 关键词<span class="wb-opt">（可选，用于匹配范文库中同类型的高分写法）</span></label>
+                    <input type="text" id="keywords" placeholder="关键词（选填，逗号分隔）：如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                    <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px;">留空也会从项目创意里自动提取关键词；在「范文库」页签可自行添加范文。</div>
+                </div>
+
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
@@ -1125,6 +1131,7 @@ button:hover { transform: translateY(-1px); }
                 <button class="tab" id="proposalTab" onclick="switchTab(event, 'proposal')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报与评审</button>
                 <button class="tab" id="chartsTab" style="display:none;" onclick="switchTab(event, 'charts')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-linechart"/></svg> 可视化图表</button>
                 <button class="tab" id="defenseTab" style="display:none;" onclick="switchTab(event, 'defense')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩准备</button>
+                <button class="tab" id="kbTab" onclick="switchTab(event, 'kb')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</button>
             </div>
 
             <div id="tab-analysis" class="tab-content active">
@@ -1169,6 +1176,38 @@ button:hover { transform: translateY(-1px); }
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                </div>
+            </div>
+
+            <div id="tab-kb" class="tab-content">
+                <div style="padding: 20px;">
+                    <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</h3>
+                    <div style="background: var(--surface-2); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-dim); line-height: 1.7;">
+                        收录高分申报书片段并打上标签。生成时会检索同标签范文作为写作参考——<b>关键词检索，不是模型微调</b>，所以持续往里加范文就能持续提升生成质量。
+                    </div>
+
+                    <div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+                        <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">添加范文</div>
+                        <textarea id="kbContent" rows="5" placeholder="粘贴高分申报书片段（300-600 字为宜）。写得越具体越好：带数字、有细节、敢写局限的片段，比空泛的范文更有参考价值。" style="min-height: 110px;"></textarea>
+                        <input type="text" id="kbTags" placeholder="标签（逗号分隔）：如 项目简介, 文化文旅, web网站" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text); margin-top: 10px;">
+                        <div style="font-size: 12px; color: var(--text-mute); margin: 10px 0 6px;">点击标签快速添加：</div>
+                        <div id="kbChipWrap" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;"></div>
+                        <button onclick="kbAdd()" style="padding: 10px 20px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 添加到范文库</button>
+                    </div>
+
+                    <div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+                        <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">检索测试</div>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="kbSearchInput" placeholder="输入关键词测试命中情况：如 苏轼文旅, web网站" style="flex: 1; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            <button onclick="kbSearch()" style="padding: 0 20px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 检索</button>
+                        </div>
+                        <div id="kbSearchResult" style="margin-top: 12px; font-size: 13px; color: var(--text-dim);"></div>
+                    </div>
+
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">范文列表（<span id="kbCount">0</span> 条）</div>
+                        <div id="kbList" style="font-size: 13px;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -2388,6 +2427,7 @@ button:hover { transform: translateY(-1px); }
                     idea: idea,
                     proposal_draft: proposal_draft,
                     mode: mode,
+                    keywords: (document.getElementById('keywords') || {}).value || '',
                     theme: (document.getElementById('deckTheme') || {}).value || null
                 })
             })
@@ -2709,6 +2749,137 @@ button:hover { transform: translateY(-1px); }
             // 显示当前tab
             document.getElementById('tab-' + tabName).classList.add('active');
             event.currentTarget.classList.add('active');
+            if (tabName === 'kb') { kbLoadTags(); kbList(); }
+        }
+
+        /* ---------- 范文库 ---------- */
+        function kbLoadTags() {
+            fetch('/api/kb/tags')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.success) return;
+                    var wrap = document.getElementById('kbChipWrap');
+                    if (!wrap) return;
+                    var html = '';
+                    var groups = [['模块', d.module || []], ['赛道', d.track || []], ['特征', d.feature || []]];
+                    groups.forEach(function (g) {
+                        (g[1] || []).forEach(function (t) {
+                            var color = g[0] === '模块' ? 'var(--c-a-soft)' : (g[0] === '赛道' ? 'var(--surface-2)' : 'var(--surface-2)');
+                            html += '<span onclick="kbAddTag(\'' + t + '\')" style="padding:4px 10px; background:' + color +
+                                '; color:var(--text); border:1px solid var(--line); border-radius:12px; cursor:pointer; font-size:12px;">' +
+                                t + '</span>';
+                        });
+                    });
+                    wrap.innerHTML = html || '<span style="font-size:12px;color:var(--text-mute);">（标签词表未加载）</span>';
+                })
+                .catch(function () {});
+        }
+
+        function kbAddTag(tag) {
+            var el = document.getElementById('kbTags');
+            if (!el) return;
+            var cur = el.value.split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean);
+            if (cur.indexOf(tag) >= 0) return;
+            cur.push(tag);
+            el.value = cur.join(', ');
+        }
+
+        function kbAdd() {
+            var content = (document.getElementById('kbContent') || {}).value || '';
+            var tagsRaw = (document.getElementById('kbTags') || {}).value || '';
+            content = content.trim();
+            if (!content) { wbToast('请先粘贴范文内容', { type: 'warn' }); return; }
+            var tags = tagsRaw.split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean);
+            if (!tags.length) { wbToast('至少填一个标签', { type: 'warn' }); return; }
+            fetch('/api/kb/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: content, tags: tags })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d && d.success) {
+                    wbToast('已添加到范文库', { type: 'success' });
+                    document.getElementById('kbContent').value = '';
+                    document.getElementById('kbTags').value = '';
+                    kbList();
+                } else {
+                    wbToast('添加失败：' + ((d && d.error) || '未知错误'), { type: 'error' });
+                }
+            })
+            .catch(function () { wbToast('添加失败：连不上服务', { type: 'error' }); });
+        }
+
+        function kbList() {
+            fetch('/api/kb/list')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    var box = document.getElementById('kbList');
+                    var cnt = document.getElementById('kbCount');
+                    if (!box) return;
+                    var items = (d && d.items) || [];
+                    if (cnt) cnt.innerText = items.length;
+                    if (!items.length) {
+                        box.innerHTML = '<div style="color:var(--text-mute);padding:16px;background:var(--surface-2);border-radius:8px;">范文库还是空的。在上面粘贴一段高分申报书片段并打上标签即可。</div>';
+                        return;
+                    }
+                    var html = '';
+                    items.forEach(function (it) {
+                        var tags = (it.tags || []).map(function (t) {
+                            return '<span style="padding:2px 8px;background:var(--c-a-soft);color:var(--c-a);border-radius:10px;font-size:11px;">' + t + '</span>';
+                        }).join(' ');
+                        html += '<div style="padding:12px;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;">' +
+                            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+                            '<div style="flex:1;min-width:0;">' +
+                            '<div style="margin-bottom:6px;">' + tags + '</div>' +
+                            '<div style="color:var(--text-dim);line-height:1.6;">' + (it.content || '').slice(0, 80) + '…</div>' +
+                            '</div>' +
+                            '<button onclick="kbDelete(' + it.id + ')" style="padding:4px 10px;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--line);border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap;">删除</button>' +
+                            '</div></div>';
+                    });
+                    box.innerHTML = html;
+                })
+                .catch(function () {});
+        }
+
+        function kbDelete(id) {
+            if (!confirm('确定删除这条范文？')) return;
+            fetch('/api/kb/delete/' + id, { method: 'DELETE' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.success) { wbToast('已删除', { type: 'success' }); kbList(); }
+                    else { wbToast('删除失败', { type: 'error' }); }
+                })
+                .catch(function () { wbToast('删除失败：连不上服务', { type: 'error' }); });
+        }
+
+        function kbSearch() {
+            var q = (document.getElementById('kbSearchInput') || {}).value || '';
+            var out = document.getElementById('kbSearchResult');
+            if (!out) return;
+            if (!q.trim()) { out.innerHTML = '<span style="color:var(--text-mute);">请输入关键词</span>'; return; }
+            out.innerHTML = '检索中…';
+            fetch('/api/kb/search?keywords=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.success) {
+                        out.innerHTML = '<span style="color:var(--text-mute);">检索失败</span>';
+                        return;
+                    }
+                    var kws = (d.keywords || []).map(function (k) {
+                        return '<span style="padding:2px 8px;background:var(--c-a-soft);color:var(--c-a);border-radius:10px;font-size:11px;">' + k + '</span>';
+                    }).join(' ');
+                    if (!d.hits) {
+                        out.innerHTML = '识别到的标签：' + (kws || '（无）') +
+                            '<div style="margin-top:6px;color:var(--text-mute);">没有命中任何范文。换个说法，或先添加带这些标签的范文。</div>';
+                        return;
+                    }
+                    out.innerHTML = '识别到的标签：' + (kws || '（无）') +
+                        '<div style="margin-top:8px;padding:10px;background:var(--surface-2);border-radius:8px;color:var(--text-dim);line-height:1.7;max-height:260px;overflow:auto;">' +
+                        (d.ref || '').slice(0, 600) + (d.hits > 600 ? '…' : '') +
+                        '</div><div style="margin-top:6px;color:var(--text-mute);">共命中 ' + d.hits + ' 字，生成时会作为参考上下文注入。</div>';
+                })
+                .catch(function () { out.innerHTML = '<span style="color:var(--text-mute);">检索失败：连不上服务</span>'; });
         }
 
         function showHistory() {

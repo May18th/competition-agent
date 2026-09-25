@@ -406,6 +406,33 @@ def _run_graph(app, state):
     return result
 
 
+def _strip_identifying_text(t):
+    """剔除文本里的院校名称、指导教师姓名（高置信度模式，后处理兜底）。"""
+    import re
+    if not t:
+        return t
+    # 指导教师 + 姓名（含职称）
+    t = re.sub(
+        r'(指导老师|指导教师)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
+        '指导教师（隐去）', t)
+    # 院校全称（高置信度，避免误伤「大学生」「商学院」等）
+    t = re.sub(r'[\u4e00-\u9fa5]{2,4}(?:大学|学校)', '（隐去）', t)
+    # 学院：只认较长校名（如「职业技术学院」「文理学院」），避开「商学院」等院系
+    t = re.sub(r'[\u4e00-\u9fa5]{4,8}学院', '（隐去）', t)
+    return t
+
+
+def _strip_identifying_info(obj):
+    """递归剔除身份信息：字符串过滤，dict/list 递归，其余原样。"""
+    if isinstance(obj, str):
+        return _strip_identifying_text(obj)
+    if isinstance(obj, dict):
+        return {k: _strip_identifying_info(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_identifying_info(x) for x in obj]
+    return obj
+
+
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -417,6 +444,7 @@ def _run_generation(data):
             "rule_content": data.get("rule_content", ""),
             "idea": idea,
             "proposal_draft": proposal_draft,
+            "user_keywords": data.get("keywords", ""),
             "parsed_rules": "",
             "similarity_report": "",
             "competitor_analysis": "",
@@ -528,6 +556,7 @@ def _run_generation(data):
                 "rich_deck": result.get("rich_deck")
             }
         }
+        history_item["data"] = _strip_identifying_info(history_item["data"])
         save_history_item(history_item)
 
     try:
@@ -566,6 +595,7 @@ def _run_generation(data):
         "completeness": completeness
     }
 
+    payload = _strip_identifying_info(payload)
     return payload
 
 
@@ -1027,3 +1057,76 @@ def export_pptx():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"PPT导出失败：{e}"}), 500
+
+
+# ============ 范文库管理接口 ============
+
+@app.route('/api/kb/add', methods=['POST'])
+def kb_add():
+    data = request.get_json(force=True, silent=True) or {}
+    content = data.get('content', '')
+    tags = data.get('tags') or []
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(',') if t.strip()]
+    if not content.strip():
+        return jsonify({"success": False, "error": "内容为空"}), 400
+    try:
+        from kb_samples import add_sample
+        sid = add_sample(content, tags, source=data.get('source', ''), score=data.get('score', 0))
+        return jsonify({"success": True, "id": sid})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/kb/list')
+def kb_list():
+    tag = request.args.get('tag', '')
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+    try:
+        from kb_samples import list_samples
+        items = list_samples(tag=tag or None, limit=limit)
+        return jsonify({"success": True, "items": items})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/kb/delete/<int:sample_id>', methods=['DELETE'])
+def kb_delete(sample_id):
+    try:
+        from kb_samples import delete_sample
+        ok = delete_sample(sample_id)
+        return jsonify({"success": ok})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/kb/tags')
+def kb_tags():
+    try:
+        from kb_samples import get_all_tags
+        d = get_all_tags()
+        return jsonify({"success": True, "module": d["module"], "track": d["track"], "feature": d["feature"]})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/kb/search')
+def kb_search():
+    """按关键词真实检索（走 kb_retrieve，与生成时同一套逻辑），供前端检索测试用。
+
+    /api/kb/list?tag= 是精确标签过滤，用户输入「苏轼文旅」命中不了标签「文化文旅」，
+    所以单独开这个接口：先 extract_keywords 抽标签，再 search_samples 检索。
+    """
+    q = request.args.get('keywords', '') or request.args.get('q', '')
+    module = request.args.get('module', '')
+    try:
+        from kb_retrieve import extract_keywords, search_samples
+        kws = extract_keywords(q)
+        ref = search_samples(kws, module or None)
+        return jsonify({"success": True, "keywords": kws,
+                        "ref": ref, "hits": len(ref or "")})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

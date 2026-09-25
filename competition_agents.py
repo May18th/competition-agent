@@ -12,6 +12,7 @@ from stage_reporter import report_stage as _report_stage, set_partial_field
 # ============ 配置 ============
 import os
 import re
+import threading
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -79,6 +80,9 @@ def get_quota_status():
     }
 
 
+# 峰值并发闸：深度版 START 阶段最多 8 个节点并行打 DeepSeek，
+# 限制到 4 个一批，避免瞬时并发过高触发限流。
+_LLM_GATE = threading.Semaphore(4)
 _llm_invoke_original = llm.invoke
 
 
@@ -86,7 +90,8 @@ def _llm_invoke_with_quota(*args, **kwargs):
     data = _quota_load()
     if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
         raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
-    result = _llm_invoke_original(*args, **kwargs)
+    with _LLM_GATE:
+        result = _llm_invoke_original(*args, **kwargs)
     data["calls"] = data.get("calls", 0) + 1
     _quota_save(data)
     return result
@@ -334,6 +339,7 @@ class CompetitionState(TypedDict):
     rule_content: str
     idea: str
     proposal_draft: str
+    user_keywords: str
 
     # 中间结果
     parsed_rules: str
@@ -416,6 +422,8 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 ✅ 全程统一叫「平台」，各环节统一叫「智能体」。
 
 11. 整体语气：像项目负责人在跟评委陈述自己的项目，自然、平实、有分寸，不要背范文、写八股、念新闻稿。
+
+12. 匿名要求（硬性）：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名等身份信息；涉及团队一律用「本项目团队」「参赛团队」指代，涉及指导教师一律省略。违者视为不合格。
 """
 
 _REPORT_SPEC = """【输出规格 —— 必须遵守】
@@ -489,7 +497,8 @@ def _tier_hint(state, brief, full):
     用于那些有自己专属结构、不适合整段套 _spec_for 的 Agent
     （评委 / 答辩 / PPT / 演讲稿 / 快速诊断）。
     """
-    return brief if (state or {}).get("tier") == "fast" else full
+    hint = brief if (state or {}).get("tier") == "fast" else full
+    return hint + "\n（匿名要求：严禁出现院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。）"
 
 
 def _cjk_len(text):
@@ -679,6 +688,7 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深商业模式专家。请只负责设计商业模式，不要写竞品分析、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_ref_block(state, '商业模式')}
 
 请只写以下内容：
 1. 目标客户细分（至少3类，每类的痛点和付费意愿）
@@ -702,6 +712,7 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深风险评估专家。请只负责分析风险，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_ref_block(state, '风险分析')}
 
 请只写以下内容：
 1. 技术风险（具体有哪些技术难题，怎么应对）
@@ -748,6 +759,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目规划专家。请为以下项目制定详细的实施计划。
 
 项目创意：{state['idea']}
+{_ref_block(state, '实践过程')}
 
 请写：
 1. 分阶段计划（共8周，每周做什么，交付什么成果）
@@ -771,6 +783,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目价值分析专家。请分析这个项目的社会价值和应用前景。
 
 项目创意：{state['idea']}
+{_ref_block(state, '社会价值')}
 
 请写：
 1. 社会价值（解决了什么社会问题，惠及哪些人群）
@@ -812,6 +825,20 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
+def _ref_block(state: dict, module_tag: str) -> str:
+    """取该模块的范文参考块；检索失败或为空返回空串，绝不抛异常。"""
+    try:
+        from kb_retrieve import extract_keywords, search_samples
+        kws = extract_keywords(state.get("idea", "") + " " + state.get("user_keywords", ""))
+        ref = search_samples(kws, module_tag)
+        if ref:
+            return f"【高分范文参考（务必学习其结构与表述风格，不要照抄内容）】\n{ref}\n"
+        return ""
+    except Exception as e:
+        print(f"[kb] 范文检索跳过：{e}")
+        return ""
+
+
 def _stream_llm(prompt, field, every=8):
     """流式调用 LLM：边生成边把累积文本写进 partial，前端即可逐字看到内容。
 
@@ -847,6 +874,7 @@ def _build_outline(state: CompetitionState) -> str:
 技术方案：{state.get('tech_solution', '')[:1800]}
 商业模式：{state.get('business_model', '')[:1200]}
 社会价值：{state.get('social_value', '')[:1000]}
+{_ref_block(state, '项目简介')}
 
 请输出一份 Markdown 纲要（1200～1800 字），包含以下六部分：
 ## 一、项目定位
@@ -1000,6 +1028,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {source_label}：{source_text}
 {revise_block}
 {analysis_block}
+{_ref_block(state, '项目简介')}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -1092,6 +1121,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 同质化分析：{state['similarity_report']}
 （本模式不做外部调研，请基于项目创意本身往下推演；涉及数字时标明是测算值，不要编造引用来源）
 一句话定位：{state.get('one_liner','')}
+{_ref_block(state, '项目简介')}
 
 【篇幅硬性要求】
 1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。
@@ -1270,7 +1300,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
     state["score"] = max(0, min(100, state["score"]))
     state["approved"] = state["score"] >= 70
     print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
-    return state
+    return {"judge_feedback": state["judge_feedback"], "score": state["score"], "approved": state["approved"]}
 
 
 def expert_review_agent(state: CompetitionState) -> CompetitionState:
@@ -1319,7 +1349,7 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
     response = llm.invoke([HumanMessage(content=prompt)])
     state["expert_review"] = response.content
     print("🧑‍⚖️ 多专家模拟评审：已生成")
-    return state
+    return {"expert_review": state["expert_review"]}
 
 
 def defense_questions_agent(state: CompetitionState) -> CompetitionState:
@@ -1338,7 +1368,10 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     response = llm.invoke([HumanMessage(content=prompt)])
     state["defense_questions"] = response.content
     print(f"🎤 答辩问题 Agent：已生成")
-    return state
+    # 只回传自己负责的字段：defense 与 ppt 在图上并行，若各自 return 整个 state，
+    # 两者会同时写 competition_name 等公共字段，触发 LangGraph
+    # InvalidUpdateError（Can receive only one value per step），导致整轮生成失败。
+    return {"defense_questions": response.content}
 
 
 def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
@@ -1357,7 +1390,8 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
     response = llm.invoke([HumanMessage(content=prompt)])
     state["ppt_outline"] = response.content
     print(f"📊 PPT 大纲 Agent：已生成")
-    return state
+    # 同上：ppt 与 defense 并行，不能 return 整个 state
+    return {"ppt_outline": response.content}
 
 
 def speech_agent(state: CompetitionState) -> CompetitionState:
@@ -1436,7 +1470,7 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
     response = llm.invoke([HumanMessage(content=prompt)])
     state["proposal_analysis"] = response.content
     print("申报书快速诊断 Agent：完成")
-    return state
+    return {"proposal_analysis": state["proposal_analysis"]}
 
 
 def rich_media_agent(state: CompetitionState) -> CompetitionState:
@@ -1460,6 +1494,7 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 - charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；
 - tables 生成 2-3 个（竞品对比、商业模式、实施计划等），header 和 rows 要真实具体、贴合本项目；
 - deck.slides 生成 8-12 页，type 只用 cover/section/bullets/metrics/table/closing 这些，标题和内容贴合本项目。
+- 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["rich_media"] = response.content
@@ -1467,20 +1502,19 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
-def should_iterate(state: CompetitionState) -> Literal["revise", "defense"]:
+def should_iterate(state: CompetitionState):
     if state["approved"] or (state.get("revision_count") or 0) >= 2:
-        return "defense"
-    else:
-        return "revise"
+        return ["defense", "ppt"]
+    return ["revise"]
 
 
-def should_iterate_fast(state: CompetitionState) -> Literal["revise", "defense"]:
+def should_iterate_fast(state: CompetitionState):
     """简洁版可选迭代：仅当用户开启 iterate 且低分且未迭代过时返工一轮"""
     if not state.get("iterate", False):
-        return "defense"
+        return ["defense", "ppt"]
     if state["approved"] or (state.get("revision_count") or 0) >= 2:
-        return "defense"
-    return "revise"
+        return ["defense", "ppt"]
+    return ["revise"]
 
 
 # ============ 4. 构建工作流 ============
@@ -1510,15 +1544,12 @@ workflow.add_edge("idea_evaluator", "analysis")
 workflow.add_edge("one_liner", "analysis")
 workflow.add_edge("analysis", "writer")
 workflow.add_edge("writer", "judge")
-workflow.add_edge("judge", "proposal_analysis")
-workflow.add_conditional_edges(
-    "proposal_analysis",
-    should_iterate_fast,
-    {"revise": "revise", "defense": "defense"}
-)
+workflow.add_edge("writer", "proposal_analysis")
+workflow.add_conditional_edges("judge", should_iterate_fast)
 workflow.add_edge("revise", "judge")
-workflow.add_edge("defense", "ppt")
+workflow.add_edge("defense", "speech")
 workflow.add_edge("ppt", "speech")
+workflow.add_edge("proposal_analysis", END)
 workflow.add_edge("speech", END)
 
 
@@ -1568,18 +1599,13 @@ deep_workflow.add_edge("social", "summary")
 deep_workflow.add_edge("summary", "rich_media")
 deep_workflow.add_edge("rich_media", "writer")
 deep_workflow.add_edge("writer", "judge")
-deep_workflow.add_edge("judge", "expert_review")
+deep_workflow.add_edge("writer", "expert_review")
+deep_workflow.add_edge("judge", "proposal_analysis")
 deep_workflow.add_edge("expert_review", "proposal_analysis")
-deep_workflow.add_conditional_edges(
-    "proposal_analysis",
-    should_iterate,
-    {
-        "revise": "revise",
-        "defense": "defense"
-    }
-)
+deep_workflow.add_conditional_edges("proposal_analysis", should_iterate)
 deep_workflow.add_edge("revise", "judge")
-deep_workflow.add_edge("defense", "ppt")
+deep_workflow.add_edge("revise", "expert_review")
+deep_workflow.add_edge("defense", "speech")
 deep_workflow.add_edge("ppt", "speech")
 deep_workflow.add_edge("speech", END)
 
