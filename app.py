@@ -16,6 +16,7 @@ from competition_agents import fast_app, deep_app, CompetitionState
 
 
 app = Flask(__name__)
+START_TIME = time.time()
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
 # 由 media_routes.py 提供，WorkBuddy 注册。
@@ -60,15 +61,85 @@ latest_result = None
 import json
 from datetime import datetime
 
-def load_history():
-    if os.path.exists(app.config['HISTORY_FILE']):
-        with open(app.config['HISTORY_FILE'], 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return []
+def _row_to_item(row):
+    rid, comp, idea, mode, result_data, created_time = row
+    try:
+        data = json.loads(result_data)
+    except Exception:
+        data = {}
+    return {
+        "id": rid, "time": created_time, "competition_name": comp,
+        "idea": idea, "mode": mode, "score": data.get("score", ""), "data": data,
+    }
 
-def save_history(history):
-    with open(app.config['HISTORY_FILE'], 'w', encoding='utf-8') as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def load_history(limit=200, offset=0, q=None):
+    """从 SQLite 读取历史记录（新的在前），返回兼容旧接口的 list"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    sql = "SELECT id, competition_name, idea, mode, result_data, created_time FROM history"
+    params = []
+    if q:
+        sql += " WHERE competition_name LIKE ? OR idea LIKE ?"
+        params = [f"%{q}%", f"%{q}%"]
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params += [limit, offset]
+    c.execute(sql, params)
+    rows = c.fetchall()
+    conn.close()
+    return [_row_to_item(r) for r in rows]
+
+
+def count_history(q=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if q:
+        c.execute("SELECT COUNT(*) FROM history WHERE competition_name LIKE ? OR idea LIKE ?", (f"%{q}%", f"%{q}%"))
+    else:
+        c.execute("SELECT COUNT(*) FROM history")
+    total = c.fetchone()[0]
+    conn.close()
+    return total
+
+
+def save_history_item(item):
+    """插入一条历史记录到 SQLite，返回新 id"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time)
+                 VALUES (?, ?, ?, ?, ?)''',
+              (item.get("competition_name", ""), item.get("idea", ""), item.get("mode", ""),
+               json.dumps(item.get("data", {}), ensure_ascii=False),
+               item.get("time", datetime.now().strftime("%Y-%m-%d %H:%M"))))
+    conn.commit()
+    new_id = c.lastrowid
+    conn.close()
+    return new_id
+
+
+def _migrate_history_json():
+    """一次性把 history.json 迁移到 SQLite（仅当 SQLite 为空）"""
+    json_path = app.config['HISTORY_FILE']
+    if not os.path.exists(json_path):
+        return
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM history")
+    has_data = c.fetchone()[0] > 0
+    conn.close()
+    if has_data:
+        return
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            items = json.load(f)
+        for item in reversed(items):  # JSON 新在前，SQLite 按 id 递增（旧在前），反序插入保持时间顺序
+            save_history_item(item)
+        print(f"✅ 已从 history.json 迁移 {len(items)} 条历史到 SQLite")
+    except Exception as e:
+        print(f"⚠️ 历史迁移失败：{e}")
+
+
+_migrate_history_json()
 
 
 # ============ 网页界面 ============
@@ -280,19 +351,43 @@ def export_business():
 
 @app.route('/api/history')
 def get_history():
-    history = load_history()
+    limit = max(1, min(int(request.args.get("limit", 20)), 100))
+    offset = max(0, int(request.args.get("offset", 0)))
+    q = request.args.get("q", "").strip()
+    history = load_history(limit=limit, offset=offset, q=q)
+    total = count_history(q)
     # 只返回摘要，不返回完整数据
     summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"], "idea": h["idea"], "score": h["score"]} for h in history]
-    return jsonify({"success": True, "history": summary})
+    return jsonify({"success": True, "history": summary, "total": total, "limit": limit, "offset": offset})
 
 
 @app.route('/api/history/<int:history_id>')
 def get_history_detail(history_id):
-    history = load_history()
-    for h in history:
-        if h["id"] == history_id:
-            return jsonify({"success": True, "data": h["data"]})
-    return jsonify({"success": False, "error": "记录不存在"})
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT result_data FROM history WHERE id = ?", (history_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "记录不存在"})
+    try:
+        data = json.loads(row[0])
+    except Exception:
+        data = {}
+    return jsonify({"success": True, "data": data})
+
+
+@app.route('/api/history/<int:history_id>', methods=['DELETE'])
+def delete_history(history_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM history WHERE id = ?", (history_id,))
+    conn.commit()
+    deleted = c.rowcount
+    conn.close()
+    if deleted:
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "记录不存在"}), 404
 
 
 tasks = {}
@@ -329,7 +424,8 @@ def _run_generation(data):
             "idea_score": 0,
             "idea_feedback": "",
             "score": 0,
-            "approved": False
+            "approved": False,
+            "iterate": bool(data.get("iterate", False))
         }
 
         mode = data.get("mode", "fast")
@@ -381,12 +477,11 @@ def _run_generation(data):
             print(f"[rich] 富媒体解析失败（不影响正文）：{_re}")
         # ===== 富媒体解析结束 =====
 
-        history = load_history()
         history_item = {
-            "id": int(datetime.now().timestamp() * 1000),
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "competition_name": data.get("competition_name", ""),
             "idea": data.get("idea", "")[:50],
+            "mode": data.get("mode", "fast"),
             "score": result.get("score", ""),
             "data": {
                 "parsed_rules": result.get("parsed_rules", ""),
@@ -414,10 +509,7 @@ def _run_generation(data):
                 "rich_deck": result.get("rich_deck")
             }
         }
-        history.insert(0, history_item)
-        if len(history) > 20:
-            history = history[:20]
-        save_history(history)
+        save_history_item(history_item)
 
     try:
         from competition_agents import check_proposal_completeness
@@ -463,6 +555,8 @@ def _friendly_error(e):
         return "请求过于频繁，请稍后再试"
     if "401" in err or "auth" in err or "api key" in err:
         return "模型接口鉴权失败，请检查 DEEPSEEK_API_KEY"
+    if "402" in err or "insufficient balance" in err or "payment required" in err or "余额不足" in err:
+        return "DeepSeek 账户余额不足，请充值后重试（充值后无需重启服务）"
     if "上限" in err or "配额" in err or "quota" in err:
         return "今日调用次数已达上限，请明天再试或联系管理员调整额度"
     return "生成失败，请稍后重试"
@@ -480,20 +574,43 @@ def generate():
         return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)})
 
 
+# ---- 异步任务阶段上报 ----
+# 用途：让 /api/status/<task_id> 能吐出「当前跑到哪一步」，前端据此渲染真实步骤。
+# 调用方式（供 _run_generation / 各 Agent 内部使用）：
+#     from app import _report_stage
+#     _report_stage("parsing_rules")
+# 约定阶段名：parsing_rules / similarity / writing / judging / revision / rich_assets
+# 不调用也能正常工作，只是 stage 停留在 start。
+_CURRENT_TASK = {"id": None}
+
+
+def _report_stage(stage):
+    tid = _CURRENT_TASK.get("id")
+    t = tasks.get(tid) if tid else None
+    if isinstance(t, dict):
+        t["stage"] = stage
+        t["updated_at"] = time.time()
+
+
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
     data = request.json or {}
     task_id = uuid.uuid4().hex
-    tasks[task_id] = {"status": "running", "updated_at": time.time()}
+    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time()}
 
     def worker():
+        _CURRENT_TASK["id"] = task_id          # 让 _report_stage 知道往哪个任务写
         try:
             rd = _run_generation(data)
-            tasks[task_id] = {"status": "done", "data": rd, "updated_at": time.time()}
+            _report_stage("done")
+            tasks[task_id] = {"status": "done", "data": rd, "stage": "done", "updated_at": time.time()}
         except Exception as e:
             import traceback
             traceback.print_exc()
-            tasks[task_id] = {"status": "error", "error": _friendly_error(e), "detail": str(e), "updated_at": time.time()}
+            tasks[task_id] = {"status": "error", "error": _friendly_error(e),
+                              "detail": str(e), "stage": "error", "updated_at": time.time()}
+        finally:
+            _CURRENT_TASK["id"] = None
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"success": True, "task_id": task_id})
@@ -504,7 +621,7 @@ def get_task_status(task_id):
     t = tasks.get(task_id)
     if not t:
         return jsonify({"success": False, "error": "任务不存在或已过期"})
-    resp = {"success": True, "status": t["status"], "updated_at": t["updated_at"]}
+    resp = {"success": True, "status": t["status"], "stage": t.get("stage"), "updated_at": t["updated_at"]}
     if t["status"] == "done":
         resp["data"] = t["data"]
     elif t["status"] == "error":
@@ -849,6 +966,28 @@ def quota():
     except Exception as e:
         print(f"[quota] 状态读取失败：{e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/health')
+def health():
+    """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间"""
+    try:
+        from competition_agents import competition_knowledge, get_quota_status
+        knowledge_count = len(competition_knowledge)
+        quota = get_quota_status()
+    except Exception:
+        knowledge_count = 0
+        quota = {}
+    latest = load_history(limit=1)
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "uptime_seconds": int(time.time() - START_TIME),
+        "knowledge_count": knowledge_count,
+        "quota": quota,
+        "history_count": count_history(),
+        "last_generation_time": latest[0]["time"] if latest else None,
+    })
 
 
 @app.route('/api/ppt_themes')

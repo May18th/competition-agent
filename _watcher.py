@@ -156,7 +156,7 @@ def already_running():
 def fetch_public_url():
     today = time.strftime('%Y%m%d')
     best = None
-    pat = re.compile(r'(https?://[A-Za-z0-9.-]+\.(?:cpolar\.(?:cn|top|io)|vip\.cpolar\.cn))')
+    pat = re.compile(r'https?://[A-Za-z0-9.-]+\.(?:cpolar\.(?:cn|top|io)|vip\.cpolar\.cn)')
     try:
         for fn in os.listdir(CPOLAR_LOG_DIR):
             # 注意：日志文件名形如 cpolar_service.log.20260925，以日期结尾而非 .log，
@@ -172,9 +172,10 @@ def fetch_public_url():
                 continue
             for m in pat.finditer(txt):
                 cand = m.group(0)
-                if 'r16.cpolar.top' in cand:
-                    continue          # 这条是远程桌面隧道，跳过
-                best = cand           # 取最后出现的一条
+                # 只取 http 地址（website 隧道是 http；remoteDesktop 是 tcp:// 不会被本正则匹配）
+                # 取最后出现的 http 地址 = 最新隧道地址（免费版地址会变，r16.cpolar.top 也可能是 website）
+                if cand.startswith('http://'):
+                    best = cand
     except Exception as e:
         write_log('读 cpolar 日志失败: %r' % e)
     return best
@@ -183,13 +184,14 @@ def fetch_public_url():
 def update_url(url):
     if url is None:
         return
-    https = url.replace('http://', 'https://')
+    # cpolar 免费版 https 证书不稳定（SSL 会失败），直接用 http 地址即可访问
+    final = url if url.startswith('http://') else url.replace('https://', 'http://')
     try:
         with open(PUBLIC_URL_FILE, 'w', encoding='utf-8') as f:
             f.write('# 科创赛事助手 · 公网访问地址\n')
             f.write('# 最后更新：%s\n' % time.strftime('%Y-%m-%d %H:%M:%S'))
             f.write('# 本文件由 _watcher.py 每 20 秒自动更新，地址变了以这里为准。\n\n')
-            f.write(https + '\n')
+            f.write(final + '\n')
     except Exception:
         pass
 

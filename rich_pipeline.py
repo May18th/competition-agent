@@ -236,6 +236,8 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             charts.append({
                 "id": cid, "title": c.get("title", ""),
                 "caption": c.get("caption", ""), "url": f"/generated/{safe}",
+                # 保留原始数值：PNG 不可 hover，前端要用 ECharts 重绘才支持「显示具体数值」
+                "spec": c,
             })
             print(f"[rich] 图表 {cid} 渲染完成 -> {safe}")
     for t in (assets.get("tables") or [])[:5]:

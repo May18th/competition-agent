@@ -19,6 +19,9 @@
 | `app.py` 导出类路由 | **我主导，改前说明** | 指 `export_pptx` / `export_zip`，其余仍归 Codex |
 | `data/*.txt` 赛事资料内容 | **队友提供** | 我只出命名规范与格式，不写业务内容 |
 | `data/README_知识库提交规范.md` | **我主导** | 给队友照填的模板与强制命名表 |
+| `wsgi.py` / `Procfile` / `render.yaml` / `Dockerfile` / `vercel.json` / `api/index.py` | **我主导** | 云端部署入口与配置，见 `部署说明.md` |
+| `requirements.txt` / `chart_renderer.py` 的字体候选段 | **我主导** | 面向跨平台部署的依赖与中文字体兜底 |
+| `app.py` 写盘路径 / `tasks` 存储（云化改造） | **Codex 主责** | 只在真要用 Vercel 时才改，方案见 `待办_后端.md` P8 |
 
 ### pptx_builder.py 内部再做二级划分
 

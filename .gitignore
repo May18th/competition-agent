@@ -4,6 +4,7 @@ __pycache__/
 uploads/
 competition.db
 history.json
+quota.json
 error.log
 *.log
 

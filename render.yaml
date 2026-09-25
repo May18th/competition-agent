@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: competition-agent
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+
+    # 装中文字体，否则图表里的中文全是方框。
+    # 如果这一步报权限错，删掉第一行 apt-get，中文会退化成方框（其余功能正常）。
+    buildCommand: |
+      apt-get update && apt-get install -y fonts-noto-cjk
+      pip install -r requirements.txt
+
+    # workers 必须为 1：异步任务状态在内存里，多进程会让轮询拿不到进度。
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 600
+
+    healthCheckPath: /
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: DEEPSEEK_API_KEY
+        sync: false          # 不写进仓库，去 Render 面板 Environment 里填
+      - key: QUOTA_DAILY_LIMIT
+        value: "500"

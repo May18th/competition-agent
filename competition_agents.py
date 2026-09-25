@@ -129,14 +129,44 @@ competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
 
 
+_ALIAS_GROUPS = [
+    ["国创", "国创项目", "国创计划", "大创", "国家级大学生创新创业训练计划"],
+    ["挑战杯", "大挑", "小挑"],
+    ["互联网+", "互联网加", "互联网＋"],
+]
+
+
+def _same_alias_group(a, b):
+    for group in _ALIAS_GROUPS:
+        if any(x in a for x in group) and any(x in b for x in group):
+            return True
+    return False
+
+
+def _competition_match(known, query):
+    """宽松匹配比赛名：去掉通用词后看是否有共同关键词"""
+    if not known or not query:
+        return False
+    if known in query or query in known:
+        return True
+    if _same_alias_group(known, query):
+        return True
+    common_words = ["大学生", "全国", "中国", "国际", "大赛", "竞赛", "训练计划", "计划", "创新创业", "创业"]
+    def _tokens(s):
+        for w in common_words:
+            s = s.replace(w, " ")
+        return {t for t in s.split() if len(t) >= 2}
+    return bool(_tokens(known) & _tokens(query))
+
+
 def get_competition_knowledge(competition_name: str) -> str:
     """根据比赛名称，匹配对应的知识库内容"""
     if not competition_knowledge:
         return ""
     
-    # 简单匹配：用户输入的比赛名，和知识库的比赛名，只要有包含关系就算匹配
+    # 宽松匹配：包含关系 或 关键词重叠
     for known_name, content in competition_knowledge.items():
-        if known_name in competition_name or competition_name in known_name:
+        if _competition_match(known_name, competition_name):
             return f"\n【知识库中关于{known_name}的资料】\n{content}\n"
     
     return ""
@@ -224,6 +254,57 @@ def check_proposal_completeness(proposal: str) -> dict:
     return {"ok": not missing, "missing": missing, "detail": detail, "chars": len(text)}
 
 
+def parse_knowledge(content: str) -> dict:
+    """把知识库 txt 解析成结构化字段（按 ## 标题切分）"""
+    result = {
+        "title": "", "intro": "", "scoring": "", "sections": "",
+        "preference": "", "penalty": "", "raw": content or "",
+    }
+    if not content:
+        return result
+    buf = {}
+    current = None
+    for line in (content or "").split("\n"):
+        line = line.rstrip()
+        if line.startswith("# ") and not line.startswith("## "):
+            result["title"] = line[2:].strip()
+            continue
+        if line.startswith("## "):
+            current = line[3:].strip()
+            buf[current] = []
+            continue
+        if current is not None:
+            buf[current].append(line)
+
+    def _join(keywords):
+        for k, v in buf.items():
+            if any(kw in k for kw in keywords):
+                return "\n".join(v).strip()
+        return ""
+
+    result["intro"] = _join(["介绍", "简介"])
+    result["scoring"] = _join(["评分", "打分"])
+    result["sections"] = _join(["章节", "申报书", "结构", "必须包含"])
+    result["preference"] = _join(["偏好", "方向", "喜欢"])
+    result["penalty"] = _join(["扣分", "注意", "误区"])
+    return result
+
+
+def get_competition_knowledge_structured(competition_name: str) -> dict:
+    """按比赛名匹配，返回结构化知识库字段（matched=False 表示未收录）"""
+    empty = {"matched": False, "matched_name": "", "title": "", "intro": "",
+             "scoring": "", "sections": "", "preference": "", "penalty": ""}
+    if not competition_knowledge:
+        return empty
+    for known_name, content in competition_knowledge.items():
+        if _competition_match(known_name, competition_name):
+            parsed = parse_knowledge(content)
+            parsed["matched"] = True
+            parsed["matched_name"] = known_name
+            return parsed
+    return empty
+
+
 # ============ 1. 定义共享状态 ============
 def merge_state(old, new):
     """并行的时候，后写的覆盖先写的"""
@@ -261,14 +342,25 @@ class CompetitionState(TypedDict):
 
     # 控制
     revision_count: int
+    iterate: bool
 
 
 # ============ 2. 四个 Agent ============
 
 def rule_parser_agent(state: CompetitionState) -> CompetitionState:
     """📋 规则解析 Agent：提取评分标准"""
-    # 先查知识库，有没有这个比赛的资料
-    kb_content = get_competition_knowledge(state['competition_name'])
+    # 先查知识库（结构化，缺失字段明确标注，避免模型瞎编）
+    kb = get_competition_knowledge_structured(state['competition_name'])
+    if kb.get("matched"):
+        kb_block = f"""【知识库中关于{kb['matched_name']}的资料】
+- 比赛介绍：{kb['intro'] or '（无）'}
+- 评分标准：{kb['scoring'] or '（无）'}
+- 申报书必须包含的章节：{kb['sections'] or '（知识库未提供，请按通用竞赛常识推断）'}
+- 偏好方向：{kb['preference'] or '（无）'}
+- 常见扣分点：{kb['penalty'] or '（无）'}
+"""
+    else:
+        kb_block = "（知识库未收录该赛事，请根据用户上传的规则或通用竞赛常识分析）"
     
     # 如果用户没上传规则，就说根据知识库来分析
     if not state['rule_content'] or state['rule_content'].strip() == '':
@@ -279,7 +371,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是赛事规则分析专家。请分析这个比赛的核心评分标准和要求。
 
 赛事名称：{state['competition_name']}
-{kb_content}
+{kb_block}
 {rule_content_text}
 
 请提取：
@@ -864,8 +956,17 @@ def should_iterate(state: CompetitionState) -> Literal["revise", "defense"]:
         return "revise"
 
 
+def should_iterate_fast(state: CompetitionState) -> Literal["revise", "defense"]:
+    """简洁版可选迭代：仅当用户开启 iterate 且低分且未迭代过时返工一轮"""
+    if not state.get("iterate", False):
+        return "defense"
+    if state["approved"] or (state.get("revision_count") or 0) >= 2:
+        return "defense"
+    return "revise"
+
+
 # ============ 4. 构建工作流 ============
-# 简洁版刻意不做迭代（无 should_iterate 回边），保持快速出稿；需要返工请用深度版
+# 简洁版默认不做迭代（保持快速出稿）；用户传 iterate=true 时，低分自动返工一轮
 workflow = StateGraph(CompetitionState)
 
 workflow.add_node("rule_parser", rule_parser_agent)
@@ -879,6 +980,7 @@ workflow.add_node("proposal_analysis", proposal_analysis_agent)
 workflow.add_node("defense", defense_questions_agent)
 workflow.add_node("ppt", ppt_outline_agent)
 workflow.add_node("speech", speech_agent)
+workflow.add_node("revise", targeted_revise_agent)
 
 workflow.add_edge(START, "rule_parser")
 workflow.add_edge(START, "similarity_checker")
@@ -891,7 +993,12 @@ workflow.add_edge("one_liner", "analysis")
 workflow.add_edge("analysis", "writer")
 workflow.add_edge("writer", "judge")
 workflow.add_edge("judge", "proposal_analysis")
-workflow.add_edge("proposal_analysis", "defense")
+workflow.add_conditional_edges(
+    "proposal_analysis",
+    should_iterate_fast,
+    {"revise": "revise", "defense": "defense"}
+)
+workflow.add_edge("revise", "judge")
 workflow.add_edge("defense", "ppt")
 workflow.add_edge("ppt", "speech")
 workflow.add_edge("speech", END)

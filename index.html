@@ -596,6 +596,40 @@ button:hover { transform: translateY(-1px); }
     button { font-size: 14px; }
 }
 
+/* ---------- 全局提示 Toast ---------- */
+#wbToast {
+    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 10px;
+    width: min(92vw, 400px); pointer-events: none;
+}
+.wb-toast {
+    pointer-events: auto;
+    display: flex; align-items: flex-start; gap: 11px;
+    padding: 14px 15px; border-radius: 12px;
+    background: var(--surface-solid);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--c-a);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .38);
+    color: var(--text); font-size: 13.5px; line-height: 1.65;
+    animation: wbToastIn .3s cubic-bezier(.2, .7, .2, 1);
+}
+.wb-toast.is-out { animation: wbToastOut .22s ease forwards; }
+.wb-toast-ico { flex: none; width: 18px; height: 18px; margin: 1px 0 0; }
+.wb-toast-main { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+.wb-toast-title { font-weight: 600; }
+.wb-toast-sub { margin-top: 5px; font-size: 12px; color: var(--text-mute); line-height: 1.55; word-break: break-all; }
+.wb-toast-x { flex: none; width: 16px; height: 16px; margin-top: 2px; cursor: pointer; opacity: .45; transition: opacity .15s; }
+.wb-toast-x:hover { opacity: 1; }
+.wb-toast.t-ok   { border-left-color: var(--ok); }
+.wb-toast.t-ok   .wb-toast-ico { color: var(--ok); }
+.wb-toast.t-warn { border-left-color: #F59E0B; }
+.wb-toast.t-warn .wb-toast-ico { color: #F59E0B; }
+.wb-toast.t-error{ border-left-color: #EF4444; }
+.wb-toast.t-error .wb-toast-ico { color: #EF4444; }
+.wb-toast.t-info .wb-toast-ico { color: var(--c-a); }
+@keyframes wbToastIn  { from { opacity: 0; transform: translateX(22px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes wbToastOut { to { opacity: 0; transform: translateX(22px) scale(.97); } }
+
 /* ---------- 无障碍：尊重减弱动效偏好 ---------- */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -1089,7 +1123,7 @@ button:hover { transform: translateY(-1px); }
         };
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
-            if (!text.trim()) { alert('「' + name + '」没有内容，请先生成'); return; }
+            if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
             try {
@@ -1101,7 +1135,7 @@ button:hover { transform: translateY(-1px); }
                 if (!res.ok) {
                     var m = '导出失败';
                     try { var j = await res.json(); m = j.error || m; } catch (e) {}
-                    alert(m);
+                    wbToast(m, { type: 'error' });
                     return;
                 }
                 const blob = await res.blob();
@@ -1109,8 +1143,9 @@ button:hover { transform: translateY(-1px); }
                 a.href = URL.createObjectURL(blob);
                 a.download = name + ".docx";
                 a.click();
+                wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
-                alert('导出失败：' + (e && e.message ? e.message : e));
+                wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
@@ -1162,19 +1197,83 @@ button:hover { transform: translateY(-1px); }
                 a.href = URL.createObjectURL(blob);
                 a.download = "科创赛事项目材料包.zip";
                 a.click();
+                wbToast('材料包已开始下载', { type: 'ok', ms: 3000 });
             } catch (e) {
-                alert('打包失败：' + (e && e.message ? e.message : e));
+                wbToast('打包失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
+        function _fallbackCopy(text, done, fail) {
+            // 非 HTTPS 或旧浏览器下 clipboard API 不可用时的兜底
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                var ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                ok ? done() : fail(new Error('execCommand 返回 false'));
+            } catch (e) { fail(e); }
+        }
         function copyText(id) {
-            var text = document.getElementById(id).innerText;
-            navigator.clipboard.writeText(text);
+            var el = document.getElementById(id);
+            if (!el) return;
+            // 优先复制渲染后的干净文本；隐藏的 tab innerText 为空时回退原始数据
+            var text = (el.innerText || '').trim() || _txt(_DOM_TO_KEY[id] || '', id);
+            if (!String(text).trim()) { wbToast('没有可复制的内容', { type: 'warn' }); return; }
+            var okFn = function () { wbToast('已复制到剪贴板', { type: 'ok', ms: 2000 }); };
+            var badFn = function (e) {
+                wbToast('复制失败，请手动选中文本按 Ctrl+C', {
+                    type: 'error', sub: String((e && e.message) || e || '')
+                });
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(okFn).catch(function () {
+                    _fallbackCopy(text, okFn, badFn);
+                });
+            } else {
+                _fallbackCopy(text, okFn, badFn);
+            }
         }
         function _esc(s) {
             return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         }
+        // ---- 全局提示 Toast（替代 alert，所有反馈统一走这里）----
+        var _toastSeq = 0;
+        function wbToast(title, opt) {
+            opt = opt || {};
+            var box = document.getElementById('wbToast');
+            if (!box) { window.alert(title); return; }
+            var type = opt.type || 'info';
+            var ms = (opt.ms == null) ? (type === 'error' ? 8000 : 4000) : opt.ms;
+            var icon = (type === 'error' || type === 'warn') ? 'wb-i-warn'
+                     : (type === 'ok') ? 'wb-i-check' : 'wb-i-bulb';
+            var id = 'wbtoast' + (++_toastSeq);
+            var el = document.createElement('div');
+            el.className = 'wb-toast t-' + type;
+            el.id = id;
+            el.innerHTML =
+                '<svg class="wb-toast-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#' + icon + '"/></svg>' +
+                '<div class="wb-toast-main">' +
+                    '<div class="wb-toast-title">' + _esc(title) + '</div>' +
+                    (opt.sub ? '<div class="wb-toast-sub">' + _esc(opt.sub) + '</div>' : '') +
+                '</div>' +
+                '<svg class="wb-toast-x" viewBox="0 0 24 24" aria-hidden="true" onclick="wbToastClose(\'' + id + '\')"><use href="#wb-i-cross"/></svg>';
+            box.appendChild(el);
+            while (box.children.length > 4) box.removeChild(box.firstChild);   // 最多 4 条，避免刷屏
+            if (ms > 0) setTimeout(function () { wbToastClose(id); }, ms);
+            return id;
+        }
+        function wbToastClose(id) {
+            var el = document.getElementById(id);
+            if (!el || el.classList.contains('is-out')) return;
+            el.classList.add('is-out');
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 240);
+        }
+
         // ---- 知识库状态面板（数据来源 /api/knowledge_status）----
         var _kbState = null;                    // 原始返回，避免重复请求
         async function loadKnowledgeStatus() {
@@ -1448,9 +1547,9 @@ button:hover { transform: translateY(-1px); }
         // ---- 下载 AI 生成的路演 PPT ----
         async function exportPptx() {
             var rd = window._lastData || {};
-            if (!rd.rich_deck) { alert('请先用深度版生成一次，才有自动排版的 PPT'); return; }
+            if (!rd.rich_deck) { wbToast('请先用深度版生成一次，才有自动排版的 PPT', { type: 'warn' }); return; }
             previewDeckStyle();
-            var btn = event && event.target;
+            var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
             try {
                 var res = await fetch('/api/export_pptx', {
@@ -1462,7 +1561,7 @@ button:hover { transform: translateY(-1px); }
                 if (!res.ok) {
                     var msg = 'PPT 导出失败';
                     try { var j = await res.json(); msg = j.error || msg; } catch (e) {}
-                    alert(msg);
+                    wbToast(msg, { type: 'error' });
                     return;
                 }
                 var blob = await res.blob();
@@ -1470,6 +1569,9 @@ button:hover { transform: translateY(-1px); }
                 a.href = URL.createObjectURL(blob);
                 a.download = '路演PPT.pptx';
                 a.click();
+                wbToast('路演 PPT 已开始下载', { type: 'ok', ms: 3000 });
+            } catch (e) {
+                wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
@@ -1490,7 +1592,9 @@ button:hover { transform: translateY(-1px); }
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
             if (!idea && !proposal_draft) {
-                
+                wbToast('请先填写项目创意，或粘贴一段申报书草稿', { type: 'warn' });
+                var _ie = document.getElementById('idea');
+                if (_ie && _ie.focus) _ie.focus();
                 return;
             }
 
@@ -1617,6 +1721,13 @@ button:hover { transform: translateY(-1px); }
                             }, 100);
                         }
                         document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                        // 后端返回的友好错误（余额不足 / 超时 / 鉴权失败等），detail 是原始报错
+                        wbToast(data.error || '生成失败，请稍后重试', {
+                            type: 'error',
+                            sub: data.detail ? ('原始报错：' + data.detail) : '',
+                            ms: 10000
+                        });
                     }
                 }, 500);
             })
@@ -1624,7 +1735,13 @@ button:hover { transform: translateY(-1px); }
                 clearInterval(timer);
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
-                
+                var _net = String((err && err.message) || err || '');
+                wbToast(_net.indexOf('Failed to fetch') >= 0
+                    ? '连不上本地服务，请确认网站还在运行'
+                    : '请求出错：' + _net, {
+                    type: 'error',
+                    sub: '若服务已停止，请双击桌面「科创助手-启动服务.bat」重新启动'
+                });
             });
         }
 
@@ -1764,5 +1881,8 @@ button:hover { transform: translateY(-1px); }
             draw();
         })();
 </script>
+<!-- 全局提示容器 -->
+<div id="wbToast" role="status" aria-live="polite"></div>
+
 </body>
 </html>

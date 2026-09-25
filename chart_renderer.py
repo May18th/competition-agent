@@ -7,21 +7,44 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 
 
-# 中文字体（Windows 微软雅黑）
+# 中文字体候选：按 Windows → macOS → Linux 顺序找，保证换机器也能显示中文。
+# （部署到 Linux 服务器时若一个都找不到，图表中文会渲染成方框 □□□，
+#   需要在服务器上装字体：apt-get install -y fonts-noto-cjk）
 _FONT_CANDIDATES = [
+    # Windows
     "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/msyhbd.ttc",
     "C:/Windows/Fonts/simhei.ttf",
     "C:/Windows/Fonts/simsun.ttc",
+    # macOS
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/Library/Fonts/Arial Unicode.ttf",
+    # Linux / 服务器（Noto CJK、文泉驿）
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
 ]
+_FONT_OK = False
 for _fp in _FONT_CANDIDATES:
     if os.path.exists(_fp):
         try:
             font_manager.fontManager.addfont(_fp)
             _name = font_manager.FontProperties(fname=_fp).get_name()
             plt.rcParams["font.sans-serif"] = [_name]
+            _FONT_OK = True
             break
         except Exception:
             continue
+if not _FONT_OK:
+    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC",
+                                       "WenQuanYi Zen Hei", "DejaVu Sans"]
+    print("⚠️ 未找到中文字体文件，图表中文可能显示为方框；"
+          "Linux 上请执行：apt-get install -y fonts-noto-cjk")
 plt.rcParams["axes.unicode_minus"] = False
 
 OUT_DIR = "generated"
