@@ -31,6 +31,66 @@ llm = ChatDeepSeek(
     max_retries=3
 )
 
+# ============ API 配额保护（防止 DeepSeek 超支） ============
+import json as _json
+from datetime import datetime as _datetime
+
+_QUOTA_FILE = os.path.join(os.path.dirname(__file__), "quota.json")
+_QUOTA_DAILY_LIMIT = int(os.getenv("QUOTA_DAILY_LIMIT", "500"))
+
+
+def _quota_today():
+    return _datetime.now().strftime("%Y-%m-%d")
+
+
+def _quota_load():
+    try:
+        with open(_QUOTA_FILE, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+        if data.get("date") == _quota_today():
+            return data
+    except Exception:
+        pass
+    return {"date": _quota_today(), "calls": 0}
+
+
+def _quota_save(data):
+    try:
+        with open(_QUOTA_FILE, "w", encoding="utf-8") as f:
+            _json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def get_quota_status():
+    """返回今日配额使用情况（供 /api/quota 与前端展示）"""
+    data = _quota_load()
+    calls = data.get("calls", 0)
+    return {
+        "date": data.get("date"),
+        "calls": calls,
+        "limit": _QUOTA_DAILY_LIMIT,
+        "remaining": max(0, _QUOTA_DAILY_LIMIT - calls),
+        "exceeded": calls >= _QUOTA_DAILY_LIMIT,
+    }
+
+
+_llm_invoke_original = llm.invoke
+
+
+def _llm_invoke_with_quota(*args, **kwargs):
+    data = _quota_load()
+    if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
+        raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
+    result = _llm_invoke_original(*args, **kwargs)
+    data["calls"] = data.get("calls", 0) + 1
+    _quota_save(data)
+    return result
+
+
+# ChatDeepSeek 是 pydantic 模型，需用 object.__setattr__ 绕过字段校验来 monkey-patch
+object.__setattr__(llm, "invoke", _llm_invoke_with_quota)
+
 # Claude模型（火山引擎）
 # from langchain_openai import ChatOpenAI
 # claude_llm = ChatOpenAI(
@@ -82,6 +142,88 @@ def get_competition_knowledge(competition_name: str) -> str:
     return ""
 
 
+# 知识库格式要求（队友提交资料需包含的关键章节）
+KNOWLEDGE_SECTIONS = {
+    "比赛介绍": ["介绍", "比赛"],
+    "评分标准": ["评分标准", "评分维度", "评分"],
+    "申报书章节": ["申报书", "章节", "必须包含"],
+    "偏好方向": ["偏好", "方向"],
+    "常见扣分点": ["扣分点", "扣分", "注意事项"],
+}
+
+# 预期收录的赛事（用于提示还缺哪些）
+EXPECTED_COMPETITIONS = [
+    "互联网+", "挑战杯", "iCAN", "国创", "金砖", "数学建模", "电子设计",
+    "西门子", "计算机设计", "RoboMaster", "信息安全",
+]
+
+
+def check_knowledge_format(content: str) -> dict:
+    """校验单个知识库文件是否包含必要章节，返回缺失项"""
+    missing = []
+    detail = {}
+    for key, keywords in KNOWLEDGE_SECTIONS.items():
+        ok = any(kw in (content or "") for kw in keywords)
+        detail[key] = ok
+        if not ok:
+            missing.append(key)
+    return {"ok": not missing, "missing": missing, "detail": detail, "chars": len(content or "")}
+
+
+def get_knowledge_status() -> dict:
+    """返回知识库收录状态 + 每个文件的格式校验结果"""
+    import glob
+    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    files = []
+    for filepath in sorted(glob.glob(os.path.join(data_dir, "*.txt"))):
+        name = os.path.basename(filepath).replace(".txt", "")
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            content = ""
+        files.append({"name": name, **check_knowledge_format(content)})
+
+    loaded_names = list(competition_knowledge.keys())
+    missing = []
+    for exp in EXPECTED_COMPETITIONS:
+        if not any(exp in n or n in exp for n in loaded_names):
+            missing.append(exp)
+
+    return {
+        "loaded_count": len(competition_knowledge),
+        "loaded_names": loaded_names,
+        "files": files,
+        "missing": missing,
+        "coverage": f"{len(competition_knowledge)}/{len(EXPECTED_COMPETITIONS)}",
+    }
+
+
+# 申报书核心章节（用于生成后完整性校验，提示性质）
+PROPOSAL_REQUIRED_SECTIONS = [
+    ("项目背景", ["项目背景", "背景", "痛点"]),
+    ("解决方案", ["解决方案", "方案"]),
+    ("技术路线", ["技术路线", "技术方案", "技术架构", "技术实现"]),
+    ("核心创新点", ["创新"]),
+    ("商业模式", ["商业模式", "盈利", "变现"]),
+    ("风险与应对", ["风险"]),
+    ("社会价值", ["社会价值", "应用前景", "前景"]),
+]
+
+
+def check_proposal_completeness(proposal: str) -> dict:
+    """检查申报书是否覆盖核心章节，返回缺失项（提示性质，不阻断）"""
+    text = proposal or ""
+    missing = []
+    detail = {}
+    for name, keywords in PROPOSAL_REQUIRED_SECTIONS:
+        ok = any(kw in text for kw in keywords)
+        detail[name] = ok
+        if not ok:
+            missing.append(name)
+    return {"ok": not missing, "missing": missing, "detail": detail, "chars": len(text)}
+
+
 # ============ 1. 定义共享状态 ============
 def merge_state(old, new):
     """并行的时候，后写的覆盖先写的"""
@@ -110,6 +252,7 @@ class CompetitionState(TypedDict):
     defense_questions: str
     ppt_outline: str
     speech_script: str
+    rich_media: str
     one_liner: str
     idea_score: int
     idea_feedback: str
@@ -688,6 +831,32 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
     return state
 
 
+def rich_media_agent(state: CompetitionState) -> CompetitionState:
+    """🎞️ 富媒体 Agent：生成结构化表格 + PPT 幻灯片结构"""
+    prompt = f"""你是路演材料制作专家。请根据下面的分析结果，生成结构化数据。
+
+项目创意：{state.get('idea', '')}
+一句话定位：{state.get('one_liner', '')}
+竞品分析：{state.get('competitor_analysis', '')}
+商业模式：{state.get('business_model', '')}
+风险分析：{state.get('risk_analysis', '')}
+技术方案：{state.get('tech_solution', '')}
+实施计划：{state.get('implementation_plan', '')}
+社会价值：{state.get('social_value', '')}
+
+请只输出一个 JSON 对象（不要任何其他文字、不要 markdown 代码块），结构严格如下：
+{{"charts": {{"budget": [{{"name": "研发成本", "value": 40}}, {{"name": "硬件采购", "value": 25}}, {{"name": "市场推广", "value": 20}}, {{"name": "运营备用", "value": 15}}], "market": {{"years": ["2024", "2025", "2026", "2027", "2028"], "values": [120, 280, 560, 980, 1500]}}, "timeline": {{"stages": ["需求调研", "原型开发", "测试迭代", "上线运营", "推广拓展"], "progress": [10, 30, 55, 80, 100]}}}}, "tables": [{{"title": "竞品对比", "header": ["维度", "本项目", "竞品A", "竞品B"], "rows": [["创新性", "强", "中", "中"], ["成本", "低", "高", "中"]]}}], "deck": {{"slides": [{{"type": "cover", "title": "项目名称", "bullets": [], "metrics": [], "chart": "", "table": ""}}, {{"type": "bullets", "title": "痛点分析", "bullets": ["痛点1", "痛点2"], "metrics": [], "chart": "", "table": ""}}, {{"type": "metrics", "title": "核心数据", "bullets": [], "metrics": ["数据1", "数据2"], "chart": "", "table": ""}}, {{"type": "table", "title": "竞品对比", "bullets": [], "metrics": [], "chart": "", "table": "竞品对比"}}, {{"type": "closing", "title": "谢谢", "bullets": [], "metrics": [], "chart": "", "table": ""}}]}}}}
+
+要求：
+- charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；
+- tables 生成 2-3 个（竞品对比、商业模式、实施计划等），header 和 rows 要真实具体、贴合本项目；
+- deck.slides 生成 8-12 页，type 只用 cover/section/bullets/metrics/table/closing 这些，标题和内容贴合本项目。
+"""
+    response = llm.invoke([HumanMessage(content=prompt)])
+    state["rich_media"] = response.content
+    print("🎞️ 富媒体 Agent：已生成")
+    return state
+
 def should_iterate(state: CompetitionState) -> Literal["revise", "defense"]:
     if state["approved"] or (state.get("revision_count") or 0) >= 2:
         return "defense"
@@ -744,6 +913,7 @@ deep_workflow.add_node("revise", targeted_revise_agent)
 deep_workflow.add_node("plan", plan_agent)
 deep_workflow.add_node("social", social_value_agent)
 deep_workflow.add_node("summary", summary_agent)
+deep_workflow.add_node("rich_media", rich_media_agent)
 deep_workflow.add_node("writer", deep_writer_agent)
 deep_workflow.add_node("judge", judge_agent)
 deep_workflow.add_node("proposal_analysis", proposal_analysis_agent)
@@ -769,7 +939,8 @@ deep_workflow.add_edge("risk", "plan")
 deep_workflow.add_edge("tech", "plan")
 deep_workflow.add_edge("plan", "social")
 deep_workflow.add_edge("social", "summary")
-deep_workflow.add_edge("summary", "writer")
+deep_workflow.add_edge("summary", "rich_media")
+deep_workflow.add_edge("rich_media", "writer")
 deep_workflow.add_edge("writer", "judge")
 deep_workflow.add_edge("judge", "proposal_analysis")
 deep_workflow.add_conditional_edges(

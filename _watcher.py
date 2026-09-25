@@ -78,25 +78,79 @@ def kill_pid(pid):
                    capture_output=True, text=True, errors='ignore')
 
 
-def already_running():
-    """避免重复守护：看有没有别的 python 进程命令行含 _watcher.py"""
-    me = os.getpid()
-    for pid in port_pid(8080):
-        pass
+LOCK_FILE = os.path.join(os.environ.get('TEMP', r'C:\Windows\Temp'),
+                         'kechuang_watcher.lock')
+
+
+def _pid_alive(pid):
+    """Windows 下 os.kill(pid, 0) 不可用，用 tasklist 判断进程是否还在"""
     try:
-        out = subprocess.run(
-            ['wmic', 'PROCESS', 'WHERE', 'name="pythonw.exe"', 'GET', 'ProcessId,CommandLine', '/VALUE'],
-            capture_output=True, text=True, encoding='utf-8', errors='ignore').stdout
-        blocks = out.replace('\r', '').split('\n\n')
-        n = 0
-        for b in blocks:
-            if '_watcher.py' in b:
-                m = re.search(r'ProcessId=(\d+)', b)
-                if m and int(m.group(1)) != me:
-                    n += 1
-        return n > 0
+        out = subprocess.run(['tasklist', '/NH', '/FI', 'PID eq %d' % pid],
+                             capture_output=True, text=True,
+                             encoding='utf-8', errors='ignore').stdout
+        return str(pid) in out
     except Exception:
         return False
+
+
+def _lock_taken_by_other():
+    """文件锁兜底：wmic 在本机不存在，already_running() 会恒返回 False，
+    导致计划任务每 5 分钟起一个新的守护进程、重复拉起 Flask 抢占 8080。
+    这里用独占文件锁做第二道判断，持有者还活着就认为自己该退出。"""
+    me = os.getpid()
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        os.write(fd, str(me).encode())
+        return False, fd
+    except FileExistsError:
+        pass
+    except Exception:
+        return False, None
+    try:
+        with open(LOCK_FILE, encoding='utf-8', errors='ignore') as f:
+            pid = int((f.read().strip() or '0'))
+    except Exception:
+        pid = 0
+    if pid and pid != me and _pid_alive(pid):
+        return True, None                      # 别人持有 → 本进程退出
+    try:
+        os.remove(LOCK_FILE)                   # 陈旧锁，回收
+    except Exception:
+        pass
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        os.write(fd, str(me).encode())
+    except Exception:
+        return False, None
+    return False, fd
+
+
+def already_running():
+    """避免重复守护：看有没有别的进程命令行含 _watcher.py。
+    计划任务每 5 分钟会触发一次，靠这个判断确保始终只有一个在跑。
+    python.exe 和 pythonw.exe 都要查（可能因启动方式不同而不同）。
+
+    本机没有 wmic，wmic 分支会抛异常被吞掉并恒返回 False，
+    所以必须再走一遍文件锁兜底。
+    """
+    me = os.getpid()
+    n = 0
+    for proc in ('python.exe', 'pythonw.exe'):
+        try:
+            out = subprocess.run(
+                ['wmic', 'PROCESS', 'WHERE', 'name="%s"' % proc, 'GET', 'ProcessId,CommandLine', '/VALUE'],
+                capture_output=True, text=True, encoding='utf-8', errors='ignore').stdout
+            for b in out.replace('\r', '').split('\n\n'):
+                if '_watcher.py' in b:
+                    m = re.search(r'ProcessId=(\d+)', b)
+                    if m and int(m.group(1)) != me:
+                        n += 1
+        except Exception:
+            pass
+    if n > 0:
+        return True
+    taken, _ = _lock_taken_by_other()
+    return taken
 
 
 def fetch_public_url():

@@ -440,6 +440,62 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .content-block hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 .content-block a { color: var(--info-strong); }
 
+/* ===== AI 生成表格（rich_tables）=====
+   独立作用域，不依赖 .content-block —— renderRich() 渲染的是裸 table，
+   之前完全没吃到样式（无边框、无表头底色）。 */
+.rich-table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); }
+table.rich-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+table.rich-table th, table.rich-table td {
+    padding: 9px 12px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+    color: var(--text); line-height: 1.55;
+}
+table.rich-table th:last-child, table.rich-table td:last-child { border-right: none; }
+table.rich-table thead th {
+    background: rgba(74,85,184,.30); color: #fff; font-weight: 600;
+    white-space: nowrap; border-bottom: 1px solid rgba(74,85,184,.55);
+}
+table.rich-table tbody tr:nth-child(even) td { background: rgba(255,255,255,.045); }
+table.rich-table tbody tr:last-child td { border-bottom: none; }
+table.rich-table tbody tr:hover td { background: rgba(34,184,207,.10); }
+table.rich-table td:first-child { color: #fff; font-weight: 600; }
+table.rich-table caption {
+    caption-side: bottom; padding: 7px 4px 0; font-size: 11.5px;
+    color: var(--text-mute); text-align: left;
+}
+
+/* ===== AI 路演 PPT 预览卡 ===== */
+.deck-card {
+    aspect-ratio: 16/9; border-radius: 9px; padding: 14px 13px 12px;
+    border: 1px solid var(--line); position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+}
+.deck-card .dc-bar { position: absolute; top: 0; left: 0; width: 100%; height: 4px; }
+.deck-card .dc-badge { position: absolute; top: 9px; right: 10px; font-size: 10px; letter-spacing: .3px; }
+.deck-card .dc-title { font-size: 12.5px; font-weight: 700; line-height: 1.35; margin: 8px 0 7px; padding-right: 46px; }
+.deck-card .dc-kicker { font-size: 10px; font-weight: 600; letter-spacing: .4px; }
+.deck-card .dc-body { flex: 1; overflow: hidden; }
+.deck-card .dc-li {
+    font-size: 10.5px; line-height: 1.45; margin: 0 0 4px 0; padding-left: 8px;
+    position: relative; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.deck-card .dc-li::before { content: ''; position: absolute; left: 0; top: 4px; width: 3px; height: 8px; border-radius: 2px; background: var(--dc-bar, #22B8CF); }
+.deck-card .dc-li b { font-weight: 700; }
+.deck-card .dc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.deck-card .dc-chip {
+    font-size: 9.5px; padding: 2px 6px; border-radius: 5px; line-height: 1.4;
+    background: rgba(74,85,184,.22); color: #fff; border: 1px solid rgba(74,85,184,.4);
+}
+.deck-card .dc-chip i { font-style: normal; font-weight: 700; color: var(--c-b, #22B8CF); }
+.deck-card .dc-mini { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+.deck-card .dc-mini th, .deck-card .dc-mini td {
+    padding: 2px 5px; border: 1px solid var(--line); text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 84px;
+}
+.deck-card .dc-mini th { background: rgba(255,255,255,.10); font-weight: 600; }
+.deck-card .dc-img { width: 100%; height: 100%; object-fit: contain; background: #fff; border-radius: 4px; }
+.deck-card .dc-foot { position: absolute; bottom: 7px; right: 10px; font-size: 9.5px; }
+
 /* 区块小标题 */
 h3[style*="margin-bottom: 12px"] { color: var(--c-a) !important; font-weight: 600; }
 
@@ -641,7 +697,7 @@ button:hover { transform: translateY(-1px); }
             <div style="display: grid; gap: 20px;">
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 赛事名称</label>
-                    <select id="competition" style="padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px;; background: var(--surface-2); color: var(--text);">
+                    <select id="competition" onchange="onCompetitionChange()" style="padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px;; background: var(--surface-2); color: var(--text);">
                         <option value="iCAN大学生创新创业大赛">iCAN大学生创新创业大赛</option>
                         <option value="中国国际互联网+大学生创新创业大赛">中国国际"互联网+"大学生创新创业大赛</option>
                         <option value="挑战杯全国大学生课外学术科技作品竞赛">"挑战杯"全国大学生课外学术科技作品竞赛</option>
@@ -660,6 +716,15 @@ button:hover { transform: translateY(-1px); }
                     <div style="padding: 12px; background: var(--info-bg-1); border-radius: 8px; font-size: 14px; color: var(--info-text);">
                         <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 已内置比赛知识库，输入比赛名称后自动匹配评分标准，无需上传PDF
                     </div>
+                    <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
+                    <div id="kbStatusBox" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font-size: 13px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                            <span style="color: var(--text-dim);"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 知识库 <b id="kbCoverage" style="color: var(--c-a);">加载中…</b></span>
+                            <span onclick="toggleKbDetail()" style="color: var(--c-a); cursor: pointer; user-select: none; white-space:nowrap;">详情 <span id="kbArrow">▾</span></span>
+                        </div>
+                        <div id="kbCurrent" style="margin-top: 8px; color: var(--text-dim);"></div>
+                    </div>
+                    <div id="kbDetail" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); font-size: 12.5px; max-height: 320px; overflow: auto;"></div>
                     <textarea id="rules" style="display: none;"></textarea>
                 </div>
                 <div class="form-group">
@@ -777,6 +842,9 @@ button:hover { transform: translateY(-1px); }
                 <div id="oneLiner" style="font-size: 16px; color: var(--info-text); line-height: 1.6;"></div>
             </div>
 
+            <!-- 申报书章节完整性校验（数据来自 generate 返回的 completeness） -->
+            <div id="completenessBox" style="display: none; margin-bottom: 20px; padding: 14px 16px; border-radius: 8px; font-size: 13.5px;"></div>
+
             <div style="margin-bottom: 20px; text-align: right;">
 
             </div>
@@ -867,6 +935,10 @@ button:hover { transform: translateY(-1px); }
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 答辩问题预测.docx</span>
                                 <button onclick="exportOne('defenseQuestions', '答辩问题预测')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
+                            <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px; border:1px solid var(--c-a-soft);">
+                                <span style="color:var(--c-a); font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 路演 PPT（含图表，.pptx）</span>
+                                <button onclick="exportPptx()" style="padding:4px 12px; background:var(--c-a); color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600;">下载 PPT</button>
+                            </div>
                             <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> PPT大纲.docx</span>
                                 <button onclick="exportOne('pptOutline', 'PPT大纲')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
@@ -900,6 +972,15 @@ button:hover { transform: translateY(-1px); }
             </div>
 
             <div id="tab-charts" class="tab-content">
+                <div id="richChartsWrap" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> AI 智能图表 <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（根据你的项目内容自动生成）</span></h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;" id="richCharts"></div>
+                    <h3 style="color: var(--c-a); margin: 28px 0 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 关键数据表格</h3>
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 16px;" id="richTables"></div>
+                </div>
+                <div id="demoChartsWrap">
                 <div style="margin-bottom: 16px; padding: 10px 14px; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; font-size: 13px; color: var(--warn-text);">
                     <svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以下图表使用通用示例数据绘制（预算占比、市场规模、时间节点均为占位数值），不来自你的项目内容，正式使用时请按实际情况替换。
                 </div>
@@ -917,6 +998,7 @@ button:hover { transform: translateY(-1px); }
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 项目实施时间线</h3>
                     <div id="timelineChart" style="width: 100%; height: 250px;"></div>
                 </div>
+                </div>
             </div>
 
             <div id="tab-defense" class="tab-content">
@@ -927,6 +1009,26 @@ button:hover { transform: translateY(-1px); }
                 <div>
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 大纲</h3>
                     <div class="content-block" id="pptOutline"></div>
+                </div>
+                <div id="deckWrap" style="display:none; margin-top: 28px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> AI 路演 PPT <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（已按大纲自动排版，可直接下载 .pptx）</span></h3>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim);">
+                                主题
+                                <select id="deckTheme" onchange="onThemeChange()"
+                                    style="padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:var(--surface-solid); color:var(--text); font-size:12px; max-width:240px;"></select>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim);">
+                                模板
+                                <select id="deckVariant" onchange="previewDeckStyle()"
+                                    style="padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:var(--surface-solid); color:var(--text); font-size:12px;"></select>
+                            </div>
+                            <button onclick="exportPptx()" style="padding:8px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 下载 PPT</button>
+                        </div>
+                    </div>
+                    <div id="deckThemeHint" style="display:none; font-size:12px; color:var(--text-mute); margin-bottom:10px;"></div>
+                    <div id="deckPreview" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;"></div>
                 </div>
             </div>
         </div>
@@ -976,46 +1078,401 @@ button:hover { transform: translateY(-1px); }
             a.download = name + ".txt";
             a.click();
         }
+        // DOM id -> 生成结果里的字段名（隐藏 tab 的 innerText 会是空串，必须走原始数据）
+        var _DOM_TO_KEY = {
+            parsedRules: 'parsed_rules', similarityReport: 'similarity_report',
+            proposalText: 'proposal', proposalAnalysis: 'proposal_analysis',
+            judgeFeedback: 'judge_feedback', competitorAnalysis: 'competitor_analysis',
+            businessModel: 'business_model', riskAnalysis: 'risk_analysis',
+            techSolution: 'tech_solution', defenseQuestions: 'defense_questions',
+            pptOutline: 'ppt_outline'
+        };
         async function exportOne(id, name) {
-            const text = document.getElementById(id).innerText;
-            const res = await fetch("/api/export_word", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({title: name, text: text})
-            });
-            const blob = await res.blob();
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = name + ".docx";
-            a.click();
+            const text = _txt(_DOM_TO_KEY[id] || '', id);
+            if (!text.trim()) { alert('「' + name + '」没有内容，请先生成'); return; }
+            var btn = (window.event && window.event.target) || null;
+            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            try {
+                const res = await fetch("/api/export_word", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({title: name, text: text})
+                });
+                if (!res.ok) {
+                    var m = '导出失败';
+                    try { var j = await res.json(); m = j.error || m; } catch (e) {}
+                    alert(m);
+                    return;
+                }
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = name + ".docx";
+                a.click();
+            } catch (e) {
+                alert('导出失败：' + (e && e.message ? e.message : e));
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
+            }
+        }
+        // 取文本：优先用生成结果的原始数据（隐藏的 tab 用 innerText 会读到空串），DOM 仅兜底
+        function _txt(key, domId) {
+            var rd = window._lastData || {};
+            var v = rd[key];
+            if (v && String(v).trim()) return String(v);
+            var el = document.getElementById(domId);
+            if (!el) return '';
+            return el.innerText || el.textContent || '';
         }
         async function exportAll() {
+            var rd = window._lastData || {};
+            var deck = rd.rich_deck || null;
+            var tk = (document.getElementById('deckTheme') || {}).value;
+            var vk = (document.getElementById('deckVariant') || {}).value;
             const data = {
-                parsed_rules: document.getElementById("parsedRules").innerText,
-                similarity_report: document.getElementById("similarityReport").innerText,
-                proposal: document.getElementById("proposalText").innerText,
-                proposal_analysis: document.getElementById("proposalAnalysis").innerText,
-                judge_feedback: document.getElementById("judgeFeedback").innerText,
-                competitor_analysis: document.getElementById("competitorAnalysis").innerText,
-                business_model: document.getElementById("businessModel").innerText,
-                risk_analysis: document.getElementById("riskAnalysis").innerText,
-                defense_questions: document.getElementById("defenseQuestions").innerText,
-                ppt_outline: document.getElementById("pptOutline").innerText
+                parsed_rules: _txt('parsed_rules', 'parsedRules'),
+                similarity_report: _txt('similarity_report', 'similarityReport'),
+                proposal: _txt('proposal', 'proposalText'),
+                proposal_analysis: _txt('proposal_analysis', 'proposalAnalysis'),
+                judge_feedback: _txt('judge_feedback', 'judgeFeedback'),
+                competitor_analysis: _txt('competitor_analysis', 'competitorAnalysis'),
+                business_model: _txt('business_model', 'businessModel'),
+                risk_analysis: _txt('risk_analysis', 'riskAnalysis'),
+                defense_questions: _txt('defense_questions', 'defenseQuestions'),
+                ppt_outline: _txt('ppt_outline', 'pptOutline'),
+                // 富媒体三件套：不带上就没有 11_项目数据图表.docx 和 12_路演PPT.pptx
+                rich_charts: rd.rich_charts || [],
+                rich_tables: rd.rich_tables || [],
+                rich_deck: deck,
+                idea: rd.idea || (document.getElementById('idea') || {}).value || '',
+                // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
+                theme: tk || (deck && deck.theme) || null,
+                variant: vk || (deck && deck.variant) || null
             };
-            const res = await fetch("/api/export_zip", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(data)
-            });
-            const blob = await res.blob();
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "科创赛事项目材料包.zip";
-            a.click();
+            var btn = (window.event && window.event.target) || null;
+            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '打包中...'; }
+            try {
+                const res = await fetch("/api/export_zip", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(data)
+                });
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = "科创赛事项目材料包.zip";
+                a.click();
+            } catch (e) {
+                alert('打包失败：' + (e && e.message ? e.message : e));
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
+            }
         }
         function copyText(id) {
             var text = document.getElementById(id).innerText;
             navigator.clipboard.writeText(text);
+        }
+        function _esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+        }
+        // ---- 知识库状态面板（数据来源 /api/knowledge_status）----
+        var _kbState = null;                    // 原始返回，避免重复请求
+        async function loadKnowledgeStatus() {
+            try {
+                const res = await fetch('/api/knowledge_status');
+                const d = await res.json();
+                if (d && d.success) _kbState = d;
+            } catch (e) { _kbState = null; }
+            renderKbStatus();
+            return _kbState;
+        }
+        // 与后端 get_competition_knowledge 保持一致：文件名与赛事名互为子串即命中
+        function _kbMatch(fname, comp) {
+            return !!comp && (String(comp).indexOf(fname) >= 0 || String(fname).indexOf(comp) >= 0);
+        }
+        // 逐个下拉选项算出命中的知识库文件
+        function _kbHitList() {
+            var files = ((_kbState && _kbState.files) || []).map(function (f) { return f.name; });
+            var sel = document.querySelectorAll('#competition option');
+            return Array.prototype.map.call(sel, function (o) {
+                var comp = o.value;
+                return { comp: comp, hit: files.filter(function (n) { return _kbMatch(n, comp); }) };
+            });
+        }
+        function _kbFileByName(name) {
+            return ((_kbState && _kbState.files) || []).filter(function (x) { return x.name === name; })[0] || {};
+        }
+        function renderKbStatus() {
+            var cov = document.getElementById('kbCoverage');
+            var cur = document.getElementById('kbCurrent');
+            if (!cov || !cur) return;
+            if (!_kbState) {
+                cov.textContent = '读取失败';
+                cov.style.color = 'var(--warn-text)';
+                cur.innerHTML = '<span style="color:var(--warn-text);">未能读取 /api/knowledge_status，请确认服务已启动（桌面「科创助手-启动服务.bat」）</span>';
+                return;
+            }
+            var list = _kbHitList();
+            var okN = list.filter(function (x) { return x.hit.length; }).length;
+            cov.textContent = okN + '/' + list.length + ' 个赛事有资料';
+            cov.style.color = okN === list.length ? 'var(--ok)' : (okN ? 'var(--warn-text)' : 'var(--c-b)');
+            var me = (document.getElementById('competition') || {}).value || '';
+            var row = list.filter(function (x) { return x.comp === me; })[0] || {hit: []};
+            if (row.hit.length) {
+                var f = _kbFileByName(row.hit[0]);
+                var tail = f.ok
+                    ? '<span style="color:var(--ok);">资料格式完整（' + (f.chars || 0) + ' 字）</span>'
+                    : '<span style="color:var(--warn-text);">已收录但缺章节：' + (f.missing || []).map(_esc).join('、') + '</span>';
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → 命中《' + _esc(row.hit[0]) + '》' + tail;
+            } else {
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--warn-text);">暂无对应资料，AI 将按通用标准评审</span>';
+            }
+            renderKbDetail();
+        }
+        function renderKbDetail() {
+            var box = document.getElementById('kbDetail');
+            if (!box || !_kbState) return;
+            var rows = _kbHitList().map(function (x) {
+                var badge, tip;
+                if (x.hit.length) {
+                    var f = _kbFileByName(x.hit[0]);
+                    badge = f.ok
+                        ? '<span style="color:var(--ok);">完整</span>'
+                        : '<span style="color:var(--warn-text);">缺 ' + (f.missing || []).map(_esc).join('、') + '</span>';
+                    tip = '《' + _esc(x.hit[0]) + '》' + (f.chars || 0) + ' 字';
+                } else {
+                    badge = '<span style="color:var(--text-mute);">未收录</span>';
+                    tip = '<span style="color:var(--text-mute);">data/ 下无同名文件</span>';
+                }
+                return '<div style="display:flex; gap:8px; padding:5px 0; border-bottom:1px dashed var(--line);">' +
+                    '<span style="flex:1 1 44%; min-width:0; color:var(--text-dim);">' + _esc(x.comp) + '</span>' +
+                    '<span style="flex:0 0 auto;">' + badge + '</span>' +
+                    '<span style="flex:1 1 38%; min-width:0; text-align:right; color:var(--text-mute);">' + tip + '</span></div>';
+            }).join('');
+            var miss = (_kbState.missing || []).map(_esc).join('、');
+            box.innerHTML =
+                '<div style="color:var(--text-dim); margin-bottom:8px; line-height:1.7;">' +
+                '后端统计覆盖率：<b style="color:var(--text);">' + _esc(_kbState.coverage || '-') + '</b>' +
+                (miss ? '<br>后端标记缺失：' + miss : '') + '</div>' +
+                '<div style="color:var(--text-mute); margin-bottom:8px; line-height:1.6;">' +
+                '命中规则：知识库文件名与下拉赛事名<b>互为连续子串</b>才生效（如「iCAN大赛.txt」匹配不上「iCAN大学生创新创业大赛」，须改名「iCAN.txt」）</div>' +
+                rows;
+        }
+        function toggleKbDetail() {
+            var box = document.getElementById('kbDetail');
+            var ar = document.getElementById('kbArrow');
+            if (!box) return;
+            var show = box.style.display === 'none';
+            box.style.display = show ? 'block' : 'none';
+            if (ar) ar.textContent = show ? '▴' : '▾';
+        }
+        function onCompetitionChange() { renderKbStatus(); }
+
+        // ---- 申报书章节完整性提示（数据来源 generate 返回的 completeness）----
+        function renderCompleteness(comp) {
+            var box = document.getElementById('completenessBox');
+            if (!box) return;
+            var miss = (comp && comp.missing) || [];
+            if (!miss.length) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.style.background = 'var(--warn-bg)';
+            box.style.border = '1px solid rgba(251,191,36,.35)';
+            box.style.color = 'var(--warn-text)';
+            box.innerHTML = '<b>申报书可能缺少以下章节：</b>' + miss.map(_esc).join('、') +
+                '<br><span style="color:var(--text-mute); font-size:12.5px;">可据此人工补写，或把草稿粘回输入框用深度版重跑一轮（当前正文 ' + (comp.chars || 0) + ' 字）</span>';
+        }
+
+        // ---- AI 富媒体渲染：图表 / 表格 / PPT 预览 ----
+        function renderRich(rd, isDeep) {
+            var charts = rd.rich_charts || [];
+            var tables = rd.rich_tables || [];
+            var deck = rd.rich_deck;
+            var rcw = document.getElementById('richChartsWrap');
+            var dcw = document.getElementById('demoChartsWrap');
+            if (!rcw || !dcw) return;
+            if (isDeep && charts.length) {
+                rcw.style.display = 'block'; dcw.style.display = 'none';
+            } else {
+                rcw.style.display = 'none'; dcw.style.display = 'block';
+            }
+            document.getElementById('richCharts').innerHTML = charts.map(c =>
+                '<div style="background: var(--surface-2); border-radius: 10px; padding: 14px; border: 1px solid var(--line);">' +
+                '<img src="' + _esc(c.url) + '" style="width:100%; border-radius:6px; background:#fff;" alt="' + _esc(c.title) + '">' +
+                '<div style="margin-top:10px; font-size:13px; color:var(--text); font-weight:600;">' + _esc(c.title) + '</div>' +
+                (c.caption ? '<div style="font-size:12px; color:var(--text-mute); margin-top:3px;">' + _esc(c.caption) + '</div>' : '') +
+                '</div>').join('');
+            document.getElementById('richTables').innerHTML = tables.map(t => {
+                var th = '<thead><tr>' + (t.header || []).map(h => '<th>' + _esc(h) + '</th>').join('') + '</tr></thead>';
+                var trs = (t.rows || []).map(r =>
+                    '<tr>' + r.map(c => '<td>' + _esc(c) + '</td>').join('') + '</tr>').join('');
+                return '<div style="background: var(--surface-2); border-radius: 10px; padding: 16px; border: 1px solid var(--line);">' +
+                    '<div style="font-size:13px; color:var(--text); font-weight:600; margin-bottom:10px;">' + _esc(t.title) + '</div>' +
+                    '<div class="rich-table-wrap"><table class="rich-table">' + th + '<tbody>' + trs + '</tbody>' +
+                    (t.caption ? '<caption>' + _esc(t.caption) + '</caption>' : '') +
+                    '</table></div></div>';
+            }).join('');
+            var dw = document.getElementById('deckWrap');
+            if (isDeep && deck && deck.slides && deck.slides.length) {
+                dw.style.display = 'block';
+                var typeLabel = {cover:'封面', section:'章节', bullets:'要点', metrics:'数据', chart:'图表', table:'表格', closing:'结尾'};
+                // 图表 / 表格索引：slide 里只存 id，卡片要还原出真实内容
+                var chartsById = {};
+                charts.forEach(function (c) { if (c.id) chartsById[c.id] = c; if (c.title) chartsById[c.title] = c; });
+                var tablesById = {};
+                tables.forEach(function (t) { if (t.id) tablesById[t.id] = t; if (t.title) tablesById[t.title] = t; });
+                // "**重点**：说明" 里的加粗标记转成 <b>
+                function _md(s) { return _esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
+                function bulletsHtml(bs, n, dark) {
+                    var arr = (bs || []).filter(function (x) { return String(x == null ? '' : x).trim(); });
+                    var color = dark ? 'rgba(255,255,255,.84)' : 'var(--text-dim)';
+                    var bar = dark ? '#22B8CF' : 'var(--c-a)';
+                    var h = arr.slice(0, n).map(function (b) {
+                        return '<div class="dc-li" style="color:' + color + '; --dc-bar:' + bar + ';">' + _md(b) + '</div>';
+                    }).join('');
+                    if (arr.length > n) {
+                        h += '<div style="font-size:9.5px; color:' + (dark ? '#8A93D8' : 'var(--text-mute)') + '; margin-top:2px;">+' + (arr.length - n) + ' 条…</div>';
+                    }
+                    return h;
+                }
+                function miniTable(tb) {
+                    if (!tb || !tb.header || !tb.header.length) return '';
+                    var head = '<tr>' + tb.header.slice(0, 5).map(function (h) { return '<th>' + _esc(h) + '</th>'; }).join('') + '</tr>';
+                    var rows = (tb.rows || []).slice(0, 4).map(function (r) {
+                        return '<tr>' + r.slice(0, 5).map(function (c) { return '<td>' + _esc(c) + '</td>'; }).join('') + '</tr>';
+                    }).join('');
+                    var more = (tb.rows || []).length > 4
+                        ? '<div style="font-size:9.5px; color:var(--text-mute); margin-top:3px;">共 ' + tb.rows.length + ' 行</div>' : '';
+                    return '<table class="dc-mini">' + head + rows + '</table>' + more;
+                }
+                document.getElementById('deckPreview').innerHTML = deck.slides.map((s, i) => {
+                    var t = String(s.type || 'bullets').toLowerCase();
+                    var isDark = (t === 'cover' || t === 'section' || t === 'closing');
+                    var label = typeLabel[t] || t;
+                    var title = s.title || label;
+                    var body = '';
+                    if (t === 'cover') {
+                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(deck.one_liner || s.note || '') + '</div>' +
+                               bulletsHtml(s.bullets, 2, true);
+                    } else if (t === 'closing') {
+                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(deck.one_liner || '') + '</div>' +
+                               bulletsHtml(s.bullets, 2, true);
+                    } else if (t === 'metrics' || (s.metrics && s.metrics.length)) {
+                        body = '<div class="dc-chips">' + (s.metrics || []).slice(0, 4).map(function (m) {
+                            var mm = String(m).match(/^\s*([\d.]+\s*[^\s：:、]*)\s*[：:、]\s*(.+)$/);
+                            return '<span class="dc-chip">' + (mm ? '<i>' + _esc(mm[1]) + '</i> ' + _esc(mm[2]) : _esc(m)) + '</span>';
+                        }).join('') + '</div>' + bulletsHtml(s.bullets, 3, isDark);
+                    } else if (t === 'table' || (s.table && typeof s.table === 'object')) {
+                        var tb = (s.table && typeof s.table === 'object') ? s.table : tablesById[s.table];
+                        body = miniTable(tb) + (s.note ? '<div class="dc-li" style="color:var(--text-mute);">' + _md(s.note) + '</div>' : '');
+                    } else {
+                        var img = s.chart ? (chartsById[s.chart] || {}) : {};
+                        if (img.url) {                       // 左文右图，和真 PPT 版式一致
+                            body = '<div style="display:flex; gap:8px; height:100%; align-items:flex-start;">' +
+                                   '<div style="flex:1 1 52%; min-width:0;">' + bulletsHtml(s.bullets, 4, isDark) + '</div>' +
+                                   '<div style="flex:0 0 46%;"><img class="dc-img" src="' + _esc(img.url) + '" alt=""></div></div>';
+                        } else {
+                            body = bulletsHtml(s.bullets, 5, isDark);
+                        }
+                    }
+                    var bg = isDark ? 'linear-gradient(135deg,#0F1535,#232E6A)' : 'var(--surface-2)';
+                    var barColor = isDark ? '#22B8CF' : 'var(--c-a)';
+                    var muteColor = isDark ? '#8A93D8' : 'var(--text-mute)';
+                    var titleColor = isDark ? '#FFFFFF' : 'var(--text)';
+                    return '<div class="deck-card" style="background:' + bg + ';">' +
+                        '<div class="dc-bar" style="background:' + barColor + ';"></div>' +
+                        '<div class="dc-badge" style="color:' + muteColor + ';">P' + (i + 1) + ' · ' + label + '</div>' +
+                        (s.kicker ? '<div class="dc-kicker" style="color:' + (isDark ? '#22B8CF' : 'var(--c-a)') + ';">' + _esc(s.kicker) + '</div>' : '') +
+                        '<div class="dc-title" style="color:' + titleColor + ';">' + _esc(title) + '</div>' +
+                        '<div class="dc-body">' + body + '</div>' +
+                        '<div class="dc-foot" style="color:' + muteColor + ';">' + _esc(deck.project || '') + '</div>' +
+                        '</div>';
+                }).join('');
+            } else {
+                dw.style.display = 'none';
+            }
+        }
+        // ---- PPT 主题 / 模板选择 ----
+        var _themeLib = null;                       // 后端返回的 {themes:[{key,label,variants:[...]}]}
+        async function loadThemeLib() {
+            if (_themeLib) return _themeLib;
+            try {
+                const res = await fetch('/api/ppt_themes');
+                const d = await res.json();
+                if (d && d.success) _themeLib = d.themes || [];
+            } catch (e) { _themeLib = []; }
+            return _themeLib || [];
+        }
+        function _fillSelect(el, items, value) {
+            if (!el) return;
+            el.innerHTML = items.map(function (it) {
+                return '<option value="' + _esc(it.key) + '"' + (it.key === value ? ' selected' : '') + '>' + _esc(it.name || it.label) + '</option>';
+            }).join('');
+        }
+        async function initDeckThemeSelect() {
+            const themes = await loadThemeLib();
+            if (!themes.length) return;
+            const rd = window._lastData || {};
+            // 主题/模板：优先顶层 theme/variant（后端若提供），回退 rich_deck.theme（当前实际版本）
+            const cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
+            const curVariant = rd.variant || (rd.rich_deck && rd.rich_deck.variant) || 'v1';
+            _fillSelect(document.getElementById('deckTheme'),
+                        themes.map(function (t) { return {key: t.key, name: t.label}; }), cur);
+            onThemeChange(curVariant);
+        }
+        function onThemeChange(variant) {
+            const tk = document.getElementById('deckTheme') && document.getElementById('deckTheme').value;
+            const t = (_themeLib || []).find(function (x) { return x.key === tk; });
+            const vs = (t && t.variants) || [{key: 'v1', name: '流光 · 卡片'}];
+            _fillSelect(document.getElementById('deckVariant'), vs, variant || 'v1');
+            if (window._lastData && window._lastData.rich_deck) {
+                window._lastData.rich_deck.theme = tk;
+                window._lastData.rich_deck.variant = document.getElementById('deckVariant').value;
+            }
+            previewDeckStyle();
+        }
+        function previewDeckStyle() {
+            // 把选择写回 deck，下载时后端据此渲染
+            if (!window._lastData || !window._lastData.rich_deck) return;
+            const tk = document.getElementById('deckTheme') && document.getElementById('deckTheme').value;
+            const vk = document.getElementById('deckVariant') && document.getElementById('deckVariant').value;
+            window._lastData.rich_deck.theme = tk;
+            window._lastData.rich_deck.variant = vk;
+            const t = (_themeLib || []).find(function (x) { return x.key === tk; });
+            const v = ((t && t.variants) || []).find(function (x) { return x.key === vk; });
+            const hint = document.getElementById('deckThemeHint');
+            if (hint) {
+                hint.style.display = 'block';
+                hint.innerHTML = '当前：<b>' + _esc((t && t.label) || tk) + '</b> · <b>' + _esc((v && v.name) || vk) + '</b>（切换后点"下载 PPT"即生效，不必重新生成）';
+            }
+        }
+        // ---- 下载 AI 生成的路演 PPT ----
+        async function exportPptx() {
+            var rd = window._lastData || {};
+            if (!rd.rich_deck) { alert('请先用深度版生成一次，才有自动排版的 PPT'); return; }
+            previewDeckStyle();
+            var btn = event && event.target;
+            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            try {
+                var res = await fetch('/api/export_pptx', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({deck: rd.rich_deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
+                                          theme: rd.rich_deck.theme, variant: rd.rich_deck.variant})
+                });
+                if (!res.ok) {
+                    var msg = 'PPT 导出失败';
+                    try { var j = await res.json(); msg = j.error || msg; } catch (e) {}
+                    alert(msg);
+                    return;
+                }
+                var blob = await res.blob();
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = '路演PPT.pptx';
+                a.click();
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
+            }
         }
         function exportSection(id, name) {
             var text = document.getElementById(id).innerText;
@@ -1058,7 +1515,8 @@ button:hover { transform: translateY(-1px); }
                     competition_name: competition,
                     idea: idea,
                     proposal_draft: proposal_draft,
-                    mode: mode
+                    mode: mode,
+                    theme: (document.getElementById('deckTheme') || {}).value || null
                 })
             })
             .then(res => res.json())
@@ -1087,13 +1545,17 @@ button:hover { transform: translateY(-1px); }
                         if (data.data.ppt_outline) document.getElementById('pptOutline').innerHTML = marked.parse(data.data.ppt_outline);
                         // 简洁版隐藏深度版板块
                         const isDeep = mode === 'deep';
+                        window._lastData = data.data;
+                        renderCompleteness(data.data.completeness);
+                        renderRich(data.data, isDeep);
+                        initDeckThemeSelect();
                         document.querySelectorAll('.deep-only').forEach(el => {
                             el.style.display = isDeep ? 'block' : 'none';
                         });
                         document.getElementById('chartsTab').style.display = isDeep ? 'block' : 'none';
                         document.getElementById('defenseTab').style.display = isDeep ? 'block' : 'none';
-                        // 初始化可视化图表
-                        if (isDeep) {
+                        // 初始化可视化图表（有 AI 真图时不再画示例图）
+                        if (isDeep && !(data.data.rich_charts || []).length) {
                             setTimeout(() => {
                                 // 预算构成饼图（重复生成时先销毁旧实例，避免叠加）
                                 const budgetEl = document.getElementById('budgetChart');
@@ -1210,6 +1672,8 @@ button:hover { transform: translateY(-1px); }
     
         
         
+        // 页面加载后拉取一次知识库状态（失败也不影响主流程）
+        loadKnowledgeStatus();
 
 /* ===== WB UI 增强：粒子背景 + 滚动进场 ===== */
         (function () {

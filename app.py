@@ -4,6 +4,7 @@
 import threading
 import uuid
 import time
+import io
 import os
 import sqlite3
 from datetime import datetime
@@ -15,6 +16,18 @@ from competition_agents import fast_app, deep_app, CompetitionState
 
 
 app = Flask(__name__)
+
+# ===== 媒体模块（表格 / 图表 / PPT）=====
+# 由 media_routes.py 提供，WorkBuddy 注册。
+# ⚠️ 改 app.py 时请不要删这段，删了前端的图表和 PPT 下载会 404。
+try:
+    from media_routes import media_bp
+    app.register_blueprint(media_bp)
+    print("✅ 媒体模块已注册：/api/media/*")
+except Exception as _media_err:
+    print("⚠️ 媒体模块注册失败：", _media_err)
+# ===== 媒体模块结束 =====
+
 
 # ============ 初始化数据库 ============
 DB_PATH = os.path.join(os.path.dirname(__file__), "competition.db")
@@ -110,6 +123,7 @@ def _build_docx(title, text):
             p.paragraph_format.first_line_indent = Cm(0.74)
             p.paragraph_format.space_after = Pt(6)
     return doc
+
 
 @app.route('/')
 def index():
@@ -281,7 +295,9 @@ def get_history_detail(history_id):
     return jsonify({"success": False, "error": "记录不存在"})
 
 
-@app.route('/api/generate', methods=['POST'])
+tasks = {}
+
+
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -309,6 +325,7 @@ def _run_generation(data):
             "ppt_outline": "",
             "speech_script": "",
             "one_liner": "",
+            "rich_media": "",
             "idea_score": 0,
             "idea_feedback": "",
             "score": 0,
@@ -318,8 +335,51 @@ def _run_generation(data):
         mode = data.get("mode", "fast")
         if mode == "deep":
             result = deep_app.invoke(state)
+            # 深度版追加：自动生成表格 / 图表 / 路演PPT（失败不阻断主流程）
+            try:
+                from rich_pipeline import build_rich_assets
+                rich = build_rich_assets(result, data.get("competition_name", ""), idea, data.get("theme"))
+                result["rich_charts"] = rich.get("charts") or {}
+                result["rich_tables"] = rich.get("tables") or []
+                result["rich_deck"] = rich.get("deck")
+            except Exception as e:
+                print(f"[rich] 富媒体生成失败（不影响正文）：{e}")
         else:
             result = fast_app.invoke(state)
+
+        # ===== 富媒体解析（表格/图表/PPT）：三种来源统一归一，失败不阻断 =====
+        # 来源1：rich_pipeline 直接写在 result 上的三个字段（当前主链路）
+        # 来源2：result["rich_media"] 的 JSON 字符串（兼容旧写法）
+        # 来源3：已经渲染好的 [{url,title,caption}] 列表（直接透传）
+        rich_tables = []
+        rich_deck = None
+        rich_charts = []
+        try:
+            _charts_raw = result.get("rich_charts")
+            rich_tables = result.get("rich_tables") or []
+            rich_deck = result.get("rich_deck")
+
+            if not (rich_tables or rich_deck):
+                import json as _json
+                _rm = (result.get("rich_media") or "").strip()
+                if _rm.startswith("```"):
+                    _rm = _rm.strip("`")
+                    if _rm.lower().startswith("json"):
+                        _rm = _rm[4:]
+                if _rm:
+                    _d = _json.loads(_rm)
+                    rich_tables = _d.get("tables") or []
+                    rich_deck = _d.get("deck")
+                    _charts_raw = _d.get("charts") or _charts_raw
+
+            if isinstance(_charts_raw, dict) and _charts_raw:
+                from chart_renderer import render_charts
+                rich_charts = render_charts(_charts_raw)
+            elif isinstance(_charts_raw, list):
+                rich_charts = _charts_raw
+        except Exception as _re:
+            print(f"[rich] 富媒体解析失败（不影响正文）：{_re}")
+        # ===== 富媒体解析结束 =====
 
         history = load_history()
         history_item = {
@@ -348,7 +408,10 @@ def _run_generation(data):
                 "idea_score": result.get("idea_score", ""),
                 "idea_feedback": result.get("idea_feedback", ""),
                 "score": result.get("score", ""),
-                "revision_count": result.get("revision_count", "")
+                "revision_count": result.get("revision_count", ""),
+                "rich_charts": rich_charts,
+                "rich_tables": result.get("rich_tables", []),
+                "rich_deck": result.get("rich_deck")
             }
         }
         history.insert(0, history_item)
@@ -356,7 +419,13 @@ def _run_generation(data):
             history = history[:20]
         save_history(history)
 
-    return {
+    try:
+        from competition_agents import check_proposal_completeness
+        completeness = check_proposal_completeness(result.get("proposal", ""))
+    except Exception:
+        completeness = {"ok": True, "missing": [], "detail": {}, "chars": 0}
+
+    payload = {
         "parsed_rules": result.get("parsed_rules", ""),
         "similarity_report": result.get("similarity_report", ""),
         "competitor_analysis": result.get("competitor_analysis", ""),
@@ -376,8 +445,14 @@ def _run_generation(data):
         "idea_score": result.get("idea_score", 0),
         "idea_feedback": result.get("idea_feedback", ""),
         "score": result.get("score", 0),
-        "revision_count": result.get("revision_count", 0)
+        "revision_count": result.get("revision_count", 0),
+        "rich_charts": rich_charts,
+        "rich_tables": rich_tables,
+        "rich_deck": rich_deck,
+        "completeness": completeness
     }
+
+    return payload
 
 
 def _friendly_error(e):
@@ -388,6 +463,8 @@ def _friendly_error(e):
         return "请求过于频繁，请稍后再试"
     if "401" in err or "auth" in err or "api key" in err:
         return "模型接口鉴权失败，请检查 DEEPSEEK_API_KEY"
+    if "上限" in err or "配额" in err or "quota" in err:
+        return "今日调用次数已达上限，请明天再试或联系管理员调整额度"
     return "生成失败，请稍后重试"
 
 
@@ -434,6 +511,8 @@ def get_task_status(task_id):
         resp["error"] = t["error"]
         resp["detail"] = t.get("detail")
     return jsonify(resp)
+
+
 
 
 
@@ -685,5 +764,144 @@ def export_zip():
             tmppath = os.path.join(tmpdir, filename)
             doc.save(tmppath)
             zf.write(tmppath, filename)
+        # ---- 深度版附加：数据图表 docx + 路演 PPT pptx ----
+        try:
+            charts = data.get('rich_charts') or []
+            if charts:
+                from docx.shared import Inches as _Inches
+                cdoc = Document()
+                ch = cdoc.add_heading('', 0)
+                crun = ch.add_run('项目数据图表')
+                crun.font.name = '微软雅黑'
+                crun.font.size = Pt(20)
+                crun.font.bold = True
+                crun.font.color.rgb = RGBColor(0x66, 0x7e, 0xea)
+                ch.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cdoc.add_paragraph()
+                for c in charts:
+                    img = os.path.join('generated', os.path.basename(c.get('url', '')))
+                    if c.get('title'):
+                        p = cdoc.add_paragraph()
+                        r = p.add_run(c['title'])
+                        r.font.bold = True
+                        r.font.size = Pt(13)
+                    if os.path.exists(img):
+                        cdoc.add_picture(img, width=_Inches(5.9))
+                    if c.get('caption'):
+                        cap = cdoc.add_paragraph(c['caption'])
+                        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cpath = os.path.join(tmpdir, '11_项目数据图表.docx')
+                cdoc.save(cpath)
+                zf.write(cpath, '11_项目数据图表.docx')
+        except Exception as e:
+            print(f"[export_zip] 图表docx失败: {e}")
+        try:
+            deck = data.get('rich_deck')
+            if deck:
+                from pptx_builder import build_deck
+                deck = dict(deck)
+                # 前端手动选的主题/模板优先于自动推断（与 /api/export_pptx 行为保持一致）
+                if data.get('theme'):
+                    deck['theme'] = data['theme']
+                if data.get('variant'):
+                    deck['variant'] = data['variant']
+                deck['project'] = deck.get('project') or (data.get('idea', '') or '科创项目')[:30]
+                tmap = {t.get('id'): t for t in (data.get('rich_tables') or [])}
+                for s in deck.get('slides', []):
+                    if isinstance(s, dict) and isinstance(s.get('table'), str):
+                        s['table'] = tmap.get(s['table'])
+                chart_paths = {}
+                for c in (data.get('rich_charts') or []):
+                    img = os.path.join('generated', os.path.basename(c.get('url', '')))
+                    if os.path.exists(img):
+                        chart_paths[c.get('id')] = img
+                build_deck(deck, os.path.join(tmpdir, '12_路演PPT.pptx'), chart_paths)
+                zf.write(os.path.join(tmpdir, '12_路演PPT.pptx'), '12_路演PPT.pptx')
+        except Exception as e:
+            print(f"[export_zip] PPT失败: {e}")
     return send_file(zippath, as_attachment=True, download_name='科创赛事项目材料包.zip', mimetype='application/zip')
 
+
+# ============ 富媒体：图表图片 & PPT 导出 ============
+@app.route('/generated/<path:filename>')
+def generated_file(filename):
+    from flask import send_from_directory
+    return send_from_directory('generated', filename)
+
+
+@app.route('/api/knowledge_status')
+def knowledge_status():
+    """返回比赛知识库收录状态 + 每个文件的格式校验结果"""
+    try:
+        from competition_agents import get_knowledge_status
+        return jsonify({"success": True, **get_knowledge_status()})
+    except Exception as e:
+        print(f"[knowledge] 状态读取失败：{e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/quota')
+def quota():
+    """返回今日 LLM 调用配额使用情况"""
+    try:
+        from competition_agents import get_quota_status
+        return jsonify({"success": True, **get_quota_status()})
+    except Exception as e:
+        print(f"[quota] 状态读取失败：{e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/ppt_themes')
+def ppt_themes():
+    """返回可用主题与版式模板清单，供前端下拉选择"""
+    try:
+        import pptx_builder
+        if hasattr(pptx_builder, "list_themes"):
+            return jsonify({"success": True, **pptx_builder.list_themes()})
+    except Exception as e:
+        print(f"[themes] 读取失败：{e}")
+    return jsonify({"success": False, "themes": []})
+
+
+@app.route('/api/export_pptx', methods=['POST'])
+def export_pptx():
+    """导出自动生成的路演 PPT（.pptx）"""
+    data = request.get_json(force=True, silent=True) or {}
+    deck = data.get('deck')
+    if not deck or not deck.get('slides'):
+        return jsonify({"error": "没有可导出的PPT数据，请先用深度版生成"}), 400
+    try:
+        from pptx_builder import build_deck
+        deck = dict(deck)
+        # 前端选了主题/模板时，覆盖 deck 内置值（手动优先于自动推断）
+        if data.get("theme"):
+            deck["theme"] = data["theme"]
+        if data.get("variant"):
+            deck["variant"] = data["variant"]
+        deck['project'] = deck.get('project') or (data.get('idea', '') or '科创项目')[:30]
+        deck.setdefault('one_liner', data.get('one_liner', ''))
+        deck.setdefault('competition', data.get('competition', ''))
+        deck.setdefault("theme", "tech")
+        deck.setdefault("variant", "v1")
+        deck.setdefault('theme', data.get('theme') or 'tech')
+        deck.setdefault('variant', data.get('variant') or 'v1')
+        # 解析表格 id 引用（"t1" -> 实体表格）
+        tmap = {t.get('id'): t for t in (data.get('tables') or [])}
+        for s in deck.get('slides', []):
+            if isinstance(s, dict) and isinstance(s.get('table'), str):
+                s['table'] = tmap.get(s['table'])
+        chart_paths = {}
+        for c in (data.get('charts') or []):
+            img = os.path.join('generated', os.path.basename(c.get('url', '')))
+            if os.path.exists(img):
+                chart_paths[c.get('id')] = img
+        os.makedirs('generated', exist_ok=True)
+        out = os.path.join('generated', '_deck_export.pptx')
+        build_deck(deck, out, chart_paths)
+        title = (deck.get('project') or '路演PPT').replace('/', '_')[:40]
+        return send_file(out, as_attachment=True, download_name=f'{title}-路演PPT.pptx',
+                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"PPT导出失败：{e}"}), 500

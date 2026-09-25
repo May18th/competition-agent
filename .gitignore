@@ -6,3 +6,15 @@ competition.db
 history.json
 error.log
 *.log
+
+# ---- 运行产物 / 本地调试垃圾（提交会污染仓库）----
+generated/
+tmp_export/
+PPT库/
+_chart_test/
+_theme_demo/
+*.bak
+*.bak.*
+*.pptx
+*.orig
+*.rej
