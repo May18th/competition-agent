@@ -1342,8 +1342,8 @@ mark.wb-ph {
                     <!-- 赛事要求卡：跟着赛事名自动切换文档类型与章节结构，可直接改 -->
                     <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid);">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
-                            <div style="font-size: 14px; font-weight: 600; color: var(--text);">
-                                本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span>
+                            <div onclick="evToggleBody()" style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px;">
+                                本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span><span id="evBodyArrow" style="color: var(--c-a); font-weight: 400;">▾</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
                                 <button onclick="evAddSection()" style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">+ 加一章</button>
@@ -1351,7 +1351,8 @@ mark.wb-ph {
                             </div>
                         </div>
                         <!-- 匹配状态：这份要求是官方知识库来的，还是通用兜底 -->
-                        <div id="evMatchBar" style="margin-bottom: 10px; font-size: 12.5px;"></div>
+                        <div id="evBody">
+<div id="evMatchBar" style="margin-bottom: 10px; font-size: 12.5px;"></div>
                         <!-- 赛道选择：只有知识库真写了赛道差异的赛事才出现（目前 iCAN 三赛道） -->
                         <div id="evTrackBox" style="display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2);">
                             <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 7px;">
@@ -1375,6 +1376,7 @@ mark.wb-ph {
                         </div>
                         <div onclick="evToggleMore()" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
                             更多要求（扣分点 · 说明）<span id="evMoreArrow">▾</span>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -6643,9 +6645,17 @@ function wbAdvToggle(id) {
     b.style.display = open ? 'none' : '';
     if (a) a.textContent = open ? '▸' : '▾';
 }
+function evToggleBody() {
+    var b = document.getElementById('evBody');
+    var a = document.getElementById('evBodyArrow');
+    if (!b) return;
+    var open = b.style.display !== 'none';
+    b.style.display = open ? 'none' : '';
+    if (a) a.textContent = open ? '▸' : '▾';
+}
 function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-    ['kbAdvBody', 'draftAdvBody'].forEach(function (id) {
+    ['kbAdvBody', 'draftAdvBody', 'evBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;
