@@ -194,3 +194,27 @@ bash /c/Users/34984/ssh_aliyun.sh "cd /opt/comp-agent && git fetch origin -q \
 
 教训：本次我 scp 直传服务器并就地 commit，造成服务器 HEAD（`be3377d`）与 GitHub（`9185f83`）分叉，
 已用 `git reset --hard origin/main` 拉回。**服务器上不要就地改代码提交。**
+
+### 五、2026-09-26 三项后端能力实测（深度版真生成 #20 strong / #21 standard，同题对照）
+
+Codex 已把后端同步进主仓库（`d3f0f3e`），线上已部署。我跑真生成验证：
+
+| 项 | 结果 |
+|---|---|
+| 官方资料注入 | ✅ 标记词进正文。**注**：生效的是前端传的 `rule_content`（`competition_agents.py:622-625` 直接进 prompt）；Codex 的 `save_official_doc` 持久化路径**实际不触发**——前端上传没传 `purpose=reference`。两条路并存，以前者为准 |
+| 章节定制 | ✅ 12/12 命中，「二、痛点分析」标题原样保留（Codex 已采纳"不碰章节标题"写入 SPEC 第 5 条） |
+| 去 AI 味 | ✅ 生效但只一半：段落长度 CV **0.35 vs 0.16**（起伏达标）；含数字段落 56% vs 72%（**反而更低**）；91% 段落落在 80~400 字（9% 偏短）。strong 正文 5672 字 vs standard 7875 字，偏碎 |
+| judge_scores | ❌ **历史记录漏存**：`app.py` 约 658-690 的 `history_item["data"]` 少了这一行（702-730 的 payload 有）。实时能看、回看没了 |
+| T2 专家 identity | ⚠️ 仍是 `role:"技术视角"` 泛称，分数已差异化但身份没具象化 |
+
+⚠️ **禁用词计数测不出 humanize 效果**：strong 和 standard 都是 0 次，基线本来就是 0。
+别拿"禁用词 0 次"当生效证据，要看段落起伏（CV）这类结构指标。
+
+详见 **《待办_Codex_历史记录漏judge_scores.md》**。
+
+### 六、git push 当前不可用（2026-09-26 10:05）
+
+`git -c credential.helper=manager push` 走代理 `http://127.0.0.1:7877` 时卡住直到超时
+（代理本身可用：`curl -x http://127.0.0.1:7877 https://github.com` 返回 200；直连返回 000）。
+不带 `-c credential.helper=manager` 会报 `could not read Username`。
+→ 文档类 commit 先留在本地，等网络恢复再推；**功能代码已通过 scp/reset 的方式上线，不受影响**。
