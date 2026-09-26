@@ -29,6 +29,11 @@ import app_log
 app = Flask(__name__)
 START_TIME = time.time()
 
+# 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮
+MAX_CONCURRENT_GEN = 4
+_active_gen_lock = threading.Lock()
+_active_gen_count = 0
+
 # ===== 媒体模块（表格 / 图表 / PPT）=====
 # 由 media_routes.py 提供，WorkBuddy 注册。
 # ⚠️ 改 app.py 时请不要删这段，删了前端的图表和 PPT 下载会 404。
@@ -47,6 +52,11 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "competition.db")
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # WAL 模式：多用户并发读写时减少锁冲突，降低"database is locked"崩溃
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+    except Exception:
+        pass
     # 历史记录表
     c.execute('''CREATE TABLE IF NOT EXISTS history
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +70,10 @@ def init_db():
     cols = [r[1] for r in c.execute("PRAGMA table_info(history)").fetchall()]
     if "rating" not in cols:
         c.execute("ALTER TABLE history ADD COLUMN rating INTEGER DEFAULT 0")
+    if "duration" not in cols:
+        c.execute("ALTER TABLE history ADD COLUMN duration REAL DEFAULT 0")
+    if "status" not in cols:
+        c.execute("ALTER TABLE history ADD COLUMN status TEXT DEFAULT 'success'")
     # 用户反馈表：结果页打分旁的文本框，纯文本收集，不做通知/回复系统
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +85,15 @@ def init_db():
     fb_cols = [r[1] for r in c.execute("PRAGMA table_info(feedback)").fetchall()]
     if "category" not in fb_cols:
         c.execute("ALTER TABLE feedback ADD COLUMN category TEXT DEFAULT '其他'")
+    # 生成失败记录表（用于算成功率 + 动态监视）
+    c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  task_id TEXT, error TEXT, detail TEXT, created_time TEXT)''')
+    # 问题工单表：自动路由（前端/后端），可标记解决并留解决说明
+    c.execute('''CREATE TABLE IF NOT EXISTS issues
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  kind TEXT, source TEXT, content TEXT, created_time TEXT,
+                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '')''')
     conn.commit()
     conn.close()
 
@@ -131,7 +154,9 @@ def _seed_kb_if_needed():
 
 
 _seed_kb_if_needed()
-lock = threading.Lock()
+# 生成并发闸：允许最多 3 个生成任务同时进行（原来 Lock 只有 1 个，多用户会排长队）。
+# 大模型调用另有 _LLM_GATE(4) 限流 + SQLite WAL 并发写，3 个并行是稳定与速度的平衡点。
+lock = threading.Semaphore(3)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -189,15 +214,31 @@ def save_history_item(item):
     """插入一条历史记录到 SQLite，返回新 id"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time)
-                 VALUES (?, ?, ?, ?, ?)''',
+    c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time, duration, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
               (item.get("competition_name", ""), item.get("idea", ""), item.get("mode", ""),
                json.dumps(item.get("data", {}), ensure_ascii=False),
-               item.get("time", datetime.now().strftime("%Y-%m-%d %H:%M"))))
+               item.get("time", datetime.now().strftime("%Y-%m-%d %H:%M")),
+               item.get("duration", 0), item.get("status", "success")))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
     return new_id
+
+
+def record_gen_failure(task_id, error, detail=""):
+    """记录一次生成失败（用于成功率统计 + 动态监视）。"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT INTO gen_failures (task_id, error, detail, created_time) VALUES (?, ?, ?, ?)",
+                  (str(task_id or "")[:32], str(error or "")[:200], str(detail or "")[:500],
+                   datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        conn.close()
+        create_issue("backend", "error", error)
+    except Exception:
+        pass
 
 
 def _migrate_history_json():
@@ -687,6 +728,8 @@ def add_feedback():
     conn.commit()
     new_id = c.lastrowid
     conn.close()
+    if category in ("问题反馈", "吐槽"):
+        create_issue(_classify_issue(content), "feedback", content)
     return jsonify({"success": True, "id": new_id, "category": category})
 
 
@@ -800,6 +843,19 @@ def admin_dashboard():
     # 反馈分类聚合
     fb_cat = c.execute(
         "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
+    # 评估指标：平均耗时 / 成功率 / AI 评委平均分
+    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
+    avg_dur = round(avg_dur, 1) if avg_dur else 0
+    succ_total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    success_rate = round(succ_total * 100.0 / (succ_total + fail_total), 1) if (succ_total + fail_total) else 100.0
+    judge_avg = c.execute(
+        "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
+        "WHERE json_extract(result_data,'$.score') IS NOT NULL").fetchone()[0]
+    judge_avg = round(judge_avg, 1) if judge_avg else 0
+    open_issues = c.execute(
+        "SELECT id, kind, source, content, created_time FROM issues "
+        "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
     conn.close()
 
     # 今日大模型调用额度
@@ -864,6 +920,18 @@ def admin_dashboard():
         cat_chips.append('<span class="chip">%s · %d</span>' % (_html_escape(cat), n))
     cat_html = "".join(cat_chips) or '<div class="empty">暂无反馈</div>'
 
+    # 待处理问题工单
+    issue_items = []
+    for it in open_issues:
+        kind_label = "前端" if it["kind"] == "frontend" else "后端"
+        kind_color = "#d97706" if it["kind"] == "frontend" else "#2563eb"
+        issue_items.append(
+            '<li><div class="t">#%d · <span style="color:%s">%s</span> · %s</div>'
+            '<div>%s</div></li>'
+            % (it["id"], kind_color, kind_label, it["created_time"] or "",
+               _html_escape(it["content"] or "")))
+    issues_html = "".join(issue_items) or '<li class="empty">暂无待处理问题</li>'
+
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>赛创助手 · 后台数据</title>
@@ -904,6 +972,9 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <div class="card"><div class="num">%d</div><div class="label">今日剩余额度</div></div>
 <div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
+<div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
+<div class="card"><div class="num">%s%%</div><div class="label">生成成功率</div></div>
+<div class="card"><div class="num">%s</div><div class="label">AI 评委平均分</div></div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">满意度分布</h2>
@@ -921,18 +992,93 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <h2 style="margin-top:0">反馈分类</h2>
 %s
 </div>
+<div class="box">
+<h2 style="margin-top:0">待处理问题工单（自动路由给前端 / 后端）</h2>
+<ul>%s</ul>
+</div>
 <h2>最近 10 条反馈</h2>
 <ul>%s</ul>
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
 </div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
                               rated_count, feedback_total, rating_bars_html,
-                              trend_html, comp_html, cat_html, fb_html)
+                              trend_html, comp_html, cat_html, avg_dur,
+                              success_rate, judge_avg, issues_html, fb_html)
     return html
 
 
 def _html_escape(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+@app.route('/monitor')
+def monitor():
+    """动态监视页：自动刷新，实时看服务状态 / 最近生成 / 失败 / 额度。"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    recent_gen = c.execute(
+        "SELECT competition_name, mode, duration, status, created_time FROM history "
+        "ORDER BY id DESC LIMIT 12").fetchall()
+    recent_fail = c.execute(
+        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    conn.close()
+
+    uptime = int(time.time() - START_TIME)
+    up_h, up_m = divmod(uptime // 60, 60)
+    quota = {"remaining": 0, "limit": 500}
+    try:
+        from competition_agents import get_quota_status
+        quota = get_quota_status()
+    except Exception:
+        pass
+
+    gen_rows = "".join(
+        '<tr><td>%s</td><td>%s</td><td>%s</td><td>%ss</td></tr>'
+        % (_html_escape(r["competition_name"] or "—"), r["mode"] or "—",
+           r["status"] or "success", r["duration"] if r["duration"] else 0)
+        for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
+    fail_rows = "".join(
+        '<tr><td>%s</td><td>%s</td></tr>'
+        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
+
+    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="15">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>赛创助手 · 动态监视</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0f1535;color:#e9eefc;margin:0;padding:26px 18px;line-height:1.6}
+.wrap{max-width:860px;margin:0 auto}
+h1{font-size:20px;margin:0 0 6px}
+.sub{font-size:12px;color:#93a0c4;margin-bottom:18px}
+.stat{display:inline-block;background:#18224a;border-radius:10px;padding:12px 18px;margin:0 8px 8px 0}
+.stat b{font-size:22px;color:#22d3ee}
+.stat span{font-size:12px;color:#93a0c4;margin-left:6px}
+h2{font-size:15px;margin:22px 0 8px;color:#22d3ee}
+table{width:100%%;border-collapse:collapse;background:#141d42;border-radius:10px;overflow:hidden}
+th,td{padding:9px 12px;font-size:13px;text-align:left;border-bottom:1px solid #233059}
+th{background:#1b2650;color:#93a0c4;font-weight:600}
+.e{color:#6b7899;text-align:center;padding:18px}
+.green{color:#34d399}.red{color:#fb7185}
+</style></head><body><div class="wrap">
+<h1>🔴 赛创助手 · 动态监视</h1>
+<div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
+<div>
+<div class="stat"><b>%d</b><span>总生成</span></div>
+<div class="stat"><b class="%s">%d</b><span>失败</span></div>
+<div class="stat"><b>%d / %d</b><span>今日额度</span></div>
+</div>
+<h2>最近生成</h2>
+<table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table>
+<h2>最近失败</h2>
+<table><tr><th>时间</th><th>错误</th></tr>%s</table>
+</div></body></html>""" % (up_h, up_m, total_gen,
+                              "red" if fail_total else "green", fail_total,
+                              quota.get("remaining", 0), quota.get("limit", 500),
+                              gen_rows, fail_rows)
 
 
 def _categorize_feedback(content):
@@ -952,6 +1098,43 @@ def _categorize_feedback(content):
     if any(k in t for k in praise):
         return "好评"
     return "其他"
+
+
+def _classify_issue(content):
+    """把问题路由到前端还是后端。"""
+    t = content or ""
+    fe = ["页面", "按钮", "显示", "界面", "前端", "手机", "浏览器", "布局", "样式",
+          "点不动", "看不到", "空白", "弹窗", "导航", "引导", "排版"]
+    be = ["生成", "报错", "接口", "数据库", "速度", "慢", "404", "500", "崩溃", "超时",
+          "输出", "内容", "图表", "导出", "PPT", "答辩", "评委", "api"]
+    f = sum(1 for k in fe if k in t)
+    b = sum(1 for k in be if k in t)
+    if f > b:
+        return "frontend"
+    if b > f:
+        return "backend"
+    return "backend"
+
+
+def create_issue(kind, source, content):
+    """自动建一条问题工单（路由给前端/后端），幂等去重（内容 hash 相同不重复）。"""
+    try:
+        import hashlib
+        h = hashlib.md5((content or "").strip().encode("utf-8")).hexdigest()[:16]
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        row = c.execute("SELECT id FROM issues WHERE content=?", (content,)).fetchone()
+        if row:
+            conn.close()
+            return None
+        c.execute("INSERT INTO issues (kind, source, content, created_time, status) VALUES (?, ?, ?, ?, 'open')",
+                  (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        new_id = c.lastrowid
+        conn.close()
+        return new_id
+    except Exception:
+        return None
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
@@ -1055,6 +1238,7 @@ def _strip_identifying_info(obj):
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
+        t0 = time.time()
         idea = data.get("idea", "")
         proposal_draft = data.get("proposal_draft", "")
         mode = data.get("mode", "fast")
@@ -1157,6 +1341,8 @@ def _run_generation(data):
             "idea": data.get("idea", "")[:50],
             "mode": data.get("mode", "fast"),
             "score": result.get("score", ""),
+            "duration": round(time.time() - t0, 1),
+            "status": "success",
             "data": {
                 "parsed_rules": result.get("parsed_rules", ""),
                 "similarity_report": result.get("similarity_report", ""),
@@ -1271,7 +1457,14 @@ def generate():
 
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
+    global _active_gen_count
     data = request.json or {}
+    # 稳定器：并发生成任务达到上限就拒绝，避免瞬时洪峰把服务压垮
+    with _active_gen_lock:
+        if _active_gen_count >= MAX_CONCURRENT_GEN:
+            return jsonify({"success": False,
+                            "error": "当前生成人数较多，请稍后 1 分钟再试"}), 429
+        _active_gen_count += 1
     task_id = uuid.uuid4().hex
     tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(),
                       "mode": data.get("mode", "fast")}
@@ -1289,10 +1482,13 @@ def generate_async():
             import traceback
             traceback.print_exc()
             app_log.error("generate", f"task={task_id[:8]} {_friendly_error(e)} | {traceback.format_exc(limit=2)}")
+            record_gen_failure(task_id, _friendly_error(e), str(e))
             progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
         finally:
             clear_speech_stream(task_id)
             clear_current_task()
+            with _active_gen_lock:
+                _active_gen_count = max(0, _active_gen_count - 1)
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"success": True, "task_id": task_id})
