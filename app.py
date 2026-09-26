@@ -65,7 +65,12 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   history_id INTEGER,
                   content TEXT NOT NULL,
-                  created_time TEXT)''')
+                  created_time TEXT,
+                  category TEXT DEFAULT '其他')''')
+    # 旧库迁移：给 feedback 表补 category 列
+    fb_cols = [r[1] for r in c.execute("PRAGMA table_info(feedback)").fetchall()]
+    if "category" not in fb_cols:
+        c.execute("ALTER TABLE feedback ADD COLUMN category TEXT DEFAULT '其他'")
     conn.commit()
     conn.close()
 
@@ -674,14 +679,15 @@ def add_feedback():
         history_id = int(history_id) if history_id not in (None, "") else None
     except (TypeError, ValueError):
         history_id = None
+    category = _categorize_feedback(content)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO feedback (history_id, content, created_time) VALUES (?, ?, ?)",
-              (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+    c.execute("INSERT INTO feedback (history_id, content, created_time, category) VALUES (?, ?, ?, ?)",
+              (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
-    return jsonify({"success": True, "id": new_id})
+    return jsonify({"success": True, "id": new_id, "category": category})
 
 
 @app.route('/api/feedback')
@@ -691,7 +697,7 @@ def list_feedback():
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     rows = c.execute(
-        "SELECT id, history_id, content, created_time FROM feedback "
+        "SELECT id, history_id, content, created_time, category FROM feedback "
         "ORDER BY id DESC LIMIT 500").fetchall()
     conn.close()
     items = [dict(r) for r in rows]
@@ -708,14 +714,14 @@ def export_feedback():
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     rows = c.execute(
-        "SELECT id, history_id, content, created_time FROM feedback ORDER BY id ASC").fetchall()
+        "SELECT id, history_id, content, created_time, category FROM feedback ORDER BY id ASC").fetchall()
     conn.close()
 
     wb = Workbook()
     ws = wb.active
     ws.title = "用户反馈"
 
-    headers = ["提交时间", "反馈内容", "关联历史ID"]
+    headers = ["提交时间", "反馈内容", "分类", "关联历史ID"]
     header_fill = PatternFill("solid", fgColor="2563EB")
     header_font = Font(bold=True, color="FFFFFF", size=12)
     thin = Side(style="thin", color="D9D9D9")
@@ -732,6 +738,7 @@ def export_feedback():
     for i, r in enumerate(rows, start=2):
         vals = [r["created_time"] or "",
                 r["content"] or "",
+                r["category"] or "其他",
                 r["history_id"] if r["history_id"] is not None else ""]
         for col, v in enumerate(vals, 1):
             cell = ws.cell(row=i, column=col, value=v)
@@ -745,8 +752,9 @@ def export_feedback():
         ws.cell(row=2, column=2, value="暂无反馈")
 
     ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 60
-    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["B"].width = 56
+    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["D"].width = 14
     ws.freeze_panes = "A2"
 
     buf = BytesIO()
@@ -776,6 +784,22 @@ def admin_dashboard():
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     feedbacks = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 10").fetchall()
+    # 满意度分布（1-5 星）
+    rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    for r, n in c.execute(
+            "SELECT rating, COUNT(*) FROM history WHERE rating > 0 GROUP BY rating").fetchall():
+        rating_dist[int(r)] = n
+    # 生成趋势（最近 14 天）
+    trend = c.execute(
+        "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
+        "GROUP BY d ORDER BY d DESC LIMIT 14").fetchall()
+    # 赛事分布（Top 8）
+    comp_dist = c.execute(
+        "SELECT competition_name, COUNT(*) n FROM history "
+        "GROUP BY competition_name ORDER BY n DESC, competition_name LIMIT 8").fetchall()
+    # 反馈分类聚合
+    fb_cat = c.execute(
+        "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
     conn.close()
 
     # 今日大模型调用额度
@@ -797,6 +821,49 @@ def admin_dashboard():
                         % (r["created_time"] or "", _html_escape(r["content"] or "")))
     fb_html = "".join(fb_items) or '<li class="empty">暂无反馈</li>'
 
+    # 满意度分布条
+    max_r = max(rating_dist.values()) or 1
+    rating_bars = []
+    for star in range(5, 0, -1):
+        n = rating_dist.get(star, 0)
+        pct = int(n * 100 / max_r) if n else 0
+        rating_bars.append(
+            '<div class="barrow"><span class="bl">%d 星</span>'
+            '<span class="btrack"><span class="bfill" style="width:%d%%"></span></span>'
+            '<span class="bn">%d</span></div>' % (star, pct, n))
+    rating_bars_html = "".join(rating_bars)
+
+    # 生成趋势（最近 14 天，正序显示）
+    trend = list(reversed(trend))
+    max_t = max([n for _, n in trend]) if trend else 0
+    trend_bars = []
+    for d, n in trend:
+        h = int(n * 100 / max_t) if max_t else 0
+        label = d[5:] if len(d) >= 10 else d
+        trend_bars.append(
+            '<div class="tcol"><div class="tv">%d</div>'
+            '<div class="tbar"><div class="tfill" style="height:%d%%"></div></div>'
+            '<div class="td">%s</div></div>' % (n, h, label))
+    trend_html = "".join(trend_bars) or '<div class="empty">暂无数据</div>'
+
+    # 赛事分布（Top 8）
+    max_c = max([n for _, n in comp_dist]) if comp_dist else 0
+    comp_bars = []
+    for name, n in comp_dist:
+        pct = int(n * 100 / max_c) if max_c else 0
+        comp_bars.append(
+            '<div class="barrow"><span class="bl">%s</span>'
+            '<span class="btrack"><span class="bfill" style="width:%d%%"></span></span>'
+            '<span class="bn">%d</span></div>' % (_html_escape(name), pct, n))
+    comp_html = "".join(comp_bars) or '<div class="empty">暂无数据</div>'
+
+    # 反馈分类
+    cat_total = sum(n for _, n in fb_cat) or 0
+    cat_chips = []
+    for cat, n in fb_cat:
+        cat_chips.append('<span class="chip">%s · %d</span>' % (_html_escape(cat), n))
+    cat_html = "".join(cat_chips) or '<div class="empty">暂无反馈</div>'
+
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>赛创助手 · 后台数据</title>
@@ -814,6 +881,20 @@ ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
 li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
 li.empty{color:#9ca3af;text-align:center;padding:22px}
+.box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+.barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
+.barrow .bl{width:110px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
+.barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
+.barrow .bn{width:34px;font-size:13px;color:#6b7280;flex-shrink:0}
+.trend{display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:8px}
+.tcol{flex:1;display:flex;flex-direction:column;align-items:center;height:100%%}
+.tcol .tv{font-size:11px;color:#6b7280}
+.tcol .tbar{flex:1;width:100%%;display:flex;align-items:flex-end}
+.tcol .tfill{width:100%%;background:#2563eb;border-radius:4px 4px 0 0;min-height:2px}
+.tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
+.chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
+.empty{color:#9ca3af;text-align:center;padding:16px}
 </style></head><body><div class="wrap">
 <h1>赛创助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
@@ -824,17 +905,53 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 </div>
+<div class="box">
+<h2 style="margin-top:0">满意度分布</h2>
+%s
+</div>
+<div class="box">
+<h2 style="margin-top:0">生成趋势（最近 14 天）</h2>
+<div class="trend">%s</div>
+</div>
+<div class="box">
+<h2 style="margin-top:0">赛事分布（Top 8）</h2>
+%s
+</div>
+<div class="box">
+<h2 style="margin-top:0">反馈分类</h2>
+%s
+</div>
 <h2>最近 10 条反馈</h2>
 <ul>%s</ul>
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
-</div></body></html>""" % (total_gen, today_gen, quota_remaining,
-                              avg_rating, rated_count, feedback_total, fb_html)
+</div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
+                              rated_count, feedback_total, rating_bars_html,
+                              trend_html, comp_html, cat_html, fb_html)
     return html
 
 
 def _html_escape(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+def _categorize_feedback(content):
+    """按关键词给反馈打标签（免费、即时，不用调 LLM）。"""
+    t = content or ""
+    neg = ["难用", "垃圾", "无语", "失望", "烦死", "太差"]
+    bug = ["报错", "错误", "打不开", "失败", "卡", "慢", "崩", "404", "500", "闪退",
+           "乱码", "不能用", "不行", "无响应", "空白"]
+    sugg = ["建议", "希望", "能不能", "加", "优化", "最好", "要是", "期待", "想要", "改进"]
+    praise = ["好", "不错", "满意", "赞", "棒", "厉害", "好用", "喜欢", "方便", "感谢"]
+    if any(k in t for k in neg):
+        return "吐槽"
+    if any(k in t for k in bug):
+        return "问题反馈"
+    if any(k in t for k in sugg):
+        return "功能建议"
+    if any(k in t for k in praise):
+        return "好评"
+    return "其他"
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
