@@ -963,7 +963,11 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
 .empty{color:#9ca3af;text-align:center;padding:16px}
+.nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.nav a.active{background:#2563eb;color:#fff}
 </style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 返回主站</a></nav>
 <h1>赛创助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 <div class="cards">
@@ -1063,7 +1067,11 @@ th,td{padding:9px 12px;font-size:13px;text-align:left;border-bottom:1px solid #2
 th{background:#1b2650;color:#93a0c4;font-weight:600}
 .e{color:#6b7899;text-align:center;padding:18px}
 .green{color:#34d399}.red{color:#fb7185}
+.nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
+.nav a.active{background:#22d3ee;color:#0b1026}
 </style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 返回主站</a></nav>
 <h1>🔴 赛创助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
 <div>
