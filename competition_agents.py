@@ -1154,6 +1154,15 @@ def _industry_ref() -> str:
             + data[:2500] + "\n")
 
 
+def _paradigm_ref(module_tag: str = None) -> str:
+    """注入从范文库蒸馏出的「写作范式」；读不到则空串，绝不抛异常。"""
+    try:
+        from kb_distill import paradigm_ref
+        return paradigm_ref(module_tag) + "\n" if paradigm_ref(module_tag) else ""
+    except Exception:
+        return ""
+
+
 _DEFAULT_CHAPTERS = """## 一、项目概述
 （350 字以上：做什么、给谁用、解决什么核心问题）
 
@@ -1477,6 +1486,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
 {_industry_ref()}
+{_paradigm_ref()}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -1540,6 +1550,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
 {_industry_ref()}
+{_paradigm_ref()}
 
 【篇幅硬性要求】
 1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。

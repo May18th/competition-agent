@@ -15,7 +15,7 @@ import sqlite3
 import re
 import gzip as _gzip
 from datetime import datetime
-from flask import Flask, request, jsonify, send_file, make_response
+from flask import Flask, request, jsonify, send_file, make_response, g
 from werkzeug.utils import secure_filename
 from pypdf import PdfReader
 from docx import Document
@@ -57,10 +57,73 @@ def _gzip_response(resp):
     return resp
 
 
+# ===== 匿名用户隔离（无登录）=====
+# 首次访问下发一个长期匿名 cookie（comp_uid），历史记录/反馈按它隔离，
+# 让公网随机访客之间看不到彼此的生成记录，同时不做复杂登录系统。
+# 注：admin / 导出 / 分享链接仍是全局或 token 校验，范文库按设计保持团队共享。
+@app.before_request
+def _ensure_uid():
+    uid = (request.cookies.get('comp_uid') or '').strip()
+    if not uid or len(uid) > 64 or not uid.isalnum():
+        uid = uuid.uuid4().hex
+    g.uid = uid
+    g.uid_is_new = 'comp_uid' not in request.cookies
+
+
+@app.after_request
+def _set_uid_cookie(resp):
+    if getattr(g, 'uid_is_new', False):
+        resp.set_cookie('comp_uid', g.uid, max_age=60 * 60 * 24 * 365,
+                        httponly=True, samesite='Lax')
+    return resp
+
+
+def _current_uid():
+    """取当前匿名用户 id；无 cookie 时退回 IP，保证旧前端也能落到一个稳定隔离键。"""
+    return getattr(g, 'uid', None) or (request.cookies.get('comp_uid') or '').strip() or \
+        (request.remote_addr or 'anon')
+
+
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮
 MAX_CONCURRENT_GEN = 4
 _active_gen_lock = threading.Lock()
 _active_gen_count = 0
+
+# 简单限流：同一 IP 1 分钟最多生成 5 次，防止刷接口（学生项目级防护，无需登录系统）。
+# 说明：进程内内存限流，gunicorn 多 worker 时是「每 worker 各自限 5 次」；
+# 对当前单机小规模部署足够，若以后上多机/高并发再升级为共享存储（如 Redis）。
+_RATE_WINDOW_SEC = 60
+_RATE_LIMIT = 5
+_rate_lock = threading.Lock()
+_rate_hits = {}  # ip -> list[float] 命中时间戳（Unix 秒）
+
+
+def _client_ip():
+    """取客户端 IP，优先信任反代传入的 X-Forwarded-For 首地址。"""
+    fwd = (request.headers.get('X-Forwarded-For') or '').strip()
+    if fwd:
+        return fwd.split(',')[0].strip()
+    return (request.remote_addr or 'unknown').strip()
+
+
+def _rate_limited():
+    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。"""
+    ip = _client_ip()
+    now = time.time()
+    with _rate_lock:
+        hits = [t for t in _rate_hits.get(ip, []) if now - t < _RATE_WINDOW_SEC]
+        if len(hits) >= _RATE_LIMIT:
+            _rate_hits[ip] = hits
+            return True
+        hits.append(now)
+        _rate_hits[ip] = hits
+        # 键过多时顺手清理，避免内存缓慢增长
+        if len(_rate_hits) > 5000:
+            for k in list(_rate_hits.keys()):
+                _rate_hits[k] = [t for t in _rate_hits[k] if now - t < _RATE_WINDOW_SEC]
+                if not _rate_hits[k]:
+                    del _rate_hits[k]
+        return False
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
 # 由 media_routes.py 提供，WorkBuddy 注册。
@@ -102,6 +165,8 @@ def init_db():
         c.execute("ALTER TABLE history ADD COLUMN duration REAL DEFAULT 0")
     if "status" not in cols:
         c.execute("ALTER TABLE history ADD COLUMN status TEXT DEFAULT 'success'")
+    if "user_id" not in cols:
+        c.execute("ALTER TABLE history ADD COLUMN user_id TEXT DEFAULT ''")
     # 用户反馈表：结果页打分旁的文本框，纯文本收集，不做通知/回复系统
     c.execute('''CREATE TABLE IF NOT EXISTS feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +178,8 @@ def init_db():
     fb_cols = [r[1] for r in c.execute("PRAGMA table_info(feedback)").fetchall()]
     if "category" not in fb_cols:
         c.execute("ALTER TABLE feedback ADD COLUMN category TEXT DEFAULT '其他'")
+    if "user_id" not in fb_cols:
+        c.execute("ALTER TABLE feedback ADD COLUMN user_id TEXT DEFAULT ''")
     # 生成失败记录表（用于算成功率 + 动态监视）
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,6 +261,7 @@ lock = threading.Semaphore(3)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 上传文件上限 20MB，防超大文件把服务压垮
 
 # 存储最新结果
 latest_result = None
@@ -215,15 +283,24 @@ def _row_to_item(row):
     }
 
 
-def load_history(limit=200, offset=0, q=None):
-    """从 SQLite 读取历史记录（新的在前），返回兼容旧接口的 list"""
+def load_history(limit=200, offset=0, q=None, uid=None):
+    """从 SQLite 读取历史记录（新的在前），返回兼容旧接口的 list。
+
+    uid 传入时只返回该匿名用户自己的记录；不传则返回全部（供 admin/健康检查用）。
+    """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     sql = "SELECT id, competition_name, idea, mode, result_data, created_time, rating FROM history"
     params = []
+    conds = []
     if q:
-        sql += " WHERE competition_name LIKE ? OR idea LIKE ?"
-        params = [f"%{q}%", f"%{q}%"]
+        conds.append("(competition_name LIKE ? OR idea LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if uid:
+        conds.append("user_id = ?")
+        params.append(uid)
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
     sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
     params += [limit, offset]
     c.execute(sql, params)
@@ -232,13 +309,20 @@ def load_history(limit=200, offset=0, q=None):
     return [_row_to_item(r) for r in rows]
 
 
-def count_history(q=None):
+def count_history(q=None, uid=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    conds, params = [], []
     if q:
-        c.execute("SELECT COUNT(*) FROM history WHERE competition_name LIKE ? OR idea LIKE ?", (f"%{q}%", f"%{q}%"))
-    else:
-        c.execute("SELECT COUNT(*) FROM history")
+        conds.append("(competition_name LIKE ? OR idea LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if uid:
+        conds.append("user_id = ?")
+        params.append(uid)
+    sql = "SELECT COUNT(*) FROM history"
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
+    c.execute(sql, params)
     total = c.fetchone()[0]
     conn.close()
     return total
@@ -248,12 +332,13 @@ def save_history_item(item):
     """插入一条历史记录到 SQLite，返回新 id"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time, duration, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
+    c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time, duration, status, user_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
               (item.get("competition_name", ""), item.get("idea", ""), item.get("mode", ""),
                json.dumps(item.get("data", {}), ensure_ascii=False),
                item.get("time", datetime.now().strftime("%Y-%m-%d %H:%M")),
-               item.get("duration", 0), item.get("status", "success")))
+               item.get("duration", 0), item.get("status", "success"),
+               item.get("user_id", "")))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
@@ -534,10 +619,27 @@ def upload_pdf():
         return jsonify({"success": False, "error": "旧版 .doc 读不了：请在 Word 里「另存为 .docx」再上传，或把内容另存为 TXT / PDF"})
     if ext not in ('.pdf', '.docx', '.txt', '.md'):
         return jsonify({"success": False, "error": "不支持的文件格式（" + (ext or '无扩展名') + "），请上传 PDF / DOCX / TXT / MD"})
+
+    # 大小校验：先看 Content-Length 快速拦截，再按实际字节数兜底（防超大文件压内存）
+    if request.content_length and request.content_length > MAX_UPLOAD_SIZE + 1024 * 1024:
+        return jsonify({"success": False, "error": "文件过大（上限 20MB），请压缩或拆分后再传"})
+    data_bytes = file.read(MAX_UPLOAD_SIZE + 1)
+    if len(data_bytes) > MAX_UPLOAD_SIZE:
+        return jsonify({"success": False, "error": "文件过大（上限 20MB），请压缩或拆分后再传"})
+    # 内容校验：扩展名和真实文件头要匹配，防止把可执行文件改名成 .pdf/.docx 绕过
+    head = data_bytes[:8]
+    if ext == '.pdf' and not data_bytes.lstrip()[:5].startswith(b'%PDF-'):
+        return jsonify({"success": False, "error": "文件内容不是有效的 PDF，请确认后重新上传"})
+    if ext == '.docx' and head[:2] != b'PK':
+        return jsonify({"success": False, "error": "文件内容不是有效的 Word(.docx)，请确认后重新上传"})
+    if ext in ('.txt', '.md') and b'\x00' in data_bytes[:4096]:
+        return jsonify({"success": False, "error": "文件内容不是纯文本，请另存为 TXT / Markdown 后重新上传"})
+
     base = secure_filename(os.path.splitext(raw_name)[0]) or 'upload'
     filename = base + '_' + str(int(time.time())) + ext
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
+    with open(filepath, 'wb') as f:
+        f.write(data_bytes)
     text = ""
     try:
         if ext == '.pdf':
@@ -705,8 +807,9 @@ def get_history():
     limit = max(1, min(int(request.args.get("limit", 20)), 100))
     offset = max(0, int(request.args.get("offset", 0)))
     q = request.args.get("q", "").strip()
-    history = load_history(limit=limit, offset=offset, q=q)
-    total = count_history(q)
+    uid = _current_uid()
+    history = load_history(limit=limit, offset=offset, q=q, uid=uid)
+    total = count_history(q, uid=uid)
     # 只返回摘要，不返回完整数据
     summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"],
                 "idea": h["idea"], "score": h["score"], "rating": h.get("rating", 0)} for h in history]
@@ -716,7 +819,7 @@ def get_history():
 @app.route('/api/history/groups')
 def history_groups():
     """按比赛类型自动分组的历史记录（前端下拉按比赛过滤用）。"""
-    history = load_history(limit=500)
+    history = load_history(limit=500, uid=_current_uid())
     groups = {}
     for h in history:
         comp = (h.get("competition_name") or "未标注比赛").strip()
@@ -842,7 +945,8 @@ def view_share(token):
 def get_history_detail(history_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT result_data, rating FROM history WHERE id = ?", (history_id,))
+    c.execute("SELECT result_data, rating FROM history WHERE id = ? AND user_id = ?",
+              (history_id, _current_uid()))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -866,7 +970,8 @@ def rate_history(history_id):
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("UPDATE history SET rating = ? WHERE id = ?", (rating, history_id))
+    c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
+              (rating, history_id, _current_uid()))
     conn.commit()
     updated = c.rowcount
     conn.close()
@@ -892,8 +997,8 @@ def add_feedback():
     category = _categorize_feedback(content)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO feedback (history_id, content, created_time, category) VALUES (?, ?, ?, ?)",
-              (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category))
+    c.execute("INSERT INTO feedback (history_id, content, created_time, category, user_id) VALUES (?, ?, ?, ?, ?)",
+              (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category, _current_uid()))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
@@ -1404,7 +1509,7 @@ def create_issue(kind, source, content):
 def delete_history(history_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("DELETE FROM history WHERE id = ?", (history_id,))
+    c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
     conn.commit()
     deleted = c.rowcount
     conn.close()
@@ -1606,6 +1711,7 @@ def _run_generation(data):
             "score": result.get("score", ""),
             "duration": round(time.time() - t0, 1),
             "status": "success",
+            "user_id": data.get("_user_id", ""),
             "data": {
                 "parsed_rules": result.get("parsed_rules", ""),
                 "similarity_report": result.get("similarity_report", ""),
@@ -1798,7 +1904,7 @@ def _project_name_hint(data):
         if v and str(v).strip():
             return str(v).strip()
     try:
-        h = load_history(limit=1)
+        h = load_history(limit=1, uid=_current_uid())
         if h and h[0].get('idea'):
             return str(h[0]['idea']).strip()
     except Exception:
@@ -1809,7 +1915,11 @@ def _project_name_hint(data):
 @app.route('/api/generate', methods=['POST'])
 def generate():
     """⚠️ 已废弃：请改用 /api/generate_async + /api/status 轮询。保留仅为兼容旧前端。"""
+    if _rate_limited():
+        return jsonify({"success": False,
+                        "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"}), 429
     data = request.json or {}
+    data["_user_id"] = _current_uid()
     try:
         result_data = _run_generation(data)
         return jsonify({"success": True, "data": result_data, "deprecated": True})
@@ -1831,6 +1941,11 @@ def generate():
 def _start_generation(data):
     """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。"""
     global _active_gen_count
+    # 在请求上下文里把匿名用户 id 固化进任务参数，供后台线程写历史记录时使用
+    data["_user_id"] = _current_uid()
+    if _rate_limited():
+        return None, jsonify({"success": False,
+                              "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
     # 稳定器：并发生成任务达到上限就拒绝，避免瞬时洪峰把服务压垮
     with _active_gen_lock:
         if _active_gen_count >= MAX_CONCURRENT_GEN:
@@ -2084,7 +2199,7 @@ def export_all():
     from docx_render import build_docx
     
     # 拿最新的历史记录
-    history = load_history()
+    history = load_history(uid=_current_uid())
     if not history:
         return jsonify({"success": False, "error": "没有可导出的记录"})
     
