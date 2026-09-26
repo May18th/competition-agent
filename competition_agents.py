@@ -483,9 +483,16 @@ _kbv_ready = False
 
 
 def _kbv_char_terms(text):
+    """中文单字 + 相邻二元组 + 英文/数字词，比纯单字更能抓住短语语义。"""
     out = set()
-    for m in re.finditer(r'[a-zA-Z0-9]+|[\u4e00-\u9fff]', (text or '').lower()):
+    s = (text or '').lower()
+    for m in re.finditer(r'[a-zA-Z0-9]+', s):
         out.add(m.group(0))
+    cjk = re.findall(r'[\u4e00-\u9fff]', s)
+    for ch in cjk:
+        out.add(ch)
+    for i in range(len(cjk) - 1):
+        out.add(cjk[i] + cjk[i + 1])
     return out
 
 

@@ -19,6 +19,13 @@ def _register_cjk():
         ("C:/Windows/Fonts/msyh.ttc", "MSYH"),
         ("C:/Windows/Fonts/simhei.ttf", "SIMHEI"),
         ("C:/Windows/Fonts/simsun.ttc", "SIMSUN"),
+        ("/System/Library/Fonts/PingFang.ttc", "PINGFANG"),
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "NOTOCJK"),
+        ("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf", "NOTOCJK"),
+        ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", "NOTOCJK"),
+        ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "NOTOCJK"),
+        ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "WQY"),
+        ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "WQY"),
     ]
     for path, name in candidates:
         try:
