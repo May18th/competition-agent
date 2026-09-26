@@ -573,7 +573,10 @@ def export_word():
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
-    return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+    project = _project_name_hint(data)
+    competition = data.get('competition_name') or ''
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(project, competition, title, '.docx'))
 
 
 @app.route('/api/export_pdf', methods=['POST'])
@@ -601,7 +604,10 @@ def export_pdf():
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
-    return send_file(filepath, as_attachment=True, download_name=title + '.pdf')
+    project = _project_name_hint(data)
+    competition = data.get('competition_name') or ''
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(project, competition, title, '.pdf'))
 
 
 @app.route('/api/export_defense')
@@ -614,7 +620,8 @@ def export_defense():
     doc = _build_docx(title, text, doc_type='analysis')
     filepath = '答辩问题.docx'
     doc.save(filepath)
-    return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(_project_name_hint(data), data.get('competition_name') or '', '答辩问题', '.docx'))
 
 
 @app.route('/api/export_ppt')
@@ -627,7 +634,8 @@ def export_ppt():
     doc = _build_docx(title, text, doc_type='outline')
     filepath = 'PPT大纲.docx'
     doc.save(filepath)
-    return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(_project_name_hint(data), data.get('competition_name') or '', 'PPT大纲', '.docx'))
 
 
 @app.route('/api/export_competitor')
@@ -640,7 +648,8 @@ def export_competitor():
     doc = _build_docx(title, text, doc_type='analysis')
     filepath = '竞品分析.docx'
     doc.save(filepath)
-    return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(_project_name_hint(data), data.get('competition_name') or '', '竞品分析', '.docx'))
 
 
 @app.route('/api/export_business')
@@ -653,7 +662,8 @@ def export_business():
     doc = _build_docx(title, text, doc_type='analysis')
     filepath = '商业模式.docx'
     doc.save(filepath)
-    return send_file(filepath, as_attachment=True, download_name=title + '.docx')
+    return send_file(filepath, as_attachment=True,
+                     download_name=_export_filename(_project_name_hint(data), data.get('competition_name') or '', '商业模式', '.docx'))
 
 
 @app.route('/api/history')
@@ -1527,6 +1537,53 @@ def _friendly_error(e):
     return "生成失败，请稍后重试"
 
 
+def _error_code(e):
+    """根据异常返回稳定的错误码，前端据此分支处理，不再靠匹配文字。"""
+    err = str(e).lower()
+    if "timeout" in err or "timed out" in err:
+        return "timeout"
+    if "429" in err or "rate" in err or "too many" in err:
+        return "rate_limit"
+    if "401" in err or "auth" in err or "api key" in err:
+        return "auth_error"
+    if "402" in err or "insufficient balance" in err or "payment required" in err or "余额不足" in err:
+        return "insufficient_balance"
+    if "上限" in err or "配额" in err or "quota" in err:
+        return "quota_exceeded"
+    return "internal_error"
+
+
+def _safe_filename_part(s):
+    """清洗文件名片段：去非法字符、压缩空白、去首尾分隔符。"""
+    s = re.sub(r'[\\/:*?"<>|\r\n\t]+', '_', str(s or ''))
+    s = re.sub(r'\s+', ' ', s).strip(' _-')
+    return s
+
+
+def _export_filename(project, competition, doc_name, ext):
+    """拼「项目名_比赛名_文档类型.ext」的下载文件名。"""
+    project = _safe_filename_part((project or '')[:30])
+    competition = _safe_filename_part((competition or '')[:30])
+    doc_name = _safe_filename_part(doc_name)
+    parts = [p for p in (project, competition, doc_name) if p]
+    return ('_'.join(parts) or '导出文件') + ext
+
+
+def _project_name_hint(data):
+    """从请求里尽力取「项目名/创意」，导出文件命名用；取不到再从历史兜底。"""
+    for k in ('project_name', 'project', 'idea'):
+        v = (data or {}).get(k)
+        if v and str(v).strip():
+            return str(v).strip()
+    try:
+        h = load_history(limit=1)
+        if h and h[0].get('idea'):
+            return str(h[0]['idea']).strip()
+    except Exception:
+        pass
+    return ''
+
+
 @app.route('/api/generate', methods=['POST'])
 def generate():
     """⚠️ 已废弃：请改用 /api/generate_async + /api/status 轮询。保留仅为兼容旧前端。"""
@@ -1549,19 +1606,18 @@ def generate():
 # tasks / report_stage / set_current_task / clear_current_task 已下沉到 stage_reporter.py（零依赖）。
 
 
-@app.route('/api/generate_async', methods=['POST'])
-def generate_async():
+def _start_generation(data):
+    """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。"""
     global _active_gen_count
-    data = request.json or {}
     # 稳定器：并发生成任务达到上限就拒绝，避免瞬时洪峰把服务压垮
     with _active_gen_lock:
         if _active_gen_count >= MAX_CONCURRENT_GEN:
-            return jsonify({"success": False,
-                            "error": "当前生成人数较多，请稍后 1 分钟再试"}), 429
+            return None, jsonify({"success": False,
+                                  "error": "当前生成人数较多，请稍后 1 分钟再试"})
         _active_gen_count += 1
     task_id = uuid.uuid4().hex
     tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(),
-                      "mode": data.get("mode", "fast")}
+                      "mode": data.get("mode", "fast"), "data": data}
 
     def worker():
         set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
@@ -1575,9 +1631,12 @@ def generate_async():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            app_log.error("generate", f"task={task_id[:8]} {_friendly_error(e)} | {traceback.format_exc(limit=2)}")
-            record_gen_failure(task_id, _friendly_error(e), str(e))
-            progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
+            code = _error_code(e)
+            msg = _friendly_error(e)
+            app_log.error("generate", f"task={task_id[:8]} {msg} | {traceback.format_exc(limit=2)}")
+            record_gen_failure(task_id, msg, str(e))
+            progress.mark_error(task_id, error=msg, detail=str(e))
+            tasks[task_id]["error_code"] = code
         finally:
             clear_speech_stream(task_id)
             clear_current_task()
@@ -1585,7 +1644,32 @@ def generate_async():
                 _active_gen_count = max(0, _active_gen_count - 1)
 
     threading.Thread(target=worker, daemon=True).start()
+    return task_id, None
+
+
+@app.route('/api/generate_async', methods=['POST'])
+def generate_async():
+    data = request.json or {}
+    task_id, err = _start_generation(data)
+    if err is not None:
+        return err, 429
     return jsonify({"success": True, "task_id": task_id})
+
+
+@app.route('/api/retry/<task_id>', methods=['POST'])
+def retry_generation(task_id):
+    """用上次的参数直接重跑一遍，用户不用重新输入创意。"""
+    t = tasks.get(task_id)
+    if not t or not t.get("data"):
+        # 任务字典里没有参数（可能服务重启或任务被清理），退回历史记录兜底
+        return jsonify({"success": False, "error": "任务参数已丢失，请重新提交创意"}), 404
+    # 允许对失败/超时/已完成的任务都重跑；数据里带一个来源标记便于日志排查
+    data = dict(t["data"])
+    data.setdefault("_retry_from", task_id)
+    task_id2, err = _start_generation(data)
+    if err is not None:
+        return err, 429
+    return jsonify({"success": True, "task_id": task_id2})
 
 
 @app.route('/api/cancel/<task_id>', methods=['POST'])
@@ -1603,6 +1687,7 @@ def get_task_status(task_id):
     if t.get("status") == "running" and (time.time() - t.get("updated_at", 0)) > 600:
         t["status"] = "error"
         t["error"] = "任务超时，请重试"
+        t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
     _stage = t.get("stage", "start")
@@ -1621,6 +1706,7 @@ def get_task_status(task_id):
     elif t["status"] == "error":
         resp["error"] = t["error"]
         resp["detail"] = t.get("detail")
+        resp["error_code"] = t.get("error_code", "internal_error")
     return jsonify(resp)
 
 
@@ -1672,7 +1758,11 @@ def export_all():
             zf.writestr(filename, docx_buf.read())
     
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name='科创赛事材料包.zip', mimetype='application/zip')
+    project = latest.get("idea") or data.get("idea") or ''
+    competition = latest.get("competition_name") or data.get("competition_name") or ''
+    return send_file(buf, as_attachment=True,
+                     download_name=_export_filename(project, competition, '材料包', '.zip'),
+                     mimetype='application/zip')
 
 @app.route('/api/export_original_format', methods=['POST'])
 def export_original_format():
@@ -1917,7 +2007,11 @@ def export_zip():
                 zf.write(os.path.join(tmpdir, '12_路演PPT.pptx'), '12_路演PPT.pptx')
         except Exception as e:
             print(f"[export_zip] PPT失败: {e}")
-    return send_file(zippath, as_attachment=True, download_name='项目材料包.zip', mimetype='application/zip')
+    project = data.get('idea') or data.get('project_name') or ''
+    competition = data.get('competition_name') or ''
+    return send_file(zippath, as_attachment=True,
+                     download_name=_export_filename(project, competition, '材料包', '.zip'),
+                     mimetype='application/zip')
 
 
 # ============ 富媒体：图表图片 & PPT 导出 ============
@@ -2046,8 +2140,10 @@ def export_pptx():
         os.makedirs('generated', exist_ok=True)
         out = os.path.join('generated', '_deck_export.pptx')
         build_deck(deck, out, chart_paths)
-        title = (deck.get('project') or '路演PPT').replace('/', '_')[:40]
-        return send_file(out, as_attachment=True, download_name=f'{title}-路演PPT.pptx',
+        project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
+        competition = deck.get('competition') or data.get('competition_name') or ''
+        return send_file(out, as_attachment=True,
+                         download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
                          mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
     except Exception as e:
         import traceback
