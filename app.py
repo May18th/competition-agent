@@ -342,6 +342,12 @@ def save_history_item(item):
     conn.commit()
     new_id = c.lastrowid
     conn.close()
+    # 新增历史记录后触发「评委评分范式」自动蒸馏检查（阈值 + 冷却，后台线程，失败静默）
+    try:
+        from distill_scheduler import maybe_auto_distill
+        maybe_auto_distill("judge")
+    except Exception:
+        pass
     return new_id
 
 
@@ -1165,8 +1171,21 @@ h1{font-size:24px;margin:0 0 4px}
 <button id="distillBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏</button>
 <span id="distillMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
 </div>
+<div class="box" style="margin-top:14px"><h2>🎤 答辩范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从高频答辩题库提炼「评委必问套路 + 回答框架」，注入答辩生成。</p>
+<button id="distillDefenseBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏答辩范式</button>
+<span id="distillDefenseMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
+<div class="box" style="margin-top:14px"><h2>⚖️ 评委评分范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从历史生成的多专家评审记录提炼「高频扣分点 + 三视角常挑的毛病」，注入评委打分。</p>
+<button id="distillJudgeBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏评委范式</button>
+<span id="distillJudgeMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
 <script>
-document.getElementById('distillBtn').onclick=function(){var b=this,m=document.getElementById('distillMsg');b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';fetch('/api/distill',{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent='完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};
+function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';fetch(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
+bindDistill('distillBtn','distillMsg','/api/distill',function(j){return '完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';});
+bindDistill('distillDefenseBtn','distillDefenseMsg','/api/distill/defense',function(j){return '完成：用了 '+j.questions_used+' 道题、'+j.pattern_count+' 条必问套路';});
+bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j){return '完成：提炼 '+j.criticism_count+' 条高频扣分点';});
 </script>
 </div></body></html>""" % (
         total_gen, today_gen,
@@ -2793,6 +2812,28 @@ def distill_paradigm():
     try:
         from kb_distill import distill_from_samples
         result = distill_from_samples()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/distill/defense', methods=['POST'])
+def distill_defense_paradigm():
+    """从答辩题库蒸馏「答辩范式」写回 defense_paradigm.json。"""
+    try:
+        from kb_distill import distill_defense
+        result = distill_defense()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/distill/judge', methods=['POST'])
+def distill_judge_paradigm():
+    """从历史评审记录蒸馏「评委评分范式」写回 judge_paradigm.json。"""
+    try:
+        from kb_distill import distill_judge
+        result = distill_judge()
         return jsonify({"success": True, **result})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e)}), 500

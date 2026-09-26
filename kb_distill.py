@@ -135,3 +135,191 @@ def distill_from_samples(max_samples=40, max_chars=16000):
         "module_count": len([v for v in data["modules"].values() if v]),
         "paradigm": data,
     }
+
+
+# ============ 答辩范式 / 评委评分范式 蒸馏 ============
+DEFENSE_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "defense_paradigm.json")
+JUDGE_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "judge_paradigm.json")
+DEFENSE_QUESTIONS_PATH = os.path.join(BASE, "knowledge_base", "defense_questions.json")
+
+
+def _load_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def defense_paradigm_ref():
+    """注入答辩生成 prompt 的「答辩范式」；无则空串。"""
+    p = _load_json(DEFENSE_PARADIGM_PATH)
+    if not p:
+        return ""
+    parts = ["【答辩范式（从高频答辩题库蒸馏，务必内化）】"]
+    pats = [str(x).strip() for x in (p.get("question_patterns") or []) if str(x).strip()]
+    if pats:
+        parts.append("评委必问套路：\n" + "\n".join("（%d）%s" % (i + 1, s) for i, s in enumerate(pats[:8])))
+    fw = str(p.get("answer_framework") or "").strip()
+    if fw:
+        parts.append("回答框架：" + fw)
+    return "\n".join(parts) + "\n"
+
+
+def judge_paradigm_ref():
+    """注入评委/多专家评审 prompt 的「评委评分范式」；无则空串。"""
+    p = _load_json(JUDGE_PARADIGM_PATH)
+    if not p:
+        return ""
+    parts = ["【评委评分范式（从历史评审蒸馏，务必内化）】"]
+    crits = [str(x).strip() for x in (p.get("common_criticisms") or []) if str(x).strip()]
+    if crits:
+        parts.append("高频扣分点：\n" + "\n".join("（%d）%s" % (i + 1, s) for i, s in enumerate(crits[:8])))
+    byp = p.get("by_perspective") or {}
+    for k, v in byp.items():
+        if v and str(v).strip():
+            parts.append("%s视角常挑的毛病：%s" % (k, str(v).strip()))
+    return "\n".join(parts) + "\n"
+
+
+def _llm_json(prompt):
+    """调 LLM 并稳健抠出 JSON（复用全局 llm 与配额保护）。"""
+    from competition_agents import llm
+    from langchain_core.messages import HumanMessage
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    return _extract_json(resp.content)
+
+
+def distill_defense(max_questions=40, max_chars=16000):
+    """从 defense_questions.json 蒸馏答辩范式，写回 defense_paradigm.json。"""
+    qd = _load_json(DEFENSE_QUESTIONS_PATH)
+    if not qd:
+        raise ValueError("未找到答辩题库 defense_questions.json")
+    qs = qd.get("questions") or []
+    if not qs:
+        raise ValueError("答辩题库为空")
+
+    # 按 type 均衡采样
+    from collections import defaultdict
+    by_type = defaultdict(list)
+    for q in qs:
+        by_type[str(q.get("type") or "other")].append(q)
+    picked, idx = [], 0
+    types = list(by_type.keys())
+    while len(picked) < max_questions and any(by_type[t] for t in types):
+        t = types[idx % len(types)]
+        lst = by_type[t]
+        if lst:
+            picked.append(lst.pop(0))
+        idx += 1
+    corpus = "\n".join(
+        "【%s｜%s】%s\n要点：%s" % (q.get("type"), q.get("topic"), q.get("question"), q.get("hint"))
+        for q in picked)
+    corpus = corpus[:max_chars]
+
+    prompt = f"""你是科创赛事答辩教练。下面是答辩高频题库里的一批真实评委问法（按工程/商业/建模/学术分类）。请通读后提炼「答辩范式」，直接输出 JSON。
+
+硬性要求：
+1. question_patterns 数组给 8 条「评委必问套路」，每条一句，聚焦「评委最爱从哪个角度戳穿项目的真伪/数据/落地」；
+2. answer_framework 给一段回答框架（先摆结论 → 再给证据 → 最后堵质疑），200 字内；
+3. 不出现院校名称、指导老师姓名、作者姓名，不编造数据；
+4. 只输出 JSON 本身，不要解释、不要 markdown 围栏。
+
+输出格式（严格）：
+{{"question_patterns": ["套路1", "套路2", "套路3", "套路4", "套路5", "套路6", "套路7", "套路8"], "answer_framework": "..."}}
+
+题库样本：
+{corpus}
+"""
+    data = _llm_json(prompt)
+    pats = data.get("question_patterns")
+    if not isinstance(pats, list) or not pats:
+        raise ValueError("question_patterns 缺失")
+    out = {
+        "question_patterns": [str(x).strip() for x in pats if str(x).strip()][:8],
+        "answer_framework": str(data.get("answer_framework") or "").strip(),
+    }
+    _save_json(DEFENSE_PARADIGM_PATH, out)
+    return {"ok": True, "questions_used": len(picked),
+            "pattern_count": len(out["question_patterns"]), "paradigm": out}
+
+
+def _history_judge_corpus(limit=60):
+    """从 history 抽取评委评分 + 多专家批注，拼成蒸馏素材；无数据返回空串。"""
+    import sqlite3
+    conn = sqlite3.connect(os.path.join(BASE, "competition.db"))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT result_data FROM history ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    parts = []
+    for r in rows:
+        try:
+            d = json.loads(r["result_data"])
+        except Exception:
+            continue
+        judge = d.get("judge_scores") or []
+        if isinstance(judge, list) and judge:
+            dims = "、".join(
+                "%s=%s" % (x.get("name"), x.get("score"))
+                for x in judge if isinstance(x, dict))
+            if dims:
+                parts.append("单评委评分维度：" + dims)
+        er = d.get("expert_review") or ""
+        if isinstance(er, str):
+            try:
+                erj = json.loads(er)
+            except Exception:
+                erj = None
+        elif isinstance(er, dict):
+            erj = er
+        else:
+            erj = None
+        if erj:
+            for e in erj.get("experts") or []:
+                if not isinstance(e, dict):
+                    continue
+                role = e.get("role") or ""
+                for it in e.get("issues") or []:
+                    if isinstance(it, dict) and it.get("problem"):
+                        parts.append("%s扣分：%s" % (role, it.get("problem")))
+    return "\n".join(parts)[:16000]
+
+
+def distill_judge(limit=60):
+    """从历史评审记录蒸馏评委评分范式，写回 judge_paradigm.json。"""
+    corpus = _history_judge_corpus(limit)
+    if not corpus:
+        raise ValueError("历史里没有评委评分/批注数据，请先生成几轮深度版再蒸馏")
+    prompt = f"""你是科创赛事评审主委。下面是历史生成中对多份申报书给出的评委评分维度与批注（已脱敏）。请通读后提炼「评委评分范式」，直接输出 JSON。
+
+硬性要求：
+1. common_criticisms 数组给 8 条「高频扣分点」，每条一句，具体到问题，禁止空话；
+2. by_perspective 对象给「技术/商业/落地」三个视角各自最常挑的毛病（各一句话）；
+3. 不出现院校名称、指导老师姓名、作者姓名，不编造数据；
+4. 只输出 JSON 本身，不要解释、不要 markdown 围栏。
+
+输出格式（严格）：
+{{"common_criticisms": ["扣分点1", "扣分点2", "扣分点3", "扣分点4", "扣分点5", "扣分点6", "扣分点7", "扣分点8"], "by_perspective": {{"技术": "...", "商业": "...", "落地": "..."}}}}
+
+历史评审样本：
+{corpus}
+"""
+    data = _llm_json(prompt)
+    crits = data.get("common_criticisms")
+    if not isinstance(crits, list) or not crits:
+        raise ValueError("common_criticisms 缺失")
+    byp = data.get("by_perspective") or {}
+    out = {
+        "common_criticisms": [str(x).strip() for x in crits if str(x).strip()][:8],
+        "by_perspective": {k: str(byp.get(k, "")).strip() for k in ("技术", "商业", "落地")},
+    }
+    _save_json(JUDGE_PARADIGM_PATH, out)
+    return {"ok": True, "criticism_count": len(out["common_criticisms"]), "paradigm": out}

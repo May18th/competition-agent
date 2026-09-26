@@ -107,6 +107,13 @@ def add_sample(content, tags, source="", score=0, type="材料", summary=""):
     conn.commit()
     sid = c.lastrowid
     conn.close()
+    # 新增范文后触发「写作范式」自动蒸馏检查（阈值 + 冷却，后台线程，失败静默）
+    if (type or "材料") == "范文":
+        try:
+            from distill_scheduler import maybe_auto_distill
+            maybe_auto_distill("writing")
+        except Exception:
+            pass
     return sid, True
 
 

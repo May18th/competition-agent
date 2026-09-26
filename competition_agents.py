@@ -1163,6 +1163,24 @@ def _paradigm_ref(module_tag: str = None) -> str:
         return ""
 
 
+def _defense_paradigm_ref() -> str:
+    """注入从答辩题库蒸馏出的「答辩范式」；读不到则空串。"""
+    try:
+        from kb_distill import defense_paradigm_ref
+        return defense_paradigm_ref()
+    except Exception:
+        return ""
+
+
+def _judge_paradigm_ref() -> str:
+    """注入从历史评审蒸馏出的「评委评分范式」；读不到则空串。"""
+    try:
+        from kb_distill import judge_paradigm_ref
+        return judge_paradigm_ref()
+    except Exception:
+        return ""
+
+
 _DEFAULT_CHAPTERS = """## 一、项目概述
 （350 字以上：做什么、给谁用、解决什么核心问题）
 
@@ -1705,6 +1723,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 打分说明：
 - {weight_desc}
 不要给所有文档打接近的分数，要拉开差距。
+{_judge_paradigm_ref()}
 
 {_tier_hint(state,
 "【点评文字要求（精简档）】「主要优点」「需要改进的地方」各写 3 点，每点 40～60 字，点到为止。上面的打分字段保持原格式，不要改动。",
@@ -1780,6 +1799,7 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
   "disclaimer":"本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。"
 }}
 
+{_judge_paradigm_ref()}
 硬性要求：
 1. 三个视角必须各自独立给分，且**必须落在不同区间**：技术视角 76～85、商业视角 82～92、落地视角 68～78；允许出现 60～70 的低分（说明该项目在该维度确实有硬伤）。三位专家总分两两相差 ≥8 分，严禁挤在 85～92。overall_score 是三者按「落地视角权重略高」综合后的整数（0-100）。
 2. role 只写「技术视角 / 商业视角 / 落地视角」三种之一，**不设任何专家人设、不出现任何职称、人名、院校名**。
@@ -1811,6 +1831,7 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
 【10 个问题必须按本比赛类型覆盖以下方向，每题都要点到具体质疑点；禁止「请介绍你的项目」「你的创新点是什么」这类泛泛而问】
 {_defense_focus(state)}
 {_SELF_DEFENSE_HINTS}
+{_defense_paradigm_ref()}
 
 【输出格式】每个问题单独一段，用「问题 N：……」开头，紧接着另起一行写「回答框架：」，再用约 200 字分三点写出：①先摆结论（一句话站住立场）②再给证据（要报出哪个具体数字、哪份测试/试点数据，没有真实数据就明说「此处需补充 XX 实测数据」）③最后堵质疑（提前承认一个短板并给补救说法）。这三点必须落地到本项目，不许写「准备好相关数据即可」这类空框架。不要写成标准答案，不要写成演讲稿，不要照抄申报书原文。
 
