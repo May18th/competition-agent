@@ -59,18 +59,18 @@ def _S(name, **kw):
     return _styles[name]
 
 
-_TITLE = _S("t", fontSize=19, leading=26, alignment=TA_CENTER,
-            textColor=colors.HexColor("#0F1535"), spaceAfter=4)
-_SUB = _S("s", fontSize=13, leading=19, alignment=TA_CENTER,
-          textColor=colors.HexColor("#3B4A6B"), spaceAfter=14)
-_H1 = _S("h1", fontSize=14, leading=20, textColor=colors.HexColor("#0F1535"),
-         spaceBefore=12, spaceAfter=6)
-_H2 = _S("h2", fontSize=11.5, leading=16, textColor=colors.HexColor("#1F2A4D"),
-         spaceBefore=8, spaceAfter=4)
-_BODY = _S("b", fontSize=10.5, leading=17, firstLineIndent=21, spaceAfter=5)
-_BULLET = _S("bl", fontSize=10.5, leading=17, leftIndent=18, bulletIndent=6,
+_TITLE = _S("t", fontSize=22, leading=30, alignment=TA_CENTER,
+            textColor=colors.HexColor("#0F1535"), spaceAfter=6)
+_SUB = _S("s", fontSize=14, leading=20, alignment=TA_CENTER,
+          textColor=colors.HexColor("#3B4A6B"), spaceAfter=16)
+_H1 = _S("h1", fontSize=16, leading=24, textColor=colors.HexColor("#0F1535"),
+         spaceBefore=14, spaceAfter=8)
+_H2 = _S("h2", fontSize=13.5, leading=19, textColor=colors.HexColor("#1F2A4D"),
+         spaceBefore=10, spaceAfter=6)
+_BODY = _S("b", fontSize=12, leading=20, firstLineIndent=24, spaceAfter=6)
+_BULLET = _S("bl", fontSize=12, leading=20, leftIndent=20, bulletIndent=6,
              spaceAfter=3)
-_NOTE = _S("n", fontSize=9, leading=14, textColor=colors.HexColor("#5A657F"),
+_NOTE = _S("n", fontSize=10.5, leading=16, textColor=colors.HexColor("#5A657F"),
            spaceBefore=10, spaceAfter=4)
 
 
@@ -148,7 +148,7 @@ def _flow(text):
     return flow
 
 
-def render_markdown_to_pdf(markdown_text, out_path, title="作品说明书"):
+def render_markdown_to_pdf(markdown_text, out_path, title="申报书"):
     """把 Markdown 文本渲染成 A4 PDF。成功返回 out_path，失败抛异常。"""
     doc = SimpleDocTemplate(
         out_path, pagesize=A4,

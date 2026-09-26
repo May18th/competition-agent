@@ -312,10 +312,10 @@ def _setup_heading_styles(doc, prof):
         rFonts.set(qn('w:hAnsi'), EN)
         rFonts.set(qn('w:eastAsia'), cn)
         pf = st.paragraph_format
-        pf.space_before = Pt(14 if level == 1 else 10)
-        pf.space_after = Pt(6)
+        pf.space_before = Pt(10 if level == 1 else 6)
+        pf.space_after = Pt(4)
         pf.line_spacing = 1.5
-        pf.keep_with_next = True
+        pf.keep_with_next = (level >= 2)
         pf.left_indent = Cm(0)
         pf.first_line_indent = Cm(0)
 
@@ -519,10 +519,12 @@ def _render_heading(doc, level, text, prof=None, mark=None, bid=0):
         p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     pf = p.paragraph_format
-    pf.space_before = Pt(14 if level == 1 else 10)
-    pf.space_after = Pt(6)
+    pf.space_before = Pt(10 if level == 1 else 6)
+    pf.space_after = Pt(4)
     pf.line_spacing = 1.5
-    pf.keep_with_next = True
+    # 只让二级以下标题与正文「同页不分离」；一级章标题允许落页底，
+    # 避免「keep_with_next」把整章推到下一页、在页底留大片空白
+    pf.keep_with_next = (level >= 2)
     _font(p.add_run(_fullwidth(text)), size, cn, bold=bold)
     if mark:
         _add_bookmark(p, mark, bid)

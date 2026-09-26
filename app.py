@@ -796,6 +796,8 @@ def export_word():
     charts = data.get('charts') or []
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
+    # 封面主标题用「项目名」；没传项目名/创意时，从正文第一行自动提取，避免封面只写「项目申报书」这种泛名
+    project = _project_name_hint(data) or _extract_project_name(text) or title
     text = _strip_identifying_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
@@ -803,7 +805,7 @@ def export_word():
     if chapter_order:
         text = _reorder_markdown_by_chapters(text, chapter_order)
     doc = _build_docx(
-        title, text,
+        project, text,
         doc_type=data.get('doc_type', 'report'),
         subtitle=data.get('competition_name'),
         school=data.get('school'),
@@ -1988,6 +1990,18 @@ def _run_generation(data):
     }
 
     payload = _strip_identifying_info(payload)
+    # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
+    # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
+    try:
+        from competition_agents import _dedupe_consecutive
+        for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
+                   "project_summary", "social_value", "tech_solution", "competitor_analysis",
+                   "business_model", "risk_analysis", "implementation_plan", "defense_questions",
+                   "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
+            if isinstance(payload.get(_k), str) and payload[_k]:
+                payload[_k] = _dedupe_consecutive(payload[_k])
+    except Exception:
+        pass
     return payload
 
 
@@ -2101,6 +2115,23 @@ def _project_name_hint(data):
             return str(h[0]['idea']).strip()
     except Exception:
         pass
+    return ''
+
+
+def _extract_project_name(text):
+    """从正文提取项目名：取第一个非空行，去掉 Markdown 标记和「项目名/作品名」前缀。"""
+    if not text:
+        return ''
+    for line in str(text).strip().split('\n'):
+        s = line.strip()
+        if not s:
+            continue
+        s = re.sub(r'^#{1,6}\s*', '', s)
+        s = re.sub(r'^[>·•\-—\s]+', '', s)
+        s = re.sub(r'^(项目名称|作品名称|项目名|作品名|标题)\s*[:：]\s*', '', s)
+        s = re.sub(r'\*+', '', s).strip()
+        if s and len(s) >= 2:
+            return s[:40]
     return ''
 
 
@@ -2254,6 +2285,34 @@ def restyle():
 """
         resp = llm.invoke([HumanMessage(content=prompt)])
         return jsonify({"success": True, "text": resp.content, "style": style})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/rewrite', methods=['POST'])
+def rewrite_paragraph():
+    """局部改写：选中一段文字，让 AI 按指令改写/扩写，不整篇重写。"""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get('text', '')
+    instruction = data.get('instruction', '改写这段，让它更具体、更有说服力')
+    if not text or not text.strip():
+        return jsonify({"success": False, "error": "内容为空"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = f"""请对下面这段申报书文字做局部修改，指令：{instruction}
+
+要求：
+1. 只改这一段，保持 Markdown 格式、不改变章节/标题；
+2. 保留原意和已有事实数字、占位符【待你填写：xxx】原样；
+3. 涉及数字只能标测算值/示例值，严禁编造具体型号或实测数据；
+4. 直接输出修改后的这一段，不要任何解释。
+
+原文：
+{text[:4000]}
+"""
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=1500)
+        return jsonify({"success": True, "text": (resp.content or "").strip()})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
