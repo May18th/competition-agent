@@ -325,7 +325,7 @@ def is_real_section(s):
     return True
 
 
-def main():
+def build_index():
     items = []
     for path in sorted(glob.glob(os.path.join(DATA, "*.txt"))):
         key = os.path.basename(path).replace(".txt", "")
@@ -379,18 +379,22 @@ def main():
             "tracks": parse_tracks(key, sec),
         })
 
-    data = {
-        "version": "2026-09-26.2",
-        "source": "由 data/*.txt 解析生成（后端知识库）",
+    return {
+        "version": "2026-09-26.3",
+        "source": "由 data/*.txt 解析生成（后端知识库，动态）",
         "count": len(items),
         "items": items,
     }
+
+
+def main():
+    data = build_index()
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print("生成 %s（%d 个赛事）\n" % (OUT, len(items)))
-    for it in items:
+    print("生成 %s（%d 个赛事）\n" % (OUT, data["count"]))
+    for it in data["items"]:
         print("%-12s 评分%d项 章节%d项 扣分点:%s 文档:%s 赛道:%s" % (
             it["key"], len(it["scoring"]), len(it["sections"]),
             "有" if it["deduct"] else "无", it["doc_type"] or "(待定)",
