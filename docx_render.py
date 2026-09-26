@@ -348,6 +348,20 @@ def _setup_page(doc, prof=None):
         sec.footer_distance = Cm(1.5)
 
     _setup_heading_styles(doc, prof)
+    _force_update_fields_on_open(doc)
+
+
+def _force_update_fields_on_open(doc):
+    """让 Word 打开文档时自动刷新 PAGE/PAGEREF 域，避免目录页码显示占位「1」。"""
+    try:
+        settings = doc.settings.element
+        existing = settings.find(qn('w:updateFields'))
+        if existing is None:
+            el = OxmlElement('w:updateFields')
+            el.set(qn('w:val'), 'true')
+            settings.append(el)
+    except Exception:
+        pass
 
 
 def _page_number_footer(doc):
@@ -383,7 +397,8 @@ def _header(doc, title):
     _font(p.add_run(title or ''), SZ_WU, CN_SONG)
 
 
-def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None):
+def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None,
+           show_school_advisor=True):
     """封面：主标题黑体小初 / 副标题黑体二号 / 学校·团队·指导老师·日期黑体小三，全部居中。"""
     # 把封面文字压到页面纵向约 1/3 处
     sp = doc.add_paragraph()
@@ -406,7 +421,12 @@ def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=
         _font(p.add_run(subtitle), SZ_ER, CN_HEI)
 
     # 学校 / 团队 / 指导老师：黑体小三居中（申报书封面必备信息）
-    info_lines = [x for x in (org, school, team, advisor) if x]
+    # iCAN 等双盲赛事不允许出现学校与指导老师，此时只保留团队（学生）信息
+    if show_school_advisor:
+        info_lines = [x for x in (org, school, team, advisor) if x]
+    else:
+        # org 通常也是「XX大学/单位」，双盲时一并隐藏
+        info_lines = [x for x in (team,) if x]
     for line in info_lines:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -655,7 +675,7 @@ def _render_hr(doc):
 
 def build_docx(title, text, subtitle=None, org=None, toc=None,
                cover=None, cover_image=False, topic=None, doc_type='report',
-               school=None, team=None, advisor=None):
+               school=None, team=None, advisor=None, show_school_advisor=True):
     """生成符合格式标准的 Word 文档。
 
     :param title:       文档主标题（封面黑体小初）
@@ -669,6 +689,7 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
     :param topic:       封面背景图风格匹配用文本（cover_image=True 时生效）
     :param doc_type:    'report' 报告（默认）/ 'analysis' 分析 / 'outline' 大纲
                         / 'default' 申报书 —— 决定标题字号、正文缩进、封面目录
+    :param show_school_advisor: 封面是否显示学校/指导老师；iCAN 双盲评审时应为 False
     :return:            python-docx Document
     """
     prof = PROFILES.get(doc_type, PROFILES['default'])
@@ -690,7 +711,8 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
                 _cover_background(doc, path)
             except Exception as e:
                 print('[docx_render] 封面背景图失败，忽略：%r' % (e,))
-        _cover(doc, title, subtitle, org, school, team, advisor)
+        _cover(doc, title, subtitle, org, school, team, advisor,
+               show_school_advisor=show_school_advisor)
         doc.add_page_break()
 
     blocks = _blocks(text or '')

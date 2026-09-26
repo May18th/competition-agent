@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """可复用的 Markdown -> PDF 渲染器（A4 中文，供作品说明书导出接口使用）"""
+import os
 import re
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -22,6 +23,25 @@ def _register_cjk():
     for path, name in candidates:
         try:
             pdfmetrics.registerFont(TTFont(name, path))
+            # 粗体：优先微软雅黑粗体，退回黑体（simhei 本身就是黑体，作粗体兜底可用）
+            bold_name = None
+            for bpath, bname in (
+                ("C:/Windows/Fonts/msyhbd.ttc", name + "B"),
+                ("C:/Windows/Fonts/simhei.ttf", name + "B"),
+            ):
+                try:
+                    if os.path.exists(bpath) and bname != name:
+                        pdfmetrics.registerFont(TTFont(bname, bpath))
+                        bold_name = bname
+                        break
+                except Exception:
+                    continue
+            if bold_name:
+                try:
+                    pdfmetrics.registerFontFamily(name, normal=name, bold=bold_name,
+                                                  italic=name, boldItalic=bold_name)
+                except Exception:
+                    pass
             return name
         except Exception:
             continue
@@ -54,8 +74,22 @@ _NOTE = _S("n", fontSize=9, leading=14, textColor=colors.HexColor("#5A657F"),
            spaceBefore=10, spaceAfter=4)
 
 
+_HTML_ESCAPE = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+}
+
+
+def _escape_html(t):
+    return "".join(_HTML_ESCAPE.get(ch, ch) for ch in (t or ""))
+
+
 def _clean(t):
-    return re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t).strip()
+    # 先把用户/模型文本里的 HTML 特殊字符转义，防止被 reportlab 当标签吞掉内容；
+    # 再仅针对 Markdown **加粗** 还原成 <b> 标签。
+    escaped = _escape_html(t)
+    return re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped).strip()
 
 
 def _flow(text):

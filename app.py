@@ -12,6 +12,7 @@ import time
 import io
 import os
 import sqlite3
+import re
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, make_response
 from werkzeug.utils import secure_filename
@@ -212,15 +213,88 @@ _migrate_history_json()
 
 # ============ API ============
 def _build_docx(title, text, doc_type='report', subtitle=None,
-                school=None, team=None, advisor=None):
+                school=None, team=None, advisor=None, competition_name=None):
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
+    show_school_advisor = True
+    if competition_name and 'iCAN' in str(competition_name):
+        show_school_advisor = False
     return build_docx(
         title, text,
         subtitle=subtitle,
         doc_type=doc_type,
         school=school, team=team, advisor=advisor,
+        show_school_advisor=show_school_advisor,
     )
+
+
+def _official_chapter_titles(competition_name):
+    """读取知识库里的官方申报书章节标题列表（导出时用于自动排序）。"""
+    if not competition_name:
+        return []
+    try:
+        from competition_agents import _official_chapters
+        return _official_chapters({"competition_name": competition_name})
+    except Exception:
+        return []
+
+
+def _normalize_heading_title(s):
+    """把「一、项目概述 / (1)项目概述 / 项目概述」归一成可用于匹配的关键词串。"""
+    return re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", s or "")
+
+
+def _reorder_markdown_by_chapters(text, ordered_titles):
+    """按官方章节顺序重排 Markdown 正文，缺省部分保持原有先后追加到末尾。
+
+    只做标题块级别的排序，不拆段、不改内容；拿不到任何标题就原样返回。
+    """
+    if not text or not ordered_titles:
+        return text
+    order_keys = [_normalize_heading_title(t) for t in ordered_titles if _normalize_heading_title(t)]
+    if not order_keys:
+        return text
+
+    # 切成「标题块」：每个 ## 标题到下一个 ## 标题之间的内容
+    blocks = []
+    cur = {"head": None, "body": []}
+    for line in text.split("\n"):
+        m = re.match(r"^(#{1,6})\s+(.+)$", line)
+        if m and m.group(1).startswith("##"):
+            if cur["head"] is not None or cur["body"]:
+                blocks.append(cur)
+            cur = {"head": m.group(2).strip(), "body": []}
+        else:
+            cur["body"].append(line)
+    if cur["head"] is not None or cur["body"]:
+        blocks.append(cur)
+
+    if not any(b["head"] for b in blocks):
+        return text
+
+    def match_index(head):
+        h = _normalize_heading_title(head or "")
+        if not h:
+            return -1
+        for i, key in enumerate(order_keys):
+            # 官方章节标题较长，允许包含关系命中，避免「技术方案与系统架构」和「技术方案」串位
+            if h == key or (len(key) >= 4 and key in h):
+                return i
+        return -1
+
+    ordered = sorted(blocks, key=lambda b: (
+        0 if match_index(b["head"]) >= 0 else 1,
+        match_index(b["head"]) if match_index(b["head"]) >= 0 else 9999,
+    ))
+
+    out_lines = []
+    for b in ordered:
+        if b["head"] is not None:
+            out_lines.append("## " + b["head"])
+        out_lines.extend(b["body"])
+        if out_lines and out_lines[-1] != "":
+            out_lines.append("")
+    return "\n".join(out_lines).rstrip() + "\n"
 
 
 @app.route('/')
@@ -364,6 +438,11 @@ def export_word():
     charts = data.get('charts') or []
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
+    chapter_order = data.get('chapter_order')
+    if not chapter_order and data.get('competition_name'):
+        chapter_order = _official_chapter_titles(data.get('competition_name'))
+    if chapter_order:
+        text = _reorder_markdown_by_chapters(text, chapter_order)
     doc = _build_docx(
         title, text,
         doc_type=data.get('doc_type', 'report'),
@@ -371,6 +450,7 @@ def export_word():
         school=data.get('school'),
         team=data.get('team'),
         advisor=data.get('advisor'),
+        competition_name=data.get('competition_name'),
     )
     if charts:
         try:
@@ -391,6 +471,11 @@ def export_pdf():
     title = data.get('title', '申报书')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
+    chapter_order = data.get('chapter_order')
+    if not chapter_order and data.get('competition_name'):
+        chapter_order = _official_chapter_titles(data.get('competition_name'))
+    if chapter_order:
+        text = _reorder_markdown_by_chapters(text, chapter_order)
     try:
         from pdf_render import render_markdown_to_pdf
         filepath = 'tmp_export.pdf'
@@ -573,7 +658,7 @@ def _strip_identifying_info(obj):
 
 def _ensure_risk_notice(text):
     """在申报书末尾追加统一的风险提示（AI 生成初稿声明），已存在则不重复追加。"""
-    notice = "\n\n## 风险提示\n\n本内容为 AI 生成初稿，需替换真实项目数据后方可提交。"
+    notice = "\n\n风险提示：本内容为 AI 生成初稿，请替换真实项目数据后提交。"
     t = (text or "").rstrip()
     if "风险提示" in t:
         return text

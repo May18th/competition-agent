@@ -1002,12 +1002,41 @@ _DEFAULT_CHAPTERS = """## 一、项目概述
 （200 字以上：项目的核心主张与参赛诉求）"""
 
 
+def _official_chapters(state: dict) -> list:
+    """从知识库「申报书章节」里解析官方章节标题，作为深度版缺省章节结构。
+
+    返回 ["一、项目概述", ...] 形式的干净标题列表；解析不到就返回空列表。
+    """
+    try:
+        kb = get_competition_knowledge_structured(state.get("competition_name", ""))
+    except Exception:
+        kb = {}
+    raw = (kb or {}).get("sections") or ""
+    if not raw:
+        return []
+    out = []
+    for line in raw.split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        # 支持：(1)项目概述 / 1.项目概述 / 一、项目概述 等写法
+        m = re.match(r"^(?:\(?\d+\)?[.、\s]*)?(.+)$", s)
+        title = (m.group(1) if m else s).strip()
+        if title:
+            out.append(title)
+    return out
+
+
 def _chapter_block(state: dict) -> str:
-    """章节结构：优先用 outline_requirement（前端传），缺省用默认 12 章。"""
+    """章节结构：前端定制 > 知识库官方章节 > 内置 12 章。"""
     req = [str(c).strip() for c in (state.get("outline_requirement") or []) if str(c).strip()]
     if req:
         return "章节严格按以下顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
                "\n".join("## " + c for c in req[:20])
+    official = _official_chapters(state)
+    if official:
+        return "章节严格按以下官方申报书章节顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
+               "\n".join("## " + c for c in official[:20])
     return "章节依次为：\n\n" + _DEFAULT_CHAPTERS
 
 
@@ -1457,7 +1486,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 
 
 def expert_review_agent(state: CompetitionState) -> CompetitionState:
-    """🧑‍⚖️ MedPeer 式多专家模拟评审：技术/商业/综合三视角，分维度打分 + 逐条批注"""
+    """🧑‍⚖️ MedPeer 式多专家模拟评审：技术/商业/落地三视角，分维度打分 + 逐条批注"""
     _report_stage("expert_review")
     prompt = f"""你是国家级科创赛事的评审委员会。请以「多专家视角」对下面这份申报书做一次模拟评审，就像专业同行评议（MedPeer 式）那样：不是只给一个总分，而是让不同专家从各自视角独立评审，给出分维度打分和能落地的逐条批注。
 
@@ -1482,8 +1511,8 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
       "dimensions":[{{"name":"商业模式","score":80,"comment":"一句话点评"}},{{"name":"市场空间","score":84,"comment":"一句话点评"}},{{"name":"落地可行性","score":82,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}},
-    {{"role":"综合评审视角","focus":"整体完成度、逻辑闭环、晋级潜力","score":87,
-      "dimensions":[{{"name":"整体完成度","score":86,"comment":"一句话点评"}},{{"name":"逻辑闭环","score":88,"comment":"一句话点评"}},{{"name":"晋级潜力","score":87,"comment":"一句话点评"}}],
+    {{"role":"落地视角","focus":"落地可行性、实施路径、团队执行力","score":87,
+      "dimensions":[{{"name":"落地可行性","score":86,"comment":"一句话点评"}},{{"name":"实施路径","score":88,"comment":"一句话点评"}},{{"name":"团队执行力","score":87,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}}
   ],
@@ -1494,9 +1523,9 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
 }}
 
 硬性要求：
-1. 三个视角必须各自独立给分；**三位专家总分两两相差 ≥8 分**（不要挤在 88-92）；overall_score 是三者按「综合视角权重略高」综合后的整数（0-100）。
-2. role 只写「技术视角 / 商业视角 / 综合评审视角」三种之一，**不设任何专家人设、不出现任何职称、人名、院校名**。
-3. issues 里必须包含**一条只有这个视角才会提的尖锐反对意见**（技术视角可质疑"算法门槛不高、别人三个月能复制"；商业视角可质疑"客单价撑不起获客成本"；综合视角可质疑"缺第三方检测报告、创新性拿不到分"），三位不能都说"落地路径需要细化"这种谁都能说的话；quote 必须从申报书里摘原句，problem 说清问题，suggestion 给出可执行改法。
+1. 三个视角必须各自独立给分；**三位专家总分两两相差 ≥8 分**（不要挤在 88-92）；overall_score 是三者按「落地视角权重略高」综合后的整数（0-100）。
+2. role 只写「技术视角 / 商业视角 / 落地视角」三种之一，**不设任何专家人设、不出现任何职称、人名、院校名**。
+3. issues 里必须包含**一条只有这个视角才会提的尖锐反对意见**（技术视角可质疑"算法门槛不高、别人三个月能复制"；商业视角可质疑"客单价撑不起获客成本"；落地视角可质疑"试点资源和实施路径支撑不起落地、团队执行力存疑"），三位不能都说"落地路径需要细化"这种谁都能说的话；quote 必须从申报书里摘原句，problem 说清问题，suggestion 给出可执行改法。
 4. strengths 不要写「项目定位清晰」「痛点抓得准」这类通用褒义前缀，直接写具体、有依据的优点。
 5. 每个维度 comment 20-40 字，必须是「打分依据」：指出申报书里哪句话/哪个数据支撑了这个分数，禁止「表现不错」「有待提升」这类空话。
 6. 中文标点用全角。
