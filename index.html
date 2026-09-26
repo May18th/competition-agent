@@ -1380,7 +1380,10 @@ mark.wb-ph {
                 </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 赛事规则</label>
-                    <div class="wb-note">
+                    <div onclick="wbAdvToggle('kbAdvBody')" style="display:flex; align-items:center; gap:6px; margin-top:2px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
+                        赛事规则与官方文件（可选）<span id="kbAdvBodyArrow">▾</span>
+                    </div>
+                    <div id="kbAdvBody">                    <div class="wb-note">
                         <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 内置赛事知识库，输入赛事名称自动匹配评分标准，无需上传PDF
                     </div>
                     <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
@@ -1412,6 +1415,7 @@ mark.wb-ph {
                         <div id="ruleDocPreview" style="display: none; margin-top: 8px; max-height: 140px; overflow: auto; padding: 10px; background: var(--surface-2); border-radius: 6px; font-size: 12px; color: var(--text-dim); white-space: pre-wrap;"></div>
                     </div>
                 </div>
+                    </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
                     <textarea id="idea" placeholder="谁，在什么具体时刻，卡在哪一步？&#10;例：大二学生凌晨2点改申报书，不知道评分标准，翻了20篇论文还是写不出摘要" rows="3" style="min-height: 80px;"></textarea>
@@ -1447,6 +1451,10 @@ mark.wb-ph {
 
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
+                    <div onclick="wbAdvToggle('draftAdvBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
+                        粘贴已有草稿 / 上传文件（可选）<span id="draftAdvBodyArrow">▾</span>
+                    </div>
+                    <div id="draftAdvBody">
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
                     <div id="uploadRow" style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
                         <button id="btnUploadDraft" onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
@@ -1479,6 +1487,7 @@ mark.wb-ph {
         <div class="card">
             <div style="margin-bottom: 20px;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+                    </div>
                     <label class="version-card" style="display: block; padding: 16px; background: var(--surface-solid); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
@@ -6624,6 +6633,34 @@ mark.wb-ph {
     </div>
 </div>
 
+
+<script>
+function wbAdvToggle(id) {
+    var b = document.getElementById(id);
+    var a = document.getElementById(id + 'Arrow');
+    if (!b) return;
+    var open = b.style.display !== 'none';
+    b.style.display = open ? 'none' : '';
+    if (a) a.textContent = open ? '▸' : '▾';
+}
+function wbAdvInit() {
+    var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    ['kbAdvBody', 'draftAdvBody'].forEach(function (id) {
+        var b = document.getElementById(id);
+        var a = document.getElementById(id + 'Arrow');
+        if (!b) return;
+        b.style.display = m ? 'none' : '';
+        if (a) a.textContent = m ? '▸' : '▾';
+    });
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wbAdvInit);
+} else { wbAdvInit(); }
+window.addEventListener('resize', function () {
+    if (window._advT) return;
+    window._advT = setTimeout(function () { window._advT = 0; wbAdvInit(); }, 300);
+});
+</script>
 </body>
 </html>
 
