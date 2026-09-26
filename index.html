@@ -1367,7 +1367,7 @@ mark.wb-ph {
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>从规则解析到模拟答辩，一站式搞定科创竞赛申报材料</p>
+            <p>科创竞赛申报材料，一站式生成</p>
 
         </div>
 
@@ -1376,17 +1376,17 @@ mark.wb-ph {
         <div id="wbGuide">
             <div class="wb-guide-step" id="wbGuideStep0" onclick="wbGuideGo(0)">
                 <span class="wb-guide-num">1</span>
-                <span class="wb-guide-txt"><b>输项目创意 / 传申报书</b>一句话说清「解决什么问题、怎么做」；已经写过的直接上传 Word / PDF，AI 在你的原文上改</span>
+                <span class="wb-guide-txt"><b>输创意 / 传申报书</b></span>
                 <span class="wb-guide-ok">✓</span>
             </div>
             <div class="wb-guide-step" id="wbGuideStep1" onclick="wbGuideGo(1)">
                 <span class="wb-guide-num">2</span>
-                <span class="wb-guide-txt"><b>选简洁版 / 深度版</b>简洁版约 40 秒出初稿；深度版约 2 分钟，多出竞品·商业·风险分析、图表和路演 PPT</span>
+                <span class="wb-guide-txt"><b>选简洁 / 深度版</b></span>
                 <span class="wb-guide-ok">✓</span>
             </div>
             <div class="wb-guide-step" id="wbGuideStep2" onclick="wbGuideGo(2)">
                 <span class="wb-guide-num">3</span>
-                <span class="wb-guide-txt"><b>点「开始生成」</b>内容逐字实时流出，不用盯着空白页等；生成完顶部直接导出</span>
+                <span class="wb-guide-txt"><b>点生成</b></span>
                 <span class="wb-guide-ok">✓</span>
             </div>
         </div>
@@ -1399,10 +1399,10 @@ mark.wb-ph {
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap;">
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
-                <span class="wb-dot"></span>这是什么 / 使用说明
+                <span class="wb-dot"></span>使用说明
             </button>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
-                <span class="wb-dot"></span>历史记录
+                <span class="wb-dot"></span>历史
             </button>
         </div>
 
@@ -1523,7 +1523,7 @@ mark.wb-ph {
                         赛事规则与官方文件（可选）<span id="kbAdvBodyArrow">▾</span>
                     </div>
                     <div id="kbAdvBody">                    <div class="wb-note">
-                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 内置赛事知识库，输入赛事名称自动匹配评分标准，无需上传PDF
+                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 内置知识库，自动匹配评分标准
                     </div>
                     <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
                     <div id="kbStatusBox" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font-size: 13px;">
@@ -1557,17 +1557,15 @@ mark.wb-ph {
                     </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
-                    <textarea id="idea" placeholder="谁，在什么具体时刻，卡在哪一步？&#10;例：大二学生凌晨2点改申报书，不知道评分标准，翻了20篇论文还是写不出摘要" rows="3" style="min-height: 80px;"></textarea>
+                    <textarea id="idea" placeholder="一句话说清：谁，在什么场景，解决什么问题" rows="3" style="min-height: 80px;"></textarea>
                     <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
-                        写得越具体，生成的内容越不像套话。「广大大学生」这种大词，评委看过 100 遍了；
-                        「凌晨 2 点改申报书的大二学生」才是能拿分的痛点。
+                        写得越具体，生成内容越贴题
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 关键词<span class="wb-opt">（可选，用于匹配范文库中同类型的高分写法）</span></label>
                     <input type="text" id="keywords" placeholder="关键词（选填，逗号分隔）：如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
-                    <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px;">留空也会从项目创意里自动提取关键词；在「范文库」页签可自行添加范文。</div>
                 </div>
 
                 <!-- 文风：只在选了「深度完整版」时露出（humanize 后端约定只对深度版生效，
