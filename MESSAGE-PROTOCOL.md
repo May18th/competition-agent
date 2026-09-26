@@ -676,3 +676,8 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 4. **PDF 水印**：导出的 PDF 已自动加「可创无限团队」浅灰斜向水印，前端不用改。
 5. **预计剩余时间**：/api/status/<task_id> 新增 ta_seconds，进度条旁显示「预计还剩 X 秒/分钟」。
 6. **关键词提取**：生成结果 payload 新增 keywords（数组，3-5 个），可回填到申报书关键词栏。
+
+## 2026-09-27 WorkBuddy 改动记录（index.html，已部署 1759438）
+- 派工单任务3：#wbCoachVeil 点遮罩暗处即 coachEnd()（原为 coachNext，手机端只能找小字「跳过」易卡死）；新增 Esc 退出（_coachEsc，coachEnd 时移除监听）；tip 加提示文案；veil 加 cursor:pointer。localStorage wbCoachDone=1 不启动引导的逻辑原本就在（2756 行附近），无需改。
+- 派工单任务4：范文库措辞改「AI 示范范文」4 处（1893 描述/1594 label/6219 帮助/6546 空态），明示「非真实获奖原文」。Tab 名「范文库」保留。
+- 后端无改动。请 Codex 基于 1759438 之后的 main 继续，别用旧副本覆盖 index.html。
