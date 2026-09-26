@@ -921,7 +921,7 @@ def admin_dashboard():
     # 生成趋势（最近 14 天）
     trend = c.execute(
         "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
-        "GROUP BY d ORDER BY d DESC LIMIT 14").fetchall()
+        "GROUP BY d ORDER BY d DESC LIMIT 7").fetchall()
     # 赛事分布（Top 8）
     comp_dist = c.execute(
         "SELECT competition_name, COUNT(*) n FROM history "
@@ -1041,10 +1041,10 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
 .barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
 .barrow .bn{width:34px;font-size:13px;color:#6b7280;flex-shrink:0}
-.trend{display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:8px}
-.tcol{flex:1;display:flex;flex-direction:column;align-items:center;height:100%%}
+.trend{display:flex;align-items:flex-end;gap:12px;height:130px;padding-top:6px}
+.tcol{flex:1;display:flex;flex-direction:column;align-items:center}
 .tcol .tv{font-size:11px;color:#6b7280}
-.tcol .tbar{flex:1;width:100%%;display:flex;align-items:flex-end}
+.tcol .tbar{width:100%%;height:80px;display:flex;align-items:flex-end}
 .tcol .tfill{width:100%%;background:#2563eb;border-radius:4px 4px 0 0;min-height:2px}
 .tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
@@ -1071,7 +1071,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 %s
 </div>
 <div class="box">
-<h2 style="margin-top:0">生成趋势（最近 14 天）</h2>
+<h2 style="margin-top:0">生成趋势（最近 7 天）</h2>
 <div class="trend">%s</div>
 </div>
 <div class="box">
@@ -1090,9 +1090,9 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <ul>%s</ul>
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
 </div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
-                              rated_count, feedback_total, rating_bars_html,
-                              trend_html, comp_html, cat_html, avg_dur,
-                              success_rate, judge_avg, issues_html, fb_html)
+                              rated_count, feedback_total, avg_dur, success_rate,
+                              judge_avg, rating_bars_html, trend_html, comp_html,
+                              cat_html, issues_html, fb_html)
     return html
 
 
