@@ -1938,7 +1938,10 @@ def _run_generation(data):
             }
         }
         history_item["data"] = _strip_identifying_info(history_item["data"])
-        save_history_item(history_item)
+        try:
+            _new_hid = save_history_item(history_item)
+        except Exception:
+            _new_hid = None
 
     try:
         from competition_agents import check_proposal_completeness
@@ -2003,6 +2006,8 @@ def _run_generation(data):
                 payload[_k] = _dedupe_consecutive(payload[_k])
     except Exception:
         pass
+    # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
+    payload["history_id"] = locals().get("_new_hid")
     return payload
 
 
@@ -2405,7 +2410,12 @@ def get_task_status(task_id):
     if t.get("status") == "running" and _pct and _pct > 0:
         _start = t.get("start_time") or t.get("updated_at") or time.time()
         _elapsed = max(0.0, time.time() - _start)
-        _eta = int(_elapsed * (100 - _pct) / _pct)
+        _linear = int(_elapsed * (100 - _pct) / _pct)
+        # 阶段下限：pct 接近 100 时线性外推会算出「还需 1 秒」，但 speech/ppt/defense
+        # 这些长节点实际还要几十秒，给一个按阶段的最短剩余时间兜底。
+        _min_eta = {"speech": 30, "writing": 30, "revision": 20, "defense": 20,
+                    "ppt": 15, "expert_review": 20, "judging": 15, "diagnosis": 12}
+        _eta = max(_linear, _min_eta.get(_stage, 8))
     resp = {
         "success": True,
         "status": t["status"],

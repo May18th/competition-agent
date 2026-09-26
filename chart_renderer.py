@@ -190,8 +190,15 @@ def _save(fig, path, title=None, caption=None, source=None):
     if caption:
         fig.text(0.5, 0.032, str(caption)[:60], fontsize=10.5, color=C2, ha="center")
     if source:
-        fig.text(0.985, 0.012, "数据来源：" + str(source)[:32], fontsize=8.5,
-                 color=FG_DIM, ha="right", alpha=0.9)
+        src = str(source)
+        is_estimate = any(k in src for k in ("测算", "假设", "示例", "估算", "预计"))
+        if is_estimate:
+            # 测算/假设类数据用警示色强调，避免被当成真实实测数据
+            fig.text(0.985, 0.012, "数据来源：" + src[:24] + "（测算值，需替换为实测）",
+                     fontsize=8.5, color="#F5A623", ha="right", alpha=0.95, fontweight="bold")
+        else:
+            fig.text(0.985, 0.012, "数据来源：" + src[:32], fontsize=8.5,
+                     color=FG_DIM, ha="right", alpha=0.9)
     fig.tight_layout(rect=(0.02, 0.06, 0.98, 0.92))
     fig.savefig(path, facecolor=BG, dpi=_DPI)
     plt.close(fig)
