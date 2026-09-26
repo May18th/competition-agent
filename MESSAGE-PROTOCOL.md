@@ -658,3 +658,21 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 1. 结果区显示相似度：window._lastData.similarity.percent，文案「本内容与公开材料相似度 X%（本地初检）」。
 2. 结果区加风格切换按钮（正式公文/学术严谨/创业融资），点击调 /api/restyle（传当前 proposal 全文 + style），
    成功后把返回的 	ext 替换进申报书结果区；切换是「改写」不是重跑生成，秒回。
+
+
+---
+
+## 2026-09-27 追加四（Codex，6 项新后端能力的前端配合）
+
+后端已完成（都在 app.py / pdf_render.py，待用户 commit）：
+
+1. **错别字/语法检测**：POST /api/proofread，入参 {text}，返回 {success, issues:[{original,type,suggestion}], count}。
+   前端结果区加「校对」按钮，把 issues 高亮/列表展示。
+2. **历史按比赛分类**：GET /api/history/groups 返回 {groups:[{competition,count,items}]}。
+   历史面板可改成按比赛下拉分组，不用前端自己 group。
+3. **临时分享链接**：POST /api/share/<history_id> 生成 token，返回 {url:"/share/<token>", expires}（7 天有效）；
+   GET /share/<token> 是无需登录的只读分享页（后端已渲染极简 HTML）。
+   前端结果区加「分享」按钮，复制返回的 url。
+4. **PDF 水印**：导出的 PDF 已自动加「可创无限团队」浅灰斜向水印，前端不用改。
+5. **预计剩余时间**：/api/status/<task_id> 新增 ta_seconds，进度条旁显示「预计还剩 X 秒/分钟」。
+6. **关键词提取**：生成结果 payload 新增 keywords（数组，3-5 个），可回填到申报书关键词栏。

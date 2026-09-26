@@ -122,6 +122,12 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   kind TEXT, source TEXT, content TEXT, created_time TEXT,
                   status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '')''')
+    # 临时分享链接表：token -> 历史记录，7 天过期，无需登录即可看结果
+    c.execute('''CREATE TABLE IF NOT EXISTS shares
+                 (token TEXT PRIMARY KEY,
+                  history_id INTEGER,
+                  created_time TEXT,
+                  expires_time TEXT)''')
     conn.commit()
     conn.close()
 
@@ -705,6 +711,131 @@ def get_history():
     summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"],
                 "idea": h["idea"], "score": h["score"], "rating": h.get("rating", 0)} for h in history]
     return jsonify({"success": True, "history": summary, "total": total, "limit": limit, "offset": offset})
+
+
+@app.route('/api/history/groups')
+def history_groups():
+    """按比赛类型自动分组的历史记录（前端下拉按比赛过滤用）。"""
+    history = load_history(limit=500)
+    groups = {}
+    for h in history:
+        comp = (h.get("competition_name") or "未标注比赛").strip()
+        groups.setdefault(comp, []).append({
+            "id": h["id"], "time": h["time"], "idea": h["idea"],
+            "score": h["score"], "rating": h.get("rating", 0),
+        })
+    result = [{"competition": k, "count": len(v), "items": v} for k, v in groups.items()]
+    result.sort(key=lambda x: -x["count"])
+    return jsonify({"success": True, "groups": result, "total": len(history)})
+
+
+def _html_esc(s):
+    return (str(s or '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def _share_page(title, comp, idea, body_html):
+    t = _html_esc(title)
+    c = _html_esc(comp)
+    css = ("body{font-family:'Microsoft YaHei',sans-serif;max-width:860px;margin:0 auto;padding:24px;"
+           "line-height:1.85;color:#1f2a4d;background:#fafbfe}"
+           "h1{font-size:24px;margin-bottom:8px}"
+           ".meta{color:#6b7a99;font-size:13px;margin-bottom:20px}"
+           "h2{font-size:18px;margin:22px 0 8px;border-left:4px solid #5b6ee1;padding-left:10px}"
+           "h3{font-size:15px;margin:16px 0 6px}"
+           "p{margin:8px 0;white-space:pre-wrap}"
+           "hr{border:none;border-top:1px solid #e2e7f2;margin:16px 0}")
+    return ("<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>" + t + "</title><style>" + css + "</style></head><body>"
+            "<h1>" + t + "</h1><div class='meta'>" + c + "</div>" + body_html + "</body></html>")
+
+
+def _md_to_html(t):
+    out, buf = [], []
+    for line in (t or '').split(chr(10)):
+        s = _html_esc(line.rstrip())
+        if not s.strip():
+            if buf:
+                out.append('<p>' + '<br>'.join(buf) + '</p>')
+                buf = []
+            continue
+        if s.startswith('### '):
+            if buf:
+                out.append('<p>' + '<br>'.join(buf) + '</p>'); buf = []
+            out.append('<h3>' + s[4:] + '</h3>')
+        elif s.startswith('## '):
+            if buf:
+                out.append('<p>' + '<br>'.join(buf) + '</p>'); buf = []
+            out.append('<h2>' + s[3:] + '</h2>')
+        elif s.startswith('# '):
+            if buf:
+                out.append('<p>' + '<br>'.join(buf) + '</p>'); buf = []
+            out.append('<h1>' + s[2:] + '</h1>')
+        elif s.strip() == '---':
+            if buf:
+                out.append('<p>' + '<br>'.join(buf) + '</p>'); buf = []
+            out.append('<hr>')
+        else:
+            buf.append(s)
+    if buf:
+        out.append('<p>' + '<br>'.join(buf) + '</p>')
+    return ''.join(out)
+
+
+@app.route('/api/share/<int:history_id>', methods=['POST'])
+def create_share(history_id):
+    import secrets
+    from datetime import timedelta
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id FROM history WHERE id=?", (history_id,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({"success": False, "error": "记录不存在"}), 404
+    token = secrets.token_urlsafe(8)
+    now = datetime.now()
+    expires = now + timedelta(days=7)
+    c.execute("INSERT OR REPLACE INTO shares (token, history_id, created_time, expires_time) VALUES (?,?,?,?)",
+              (token, history_id, now.strftime("%Y-%m-%d %H:%M"), expires.strftime("%Y-%m-%d %H:%M")))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "token": token, "url": "/share/" + token,
+                    "expires": expires.strftime("%Y-%m-%d %H:%M")})
+
+
+@app.route('/share/<token>')
+def view_share(token):
+    from datetime import datetime as _dt
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT history_id, expires_time FROM shares WHERE token=?", (token,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return _share_page("链接不存在或已失效", "", "", "<p>该分享链接无效。</p>"), 404
+    history_id, expires_time = row
+    try:
+        if _dt.now() > _dt.strptime(expires_time, "%Y-%m-%d %H:%M"):
+            return _share_page("链接已过期", "", "", "<p>该分享链接已过期，请联系分享者重新生成。</p>"), 410
+    except Exception:
+        pass
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT competition_name, idea, result_data FROM history WHERE id=?", (history_id,))
+    hr = c.fetchone()
+    conn.close()
+    if not hr:
+        return _share_page("记录不存在", "", "", "<p>该记录已删除。</p>"), 404
+    comp, idea, result_data = hr
+    data = {}
+    try:
+        data = json.loads(result_data)
+    except Exception:
+        data = {}
+    title = data.get("one_liner") or idea or comp or "科创项目分享"
+    proposal = data.get("proposal") or ""
+    body = _md_to_html(proposal)
+    return _share_page(title, comp, idea, body)
 
 
 @app.route('/api/history/<int:history_id>')
@@ -1520,6 +1651,8 @@ def _run_generation(data):
     except Exception:
         proposal_chars = len(re.sub(r'\s', '', result.get("proposal", "") or ""))
     similarity = _similarity_check(result.get("proposal", ""))
+    # 从创意提取关键词，自动填申报书关键词栏
+    keywords = _extract_keywords_llm(result.get("idea") or data.get("idea") or "")
 
     payload = {
         "parsed_rules": result.get("parsed_rules", ""),
@@ -1552,6 +1685,7 @@ def _run_generation(data):
         "rich_deck": rich_deck,
         "proposal_chars": proposal_chars,
         "similarity": similarity,
+        "keywords": keywords,
         "completeness": completeness
     }
 
@@ -1588,6 +1722,26 @@ def _similarity_check(text):
     except Exception as e:
         print(f"[similarity] 检测失败：{e}")
         return {"percent": None, "checked": 0, "note": "检测失败"}
+
+
+def _extract_keywords_llm(idea):
+    """从创意描述里提取 3-5 个关键词（技术领域/应用场景/核心功能），用于申报书关键词栏。"""
+    if not idea or not idea.strip():
+        return []
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = ("从下面这段创意描述里提取 3-5 个最能代表项目的关键词"
+                  "（技术领域、应用场景、核心功能、服务对象等）。\n"
+                  "只输出关键词本身，用中文顿号「、」分隔，不要编号、不要任何解释。\n\n"
+                  f"创意：{idea[:1200]}")
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        raw = (resp.content or '').strip()
+        kws = [k.strip() for k in re.split(r'[、,，;；\n]+', raw) if k.strip()]
+        return kws[:5]
+    except Exception as e:
+        print(f"[keywords] 提取失败：{e}")
+        return []
 
 
 def _friendly_error(e):
@@ -1684,7 +1838,7 @@ def _start_generation(data):
                                   "error": "当前生成人数较多，请稍后 1 分钟再试"})
         _active_gen_count += 1
     task_id = uuid.uuid4().hex
-    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(),
+    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(), "start_time": time.time(),
                       "mode": data.get("mode", "fast"), "data": data}
 
     def worker():
@@ -1778,6 +1932,39 @@ def restyle():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
+@app.route('/api/proofread', methods=['POST'])
+def proofread():
+    """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get('text', '')
+    if not text or not text.strip():
+        return jsonify({"success": False, "error": "内容为空"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        import json as _json
+        prompt = ("你是中文文本校对专家。请找出下面文本里的错别字、语法错误、标点误用、语句不通顺等问题。\n"
+                  "对每个问题输出：原文片段、问题类型、修正建议。\n\n"
+                  "只输出 JSON 数组，格式：\n"
+                  '[{"original":"错误原文","type":"错别字/语法/标点/语句不通","suggestion":"修正建议"}]\n'
+                  "没有发现问题就输出 []。不要输出 JSON 以外的任何文字。\n\n"
+                  f"文本：\n{text[:8000]}")
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        raw = (resp.content or '').strip()
+        m = re.search(r'\[.*\]', raw, re.DOTALL)
+        issues = []
+        if m:
+            try:
+                issues = _json.loads(m.group(0))
+                if not isinstance(issues, list):
+                    issues = []
+            except Exception:
+                issues = []
+        return jsonify({"success": True, "issues": issues, "count": len(issues)})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
 @app.route('/api/cancel/<task_id>', methods=['POST'])
 def cancel_generation(task_id):
     progress.cancel(task_id)
@@ -1798,12 +1985,19 @@ def get_task_status(task_id):
         t["updated_at"] = time.time()
     _stage = t.get("stage", "start")
     _label, _pct = stage_meta(_stage)
+    # 预计剩余时间：按阶段进度百分比外推（已完成比例 -> 剩余比例）
+    _eta = 0
+    if t.get("status") == "running" and _pct and _pct > 0:
+        _start = t.get("start_time") or t.get("updated_at") or time.time()
+        _elapsed = max(0.0, time.time() - _start)
+        _eta = int(_elapsed * (100 - _pct) / _pct)
     resp = {
         "success": True,
         "status": t["status"],
         "stage": _stage,
         "stage_label": _label,
         "pct": _pct,
+        "eta_seconds": _eta,
         "partial": t.get("partial"),
         "updated_at": t["updated_at"]
     }
