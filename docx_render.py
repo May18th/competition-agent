@@ -797,6 +797,9 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         cover = prof['cover']
     if toc is None:
         toc = prof['toc']
+    # 短文档（简洁版约 1000-1500 字）不要目录：目录页只有 5 个条目，整页大半空白
+    if toc and len((text or '').replace('\n', '').replace(' ', '')) < 2500:
+        toc = False
 
     doc = Document()
     _setup_page(doc, prof)

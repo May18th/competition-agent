@@ -150,11 +150,24 @@ def _flow(text):
 
 def render_markdown_to_pdf(markdown_text, out_path, title="申报书"):
     """把 Markdown 文本渲染成 A4 PDF。成功返回 out_path，失败抛异常。"""
+    markdown_text = markdown_text or ""
+    # 若正文没有以一级标题（# 标题）开头，补一个文档主标题，避免 PDF 上来就是「## 项目简介」没有题头
+    stripped = markdown_text.lstrip()
+    if not re.match(r"^#\s+", stripped):
+        markdown_text = ("# %s\n\n" % (title or "申报书")) + markdown_text
+
+    def _footer(canvas, docobj):
+        canvas.saveState()
+        canvas.setFont(_FONT, 8.5)
+        canvas.setFillColor(colors.HexColor("#8A93A8"))
+        canvas.drawCentredString(A4[0] / 2.0, 0.85 * cm, "%d" % docobj.page)
+        canvas.restoreState()
+
     doc = SimpleDocTemplate(
         out_path, pagesize=A4,
         leftMargin=2.2 * cm, rightMargin=2.2 * cm,
         topMargin=2.0 * cm, bottomMargin=2.0 * cm,
         title=title,
     )
-    doc.build(_flow(markdown_text or ""))
+    doc.build(_flow(markdown_text), onFirstPage=_footer, onLaterPages=_footer)
     return out_path
