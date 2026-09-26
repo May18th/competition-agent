@@ -695,3 +695,10 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - 已真接口验证：https 直连 POST /api/generate_async 带 user_data → 返回 task_id，随后 /api/cancel 取消成功。
 - 排障备注：用 http:// + curl -L 打线上接口会拿到假的「400 Bad Request / 生成失败」（nginx 80→https 的 301 把 POST 改写了），不是服务故障，冒烟一律 https 直连。
 - 后端无改动。
+
+## 2026-09-27 WorkBuddy 改动记录④（index.html，已部署 4c3a26d）
+- 分享链路**已端到端实测通过**：Codex 的 history_id 回传接上了 —— /api/status 的 data.history_id=70 → POST /api/share/70 返回 token → GET /share/<token> 返回 5675 字节页面且正文内容正确。测试历史记录已从库里删掉（服务器上有 competition.db.bak_* 备份）。
+- AI 模拟自评：`<details id="scorePanel">` 整块折叠条 → 常驻二级标签导航「评分总览 / 评分依据 / 提交前自查」（switchScoreTab），8 个板块按归属分到三个面板，id 全部保留未改名，无 JS 依赖旧 details。
+- 自查面板不再默认可见，所以给「提交前自查」标签加了未处理项红点计数（占位符数 + 双盲命中 + 缺章节数），由 wbScoreTabBadge() 在 wbRefreshPhBar / renderCompleteness 后刷新 —— 避免重要提醒被标签藏起来。
+- 排障备注（重要）：线上 DELETE /api/history/<id> 对匿名 UID 做了归属校验，删别人生成的记录返回 404，不是 bug。
+- 后端无改动。
