@@ -237,7 +237,8 @@ def parse_tracks(key, sec):
     TRACKS 里的 ban / focus / avoid / sections 作为结构化补充。
     知识库没写赛道的赛事 → 返回空数组，前端不显示赛道选择（宁缺毋滥）。
     """
-    raw = clean_items(sec_get(sec, "赛道设置"))
+    # 注意：不能用 clean_items——它会先剥掉编号，RE_TRACK 就匹配不上了
+    raw = [ln.strip() for ln in sec_get(sec, "赛道设置") if ln.strip()]
     if not raw:
         return []
     tpl = {t["key"]: t for t in TRACKS.get(key, [])}
