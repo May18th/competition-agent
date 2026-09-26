@@ -794,6 +794,36 @@ button:hover { transform: translateY(-1px); }
     border: 1px solid rgba(34,211,238,.28) !important;
 }
 
+/* ---------- 分步引导：箭头指向 + 一句话，点一下就走 ---------- */
+.wb-coach-target {
+    position: relative;
+    z-index: 1501;
+    border-radius: 8px;
+    box-shadow: 0 0 0 3px var(--c-a), 0 0 0 100vmax rgba(3, 6, 20, .62);
+}
+#coachTip {
+    position: fixed;
+    z-index: 1502;
+    max-width: 300px;
+    padding: 12px 14px;
+    background: linear-gradient(160deg, rgba(19, 25, 58, .98), rgba(10, 14, 38, .98));
+    border: 1px solid var(--c-a);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+}
+#coachTip::before {
+    content: "";
+    position: absolute;
+    left: 22px;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+}
+#coachTip.coach-below::before { top: -8px; border-bottom: 8px solid var(--c-a); }
+#coachTip.coach-above::before { bottom: -8px; border-top: 8px solid var(--c-a); }
+
 /* ---------- 响应式（统一放最后） ---------- */
 @media (max-width: 768px) {
     body { padding: 12px; }
@@ -951,6 +981,16 @@ button:hover { transform: translateY(-1px); }
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>科创赛事多智能体创作助手</h1>
             <p>多智能体（Agent）协同工作，从规则解析到模拟答辩，一站式搞定科创竞赛申报</p>
+
+            <!-- 用法压成一行：别一上来糊一整块字，用户会直接关掉 -->
+            <div style="margin-top: 12px; display: flex; gap: 7px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--text-dim);">
+                <span style="padding: 3px 10px; background: var(--c-a-soft); color: var(--c-a); border-radius: 12px;">① 填赛事</span>
+                <span style="color: var(--text-mute);">→</span>
+                <span style="padding: 3px 10px; background: var(--c-a-soft); color: var(--c-a); border-radius: 12px;">② 写创意</span>
+                <span style="color: var(--text-mute);">→</span>
+                <span style="padding: 3px 10px; background: var(--c-a-soft); color: var(--c-a); border-radius: 12px;">③ 点生成</span>
+                <span style="color: var(--text-mute); font-size: 12.5px;">简洁版约 40 秒 · 深度版约 2 分钟 · 生成完可直接导出</span>
+            </div>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -1017,8 +1057,9 @@ button:hover { transform: translateY(-1px); }
                         <div id="evSections" style="font-size: 13px;"></div>
                         <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
                         <div id="evDeduct" style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
-                        <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute);">
-                            章节可直接改，生成会按这份结构来（改动只存在你这台设备）。
+                        <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                            章节可直接改（改动只存在你这台设备）。<br>
+                            <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 1300 字），不套用这里的多章结构。
                         </div>
                     </div>
                 </div>
@@ -1997,8 +2038,14 @@ button:hover { transform: translateY(-1px); }
             }
             try { onCompetitionChange(); } catch (e) {}
         })();
-        // 首次进入自动弹一次引导（手机/电脑两套内容），勾了「不再弹出」就写进 localStorage
-        try { showIntro(); } catch (e) {}
+        // 首次进入才做交互引导（箭头指向 + 一句话，点一下就走），走完写 localStorage，之后不再出现。
+        // 首屏那一「行」三步是常驻静态提示，不算打扰；完整说明按需点右上角「这是什么 / 使用说明」。
+        (function () {
+            var done = false;
+            try { done = localStorage.getItem('wbCoachDone') === '1'; } catch (e) {}
+            if (done) return;
+            setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
+        })();
 
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
@@ -2353,6 +2400,80 @@ button:hover { transform: translateY(-1px); }
                     }
                 }
             }
+        }
+
+        /* ---------- 分步引导：箭头指向按钮 + 一句话，点一下就走 ---------- */
+        var COACH_STEPS = [
+            { id: 'competition', text: '先填或选你要参加的比赛。清单里没有也能自己填，会按通用标准生成。' },
+            { id: 'idea', text: '一两句话写清：解决什么问题、怎么做。越具体，生成的内容越能用。' },
+            { id: 'startBtn', text: '选好简洁版（约40秒）或深度版（约2分钟），点这里开始生成。' }
+        ];
+        var _coachIdx = 0;
+
+        function _coachClear() {
+            var olds = document.querySelectorAll('.wb-coach-target');
+            for (var i = 0; i < olds.length; i++) olds[i].classList.remove('wb-coach-target');
+            var tip = document.getElementById('coachTip');
+            if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
+        }
+
+        function coachStart() {
+            _coachIdx = 0;
+            coachShow();
+        }
+
+        function coachShow() {
+            _coachClear();
+            if (_coachIdx >= COACH_STEPS.length) { coachEnd(); return; }
+            var step = COACH_STEPS[_coachIdx];
+            var el = document.getElementById(step.id);
+            if (!el) { _coachIdx++; coachShow(); return; }
+            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+            setTimeout(function () {
+                el.classList.add('wb-coach-target');
+                var tip = document.createElement('div');
+                tip.id = 'coachTip';
+                tip.innerHTML =
+                    '<div>' + step.text + '</div>' +
+                    '<div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">' +
+                        '<span style="font-size: 12px; color: var(--text-mute);">' +
+                            (_coachIdx + 1) + ' / ' + COACH_STEPS.length + '</span>' +
+                        '<button onclick="coachNext()" style="padding: 5px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">知道了</button>' +
+                        '<span onclick="coachEnd()" style="font-size: 12px; color: var(--text-mute); cursor: pointer;">跳过</span>' +
+                    '</div>';
+                document.body.appendChild(tip);
+                coachRepos();
+                // 点被指向的元素也算「知道了」，符合「指一下就消失」
+                el.addEventListener('click', function _once() {
+                    el.removeEventListener('click', _once);
+                    coachNext();
+                });
+            }, 380);
+        }
+
+        function coachRepos() {
+            var tip = document.getElementById('coachTip');
+            if (!tip) return;
+            var step = COACH_STEPS[_coachIdx];
+            var el = step && document.getElementById(step.id);
+            if (!el) return;
+            var r = el.getBoundingClientRect();
+            var th = tip.offsetHeight || 90, tw = tip.offsetWidth || 260;
+            var below = true;
+            var top = r.bottom + 10;
+            if (top + th > window.innerHeight - 12) { top = r.top - th - 10; below = false; }
+            if (top < 8) top = 8;
+            var left = Math.max(10, Math.min(r.left, window.innerWidth - tw - 10));
+            tip.style.top = top + 'px';
+            tip.style.left = left + 'px';
+            tip.className = below ? 'coach-below' : 'coach-above';
+        }
+
+        function coachNext() { _coachIdx++; coachShow(); }
+
+        function coachEnd() {
+            _coachClear();
+            try { localStorage.setItem('wbCoachDone', '1'); } catch (e) {}
         }
 
         // 点热门赛事 chip 填入，并触发一次知识库状态刷新
@@ -3012,7 +3133,8 @@ button:hover { transform: translateY(-1px); }
                     theme: (document.getElementById('deckTheme') || {}).value || null,
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
-                    outline_requirement: (evCurrent() || {}).sections || [],
+                    // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
+                    outline_requirement: (mode === 'deep' ? ((evCurrent() || {}).sections || []) : []),
                     scoring_weights: (evCurrent() || {}).scoring || []
                 })
             })
