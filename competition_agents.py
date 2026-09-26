@@ -355,6 +355,7 @@ class CompetitionState(TypedDict):
     proposal_outline: str
     proposal_selfcheck: str
     judge_feedback: str
+    judge_scores: list
     expert_review: str
     proposal_analysis: str
     defense_questions: str
@@ -1291,6 +1292,10 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
         "说服力": _pick("说服力"),
     }
     weights = {"结构完整性": 0.30, "逻辑清晰度": 0.25, "数据支撑": 0.20, "格式规范": 0.15, "说服力": 0.10}
+    state["judge_scores"] = [
+        {"name": k, "score": (sub[k] if sub[k] is not None else None), "weight": int(weights[k] * 100)}
+        for k in ("结构完整性", "逻辑清晰度", "数据支撑", "格式规范", "说服力")
+    ]
 
     if all(v is not None for v in sub.values()):
         state["score"] = int(round(sum(sub[k] * weights[k] for k in sub)))
@@ -1305,7 +1310,8 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
     state["score"] = max(0, min(100, state["score"]))
     state["approved"] = state["score"] >= 70
     print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
-    return {"judge_feedback": state["judge_feedback"], "score": state["score"], "approved": state["approved"]}
+    return {"judge_feedback": state["judge_feedback"], "judge_scores": state["judge_scores"],
+            "score": state["score"], "approved": state["approved"]}
 
 
 def expert_review_agent(state: CompetitionState) -> CompetitionState:
@@ -1326,30 +1332,32 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
   "overall_score": 86,
   "verdict": "修改后晋级",
   "experts": [
-    {{"role":"技术专家","focus":"技术可行性、创新性、实现难度","score":88,
+    {{"role":"技术视角","focus":"技术可行性、创新性、实现难度","score":88,
       "dimensions":[{{"name":"创新性","score":90,"comment":"一句话点评"}},{{"name":"技术可行性","score":86,"comment":"一句话点评"}},{{"name":"实现难度","score":88,"comment":"一句话点评"}}],
       "strengths":["具体优点1","具体优点2"],
       "issues":[{{"quote":"申报书中的相关原文（10-30字）","problem":"这里的问题是什么","suggestion":"怎么改"}}]}},
-    {{"role":"商业专家","focus":"商业模式、市场空间、落地可行性","score":82,
+    {{"role":"商业视角","focus":"商业模式、市场空间、落地可行性","score":82,
       "dimensions":[{{"name":"商业模式","score":80,"comment":"一句话点评"}},{{"name":"市场空间","score":84,"comment":"一句话点评"}},{{"name":"落地可行性","score":82,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}},
-    {{"role":"综合评审主席","focus":"整体完成度、逻辑闭环、晋级潜力","score":87,
+    {{"role":"综合评审视角","focus":"整体完成度、逻辑闭环、晋级潜力","score":87,
       "dimensions":[{{"name":"整体完成度","score":86,"comment":"一句话点评"}},{{"name":"逻辑闭环","score":88,"comment":"一句话点评"}},{{"name":"晋级潜力","score":87,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}}
   ],
   "consensus":["三位专家一致认可的结论，至少1条"],
   "divergence":["专家之间存在分歧的点，至少1条；没有分歧就写\"无明显分歧\""],
-  "priority_actions":[{{"priority":1,"action":"最优先改的动作","reason":"为什么"}},{{"priority":2,"action":"次优先动作","reason":"为什么"}},{{"priority":3,"action":"第三优先动作","reason":"为什么"}}]
+  "priority_actions":[{{"priority":1,"action":"最优先改的动作","reason":"为什么"}},{{"priority":2,"action":"次优先动作","reason":"为什么"}},{{"priority":3,"action":"第三优先动作","reason":"为什么"}}],
+  "disclaimer":"本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。"
 }}
 
 硬性要求：
-1. 三位专家必须各自独立给分和点评，不能三份完全一样；overall_score 是三者按「主席权重略高」综合后的整数（0-100）。
-2. issues 里的 quote 必须从申报书里摘原句（体现「逐条批注」），problem 说清问题，suggestion 给出可执行的改法。
-3. 每个维度 comment 20-40 字，落到具体事实，禁止「表现不错」「有待提升」这类空话。
-4. 分数要拉开差距，不要都打 85-90 的近似分；明显薄弱处要敢于打低分。
-5. 中文标点用全角。
+1. 三个视角必须各自独立给分和点评，不能三份完全一样；overall_score 是三者按「综合视角权重略高」综合后的整数（0-100）。
+2. role 只写「技术视角 / 商业视角 / 综合评审视角」三种之一，**不设任何专家人设、不出现任何职称、人名、院校名**。
+3. issues 里的 quote 必须从申报书里摘原句（体现「逐条批注」），problem 说清问题，suggestion 给出可执行的改法。
+4. 每个维度 comment 20-40 字，必须是「打分依据」：指出申报书里哪句话/哪个数据支撑了这个分数，禁止「表现不错」「有待提升」这类空话。
+5. 分数要拉开差距，不要都打 85-90 的近似分；明显薄弱处要敢于打低分。
+6. 中文标点用全角。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["expert_review"] = response.content

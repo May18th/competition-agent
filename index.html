@@ -953,8 +953,11 @@ button:hover { transform: translateY(-1px); }
             <p>多智能体（Agent）协同工作，从规则解析到模拟答辩，一站式搞定科创竞赛申报</p>
         </div>
 
-        <!-- 历史记录：从标题下方下移，单独成行，与主标题拉开间距 -->
-        <div style="display: flex; justify-content: flex-end; margin: 0 4px 20px;">
+        <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 20px; flex-wrap: wrap;">
+            <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
+                <span class="wb-dot"></span>这是什么 / 使用说明
+            </button>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
                 <span class="wb-dot"></span>历史记录
             </button>
@@ -973,19 +976,32 @@ button:hover { transform: translateY(-1px); }
             <div style="display: grid; gap: 20px;">
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 赛事名称</label>
-                    <select id="competition" onchange="onCompetitionChange()" style="height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
-                        <option value="iCAN大学生创新创业大赛">iCAN大学生创新创业大赛</option>
-                        <option value="中国国际互联网+大学生创新创业大赛">中国国际"互联网+"大学生创新创业大赛</option>
-                        <option value="挑战杯全国大学生课外学术科技作品竞赛">"挑战杯"全国大学生课外学术科技作品竞赛</option>
-                        <option value="国家级大学生创新创业训练计划">国家级大学生创新创业训练计划（国创）</option>
-                        <option value="全国大学生数学建模竞赛">全国大学生数学建模竞赛</option>
-                        <option value="全国大学生电子设计竞赛">全国大学生电子设计竞赛</option>
-                        <option value="蓝桥杯全国软件和信息技术专业人才大赛">蓝桥杯全国软件和信息技术专业人才大赛</option>
-                        <option value="中国大学生计算机设计大赛">中国大学生计算机设计大赛</option>
-                        <option value="全国大学生广告艺术大赛">全国大学生广告艺术大赛</option>
-                        <option value="中国大学生服务外包创新创业大赛">中国大学生服务外包创新创业大赛</option>
-                        <option value="全国大学生信息安全竞赛">全国大学生信息安全竞赛</option>
-                    </select>
+                    <!-- 既能下拉选，也能自己填（手机上没法从下拉里挑未收录的赛事） -->
+                    <input type="text" id="competition" list="competitionList" onchange="onCompetitionChange()" oninput="onCompetitionChange()"
+                           placeholder="输入或选择赛事名称，如：iCAN大学生创新创业大赛"
+                           style="height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text); width: 100%;">
+                    <datalist id="competitionList">
+                        <option value="iCAN大学生创新创业大赛"></option>
+                        <option value="中国国际互联网+大学生创新创业大赛"></option>
+                        <option value="挑战杯全国大学生课外学术科技作品竞赛"></option>
+                        <option value="国家级大学生创新创业训练计划"></option>
+                        <option value="全国大学生数学建模竞赛"></option>
+                        <option value="全国大学生电子设计竞赛"></option>
+                        <option value="蓝桥杯全国软件和信息技术专业人才大赛"></option>
+                        <option value="中国大学生计算机设计大赛"></option>
+                        <option value="全国大学生广告艺术大赛"></option>
+                        <option value="中国大学生服务外包创新创业大赛"></option>
+                        <option value="全国大学生信息安全竞赛"></option>
+                    </datalist>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
+                        <span onclick="wbPickComp('iCAN大学生创新创业大赛')" style="padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
+                        <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" style="padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
+                        <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" style="padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">挑战杯</span>
+                        <span onclick="wbPickComp('国家级大学生创新创业训练计划')" style="padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">国创计划</span>
+                    </div>
+                    <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                        这个赛事名不在内置清单里也没关系，会按通用科创赛事标准生成。
+                    </div>
                 </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 赛事规则</label>
@@ -1464,6 +1480,13 @@ button:hover { transform: translateY(-1px); }
         </div>
     </div>
 
+    <!-- 首次进入引导：手机 / 电脑内容不同（手机全屏大按钮，电脑居中卡片） -->
+    <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
+        <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
+            <div id="introBody"></div>
+        </div>
+    </div>
+
     <!-- 历史记录弹窗 -->
     <div id="historyModal" class="modal-overlay" onclick="closeHistory(event)">
         <div class="modal">
@@ -1822,6 +1845,8 @@ button:hover { transform: translateY(-1px); }
             for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', wbSaveForm);
         })();
         wbLoadForm();
+        // 首次进入自动弹一次引导（手机/电脑两套内容），勾了「不再弹出」就写进 localStorage
+        try { showIntro(); } catch (e) {}
 
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
@@ -2008,6 +2033,16 @@ button:hover { transform: translateY(-1px); }
             if (!el || el.classList.contains('is-out')) return;
             el.classList.add('is-out');
             setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 240);
+        }
+
+        // 点热门赛事 chip 填入，并触发一次知识库状态刷新
+        function wbPickComp(name) {
+            var el = document.getElementById('competition');
+            if (!el) return;
+            el.value = name;
+            try { el.dispatchEvent(new Event('change')); } catch (e) {}
+            onCompetitionChange();
+            wbSaveForm();
         }
 
         // ---- 知识库状态面板（数据来源 /api/knowledge_status）----
@@ -2972,6 +3007,133 @@ button:hover { transform: translateY(-1px); }
             event.currentTarget.classList.add('active');
             if (tabName === 'kb') { kbLoadTags(); kbList(); }
             if (tabName === 'logs') { loadLogs(); loadLessons(); }
+        }
+
+        /* ---------- 首次进入引导：手机与电脑两套内容 ---------- */
+        // 端判断全自动：UA + 屏幕宽度 + 触屏能力三者综合，不让用户自己选
+        // （只看 UA 会漏掉 iPad 桌面模式、安卓平板；只看宽度会漏掉横屏手机）
+        var WB_IS_MOBILE = (function () {
+            var ua = navigator.userAgent || '';
+            var byUa = /iPhone|iPod|Android|Mobile|BlackBerry|Opera Mini|IEMobile/i.test(ua);
+            var byPad = /iPad/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+            var byWidth = false;
+            try { byWidth = window.matchMedia('(max-width: 820px)').matches; } catch (e) {}
+            return !!(byUa || byPad || byWidth);
+        })();
+
+        function _introSteps() {
+            return [
+                ['① 填创意', WB_IS_MOBILE
+                    ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
+                    : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
+                ['② 选档位', WB_IS_MOBILE
+                    ? '简洁版约 40 秒出初稿；深度版约 2 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版约 40 秒（约 1300 字）；深度版约 2 分钟（约 5000 字 / 12 章 + 图表 + PPT + 多专家评审）'],
+                ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
+            ];
+        }
+
+        function introHTML() {
+            var m = WB_IS_MOBILE;
+            var wx = /MicroMessenger|QQ\//i.test(navigator.userAgent || '');
+            var btn = m ? 'padding: 14px 20px; font-size: 16px;' : 'padding: 10px 22px; font-size: 14px;';
+            var h = '';
+
+            h += '<h2 style="margin-bottom: 6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 科创赛事申报材料智能生成助手</h2>';
+            h += '<div style="color: var(--text-dim); font-size: 13.5px; line-height: 1.8; margin-bottom: 16px;">' +
+                 '把你的项目创意变成一整套参赛材料：规则解析、申报书正文、评委打分、竞品与商业分析、图表、路演 PPT、答辩预测。</div>';
+
+            // 手机端：先说清楚在手机上怎么用，避免踩微信的坑
+            if (m) {
+                h += '<div style="padding: 12px 14px; border-radius: 10px; border: 1px solid var(--c-b); background: var(--surface-2); margin-bottom: 16px;">' +
+                     '<div style="font-weight: 700; color: var(--c-b); margin-bottom: 6px;">手机上请注意</div>' +
+                     '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.8;">' +
+                     '文字建议<b>复制后粘贴</b>到创意框（长按复制 → 长按输入框粘贴）。' +
+                     (wx ? '<br><b style="color: var(--c-b);">你现在在微信里，上传只能选到图片和视频</b>，' +
+                           '要传 Word / PDF 请点右上角 ··· → 用 Safari 打开。'
+                         : '<br>要传 Word / PDF，在 Safari 里点「浏览」选文件 App 里的文件。') +
+                     '</div></div>';
+            }
+
+            h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">怎么用（三步）</div>';
+            h += '<div style="margin-bottom: 18px;">';
+            _introSteps().forEach(function (s) {
+                h += '<div style="display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: flex-start;">' +
+                     '<span style="flex: 0 0 74px; font-weight: 700; color: var(--c-a);">' + s[0] + '</span>' +
+                     '<span style="flex: 1; color: var(--text-dim); font-size: 13px; line-height: 1.7;">' + s[1] + '</span>' +
+                     '</div>';
+            });
+            h += '</div>';
+
+            if (!m) {
+                h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">还能干什么</div>';
+                h += '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.9; margin-bottom: 18px;">' +
+                     '· <b>范文库</b>：加高分范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
+                     '· <b>导出中心</b>：Word / PDF / PPT / 一键打包，申报书按标准格式排版<br>' +
+                     '· <b>原格式导出</b>：上传学校模板 .docx，优化后保留你原来的版式<br>' +
+                     '· <b>历史记录</b>：之前生成的随时打开回看，可继续导出' +
+                     '</div>';
+            }
+
+            h += '<div style="padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-mute); font-size: 12.5px; line-height: 1.7; margin-bottom: 16px;">' +
+                 '创意与草稿仅用于本次生成，不做模型训练、不外传；生成内容归你所有。' +
+                 'AI 生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
+
+            h += '<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">' +
+                 '<button onclick="closeIntro(true)" style="' + btn + ' background: var(--c-a); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; flex: 1 1 140px;">开始使用</button>' +
+                 '<label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-mute); cursor: pointer;">' +
+                 '<input type="checkbox" id="introNoMore" checked style="width: 15px; height: 15px;"> 下次不再自动弹出</label>' +
+                 '</div>';
+            return h;
+        }
+
+        function showIntro(force) {
+            var modal = document.getElementById('introModal');
+            var box = document.getElementById('introBox');
+            var body = document.getElementById('introBody');
+            if (!modal || !box || !body) return;
+            if (!force) {
+                try { if (localStorage.getItem('wbIntroSeen') === '1') return; } catch (e) {}
+            }
+            body.innerHTML = introHTML();
+            if (WB_IS_MOBILE) {
+                // 手机做成全屏引导页：大按钮、可滚动
+                box.style.maxWidth = 'none';
+                box.style.width = '100vw';
+                box.style.maxHeight = '100vh';
+                box.style.height = '100vh';
+                box.style.borderRadius = '0';
+                box.style.overflowY = 'auto';
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeIntro(remember) {
+            var modal = document.getElementById('introModal');
+            if (modal) modal.style.display = 'none';
+            var noMore = document.getElementById('introNoMore');
+            var skip = (!noMore || noMore.checked);
+            if (remember !== false && skip) {
+                try { localStorage.setItem('wbIntroSeen', '1'); } catch (e) {}
+            }
+            // 手机端：关掉引导直接进输入区并唤起键盘
+            // （focus 必须在点击的同一个调用栈里同步执行，iOS 才认这是用户手势，
+            //   放进 setTimeout 会丢手势上下文，键盘弹不出来）
+            if (WB_IS_MOBILE) {
+                // 聚焦输入区第一个字段（赛事名）：既唤起键盘，也让视口落在输入区顶部。
+                // 不要用 preventScroll —— iOS 自己会把焦点元素滚到可见处，拦掉反而滚错。
+                // 键盘弹出动画（约 300ms）会改变视口高度，所以延迟后再校正两次位置。
+                var el = document.getElementById('competition');
+                if (el) {
+                    try { el.focus(); } catch (e) {}
+                    var card = el.closest ? el.closest('.card') : null;
+                    var fix = function () {
+                        try { (card || el).scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+                    };
+                    setTimeout(fix, 350);
+                    setTimeout(fix, 900);
+                }
+            }
         }
 
         /* ---------- 运行日志（只读排查面板，数据来自 /api/logs） ---------- */
