@@ -7088,19 +7088,29 @@ window.addEventListener('resize', function () {
     }
 
     /* ---------- 5. 结果页顶部风格切换 ---------- */
+    var _sfTried = false;
     function styleFill() {
         var bar = document.getElementById('wbStyleBar');
         var sel = document.getElementById('styleQuickSel');
         if (!bar || !sel) return;
         var lib = window._themeLib || [];
+        // 主题库走 /api/ppt_themes 异步拉，result 先渲染完时还拿不到 → 主动拉一次再填
+        if (!lib.length && !_sfTried && typeof loadThemeLib === 'function') {
+            _sfTried = true;
+            try { Promise.resolve(loadThemeLib()).then(function () { styleFill(); }); } catch (e) {}
+            return;
+        }
         if (!lib.length) { bar.style.display = 'none'; return; }
+        _sfTried = false;
         var cur = (document.getElementById('deckTheme') || {}).value || '';
         sel.innerHTML = lib.map(function (t) {
             var nm = t.name || t.label || t.key;
             return '<option value="' + ESC(t.key) + '"' + (t.key === cur ? ' selected' : '') + '>' +
                    ESC(nm) + '</option>';
         }).join('');
-        bar.style.display = '';
+        // 样式表里 #wbStyleBar 初始 display:none，必须显式写 flex ——
+        // 写 '' 会回落到样式表的 none，整条永远不显示（这个坑踩过两次）
+        bar.style.display = 'flex';
     }
     window.wbStyleQuick = function () {
         var sel = document.getElementById('styleQuickSel');
@@ -7135,6 +7145,7 @@ window.addEventListener('resize', function () {
     window.wbAgentFinish = finish;
     window.wbAgentReset = reset;
     window.twSet = twSet;          // paintPartial 内部调用，必须挂全局
+    window.wbStyleFill = styleFill;
     window.twReset = twReset;
 })();
 </script>
