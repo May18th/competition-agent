@@ -675,6 +675,7 @@ def _run_generation(data):
     with lock:
         idea = data.get("idea", "")
         proposal_draft = data.get("proposal_draft", "")
+        mode = data.get("mode", "fast")
 
         state: CompetitionState = {
             "competition_name": data.get("competition_name", ""),
@@ -685,6 +686,10 @@ def _run_generation(data):
             "outline_requirement": data.get("outline_requirement") or [],
             "scoring_weights": data.get("scoring_weights") or [],
             "humanize": data.get("humanize", "standard"),
+            # 档位标记：简洁版=fast / 深度版=deep。competition_agents 里的
+            # _spec_for / _tier_hint 依赖它决定输出规格，漏掉会默认按 deep 处理，
+            # 导致简洁版的评委/诊断/答辩也写得又长又慢，失去两档差异。
+            "tier": "deep" if mode == "deep" else "fast",
             "parsed_rules": "",
             "similarity_report": "",
             "competitor_analysis": "",
@@ -713,7 +718,6 @@ def _run_generation(data):
             "iterate": bool(data.get("iterate", False))
         }
 
-        mode = data.get("mode", "fast")
         if mode == "deep":
             result = _run_graph(deep_app, state)
             # 深度版追加：自动生成表格 / 图表 / 路演PPT（失败不阻断主流程）
