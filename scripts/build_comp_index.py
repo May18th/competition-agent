@@ -230,6 +230,21 @@ def guess_doc_type(key, title, intro):
     return ""
 
 
+# 赛道描述的来源分级（用户硬要求：「每个说明都尽量以官方为主」）。
+# 这个分级会显示给学生，所以不许含糊——没查证过的不能标 official。
+#   official = 有官方出处且已核对原文（章程 / 官方通知）
+#   kb       = 知识库整理（来自官方材料但经过转述，未逐字核对）
+#   derived  = 我们推断的建议，不是官方要求
+TRACK_SRC = {
+    # 官方章程第十九条 + 多所高校 2025 校赛通知互证，已逐条核对
+    "挑战杯": "official",
+}
+TRACK_SRC_NOTE = {
+    "official": "官方原文",
+    "kb": "知识库整理",
+    "derived": "建议（非官方）",
+}
+
 RE_TRACK = re.compile(r"^[(（]?\s*\d+\s*[)）、.]\s*(.+?)\s*[：:]\s*(.+)$")
 
 
@@ -265,6 +280,8 @@ def parse_tracks(key, sec):
             "sections": ext.get("sections", []),
             # 告诉前端：后面这些是我们推导的，不是官方原文，显示时要标注
             "derived": bool(ext),
+            # 描述本身的可信度：只有逐字核对过官方原文的才标 official
+            "src": TRACK_SRC.get(key, "kb"),
         })
     return out
 

@@ -128,7 +128,8 @@
             "应用价值与落地场景",
             "不足与后续计划"
           ],
-          "derived": true
+          "derived": true,
+          "src": "kb"
         },
         {
           "key": "创业",
@@ -154,7 +155,8 @@
             "团队与执行计划",
             "风险与应对"
           ],
-          "derived": true
+          "derived": true,
+          "src": "kb"
         },
         {
           "key": "挑战",
@@ -178,7 +180,8 @@
             "命题指标达成情况",
             "应用前景与迭代计划"
           ],
-          "derived": true
+          "derived": true,
+          "src": "kb"
         }
       ]
     },
@@ -244,7 +247,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "青年红色筑梦之旅",
@@ -255,7 +259,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "职教",
@@ -266,7 +271,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "产业命题",
@@ -277,7 +283,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -342,7 +349,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "能力赛",
@@ -353,7 +361,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -394,7 +403,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "创业训练",
@@ -405,7 +415,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "创业实践",
@@ -416,7 +427,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -486,7 +498,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "乙类",
@@ -497,7 +510,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -557,7 +571,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "视频类",
@@ -568,7 +583,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "动画类",
@@ -579,7 +595,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "互动类",
@@ -590,7 +607,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "广播类",
@@ -601,7 +619,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "策划案类",
@@ -612,7 +631,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "文案类",
@@ -623,7 +643,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -686,7 +707,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "official"
         },
         {
           "key": "哲学社会科学类社会调查报告",
@@ -697,7 +719,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "official"
         },
         {
           "key": "科技发明制作",
@@ -708,7 +731,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "official"
         }
       ]
     },
@@ -823,7 +847,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "自主命题类",
@@ -834,7 +859,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },
@@ -1031,7 +1057,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "微课与AI辅助教学",
@@ -1042,7 +1069,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "物联网应用与物联网创新转化（创业实践）",
@@ -1053,7 +1081,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "大数据应用",
@@ -1064,7 +1093,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "人工智能应用",
@@ -1075,7 +1105,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "信息可视化设计",
@@ -1086,7 +1117,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "数媒静态设计",
@@ -1097,7 +1129,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "数媒动漫与短片",
@@ -1108,7 +1141,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "数媒游戏与交互设计",
@@ -1119,7 +1153,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "计算机音乐创作",
@@ -1130,7 +1165,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         },
         {
           "key": "国际生“汉学”（“中华优秀传统文化”数智创作）",
@@ -1141,7 +1177,8 @@
           "focus": [],
           "avoid": [],
           "sections": [],
-          "derived": false
+          "derived": false,
+          "src": "kb"
         }
       ]
     },

@@ -2673,6 +2673,14 @@ mark.wb-ph {
                     var ti = document.getElementById('evTrackInfo');
                     if (ti && c._track) {
                         var t = c._track, h = '';
+                        // 来源徽章：官方原文 / 知识库整理 / 建议——学生得知道自己在看什么级别的东西
+                        var sm = { official: ['官方原文', '#0E9F6E', '#E7F7F1'],
+                                   kb: ['知识库整理', '#6B7280', '#F3F4F6'],
+                                   derived: ['建议', '#B45309', '#FEF3C7'] }[t.src || 'kb'];
+                        h += '<div style="margin-bottom: 4px;">' +
+                             '<span style="display:inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; ' +
+                             'background: ' + sm[2] + '; color: ' + sm[1] + '; font-weight: 600;">' +
+                             sm[0] + '</span></div>';
                         h += '<div style="color: var(--text-dim);">' + _esc(t.desc) + '</div>';
                         if (t.ban && t.ban.length) {
                             h += '<div style="margin-top: 5px; color: var(--danger, #C0392B); font-weight: 600;">' +
