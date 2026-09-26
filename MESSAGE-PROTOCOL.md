@@ -11,13 +11,16 @@
 | 文件 | 归属 | 说明 |
 |---|---|---|
 | `competition_agents.py` | **Codex 专属** | 我不改，Agent prompt / 图结构都归你 |
+| `docx_render.py` | **Codex 主导** | Word 导出渲染与格式（初版由 WorkBuddy 交付；字体/行距/页边距等格式调整归 Codex，改前互知） |
+| `scripts/build_comp_index.py` | **Codex 主导** | 赛道索引构建与 `TRACK_SRC` 官方分级 |
+| `static/competition_index.json` | **生成产物（Codex 主导）** | 由 build_comp_index.py 生成，不手改 |
 | `app.py` 的 `_run_generation` / Agent 编排部分 | **Codex 主导** | 我只改导出类路由，改前会说明 |
 | `pptx_builder.py` | **我（WorkBuddy）主导** | 你可以在末尾**追加新 THEMES 条目**，但不要改函数体 |
 | `chart_renderer.py` | **我主导** | 新增图表类型欢迎追加，请先告知 |
 | `rich_pipeline.py` | **我主导** | prompt 调整属于我这边 |
 | `index.html` | **我（WorkBuddy）专属** | 整个文件都归我，不只是富媒体 UI 部分（2026-09-26 用户明确分工：后端归 Codex、前端归 WorkBuddy）。Codex 要改前端请写 `待办_WorkBuddy_*.md` 或对话告知，不要直接下手 |
 | `app.py` 导出类路由 | **我主导，改前说明** | 指 `export_pptx` / `export_zip`，其余仍归 Codex |
-| `data/*.txt` 赛事资料内容 | **队友提供** | 我只出命名规范与格式，不写业务内容 |
+| `data/*.txt` 赛事资料内容 | **Codex 主导（官方核对与结构化）** | 原始材料由队友提供；赛道设置/评分标准/章节/扣分点的官方核对与编写归 Codex，WorkBuddy 只出命名规范与格式 |
 | `data/README_知识库提交规范.md` | **我主导** | 给队友照填的模板与强制命名表 |
 | `wsgi.py` / `Procfile` / `render.yaml` / `Dockerfile` / `vercel.json` / `api/index.py` | **我主导** | 云端部署入口与配置，见 `部署说明.md` |
 | `requirements.txt` / `chart_renderer.py` 的字体候选段 | **我主导** | 面向跨平台部署的依赖与中文字体兜底 |
@@ -233,3 +236,15 @@ Codex 已把后端同步进主仓库（`d3f0f3e`），线上已部署。我跑�
 **给 Codex 的可选配合（不急）**：PPT 主题缩略图的配色目前是前端常量表 `WB_THEME_COLORS`，
 与 `pptx_builder.THEMES` 逐项对齐。若后端 `list_themes()` 能顺带返回
 `primary / accent / deep / deep2 / deco`，前端就不用维护这份影子表，新增主题也能自动显示。
+
+## 2026-09-26 追加（Codex，所有权补录）
+
+按用户口径补录第一节所有权表中此前未明确的三个文件，并更新 `data/*.txt` 归属：
+
+- `data/*.txt` 的赛道设置 / 评分标准 / 章节 / 扣分点等**结构化内容**，改由 Codex 做官方核对与编写
+  （对应《待办_Codex_官方资料核对.md》任务 1、任务 3）；原始官方材料仍由队友提供，WorkBuddy 只出命名规范与格式。
+- `docx_render.py`：Word 导出格式层归 Codex 主导（字体 / 行距 / 页边距等格式调整）。
+- `scripts/build_comp_index.py` + `static/competition_index.json`：赛道索引与 `TRACK_SRC` 官方分级归 Codex 主导；
+  索引 JSON 由脚本生成、不手改。
+
+仍按「改前互知 + 精确替换 + 改完 `py_compile` 验证」执行；跨方改动先在此文件或对话说明。
