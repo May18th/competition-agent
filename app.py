@@ -297,11 +297,11 @@ def _seed_kb_if_needed():
         n = 0
         for it in data:
             try:
-                add_sample(it["content"], ",".join(it.get("tags", [])),
-                           source=it.get("source", "种子"),
-                           score=it.get("score", 0),
-                           type="范文",
-                           summary=it.get("summary", ""))
+                add_sample(it["content"], it.get("tags", []),
+                            source=it.get("source", "种子"),
+                            score=it.get("score", 0),
+                            type="范文",
+                            summary=it.get("summary", ""))
                 n += 1
             except Exception:
                 pass
