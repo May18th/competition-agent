@@ -7163,9 +7163,14 @@ window.addEventListener('resize', function () {
     // 3) 虚拟键盘遮挡：输入框/文本域聚焦后，把页面往上顶，让输入框进入视口
     document.addEventListener('focusin', function (e) {
         var t = e.target;
-        if (!t || !/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
-        // 排除 radio/checkbox，否则点「简洁版/深度版」会触发 scrollIntoView 往上跳
-        if (t.type === 'radio' || t.type === 'checkbox') return;
+        if (!t) return;
+        // 只对「会弹出虚拟键盘」的文本类输入滚动；radio/checkbox/button/file 一律不滚
+        var scrollable = (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+        if (t.tagName === 'INPUT' && (!t.type ||
+            ['text', 'number', 'email', 'tel', 'url', 'search', 'password'].indexOf(t.type) >= 0)) {
+            scrollable = true;
+        }
+        if (!scrollable) return;
         setTimeout(function () {
             try { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
             catch (err) { try { t.scrollIntoView(); } catch (e2) {} }
