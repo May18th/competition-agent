@@ -330,9 +330,32 @@
         "拒绝纯概念、简单开源工具打包。"
       ],
       "deduct": "(1)创新薄弱，直接使用开源工具简单二次封装，无自研安全机制 (2)缺少对比测试、攻防验证实验，无法证明防护效果 (3)缺少方案自身的安全漏洞评估 (4)文档描述模糊，原型无法现场演示 (5)使用开源项目不标注，知识产权不清 (6)夸大防护能力，无法通过评委现场攻防测试",
-      "chars": 541,
+      "chars": 592,
       "gaps": [],
-      "tracks": []
+      "tracks": [
+        {
+          "key": "作品赛",
+          "name": "作品赛",
+          "desc": "提交创新安全作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "能力赛",
+          "name": "能力赛",
+          "desc": "CTF 攻防解题，不提交作品申报书。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        }
+      ]
     },
     {
       "key": "国创",
@@ -356,12 +379,46 @@
         "证书：国创为国家级结题证书；竞赛为金银铜获奖证书。"
       ],
       "deduct": "(1)选题空洞、无实际研究价值 (2)技术路线不清晰、目标过大难以完成 (3)缺乏创新性，重复已有项目 (4)团队投入不足、分工不明、无导师指导",
-      "chars": 674,
+      "chars": 784,
       "gaps": [
         "评分标准",
         "章节要求"
       ],
-      "tracks": []
+      "tracks": [
+        {
+          "key": "创新训练",
+          "name": "创新训练",
+          "desc": "科研项目训练，周期 1-2 年，给予国家经费支持。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "创业训练",
+          "name": "创业训练",
+          "desc": "创业准备训练，周期 1-2 年，给予国家经费支持。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "创业实践",
+          "name": "创业实践",
+          "desc": "创业实践落地，周期 1-2 年，给予国家经费支持。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        }
+      ]
     },
     {
       "key": "小挑",
@@ -417,9 +474,32 @@
         "备赛产出：大挑核心是研究报告 + 实验数据；小挑核心是商业计划书"
       ],
       "deduct": "(1)商业模式不成立，盈利路径不清晰 (2)市场分析缺乏数据支撑，规模估算拍脑袋 (3)财务预测与融资计划不合理 (4)竞品分析不到位，差异化不突出 (5)团队分工与股权结构不合理",
-      "chars": 621,
+      "chars": 664,
       "gaps": [],
-      "tracks": []
+      "tracks": [
+        {
+          "key": "甲类",
+          "name": "甲类",
+          "desc": "已注册企业的项目。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "乙类",
+          "name": "乙类",
+          "desc": "创意项目，尚未注册企业。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        }
+      ]
     },
     {
       "key": "广告艺术",
@@ -465,9 +545,87 @@
         "有社会话题度、易传播"
       ],
       "deduct": "- 创意平庸、同质化 - 与命题策略单脱节 - 制作粗糙、表现力弱 - 缺乏策略支撑、创意说明空洞",
-      "chars": 557,
+      "chars": 660,
       "gaps": [],
-      "tracks": []
+      "tracks": [
+        {
+          "key": "平面类",
+          "name": "平面类",
+          "desc": "平面设计作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "视频类",
+          "name": "视频类",
+          "desc": "视频作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "动画类",
+          "name": "动画类",
+          "desc": "动画作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "互动类",
+          "name": "互动类",
+          "desc": "互动作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "广播类",
+          "name": "广播类",
+          "desc": "广播作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "策划案类",
+          "name": "策划案类",
+          "desc": "策划案作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "文案类",
+          "name": "文案类",
+          "desc": "文案作品。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        }
+      ]
     },
     {
       "key": "挑战杯",
@@ -653,9 +811,32 @@
         "团队协作规范、有完整交付物"
       ],
       "deduct": "- 方案与需求脱节 - 功能不完整、无演示 - 忽视商业可行性 - 交付物缺失、文档不规范",
-      "chars": 561,
+      "chars": 610,
       "gaps": [],
-      "tracks": []
+      "tracks": [
+        {
+          "key": "企业命题类",
+          "name": "企业命题类",
+          "desc": "围绕企业发布的真实需求命题。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        },
+        {
+          "key": "自主命题类",
+          "name": "自主命题类",
+          "desc": "团队自主选题。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false
+        }
+      ]
     },
     {
       "key": "电子设计",
