@@ -60,6 +60,12 @@ def init_db():
     cols = [r[1] for r in c.execute("PRAGMA table_info(history)").fetchall()]
     if "rating" not in cols:
         c.execute("ALTER TABLE history ADD COLUMN rating INTEGER DEFAULT 0")
+    # 用户反馈表：结果页打分旁的文本框，纯文本收集，不做通知/回复系统
+    c.execute('''CREATE TABLE IF NOT EXISTS feedback
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  history_id INTEGER,
+                  content TEXT NOT NULL,
+                  created_time TEXT)''')
     conn.commit()
     conn.close()
 
@@ -652,6 +658,44 @@ def rate_history(history_id):
     if not updated:
         return jsonify({"success": False, "error": "记录不存在"}), 404
     return jsonify({"success": True, "id": history_id, "rating": rating})
+
+
+@app.route('/api/feedback', methods=['POST'])
+def add_feedback():
+    """收集用户反馈：结果页文本框 + 提交按钮，纯文本入库，后台直接看。"""
+    payload = request.get_json(silent=True) or {}
+    content = str(payload.get("content") or "").strip()
+    if not content:
+        return jsonify({"success": False, "error": "反馈内容不能为空"}), 400
+    if len(content) > 2000:
+        content = content[:2000]
+    history_id = payload.get("history_id")
+    try:
+        history_id = int(history_id) if history_id not in (None, "") else None
+    except (TypeError, ValueError):
+        history_id = None
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO feedback (history_id, content, created_time) VALUES (?, ?, ?)",
+              (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+    conn.commit()
+    new_id = c.lastrowid
+    conn.close()
+    return jsonify({"success": True, "id": new_id})
+
+
+@app.route('/api/feedback')
+def list_feedback():
+    """后台查看全部反馈（最新的在前，封顶 500 条）。"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, history_id, content, created_time FROM feedback "
+        "ORDER BY id DESC LIMIT 500").fetchall()
+    conn.close()
+    items = [dict(r) for r in rows]
+    return jsonify({"success": True, "feedback": items, "total": len(items)})
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
