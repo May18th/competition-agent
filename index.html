@@ -1591,6 +1591,27 @@ mark.wb-ph {
                     </div>
                 </div>
 
+                <!-- 实测数据（选填）：后端 user_data 是最高优先级事实来源，填了的数字正文标「实测值」，
+                     没填的部分才按测算值生成（图表里橙色标出）。整块可选，手机上默认折叠，不占首屏 -->
+                <div class="form-group">
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 实测数据<span class="wb-opt">（选填，强烈建议：填了正文用真数）</span></label>
+                    <div onclick="wbAdvToggle('userDataBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
+                        填写试点数据 / 测试结果（可选）<span id="userDataBodyArrow">▾</span>
+                    </div>
+                    <div id="userDataBody">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
+                            <input type="text" id="udSite" placeholder="试点单位 / 落地场景：如 xx大学后勤处" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            <input type="text" id="udScale" placeholder="测试用户数 / 样本量：如 内测 120 人" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            <input type="text" id="udMetric" placeholder="实测指标：如 识别准确率 93.7%、响应 1.2 秒" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            <input type="text" id="udCost" placeholder="成本：如 单套硬件 260 元" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                        </div>
+                        <textarea id="udExtra" rows="2" placeholder="其它佐证（选填）：合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px; margin-top: 10px;"></textarea>
+                        <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
+                            填了的数字，正文会原文采用并标注「实测值」；没填的部分仍按测算值生成（图表里橙色标出），导出前请替换成你的真数。
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 关键词<span class="wb-opt">（可选，用于匹配范文库中同类型的示范写法）</span></label>
                     <input type="text" id="keywords" placeholder="关键词（选填，逗号分隔）：如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
@@ -2648,7 +2669,8 @@ mark.wb-ph {
 
         /* ---------- 表单自动保存：刷新 / 关掉再打开不丢 ---------- */
         var WB_FORM_KEY = 'wbFormDraft';
-        var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft'];
+        var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft',
+            'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
 
         var WB_SAVE_OFF = false;   // 清空表单期间抑制自动保存，否则刚删又被写回
         function wbSaveForm() {
@@ -2717,7 +2739,7 @@ mark.wb-ph {
                 var mins = d._t ? Math.max(1, Math.round((Date.now() - d._t) / 60000)) : 0;
                 var ago = mins >= 60 ? (Math.round(mins / 60) + ' 小时前') : (mins + ' 分钟前');
                 var tx = document.getElementById('wbRestoreText');
-                if (tx) tx.textContent = '已恢复上次填写的内容（' + ago + '）：赛事名称、创意、关键词、草稿';
+                if (tx) tx.textContent = '已恢复上次填写的内容（' + ago + '）：赛事名称、创意、实测数据、关键词、草稿';
                 box.style.display = 'flex';
             }
         }
@@ -5611,6 +5633,24 @@ mark.wb-ph {
                 })
                 .catch(function () {});
         }
+        // ---- 实测数据：拼给后端的 user_data（纯文本，后端按最高优先级事实来源注入 prompt）----
+        // 后端是 str(ud)[:3000] 直接进 prompt，所以这里拼成「字段名：值」的自然文本，别传对象（会被 str() 成字典样子）
+        var WB_UD_FIELDS = [
+            ['udSite', '试点单位/落地场景'], ['udScale', '测试用户数/样本量'],
+            ['udMetric', '实测指标'], ['udCost', '成本']
+        ];
+        function wbUserDataText() {
+            var lines = [];
+            WB_UD_FIELDS.forEach(function (f) {
+                var el = document.getElementById(f[0]);
+                var v = el ? String(el.value || '').trim() : '';
+                if (v) lines.push(f[1] + '：' + v);
+            });
+            var ex = document.getElementById('udExtra');
+            if (ex && String(ex.value || '').trim()) lines.push('其它佐证：' + String(ex.value || '').trim());
+            return lines.join('\n');
+        }
+
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
@@ -5663,6 +5703,9 @@ mark.wb-ph {
                         ? ((document.querySelector('input[name=humanize]:checked') || {}).value || 'standard')
                         : 'standard'),
                     keywords: (document.getElementById('keywords') || {}).value || '',
+                    // 用户实测数据：后端注入为最高优先级事实来源，给了的数字原文使用并标「实测值」，
+                    // 没给的才用测算值。全空就传空串，后端 _user_data_ref 返回空、不影响原有链路
+                    user_data: wbUserDataText(),
                     // 赛事官方文件：后端已有 rule_content 链路，这里把前端口子接上
                     // 官方文件文本 + 赛道规则：后端 rule_content 直接进 prompt，不用改后端
                     rule_content: (function () {
@@ -7271,7 +7314,7 @@ function evToggleBody() {
 }
 function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-    ['kbAdvBody', 'draftAdvBody', 'evBody'].forEach(function (id) {
+    ['kbAdvBody', 'draftAdvBody', 'evBody', 'userDataBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;
