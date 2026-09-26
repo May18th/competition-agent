@@ -1746,17 +1746,15 @@ mark.wb-ph {
                     你选的赛道是<b>双盲评审</b>，材料里出现学校、导师信息<b>直接扣分</b>。请删掉后再导出。
                 </div>
             </div>
+                <!-- 一句话定位 -->
+                <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                    <div style="font-size: 14px; color: var(--info-strong); font-weight: 600; margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一句话项目定位<span class="wb-opt">（路演开场用）</span></div>
+                    <div id="oneLiner" style="font-size: 16px; color: var(--info-text); line-height: 1.6;"></div>
+                </div>
+                <!-- 申报书章节完整性校验 -->
+                <div id="completenessBox" style="display: none; margin-bottom: 16px; padding: 14px 16px; border-radius: 8px; font-size: 13.5px;"></div>
                 </div>
             </details>
-
-            <!-- 一句话定位 -->
-            <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-                <div style="font-size: 14px; color: var(--info-strong); font-weight: 600; margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一句话项目定位<span class="wb-opt">（路演开场用）</span></div>
-                <div id="oneLiner" style="font-size: 16px; color: var(--info-text); line-height: 1.6;"></div>
-            </div>
-
-            <!-- 申报书章节完整性校验（数据来自 generate 返回的 completeness） -->
-            <div id="completenessBox" style="display: none; margin-bottom: 20px; padding: 14px 16px; border-radius: 8px; font-size: 13.5px;"></div>
 
             <div style="margin-bottom: 20px; text-align: right;">
 
@@ -3023,7 +3021,7 @@ mark.wb-ph {
             deduct: "通用结构：可在上方卡片里增删改章节，生成会按你改的来"
         };
 
-        // 当前文档名词（申报书 / 作品说明书 / 商业计划书），全站文案跟着它走
+        // 当前文档名词（申报书 / 应用方案 / 商业计划书，按比赛官方提交物为准），全站文案跟着它走
         var WB_DOC_LABEL = '申报书';
 
         // ---- 赛事官方资料索引：选比赛就立刻看到真实资料，不等生成 ----
