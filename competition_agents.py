@@ -801,13 +801,33 @@ def _is_repetitive(text, threshold=4):
 
 def _dedupe_consecutive(text):
     """确定性折叠连续重复的句子（模型复读时的终极兜底，不依赖模型配合）。"""
-    parts = re.split(r'(?<=[。！？!?])\s*', text or '')
+    # 注意：不能把句末标点后的空白（换行）吃掉，否则会把「## 痛点分析」这类
+    # Markdown 标题粘到上一句末尾，导致导出的 Word/PDF 只剩一个章节标题。
+    parts = re.split(r'(?<=[。！？!?])', text or '')
     out = []
     for p in parts:
         if out and p.strip() and p.strip() == out[-1].strip():
             continue
         out.append(p)
     return ''.join(out).strip()
+
+
+def _normalize_markdown_headings(text):
+    """确保 Markdown 二级标题（## x）独立成行：模型偶尔会把标题粘到上一句末尾。
+
+    例如「……做量化对比。## 痛点分析」会被拆成「……做量化对比。\\n\\n## 痛点分析」。
+    只处理 ## 二级标题（正文分节用）；本身是标题的行（以 # 开头）不动，避免拆坏三级标题。
+    """
+    if not text:
+        return text
+    out = []
+    for line in str(text).split('\n'):
+        s = line.strip()
+        if not s or s.startswith('#'):
+            out.append(line)
+            continue
+        out.append(re.sub(r'(?<=[^\s#])##[ \t]+', '\n\n## ', line))
+    return '\n'.join(out)
 
 
 def _expand_to_length(text, min_chars, topic, rounds=2):
@@ -1420,7 +1440,7 @@ def _stream_llm_guarded(prompt, field, max_retry=1):
     if _is_repetitive(text):
         print(f"[antiloop] {field} 重跑后仍复读，执行确定性折叠")
         text = _dedupe_consecutive(text)
-    return text
+    return _normalize_markdown_headings(text)
 
 
 def _build_outline(state: CompetitionState) -> str:
