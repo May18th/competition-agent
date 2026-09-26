@@ -1288,6 +1288,7 @@ mark.wb-ph {
                         </div>
                         <div id="evSections" style="font-size: 13px;"></div>
                         <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
+                        <div id="evProfileTip" style="display: none; font-size: 12.5px; line-height: 1.8;"></div>
                         <div id="evDeduct" style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                         <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                         <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -2455,6 +2456,14 @@ mark.wb-ph {
             try { wbRoadLabel(); } catch (e) {}
         })();
 
+        // 当前赛事名：后端靠它做「按官方章节排序」和「iCAN 双盲隐去学校/导师」，
+        // 不传这两件事都不生效。取输入框优先，没有再退回本轮生成时记下的赛事名。
+        function wbCompName() {
+            var v = (document.getElementById('competition') || {}).value || '';
+            if (v && String(v).trim()) return String(v).trim();
+            return (window._lastData || {}).competition || '';
+        }
+
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
@@ -2467,6 +2476,7 @@ mark.wb-ph {
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({title: name, text: text,
                         doc_type: _DOC_TYPE[id] || 'report',
+                        competition_name: wbCompName(),
                         school: m.school, team: m.team, advisor: m.advisor})
                 });
                 if (!res.ok) {
@@ -2493,7 +2503,8 @@ mark.wb-ph {
                 const res = await fetch('/api/export_pdf', {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({title: name, text: text})
+                    body: JSON.stringify({title: name, text: text,
+                        competition_name: wbCompName()})
                 });
                 if (!res.ok) {
                     var m = 'PDF导出失败';
@@ -2543,6 +2554,8 @@ mark.wb-ph {
                 rich_tables: rd.rich_tables || [],
                 rich_deck: deck,
                 idea: rd.idea || (document.getElementById('idea') || {}).value || '',
+                // 打包里的 Word 同样要按赛事章节排序 / 走 iCAN 双盲，漏了就退化成默认顺序
+                competition_name: wbCompName(),
                 // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
                 theme: tk || (deck && deck.theme) || null,
                 variant: vk || (deck && deck.variant) || null,
@@ -2644,7 +2657,8 @@ mark.wb-ph {
                 sections: ["一、项目概述", "二、市场与需求分析", "三、项目创新性分析",
                            "四、技术方案与系统架构", "五、产品形态与现场演示方案",
                            "六、商业模式", "七、实施路径与团队规划", "八、与大赛评审标准对标", "结语"],
-                scoring: [["创新性", 30], ["实用性", 25], ["技术难度", 20], ["团队展示", 15], ["社会价值", 10]],
+                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/技术实现30/实用价值20/用户体验10/应用前景10
+                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["应用前景", 10]],
                 deduct: "扣分点：缺乏原创性 / 技术方案空洞 / 只讲概念没有 demo / 章节缺失 / 痛点无数据"
             },
             "挑战杯全国大学生课外学术科技作品竞赛": {
@@ -2701,6 +2715,48 @@ mark.wb-ph {
                 .catch(function () { /* 拉不到就用缓存，再不行回落内置规则 */ });
         }
 
+        /* ---------- 赛事结构化配置（后端 data/competition_profiles.json） ----------
+           15 个比赛的官方章节顺序 / 评分重点 / 赛事侧重 / 是否双盲都在这一份里。
+           前端拉一次缓存起来，赛事卡与评分展示优先用它，避免后端改了 JSON 前端还写死旧口径。
+           优先级：知识库资料索引（真实资料）> 本配置 > 前端内置 EVENT_REQ。 */
+        var WB_COMP_PROFILES = null;
+        var WB_COMP_PROF_KEY = 'wbCompProfilesV1';
+
+        function wbLoadProfiles() {
+            try {
+                var c = JSON.parse(localStorage.getItem(WB_COMP_PROF_KEY) || 'null');
+                if (c && c.length) WB_COMP_PROFILES = c;
+            } catch (e) {}
+            fetch('/api/competition_profiles', { cache: 'no-cache' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (!d || !d.success || !d.competitions || !d.competitions.length) return;
+                    WB_COMP_PROFILES = d.competitions;
+                    try { localStorage.setItem(WB_COMP_PROF_KEY, JSON.stringify(d.competitions)); } catch (e) {}
+                    try { renderEventCard(); } catch (e) {}
+                })
+                .catch(function () { /* 拉不到就用缓存 / 回落到内置规则 */ });
+        }
+
+        function wbMatchProfile(name) {
+            if (!WB_COMP_PROFILES || !WB_COMP_PROFILES.length) return null;
+            var n = String(name || '').toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+            if (!n) return null;
+            var best = null, bs = 0;
+            WB_COMP_PROFILES.forEach(function (it) {
+                var keys = [it.name].concat(it.aliases || []);
+                var s = 0;
+                keys.forEach(function (k) {
+                    var kk = String(k || '').toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+                    if (!kk) return;
+                    if (n === kk) s = Math.max(s, 100);
+                    else if (n.indexOf(kk) >= 0 || kk.indexOf(n) >= 0) s = Math.max(s, 80);
+                });
+                if (s > bs) { bs = s; best = it; }
+            });
+            return bs >= 80 ? best : null;
+        }
+
         // 从索引匹配赛事：keys 完全相等优先，其次互相包含；取最优命中，避免「挑战杯」串到小挑
         function wbMatchIndex(name) {
             if (!WB_COMP_INDEX || !WB_COMP_INDEX.items) return null;
@@ -2721,16 +2777,27 @@ mark.wb-ph {
         }
 
         // 官方资料 + 内置规则合并：官方优先，官方缺哪块就用内置的补哪块
-        function wbMergeEvent(idx, req) {
+        function wbMergeEvent(idx, req, prof) {
             var base = req || EV_DEFAULT;
+            // 章节：官方资料 > 结构化配置 > 内置规则 > 通用结构
+            var sec = null;
+            if (idx && idx.sections && idx.sections.length) sec = idx.sections;
+            else if (prof && prof.chapters && prof.chapters.length) sec = prof.chapters;
+            else sec = base.sections;
+            // 评分：同理，profiles 里是官方口径（如 iCAN 创新性30/技术实现30…）
+            var sco = null;
+            if (idx && idx.scoring && idx.scoring.length) sco = idx.scoring;
+            else if (prof && prof.scoring && prof.scoring.length) sco = prof.scoring;
+            else sco = base.scoring;
             return {
                 label: (idx && idx.doc_type) || base.label,
                 doc_type: (idx && idx.doc_type) || base.doc_type,
-                sections: ((idx && idx.sections && idx.sections.length) ? idx.sections : base.sections).slice(),
-                scoring: ((idx && idx.scoring && idx.scoring.length) ? idx.scoring : base.scoring),
+                sections: sec.slice(),
+                scoring: sco,
                 deduct: (idx && idx.deduct) || base.deduct,
                 _idx: idx || null,
-                _src: idx ? 'index' : (req ? 'builtin' : 'default')
+                _prof: prof || null,
+                _src: idx ? 'index' : (prof ? 'profile' : (req ? 'builtin' : 'default'))
             };
         }
 
@@ -2749,8 +2816,9 @@ mark.wb-ph {
                 }
                 if (builtin) break;
             }
-            if (!idx && !builtin) return null;
-            return wbMergeEvent(idx, builtin);
+            var prof = wbMatchProfile(name);
+            if (!idx && !prof && !builtin) return null;
+            return wbMergeEvent(idx, builtin, prof);
         }
 
         function evCurrent() {
@@ -2778,7 +2846,8 @@ mark.wb-ph {
 
             return { label: base.label, doc_type: base.doc_type, sections: sections,
                      scoring: base.scoring, deduct: base.deduct, key: key,
-                     _idx: base._idx || null, _src: base._src || 'default',
+                     _idx: base._idx || null, _prof: base._prof || null,
+                     _src: base._src || 'default',
                      _track: tk, _tracks: tracks };
         }
 
@@ -2879,6 +2948,20 @@ mark.wb-ph {
                     (c.scoring || []).map(function (x) {
                         return x[0] + ' ' + x[1] + '%';
                     }).join(' · ');
+            }
+            // 赛事结构化配置带来的两条硬信息：双盲（iCAN 封面不能出现学校/导师）与官方侧重
+            var pf = document.getElementById('evProfileTip');
+            if (pf) {
+                var p = c._prof, h = '';
+                if (p && p.double_blind) {
+                    h += '<div style="margin-top: 6px; color: var(--danger, #C0392B); font-weight: 600;">' +
+                         '⚠ 本赛事双盲评审：导出封面自动隐去学校 / 单位 / 指导老师，只保留团队信息</div>';
+                }
+                if (p && p.focus) {
+                    h += '<div style="margin-top: 4px; color: var(--text-dim);">赛事侧重：' + _esc(p.focus) + '</div>';
+                }
+                pf.innerHTML = h;
+                pf.style.display = h ? 'block' : 'none';
             }
             // 赛道选择：无赛道数据的赛事整块隐藏，不留空壳
             var tb = document.getElementById('evTrackBox');
@@ -5829,6 +5912,8 @@ mark.wb-ph {
         loadKnowledgeStatus();
         // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
         wbLoadCompIndex();
+        // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
+        wbLoadProfiles();
         checkHealth();
         setInterval(checkHealth, 30000);
 

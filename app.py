@@ -1153,9 +1153,24 @@ def export_zip():
     os.makedirs(tmpdir, exist_ok=True)
     zippath = os.path.join(tmpdir, '科创赛事项目材料包.zip')
 
+    # 素材打包里的申报书也要按官方章节排序 / 走 iCAN 双盲，
+    # 否则单独下载是官方顺序、打包里又是另一套顺序，用户会以为系统不稳定。
+    comp = (data.get('competition_name') or '').strip()
+
     def build_doc(title, text):
         dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
-        return _build_docx(title, text, doc_type=dt)
+        tt = text
+        is_prop = ('申报书' in title)
+        if comp and is_prop:
+            order = _official_chapter_titles(comp)
+            if order:
+                tt = _reorder_markdown_by_chapters(tt, order)
+        return _build_docx(title, tt, doc_type=dt,
+                           subtitle=comp if is_prop else None,
+                           school=data.get('school'),
+                           team=data.get('team'),
+                           advisor=data.get('advisor'),
+                           competition_name=comp if is_prop else None)
 
     with zipfile.ZipFile(zippath, 'w', zipfile.ZIP_DEFLATED) as zf:
         for filename, title, text in mappings:
@@ -1246,6 +1261,24 @@ def competition_profiles():
     try:
         from competition_agents import get_competition_profiles
         return jsonify({"success": True, "competitions": get_competition_profiles()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/competition/index')
+def competition_index():
+    """动态赛事索引：直接解析 data/*.txt，返回与 static/competition_index.json 同构的数据。
+
+    这样改完 txt 不需要重跑 scripts/build_comp_index.py，前端可优先调接口、失败回退静态 JSON。
+    """
+    try:
+        import importlib.util
+        _script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "scripts", "build_comp_index.py")
+        spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return jsonify({"success": True, **mod.build_index()})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
