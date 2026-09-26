@@ -1002,6 +1002,25 @@ button:hover { transform: translateY(-1px); }
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                         这个赛事名不在内置清单里也没关系，会按通用科创赛事标准生成。
                     </div>
+
+                    <!-- 赛事要求卡：跟着赛事名自动切换文档类型与章节结构，可直接改 -->
+                    <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+                            <div style="font-size: 14px; font-weight: 600; color: var(--text);">
+                                本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button onclick="evAddSection()" style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">+ 加一章</button>
+                                <button onclick="evReset()" style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">恢复默认</button>
+                            </div>
+                        </div>
+                        <div id="evSections" style="font-size: 13px;"></div>
+                        <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
+                        <div id="evDeduct" style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
+                        <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute);">
+                            章节可直接改，生成会按这份结构来（改动只存在你这台设备）。
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 赛事规则</label>
@@ -1040,6 +1059,10 @@ button:hover { transform: translateY(-1px); }
                         <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
                             <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 粘贴文本
                         </button>
+                        <button onclick="document.getElementById('tplFile').click()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 导入模板（按它的章节写）
+                        </button>
+                        <input type="file" id="tplFile" accept=".docx,.doc,.pdf,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                         <!-- accept 同时给扩展名和 MIME：只写扩展名时，部分手机（尤其 iOS/微信）
                              会把选择器退化成「照片 / 视频」，选不到 PDF 和 Word -->
                         <input type="file" id="ideaFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
@@ -1643,6 +1666,55 @@ button:hover { transform: translateY(-1px); }
             }
         }
 
+        // 导入模板：上传官方/学校的模板文件 → 自动识别章节 → 填进赛事要求卡
+        // 复用 /api/upload_pdf 抽文本，前端用正则抽标题，不用新增后端接口
+        document.getElementById('tplFile').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            var tip = document.getElementById('ideaFileName');
+            if (tip) tip.innerText = '正在识别模板章节：' + file.name;
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const d = await res.json();
+                if (!d || !d.success) {
+                    if (tip) tip.innerText = '模板识别失败：' + ((d && d.error) || '未知错误');
+                    wbToast('模板识别失败：' + ((d && d.error) || '未知错误'), { type: 'error' });
+                    return;
+                }
+                var lines = String(d.text || '').split('\n');
+                var pats = [/^\s*第?[一二三四五六七八九十]+[章节][、.\s]*.{1,40}$/,
+                            /^\s*[一二三四五六七八九十]+、.{1,40}$/,
+                            /^\s*（[一二三四五六七八九十]+）.{1,40}$/,
+                            /^\s*\d+[、.]\s*.{1,40}$/];
+                var secs = [];
+                lines.forEach(function (ln) {
+                    var t = String(ln).trim();
+                    if (!t || t.length > 46) return;
+                    for (var i = 0; i < pats.length; i++) {
+                        if (pats[i].test(t)) { secs.push(t); break; }
+                    }
+                });
+                if (!secs.length) {
+                    if (tip) tip.innerText = '没从模板里认出章节标题，请先确认模板里有「一、xxx」这类标题';
+                    wbToast('没认出章节标题，模板里需要有「一、项目概述」这类编号标题', { type: 'warn' });
+                    return;
+                }
+                var c = evCurrent();
+                c.sections = secs.slice(0, 20);
+                try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (err) {}
+                renderEventCard();
+                var card = document.getElementById('eventReqCard');
+                if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (tip) tip.innerText = '已按《' + file.name + '》识别 ' + c.sections.length + ' 个章节';
+                wbToast('已导入 ' + c.sections.length + ' 个章节，生成会按模板结构写（可在要求卡里改）', { type: 'ok', ms: 3600 });
+            } catch (err) {
+                if (tip) tip.innerText = '模板识别失败：连不上服务';
+                wbToast('模板识别失败：连不上服务', { type: 'error' });
+            }
+        });
+
         document.getElementById('ideaFile').addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -1845,6 +1917,16 @@ button:hover { transform: translateY(-1px); }
             for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', wbSaveForm);
         })();
         wbLoadForm();
+        // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
+        // 并顺带把「赛事要求卡」渲染出来
+        (function () {
+            var el = document.getElementById('competition');
+            if (el && !String(el.value || '').trim()) {
+                el.value = 'iCAN大学生创新创业大赛';
+                try { wbSaveForm(); } catch (e) {}
+            }
+            try { onCompetitionChange(); } catch (e) {}
+        })();
         // 首次进入自动弹一次引导（手机/电脑两套内容），勾了「不再弹出」就写进 localStorage
         try { showIntro(); } catch (e) {}
 
@@ -2035,6 +2117,163 @@ button:hover { transform: translateY(-1px); }
             setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 240);
         }
 
+        /* ---------- 赛事要求卡：跟着赛事名自动换文档类型与章节结构 ---------- */
+        // 数据与 data/event_requirements.json 同源（改那边记得同步这里）
+        var EVENT_REQ = {
+            "iCAN大学生创新创业大赛": {
+                label: "作品说明书", doc_type: "作品说明书（参赛项目计划书）",
+                alias: ["ican", "ican大赛", "ican大学生", "创新创业"],
+                sections: ["一、项目概述", "二、市场与需求分析", "三、项目创新性分析",
+                           "四、技术方案与系统架构", "五、产品形态与现场演示方案",
+                           "六、商业模式", "七、实施路径与团队规划", "八、与大赛评审标准对标", "结语"],
+                scoring: [["创新性", 30], ["实用性", 25], ["技术难度", 20], ["团队展示", 15], ["社会价值", 10]],
+                deduct: "扣分点：缺乏原创性 / 技术方案空洞 / 只讲概念没有 demo / 章节缺失 / 痛点无数据"
+            },
+            "挑战杯全国大学生课外学术科技作品竞赛": {
+                label: "申报书", doc_type: "申报书（学术论文 / 科技发明类）",
+                alias: ["挑战杯", "课外学术科技作品"],
+                sections: ["一、项目概述", "二、国内外研究现状", "三、研究内容与方法",
+                           "四、创新点与成果", "五、应用前景与社会价值", "六、团队与进度安排"],
+                scoring: [["科学性", 30], ["先进性", 30], ["现实意义", 40]],
+                deduct: "扣分点：缺少文献综述 / 创新点不清晰 / 无数据或实验支撑"
+            },
+            "中国国际互联网+大学生创新创业大赛": {
+                label: "商业计划书", doc_type: "商业计划书",
+                alias: ["互联网+", "互联网+大赛", "中国国际大学生创新大赛"],
+                sections: ["一、项目概述", "二、市场分析", "三、产品与技术方案", "四、商业模式",
+                           "五、财务预测与融资计划", "六、团队与教育维度", "七、社会价值"],
+                scoring: [["商业性", 30], ["创新性", 25], ["团队", 20], ["就业与社会价值", 15], ["引领教育", 10]],
+                deduct: "扣分点：商业模式不成立 / 财务数据拍脑袋 / 缺少教育维度"
+            }
+        };
+        var EV_DEFAULT = {
+            label: "申报书", doc_type: "申报书（通用科创赛事结构）",
+            sections: ["一、项目概述", "二、项目背景与痛点分析", "三、解决方案与技术方案",
+                       "四、核心创新点", "五、应用场景与市场分析", "六、商业模式",
+                       "七、团队介绍与分工", "八、社会价值与应用前景"],
+            scoring: [["创新性", 30], ["实用性", 25], ["技术难度", 20], ["团队展示", 15], ["社会价值", 10]],
+            deduct: "通用结构：可在上方卡片里增删改章节，生成会按你改的来"
+        };
+
+        // 当前文档名词（申报书 / 作品说明书 / 商业计划书），全站文案跟着它走
+        var WB_DOC_LABEL = '申报书';
+
+        function wbMatchEvent(name) {
+            var n = String(name || '').toLowerCase().replace(/[""'']/g, '');
+            if (!n) return null;
+            for (var k in EVENT_REQ) {
+                if (n === k.toLowerCase()) return EVENT_REQ[k];
+                var al = EVENT_REQ[k].alias || [];
+                for (var i = 0; i < al.length; i++) {
+                    if (n.indexOf(al[i]) >= 0 || al[i].indexOf(n) >= 0) return EVENT_REQ[k];
+                }
+            }
+            return null;
+        }
+
+        function evCurrent() {
+            var name = (document.getElementById('competition') || {}).value || '';
+            var req = wbMatchEvent(name);
+            var key = 'wbEventReq_' + (req ? (req.label + name) : name);
+            var custom = null;
+            try { custom = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
+            if (custom && custom.sections && custom.sections.length) {
+                return { label: (req || EV_DEFAULT).label, doc_type: (req || EV_DEFAULT).doc_type,
+                         sections: custom.sections, scoring: (req || EV_DEFAULT).scoring,
+                         deduct: (req || EV_DEFAULT).deduct, key: key };
+            }
+            var r = req || EV_DEFAULT;
+            return { label: r.label, doc_type: r.doc_type, sections: r.sections.slice(),
+                     scoring: r.scoring, deduct: r.deduct, key: key };
+        }
+
+        function evSave() {
+            var c = evCurrent();
+            var boxes = document.querySelectorAll('#evSections input.ev-sec');
+            var arr = [];
+            for (var i = 0; i < boxes.length; i++) {
+                var v = boxes[i].value.trim();
+                if (v) arr.push(v);
+            }
+            c.sections = arr;
+            try { localStorage.setItem(c.key, JSON.stringify({ sections: arr })); } catch (e) {}
+        }
+
+        function evAddSection() {
+            evSave();
+            var c = evCurrent();
+            c.sections.push('新章节 ' + (c.sections.length + 1));
+            try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
+            renderEventCard();
+        }
+
+        function evDelSection(i) {
+            evSave();
+            var c = evCurrent();
+            c.sections.splice(i, 1);
+            try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
+            renderEventCard();
+        }
+
+        function evReset() {
+            var c = evCurrent();
+            try { localStorage.removeItem(c.key); } catch (e) {}
+            renderEventCard();
+        }
+
+        function renderEventCard() {
+            var card = document.getElementById('eventReqCard');
+            if (!card) return;
+            var c = evCurrent();
+            // 文档名换了 → 全站文案跟着换
+            WB_DOC_LABEL = c.label || '申报书';
+            wbApplyDocName();
+
+            var dt = document.getElementById('evDocType');
+            if (dt) dt.textContent = c.doc_type || WB_DOC_LABEL;
+
+            var box = document.getElementById('evSections');
+            if (box) {
+                box.innerHTML = c.sections.map(function (s, i) {
+                    return '<div style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px;">' +
+                        '<span style="color: var(--text-mute); flex: 0 0 auto;">' + (i + 1) + '.</span>' +
+                        '<input class="ev-sec" value="' + _esc(s) + '" onchange="evSave()" style="flex: 1; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 13px;">' +
+                        '<button onclick="evDelSection(' + i + ')" style="flex: 0 0 auto; padding: 4px 8px; background: transparent; color: var(--text-mute); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">删</button>' +
+                        '</div>';
+                }).join('');
+            }
+
+            var sc = document.getElementById('evScoring');
+            if (sc) {
+                sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
+                    (c.scoring || []).map(function (x) {
+                        return x[0] + ' ' + x[1] + '%';
+                    }).join(' · ');
+            }
+            var dd = document.getElementById('evDeduct');
+            if (dd) dd.textContent = c.deduct || '';
+            card.style.display = 'block';
+        }
+
+        // 全站把「申报书」替换成当前文档名（文本节点 + placeholder，可来回切换）
+        function wbApplyDocName() {
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            var nodes = [];
+            while (walker.nextNode()) nodes.push(walker.currentNode);
+            nodes.forEach(function (n) {
+                if (n._wbOrig === undefined) n._wbOrig = n.nodeValue;   // 备份原文，切回去才回得来
+                if (n._wbOrig.indexOf('申报书') >= 0) {
+                    n.nodeValue = n._wbOrig.replace(/申报书/g, WB_DOC_LABEL);
+                }
+            });
+            var ph = document.querySelectorAll('[placeholder*="申报书"]');
+            for (var i = 0; i < ph.length; i++) {
+                var el = ph[i];
+                if (el._wbPhOrig === undefined) el._wbPhOrig = el.getAttribute('placeholder');
+                el.setAttribute('placeholder', el._wbPhOrig.replace(/申报书/g, WB_DOC_LABEL));
+            }
+        }
+
         // 点热门赛事 chip 填入，并触发一次知识库状态刷新
         function wbPickComp(name) {
             var el = document.getElementById('competition');
@@ -2136,7 +2375,10 @@ button:hover { transform: translateY(-1px); }
             box.style.display = show ? 'block' : 'none';
             if (ar) ar.textContent = show ? '▴' : '▾';
         }
-        function onCompetitionChange() { renderKbStatus(); }
+        function onCompetitionChange() {
+            renderKbStatus();
+            try { renderEventCard(); } catch (e) {}   // 换赛事 → 要求卡自动换成该赛事的文档类型与章节
+        }
 
         // ---- 申报书章节完整性提示（数据来源 generate 返回的 completeness）----
         function renderCompleteness(comp) {
@@ -2684,7 +2926,11 @@ button:hover { transform: translateY(-1px); }
                     proposal_draft: proposal_draft,
                     mode: mode,
                     keywords: (document.getElementById('keywords') || {}).value || '',
-                    theme: (document.getElementById('deckTheme') || {}).value || null
+                    theme: (document.getElementById('deckTheme') || {}).value || null,
+                    // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
+                    doc_type: (evCurrent() || {}).doc_type || null,
+                    outline_requirement: (evCurrent() || {}).sections || [],
+                    scoring_weights: (evCurrent() || {}).scoring || []
                 })
             })
             .then(res => res.json())
