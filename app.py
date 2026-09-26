@@ -297,6 +297,8 @@ def upload_pdf():
         return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
     raw_name = file.filename or ''
+    purpose = (request.form.get('purpose') or 'draft').strip()
+    competition_name = (request.form.get('competition_name') or '').strip()
     if raw_name == '':
         return jsonify({"success": False, "error": "没有选择文件"})
     # ★ 坑：secure_filename 会把中文字符全部剔除，纯中文文件名《申报书草稿.pdf》
@@ -333,6 +335,15 @@ def upload_pdf():
     if not text:
         return jsonify({"success": False,
                         "error": "没能从文件里提取到文字（扫描版/图片型 PDF 提取不了），请直接把文字粘贴到草稿框"})
+    if purpose == 'reference':
+        try:
+            from competition_agents import save_official_doc
+            ok = save_official_doc(competition_name, text)
+            return jsonify({"success": True, "text": text[:20000],
+                            "purpose": "reference", "saved": ok,
+                            "competition_name": competition_name})
+        except Exception as e:
+            app_log.warn("kb", f"保存官方资料失败：{e}")
     _record_upload(text, raw_name)
     return jsonify({"success": True, "text": text[:20000]})
 
@@ -564,6 +575,9 @@ def _run_generation(data):
             "idea": idea,
             "proposal_draft": proposal_draft,
             "user_keywords": data.get("keywords", ""),
+            "outline_requirement": data.get("outline_requirement") or [],
+            "scoring_weights": data.get("scoring_weights") or [],
+            "humanize": data.get("humanize", "standard"),
             "parsed_rules": "",
             "similarity_report": "",
             "competitor_analysis": "",
@@ -577,6 +591,7 @@ def _run_generation(data):
             "proposal_outline": "",
             "proposal_selfcheck": "",
             "judge_feedback": "",
+            "judge_scores": [],
             "expert_review": "",
             "proposal_analysis": "",
             "defense_questions": "",
@@ -698,6 +713,7 @@ def _run_generation(data):
         "proposal_outline": result.get("proposal_outline", ""),
         "proposal_selfcheck": result.get("proposal_selfcheck", ""),
         "judge_feedback": result.get("judge_feedback", ""),
+        "judge_scores": result.get("judge_scores", []),
         "expert_review": _parse_expert_review(result.get("expert_review", "")) or result.get("expert_review", ""),
         "proposal_analysis": result.get("proposal_analysis", ""),
         "defense_questions": result.get("defense_questions", ""),

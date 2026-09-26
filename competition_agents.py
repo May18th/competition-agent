@@ -181,6 +181,46 @@ def get_competition_knowledge(competition_name: str) -> str:
     return ""
 
 
+_OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "official_docs.json")
+
+
+def save_official_doc(competition_name, text):
+    """把用户上传的赛事官方资料存到 data/official_docs.json（按赛事名索引）。"""
+    import json
+    if not competition_name or not text or not text.strip():
+        return False
+    try:
+        docs = {}
+        if os.path.exists(_OFFICIAL_DOCS_PATH):
+            with open(_OFFICIAL_DOCS_PATH, encoding="utf-8") as f:
+                docs = json.load(f)
+        docs[str(competition_name)] = text.strip()
+        os.makedirs(os.path.dirname(_OFFICIAL_DOCS_PATH), exist_ok=True)
+        with open(_OFFICIAL_DOCS_PATH, "w", encoding="utf-8") as f:
+            json.dump(docs, f, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[kb] 保存官方资料失败：{e}")
+        return False
+
+
+def get_official_doc(competition_name):
+    """读取用户上传的赛事官方资料；无则返回空串。"""
+    import json
+    try:
+        if not os.path.exists(_OFFICIAL_DOCS_PATH):
+            return ""
+        with open(_OFFICIAL_DOCS_PATH, encoding="utf-8") as f:
+            docs = json.load(f)
+        c = str(competition_name or "")
+        for name, text in docs.items():
+            if name == c or name in c or c in name:
+                return text
+        return ""
+    except Exception:
+        return ""
+
+
 # 知识库格式要求（队友提交资料需包含的关键章节）
 KNOWLEDGE_SECTIONS = {
     "比赛介绍": ["介绍", "比赛"],
@@ -340,6 +380,9 @@ class CompetitionState(TypedDict):
     idea: str
     proposal_draft: str
     user_keywords: str
+    outline_requirement: list
+    scoring_weights: list
+    humanize: str
 
     # 中间结果
     parsed_rules: str
@@ -426,6 +469,22 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 
 12. 匿名要求（硬性）：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名等身份信息；涉及团队一律用「本项目团队」「参赛团队」指代，涉及指导教师一律省略。违者视为不合格。
 """
+
+_HUMANIZE_BANNED = ["随着", "综上所述", "赋能", "生态", "一站式", "闭环", "深度融合"]
+
+_HUMANIZE_STRONG_SPEC = """【去 AI 味强化要求 —— 必须严格遵守】
+1. 全文严禁出现这些词/句式：随着……的发展、综上所述、赋能、打造……生态、一站式、闭环、深度融合；出现就必须改写。
+2. 每个自然段至少含一个具体数字 / 真实场景 / 明确局限，禁止纯形容词堆叠。
+3. 段落长度要自然起伏（80～400 字之间波动），不要每段都差不多长。
+4. 结尾不要总结升华，直接收在具体事实上。
+5. 只改正文，**不碰章节标题**：章节标题里出现的「痛点」等词必须原样保留（如「二、项目背景与痛点分析」），不得改写标题。
+"""
+
+
+def _humanize_spec(state):
+    """文风档位：strong 返回强化去 AI 味规范，否则返回空串。"""
+    return _HUMANIZE_STRONG_SPEC if (state or {}).get("humanize") == "strong" else ""
+
 
 _REPORT_SPEC = """【输出规格 —— 必须遵守】
 1. 使用 Markdown，最多三级标题（## / ###），一级用「一、二、三、」，二级用「（一）（二）」，三级用「1. 2. 3.」
@@ -564,12 +623,15 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
         rule_content_text = "用户没有上传规则PDF，请根据知识库中关于这个比赛的资料来分析。"
     else:
         rule_content_text = f"用户上传的规则内容：\n{state['rule_content']}"
+    official = get_official_doc(state['competition_name'])
+    official_block = ("\n【本赛事官方资料（用户上传，务必优先依据）】\n" + official[:4000] + "\n") if official else ""
     
     prompt = f"""你是赛事规则分析专家。请分析这个比赛的核心评分标准和要求。
 
 赛事名称：{state['competition_name']}
 {kb_block}
 {rule_content_text}
+{official_block}
 
 请提取：
 1. 核心评分维度（如创新性、实用性、技术难度等）及各维度占比
@@ -845,6 +907,64 @@ def _ref_block(state: dict, module_tag: str) -> str:
         return ""
 
 
+def _official_ref(state: dict) -> str:
+    """取用户上传的赛事官方资料块（撰写依据，封顶 3000 字）；无则空串。"""
+    try:
+        official = get_official_doc(state.get("competition_name", ""))
+        if official:
+            return ("\n【本赛事官方资料（撰写依据，优先采用其评分维度与章节要求，不要照抄）】\n"
+                    + official[:3000] + "\n")
+        return ""
+    except Exception:
+        return ""
+
+
+_DEFAULT_CHAPTERS = """## 一、项目概述
+（350 字以上：做什么、给谁用、解决什么核心问题）
+
+## 二、背景与痛点分析
+（450 字以上，下分 2 个二级小节：行业与现实背景 / 具体痛点拆解）
+
+## 三、目标用户与应用场景
+（400 字以上，下分 2 个二级小节：核心用户画像 / 典型使用场景）
+
+## 四、解决方案与产品形态
+（450 字以上，下分 2 个二级小节：产品形态与核心功能 / 用户使用流程）
+
+## 五、技术方案与系统架构
+（500 字以上，下分 2 个二级小节：关键技术选型与原理 / 系统架构与数据流）
+
+## 六、核心创新点
+（450 字以上，下分 2 个二级小节：与现有方案的三处以上差异 / 创新点的可验证方式）
+
+## 七、竞品对比与差异化优势
+（450 字以上：先用标准 Markdown 表格对比 3～4 类现有方案，表格前后各写一段说明与分析）
+
+## 八、商业模式与市场空间
+（450 字以上，下分 2 个二级小节：付费对象与收费模式 / 市场规模测算与成长路径）
+
+## 九、风险分析与应对措施
+（400 字以上，下分 2 个二级小节：技术与落地风险 / 团队与外部风险，每段都要给应对措施）
+
+## 十、团队分工与执行计划
+（400 字以上，下分 2 个二级小节：角色配置与分工 / 分阶段里程碑与时间点）
+
+## 十一、社会价值与应用前景
+（350 字以上：具体受益对象、可验证的效果指标、可复制的推广路径）
+
+## 十二、结语
+（200 字以上：项目的核心主张与参赛诉求）"""
+
+
+def _chapter_block(state: dict) -> str:
+    """章节结构：优先用 outline_requirement（前端传），缺省用默认 12 章。"""
+    req = [str(c).strip() for c in (state.get("outline_requirement") or []) if str(c).strip()]
+    if req:
+        return "章节严格按以下顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
+               "\n".join("## " + c for c in req[:20])
+    return "章节依次为：\n\n" + _DEFAULT_CHAPTERS
+
+
 def _stream_llm(prompt, field, every=8):
     """流式调用 LLM：边生成边把累积文本写进 partial，前端即可逐字看到内容。
 
@@ -954,7 +1074,11 @@ def _selfcheck_proposal(state: CompetitionState, proposal: str):
 【申报书全文】
 {proposal}
 
-自检三点：① 章节呼应有无前后矛盾；② 空泛表述（「显著提升」「广泛应用」「赋能」「前景广阔」等无数据支撑）；③ 数字有无推算过程、有无编造引用。
+自检要点：
+① 章节呼应有无前后矛盾；
+② 空泛表述（「显著提升」「广泛应用」「赋能」「前景广阔」等无数据支撑）；
+③ 数字有无推算过程、有无编造引用；
+④ 禁用套话出现即改写：随着、综上所述、赋能、打造生态、一站式、闭环、深度融合（章节标题中的词不在此列）。
 
 只输出一个 JSON 数组（不要任何其它文字、不要 markdown 代码块），每个补丁形如：
 {{"find":"申报书里逐字存在的短句（20～60 字）","replace":"改后文字"}}
@@ -1035,6 +1159,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {revise_block}
 {analysis_block}
 {_ref_block(state, '项目简介')}
+{_official_ref(state)}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -1046,44 +1171,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
 
 请写一份完整详实的申报书，全文 4500～6000 字，低于 3200 字判不合格，每个章节都要展开成完整段落，不要简略。
-用 Markdown 标题组织章节（最多三级标题），章节依次为：
+{_chapter_block(state)}
 
-## 一、项目概述
-（350 字以上：做什么、给谁用、解决什么核心问题）
-
-## 二、背景与痛点分析
-（450 字以上，下分 2 个二级小节：行业与现实背景 / 具体痛点拆解）
-
-## 三、目标用户与应用场景
-（400 字以上，下分 2 个二级小节：核心用户画像 / 典型使用场景）
-
-## 四、解决方案与产品形态
-（450 字以上，下分 2 个二级小节：产品形态与核心功能 / 用户使用流程）
-
-## 五、技术方案与系统架构
-（500 字以上，下分 2 个二级小节：关键技术选型与原理 / 系统架构与数据流）
-
-## 六、核心创新点
-（450 字以上，下分 2 个二级小节：与现有方案的三处以上差异 / 创新点的可验证方式）
-
-## 七、竞品对比与差异化优势
-（450 字以上：先用标准 Markdown 表格对比 3～4 类现有方案，表格前后各写一段说明与分析）
-
-## 八、商业模式与市场空间
-（450 字以上，下分 2 个二级小节：付费对象与收费模式 / 市场规模测算与成长路径）
-
-## 九、风险分析与应对措施
-（400 字以上，下分 2 个二级小节：技术与落地风险 / 团队与外部风险，每段都要给应对措施）
-
-## 十、团队分工与执行计划
-（400 字以上，下分 2 个二级小节：角色配置与分工 / 分阶段里程碑与时间点）
-
-## 十一、社会价值与应用前景
-（350 字以上：具体受益对象、可验证的效果指标、可复制的推广路径）
-
-## 十二、结语
-（200 字以上：项目的核心主张与参赛诉求）
-
+{_humanize_spec(state)}
 {_PROPOSAL_SPEC}
 """
     proposal = _stream_llm(prompt, "proposal")
@@ -1128,6 +1218,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 （本模式不做外部调研，请基于项目创意本身往下推演；涉及数字时标明是测算值，不要编造引用来源）
 一句话定位：{state.get('one_liner','')}
 {_ref_block(state, '项目简介')}
+{_official_ref(state)}
 
 【篇幅硬性要求】
 1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。
@@ -1154,6 +1245,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 3. 禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述。
 4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
 5. 中文标点用全角。
+{_humanize_spec(state)}
 """
     proposal, n = _expand_to_length(
         _stream_llm(prompt, "proposal"), 1100,
@@ -1246,6 +1338,22 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
 def judge_agent(state: CompetitionState) -> CompetitionState:
     """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
     _report_stage("judging")
+    # 评分维度：优先用 scoring_weights（前端传），缺省用默认 5 维
+    sw = state.get("scoring_weights") or []
+    dims = []
+    for item in sw:
+        if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
+            try:
+                w = float(item[1])
+            except Exception:
+                w = 0
+            if w > 0:
+                dims.append((str(item[0]).strip(), w))
+    if not dims:
+        dims = [("结构完整性", 30), ("逻辑清晰度", 25), ("数据支撑", 20), ("格式规范", 15), ("说服力", 10)]
+    score_lines = "\n".join("%s：__分" % name for name, _ in dims)
+    weight_desc = "、".join("%s %d%%" % (name, int(w)) for name, w in dims)
+
     prompt = f"""你是科创赛事资深评委。请给下面的申报书文档打分（注意：只评文档质量，不评创意本身）。
 
 申报书：
@@ -1253,22 +1361,14 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 
 请严格按下面格式输出（每项 0-100 分，可带一位小数）：
 
-结构完整性：__分
-逻辑清晰度：__分
-数据支撑：__分
-格式规范：__分
-说服力：__分
+{score_lines}
 
 然后给出：
 1. 主要优点（至少3点）
 2. 需要改进的地方（至少3点）
 
 打分说明：
-- 结构完整性30%：章节是否齐全、篇幅是否充实（内容单薄要明显扣分）
-- 逻辑清晰度25%：论证是否连贯、有无逻辑漏洞
-- 数据支撑20%：是否用了具体数字、案例、技术名词
-- 格式规范15%：是否符合申报书格式要求
-- 说服力10%：整体是否能让评委信服
+- {weight_desc}
 不要给所有文档打接近的分数，要拉开差距。
 
 {_tier_hint(state,
@@ -1281,24 +1381,18 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 
     import re
     def _pick(label):
-        m = re.search(label + r'[^0-9]*?(\d+(?:\.\d+)?)', response.content)
+        m = re.search(re.escape(label) + r'[^0-9]*?(\d+(?:\.\d+)?)', response.content)
         return float(m.group(1)) if m else None
 
-    sub = {
-        "结构完整性": _pick("结构完整性"),
-        "逻辑清晰度": _pick("逻辑清晰度"),
-        "数据支撑": _pick("数据支撑"),
-        "格式规范": _pick("格式规范"),
-        "说服力": _pick("说服力"),
-    }
-    weights = {"结构完整性": 0.30, "逻辑清晰度": 0.25, "数据支撑": 0.20, "格式规范": 0.15, "说服力": 0.10}
+    sub = {name: _pick(name) for name, _ in dims}
+    weights = {name: w / 100.0 for name, w in dims}
     state["judge_scores"] = [
-        {"name": k, "score": (sub[k] if sub[k] is not None else None), "weight": int(weights[k] * 100)}
-        for k in ("结构完整性", "逻辑清晰度", "数据支撑", "格式规范", "说服力")
+        {"name": name, "score": (sub[name] if sub[name] is not None else None), "weight": int(w)}
+        for name, w in dims
     ]
 
     if all(v is not None for v in sub.values()):
-        state["score"] = int(round(sum(sub[k] * weights[k] for k in sub)))
+        state["score"] = int(round(sum(sub[name] * weights[name] for name, _ in dims)))
     else:
         m2 = re.search(r'SCORE\s*[:：]\s*(\d{1,3})', response.content, re.IGNORECASE)
         if m2:
