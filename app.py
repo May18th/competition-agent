@@ -577,7 +577,11 @@ def _assess_and_summarize(text, max_len=4000):
 
 
 def _record_upload(text, source_name="", force_fanwen=False):
-    """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + 质量评估 + 摘要）。"""
+    """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + 质量评估 + 摘要）。
+
+    版权整改：不再自动把上传内容归为「范文」，一律按「材料」入库（官方规则/评分/模板）。
+    收集他人获奖原文需原作者书面授权，另行人工处理。
+    """
     if not text or not text.strip():
         return
     try:
@@ -591,12 +595,8 @@ def _record_upload(text, source_name="", force_fanwen=False):
         if not tags:
             tags = ["材料"]
         summary, score, reason = _assess_and_summarize(text)
-        if force_fanwen:
-            # 官方获奖作品：绕过启发式打分，强制归为范文
-            mem_type, score = "范文", 90
-        else:
-            # 质量门：≥75 分才归为「范文」，否则归「材料」
-            mem_type = "范文" if score >= 75 else "材料"
+        # 只保留「材料」（官方公开资料）；不再自动升为「范文」
+        mem_type = "材料"
         sid, _ = add_sample(text.strip(), tags, source=source_name or "用户上传",
                             type=mem_type, summary=summary, score=score)
         print(f"[kb] 已记录上传 #{sid}，类型={mem_type}，质量={score}分，摘要={summary}，理由={reason}")
@@ -678,9 +678,10 @@ def upload_pdf():
         except Exception as e:
             app_log.warn("kb", f"保存官方资料失败：{e}")
     elif purpose == 'fanwen':
-        # 真实获奖稿：绕过启发式打分，强制归为「范文」（见材料清单 P0）
-        _record_upload(text, raw_name, force_fanwen=True)
-        return jsonify({"success": True, "text": text[:20000], "purpose": "fanwen"})
+        # 版权整改：不再收集他人获奖原文（需原作者书面授权），一律按「材料」入库
+        _record_upload(text, raw_name)
+        return jsonify({"success": True, "text": text[:20000], "purpose": "fanwen",
+                        "note": "已按官方资料入库；收集他人范文需原作者书面授权"})
     _record_upload(text, raw_name)
     return jsonify({"success": True, "text": text[:20000]})
 
@@ -2405,10 +2406,7 @@ def upload_file():
         import re
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
-        if purpose == 'fanwen':
-            _record_upload(text, file.filename, force_fanwen=True)
-        else:
-            _record_upload(text, file.filename)
+        _record_upload(text, file.filename)
         return jsonify({"success": True, "text": text})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
