@@ -7097,12 +7097,20 @@ window.addEventListener('resize', function () {
     }
 
     /* ---------- 5. 结果页顶部风格切换 ---------- */
+    var _sfTried = false;
     function styleFill() {
         var bar = document.getElementById('wbStyleBar');
         var sel = document.getElementById('styleQuickSel');
         if (!bar || !sel) return;
         var lib = window._themeLib || [];
+        // 主题库是 /api/ppt_themes 异步拉的，result 先渲染完的情况下拉不到 → 主动拉一次再填
+        if (!lib.length && !_sfTried && typeof loadThemeLib === 'function') {
+            _sfTried = true;
+            try { Promise.resolve(loadThemeLib()).then(function () { styleFill(); }); } catch (e) {}
+            return;
+        }
         if (!lib.length) { bar.style.display = 'none'; return; }
+        _sfTried = false;
         var cur = (document.getElementById('deckTheme') || {}).value || '';
         sel.innerHTML = lib.map(function (t) {
             var nm = t.name || t.label || t.key;
