@@ -2680,8 +2680,13 @@ mark.wb-ph {
                                  (t.ban_note ? '<span style="font-weight:400;">（' + _esc(t.ban_note) + '）</span>' : '') +
                                  '</div>';
                         }
+                        // derived=true 表示 focus/avoid/sections 是我们按赛道定位推导的建议，
+                        // 不是官方原文——必须标出来，不然学生会当成官方要求照抄
+                        var tag = t.derived
+                            ? '<span style="color: var(--warn-text); font-size: 11.5px;">（以下为建议，非官方要求）</span>'
+                            : '';
                         if (t.focus && t.focus.length) {
-                            h += '<div style="margin-top: 4px; color: var(--text-dim);">要写到：' +
+                            h += '<div style="margin-top: 4px; color: var(--text-dim);">要写到' + tag + '：' +
                                  _esc(t.focus.join('；')) + '</div>';
                         }
                         if (t.avoid && t.avoid.length) {
@@ -2690,7 +2695,8 @@ mark.wb-ph {
                         }
                         if (t.sections && t.sections.length) {
                             h += '<div style="margin-top: 4px; color: var(--text-mute); font-size: 12px;">' +
-                                 '（下面章节已按该赛道排列，可直接改）</div>';
+                                 '（下面章节' + (t.derived ? '是我们按该赛道给的建议结构，' : '') +
+                                 '可直接改）</div>';
                         }
                         ti.innerHTML = h;
                         ti.style.display = 'block';
