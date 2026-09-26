@@ -31,10 +31,12 @@ if _no_proxy:
 llm = ChatDeepSeek(
     model="deepseek-chat",
     api_key=DEEPSEEK_API_KEY,
-    temperature=0.3,
+    temperature=0.6,
     max_tokens=8192,
     request_timeout=180,
-    max_retries=3
+    max_retries=3,
+    frequency_penalty=0.5,
+    presence_penalty=0.3,
 )
 
 # ============ API 配额保护（防止 DeepSeek 超支） ============
@@ -782,6 +784,20 @@ def _cjk_len(text):
     return len(re.sub(r'[#*`\-\|>\[\]（）()\s]', '', text or ''))
 
 
+def _is_repetitive(text, threshold=4):
+    """检测正文是否「循环复读」：同一句反复出现次数达到阈值即判定为退化输出。"""
+    try:
+        from collections import Counter
+        sentences = [s.strip() for s in re.split(r'[。！？!?\n]+', text or '')
+                     if len(s.strip()) >= 6]
+        if not sentences:
+            return False
+        top = Counter(sentences).most_common(1)[0]
+        return top[1] >= threshold
+    except Exception:
+        return False
+
+
 def _expand_to_length(text, min_chars, topic, rounds=2):
     """篇幅兜底：正文不足 min_chars 字时，让模型就地扩写，最多 rounds 轮。
 
@@ -793,6 +809,10 @@ def _expand_to_length(text, min_chars, topic, rounds=2):
     for i in range(rounds):
         if n >= min_chars:
             break
+        anti_loop = ""
+        if _is_repetitive(cur):
+            anti_loop = ("\n⚠️ 当前正文存在「同一句话循环重复」的严重退化问题，"
+                         "请彻底重写每一节内容，严禁重复任何已出现的句子。")
         prompt = (
             "下面是关于「%s」的一份科创赛事申报书，当前正文只有约 %d 字，"
             "而要求是不少于 %d 字，篇幅严重不足，评委会认定内容空洞。\n\n"
@@ -801,10 +821,10 @@ def _expand_to_length(text, min_chars, topic, rounds=2):
             "只补充新论据/数据/案例，不许重复已述内容；\n"
             "2. 每个小节补充成一到两个完整的自然段，不要一句话一段；\n"
             "3. 任何标题下面都必须有正文，不允许出现空小节；\n"
-            "4. 保持 Markdown 标题层级不变，中文标点用全角。\n\n"
+            "4. 保持 Markdown 标题层级不变，中文标点用全角。%s\n\n"
             "直接输出扩写后的完整申报书全文，不要加任何说明。\n\n"
             "当前申报书：\n%s"
-            % (topic, n, min_chars, cur)
+            % (topic, n, min_chars, anti_loop, cur)
         )
         cur = llm.invoke([HumanMessage(content=prompt)]).content
         n = _cjk_len(cur)
