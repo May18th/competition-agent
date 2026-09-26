@@ -22,6 +22,7 @@ from stage_reporter import (tasks, set_current_task, clear_current_task,
                             report_stage as _report_stage, stage_meta, TaskCancelled,
                             get_speech_stream, clear_speech_stream, set_partial)
 import progress
+import app_log
 
 
 app = Flask(__name__)
@@ -261,6 +262,7 @@ def _assess_and_summarize(text, max_len=4000):
         return (text or "")[:60], 0, "评估失败"
     except Exception as e:
         print(f"[kb] 摘要与质量评估失败：{e}")
+        app_log.warn("kb", f"摘要与质量评估失败：{e}")
         return ((text or "")[:60] + "…") if len(text or "") > 60 else (text or ""), 0, "评估失败"
 
 
@@ -286,6 +288,7 @@ def _record_upload(text, source_name=""):
         print(f"[kb] 已记录上传 #{sid}，类型={mem_type}，质量={score}分，摘要={summary}，理由={reason}")
     except Exception as e:
         print(f"[kb] 记录上传失败（不影响主流程）：{e}")
+        app_log.warn("kb", f"记录上传失败：{e}")
 
 
 @app.route('/api/upload_pdf', methods=['POST'])
@@ -771,6 +774,7 @@ def generate_async():
         except Exception as e:
             import traceback
             traceback.print_exc()
+            app_log.error("generate", f"task={task_id[:8]} {_friendly_error(e)} | {traceback.format_exc(limit=2)}")
             progress.mark_error(task_id, error=_friendly_error(e), detail=str(e))
         finally:
             clear_speech_stream(task_id)
@@ -1347,3 +1351,48 @@ def kb_search():
                         "ref": ref, "hits": len(ref or "")})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============ 运行日志 / 错误报告（Codex 后端接口 + WorkBuddy 前端面板）============
+
+@app.route('/api/logs')
+def api_logs():
+    level = request.args.get('level', '')
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+    return jsonify({
+        "success": True,
+        "logs": app_log.get_logs(level or None, limit),
+        "error_count": app_log.error_count(),
+    })
+
+
+@app.route('/api/logs/report')
+def api_logs_report():
+    errors = app_log.get_logs("ERROR", 50)
+    lines = ["# 运行错误报告", "", "最近错误 %d 条：" % len(errors), ""]
+    for x in errors:
+        lines.append("- [%s] [%s] %s" % (x["time"], x["source"], x["message"]))
+        for lesson in app_log.match_lessons(x["message"]):
+            lines.append("    ↳ 可能相关踩坑：%s —— %s" % (lesson["title"], lesson["summary"]))
+    lines.append("")
+    lines.append("---")
+    lines.append("（由 /api/logs/report 自动生成，可直接转发给 Codex / WorkBuddy 排查）")
+    return jsonify({"success": True, "report": "\n".join(lines), "errors": errors})
+
+
+@app.route('/api/lessons')
+def api_lessons():
+    q = request.args.get('q', '')
+    lessons = app_log.match_lessons(q) if q else app_log.LESSONS
+    return jsonify({"success": True, "lessons": lessons, "total": len(lessons)})
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    import traceback
+    app_log.error("http", "%s %s: %s | %s"
+                  % (request.path, type(e).__name__, e, traceback.format_exc(limit=2)))
+    return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
