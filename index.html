@@ -1108,6 +1108,24 @@ button:hover { transform: translateY(-1px); }
                     <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px;">留空也会从项目创意里自动提取关键词；在「范文库」页签可自行添加范文。</div>
                 </div>
 
+                <!-- 文风：只在选了「深度完整版」时露出（humanize 后端约定只对深度版生效，
+                     简洁版显示了选了也不起作用，反而误导）。显示/隐藏由 wbSyncHumanizeRow 控制 -->
+                <div class="form-group" id="humanizeRow" style="display: none;">
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 文风<span class="wb-opt">（深度版可选）</span></label>
+                    <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
+                            <input type="radio" name="humanize" value="standard" checked style="cursor: pointer;"> 标准
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
+                            <input type="radio" name="humanize" value="strong" style="cursor: pointer;"> 去 AI 味（强）
+                        </label>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
+                        「去 AI 味」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。<br>
+                        只对深度完整版生效；简洁版是「短而准」，不做这层处理。
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
@@ -1988,6 +2006,14 @@ button:hover { transform: translateY(-1px); }
             wbToast('已清空表单和本地草稿', { type: 'ok', ms: 2200 });
         }
 
+        // 文风选项只在深度版露出：简洁版不显示，避免用户选了却不起作用（后端也只在深度版处理）
+        function wbSyncHumanizeRow() {
+            var row = document.getElementById('humanizeRow');
+            if (!row) return;
+            var m = document.querySelector('input[name=mode]:checked');
+            row.style.display = (m && m.value === 'deep') ? 'block' : 'none';
+        }
+
         function wbLoadForm() {
             var d = null;
             try { d = JSON.parse(localStorage.getItem(WB_FORM_KEY) || 'null'); } catch (e) {}
@@ -2025,7 +2051,11 @@ button:hover { transform: translateY(-1px); }
                 el.addEventListener('change', wbSaveForm);
             });
             var radios = document.querySelectorAll('input[name=mode]');
-            for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', wbSaveForm);
+            for (var i = 0; i < radios.length; i++) {
+                radios[i].addEventListener('change', wbSaveForm);
+                radios[i].addEventListener('change', wbSyncHumanizeRow);
+            }
+            wbSyncHumanizeRow();
         })();
         wbLoadForm();
         // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
@@ -3127,6 +3157,11 @@ button:hover { transform: translateY(-1px); }
                     idea: idea,
                     proposal_draft: proposal_draft,
                     mode: mode,
+                    // 文风：standard=标准 / strong=去 AI 味。
+                    // 与 Codex 约定：只在深度版生效，简洁版一律按 standard 传，避免和「短而准」冲突
+                    humanize: (mode === 'deep'
+                        ? ((document.querySelector('input[name=humanize]:checked') || {}).value || 'standard')
+                        : 'standard'),
                     keywords: (document.getElementById('keywords') || {}).value || '',
                     // 赛事官方文件：后端已有 rule_content 链路，这里把前端口子接上
                     rule_content: (document.getElementById('rules') || {}).value || '',
