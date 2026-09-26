@@ -3,6 +3,8 @@
 设计目标：不是"能用"，而是"拿得出手"——
 - 16:9 宽屏，统一视觉系统（深蓝 #0F1535 / 主紫 #4A55B8 / 青强调 #22B8CF）
 - 封面 / 章节页 / 要点页 / 图表页 / 表格页 / 数据页 / 结尾页 7 种版式
+- 内置 15 套精品模板，按风格族分类：科技星空 2 / 扁平商务 3 / 简洁学术 3 /
+  莫兰迪 2 / 红金 2 / 清新文艺 2 / 中国风 1（配色 + 6 维版式各自钉死）
 - 每页统一页眉强调条 + 页脚（项目名 + 页码）
 - 微软雅黑全套（含中文 east-asian 字体设置）
 输入：deck = {"project":..., "one_liner":..., "competition":..., "slides":[...]}
@@ -36,16 +38,22 @@ THEMES = {
         "chart": ["#4A55B8", "#22B8CF", "#F59E0B", "#34C78A", "#F0637C", "#8B7BE8", "#5B93F5"],
     },
     "ink": {
-        "label": "水墨丹青（文化/非遗/文创/古籍/书法类）",
-        "chapter": ["5A6B7A", "8B2E2E", "B98A3C", "4A5D4E", "6B5B73", "2F4858", "A65628"],
-        "deep": "1B1B1B", "deep2": "4A4A4A",
-        "ink": "232323", "body": "4A4A4A", "muted": "8C8579",
-        "primary": "8B2E2E", "accent": "B98A3C",
-        "card": "F7F4ED", "soft": "F2EDE3",
-        "cover_deco": ["8B2E2E", "B98A3C", "4A5D4E"],
-        # 字体统一微软雅黑（原为楷体）：服务器/Linux 上没有楷体，且拿去学校打印容易缺字
-        "section_rule": "D9C7A3", "font": "微软雅黑",
-        "chart": ["#5A6B7A", "#8B2E2E", "#B98A3C", "#4A5D4E", "#6B5B73", "#2F4858", "#A65628"],
+        # 中国风：宣纸米底 + 朱红 + 黛青 + 描金，适配传统文化/非遗/国学类项目。
+        # 整份走浅底（打印省墨、投影不糊），朱红只做竖条与印章，不做大面积底色，
+        # 否则就是"年画配色"。封面单独走 orient 版式（宣纸 + 朱印 + 回纹边框）。
+        "label": "中国风·水墨朱丹（传统文化/非遗/国风项目）",
+        "chapter": ["9E2B25", "2F4858", "B08D57", "7A3B2E", "4A5D4E", "8B5A2B", "5B4A7A"],
+        "deep": "F7F3E8", "deep2": "E8DFC9",
+        "ink": "1F2328", "body": "4A4740", "muted": "94897A",
+        "primary": "9E2B25", "accent": "B08D57",
+        "card": "FDFBF5", "soft": "F2EBDC",
+        "cover_deco": ["9E2B25", "2F4858", "B08D57"],
+        "section_rule": "B08D57", "font": "微软雅黑",
+        "family": "中国风", "scene": "传统文化 / 非遗 / 国学 / 中医药",
+        "layout": {"cover": "orient", "body": "cards", "header": "sidebar",
+                   "card": "outline", "section": "light", "deco": False,
+                   "light_closing": True},
+        "chart": ["#9E2B25", "#2F4858", "#B08D57", "#7A3B2E", "#4A5D4E", "#8B5A2B", "#5B4A7A"],
     },
     "medical": {
         "label": "生命青绿（医疗/健康/护理/康复类）",
@@ -128,6 +136,7 @@ THEMES = {
         "layout": {"variant": "v4", "body": "minimal", "header": "topbar",
                    "card": "outline", "section": "light", "deco": False,
                    "light_cover": True, "light_closing": True},
+        "family": "简洁学术风", "scene": "论文 / 开题 / 答辩",
         "chart": ["#002FA7", "#2E75B6", "#4A7FB5", "#5B8C5A", "#8B6914", "#6B5B73", "#7E93AB"],
     },
     "ican": {
@@ -160,7 +169,8 @@ THEMES = {
         "section_rule": "D3D8DE", "font": "微软雅黑",
         "tier": "premium",
         # 左色块封面 + 极简条目 + 无卡：商务内容本来就密，再套填色卡片会显得挤
-        "layout": {"variant": "v2", "header": "rule", "card": "plain", "section": "light"},
+        "layout": {"variant": "v4", "body": "minimal", "header": "rule", "card": "plain", "section": "light"},
+        "family": "扁平商务风", "scene": "商业计划 / 经管 / 服务外包",
         "chart": ["#374151", "#5C6B7A", "#7D8B9C", "#9AA5B1", "#4A5568", "#6B7280", "#B4BCC6"],
     },
     "studio": {
@@ -192,7 +202,8 @@ THEMES = {
         "section_rule": "C4B5FD", "font": "微软雅黑",
         "tier": "premium",
         # 与 tech 同为整页渐变封面，但正文走极简圆点（AI 类常配图，卡片会抢视觉）
-        "layout": {"variant": "v1", "body": "minimal", "header": "topbar", "card": "solid"},
+        "layout": {"variant": "v1", "body": "numbered", "header": "sidebar", "card": "outline"},
+        "family": "科技星空风", "scene": "人工智能 / 网络安全 / 机器人",
         "chart": ["#7C3AED", "#22D3EE", "#A855F7", "#F472B6", "#8B5CF6", "#4B0082", "#F59E0B"],
     },
     # ---------------- 以下 9 套为 2026-09-26 新增的精品模板 ----------------
@@ -243,7 +254,8 @@ THEMES = {
         "section_rule": "D8C9A8", "font": "微软雅黑",
         "tier": "premium",
         # 大号序号：投资人看商业计划书是逐条过的，序号比卡片更好指
-        "layout": {"variant": "v1", "body": "numbered", "header": "sidebar", "card": "solid"},
+        "layout": {"variant": "v3", "body": "numbered", "header": "topbar", "card": "plain"},
+        "family": "扁平商务风", "scene": "融资路演 / 创赛",
         "chart": ["#2E3742", "#B08D57", "#6B7280", "#C0A062", "#4A5568", "#8A6D3F", "#A8B0BC"],
     },
     "math": {
@@ -261,6 +273,7 @@ THEMES = {
         "layout": {"cover": "paper", "body": "numbered", "header": "rule",
                    "card": "plain", "section": "light", "deco": False,
                    "light_cover": True, "light_closing": True},
+        "family": "简洁学术风", "scene": "数学建模 / 公式推导",
         "chart": ["#1F3A93", "#C0392B", "#1F6F5C", "#7D3C98", "#B9770E", "#2C3E50", "#0E6655"],
     },
     "paper": {
@@ -277,8 +290,9 @@ THEMES = {
         "cover_deco": ["0B4F9E", "2E75B6", "1F7A6B"],
         "section_rule": "B8D4F0", "font": "微软雅黑",
         "tier": "premium",
-        "layout": {"variant": "v3", "header": "topbar", "card": "solid", "section": "light",
+        "layout": {"variant": "v3", "body": "cards", "header": "rule", "card": "solid", "section": "light",
                    "light_closing": True},
+        "family": "简洁学术风", "scene": "国创 / 大创 / 科研结题",
         "chart": ["#0B4F9E", "#2E75B6", "#1F7A6B", "#8B6914", "#5B4E9E", "#0E7490", "#6B7280"],
     },
     "redgold": {
@@ -294,8 +308,9 @@ THEMES = {
         "section_rule": "E8C766", "font": "微软雅黑",
         "tier": "premium",
         # 居中构图 + 金线：红金最怕大面积撞色，居中留白能把金压成点缀
-        "layout": {"variant": "v4", "header": "topbar", "card": "solid",
+        "layout": {"variant": "v4", "body": "cards", "header": "sidebar", "card": "solid",
                    "section": "dark", "deco": True},
+        "family": "红金正式风", "scene": "挑战杯大挑 / 正式答辩",
         "chart": ["#8C1C24", "#D4AF37", "#A63A2F", "#C99700", "#7A2230", "#B8860B", "#5E1B22"],
     },
     "blackgold": {
@@ -310,8 +325,9 @@ THEMES = {
         "cover_deco": ["C9A227", "E8CE7A", "8A6D1F"],
         "section_rule": "C9A227", "font": "微软雅黑",
         "tier": "premium",
-        "layout": {"variant": "v2", "body": "numbered", "header": "rule",
+        "layout": {"variant": "v2", "body": "numbered", "header": "sidebar",
                    "card": "plain", "section": "dark"},
+        "family": "红金正式风", "scene": "挑战杯小挑 / 创业计划",
         "chart": ["#C9A227", "#8A6D1F", "#D4B942", "#A8851E", "#5C4B12", "#E8CE7A", "#3A3010"],
     },
     "poster": {
@@ -346,16 +362,120 @@ THEMES = {
         "layout": {"variant": "v1", "body": "numbered", "header": "sidebar", "card": "outline"},
         "chart": ["#1E9E6A", "#38BDF8", "#2BD47A", "#0EA5C6", "#22C55E", "#0E7490", "#7DD3FC"],
     },
+    # ---------------- 2026-09-26 重做：15 套精品按风格族分类 ----------------
+    # 参考 m1page 模板站的分类（扁平 / 简洁 / 星空科技 / 莫兰迪 / 文艺 / 中国风 / 红金），
+    # 一套 = 一套配色 + 一套钉死的 6 维版式；族内两套至少错开封面/正文/页眉/卡片中的两项，
+    # 不是"换个颜色算一套"。family/scene 会回传给前端做分组与推荐说明。
+    "star": {
+        # 科技星空·星海蓝：深空底 + 星点 + 亮蓝强调。
+        # 星空风最容易做俗（满屏星星），所以星点只铺在封面，内容页一律干净的深蓝白字。
+        "label": "星海蓝（科技星空 · iCAN/电子设计/工程类）",
+        "chapter": ["2E7BD6", "3FBFEA", "5B8DEF", "1F6FB2", "7CC4F5", "4FA3D1", "2A5F9E"],
+        "deep": "06152F", "deep2": "123A6B",
+        "ink": "0B2445", "body": "3C5573", "muted": "8CA2BC",
+        "primary": "1F6FB2", "accent": "3FBFEA",
+        "card": "F2F7FD", "soft": "E9F1FA",
+        "cover_deco": ["3FBFEA", "7CC4F5", "1F6FB2"],
+        "section_rule": "9FD4F2", "font": "微软雅黑",
+        "family": "科技星空风", "scene": "iCAN / 电赛 / 工程训练 / 计算机设计",
+        "layout": {"cover": "star", "body": "numbered", "header": "topbar",
+                   "card": "solid", "section": "dark", "deco": False},
+        "chart": ["#2E7BD6", "#3FBFEA", "#5B8DEF", "#1F6FB2", "#7CC4F5", "#4FA3D1", "#2A5F9E"],
+    },
+    "flat": {
+        # 扁平商务·蓝：扁平风的规矩是"纯色块 + 无渐变阴影 + 高对比"，
+        # 蓝做主色、琥珀做强调，比灰阶商务更有互联网气，但饱和度压住不刺眼。
+        "label": "扁平蓝（扁平商务 · 互联网+/创新创业）",
+        "chapter": ["1B6AC9", "FFB020", "2E9E6B", "E4572E", "0E9AA7", "5B6BD6", "8E44AD"],
+        "deep": "0F4C9E", "deep2": "2E7BD6",
+        "ink": "12233F", "body": "3F5470", "muted": "8B9BB5",
+        "primary": "1B6AC9", "accent": "FFB020",
+        "card": "F5F8FC", "soft": "EAF0F8",
+        "cover_deco": ["FFB020", "2E9E6B", "E4572E"],
+        "section_rule": "FFD79A", "font": "微软雅黑",
+        "family": "扁平商务风", "scene": "互联网+ / 创新创业 / 产品发布",
+        "layout": {"variant": "v2", "body": "cards", "header": "topbar",
+                   "card": "solid", "section": "light"},
+        "chart": ["#1B6AC9", "#FFB020", "#2E9E6B", "#E4572E", "#0E9AA7", "#5B6BD6", "#8E44AD"],
+    },
+    "morandi": {
+        # 莫兰迪·雾霭蓝灰：所有颜色都掺灰降饱和（雾蓝 / 灰绿 / 燕麦），
+        # 设计类路演要高级感，靠的是"灰得有层次"，不是撞色。
+        "label": "雾霭蓝灰（莫兰迪 · 广告艺术/视觉传达）",
+        "chapter": ["7C95A6", "9DAE9E", "A8998C", "6E7F8D", "B0A49B", "8F9E8B", "7E8A80"],
+        "deep": "3E4C55", "deep2": "6B7A83",
+        "ink": "2E3A40", "body": "5A666C", "muted": "96A0A4",
+        "primary": "7C95A6", "accent": "B08C7A",
+        "card": "F4F2EE", "soft": "E9E6E0",
+        "cover_deco": ["9DAE9E", "B08C7A", "A8998C"],
+        "section_rule": "C9C2B6", "font": "微软雅黑",
+        "family": "莫兰迪风", "scene": "广告艺术 / 视觉传达 / 品牌形象",
+        "layout": {"variant": "v4", "body": "cards", "header": "rule",
+                   "card": "outline", "section": "light"},
+        "chart": ["#7C95A6", "#9DAE9E", "#A8998C", "#6E7F8D", "#B0A49B", "#8F9E8B", "#7E8A80"],
+    },
+    "clay": {
+        # 莫兰迪·陶土藕粉：暖调莫兰迪（陶土 / 藕粉 / 灰紫 / 橄榄），
+        # 与 morandi 的冷雾蓝错开，包装/文创/展陈这类偏"物"的项目更贴。
+        "label": "陶土藕粉（莫兰迪 · 包装/文创/展陈）",
+        "chapter": ["B08C7A", "9C8AA5", "7D8F69", "C0A090", "8E7C8F", "A89283", "6F7B63"],
+        "deep": "5A4A46", "deep2": "8A736A",
+        "ink": "3A2E2B", "body": "5E4E49", "muted": "9A8A82",
+        "primary": "B08C7A", "accent": "9C8AA5",
+        "card": "F7F3EE", "soft": "EFE9E1",
+        "cover_deco": ["9C8AA5", "7D8F69", "C0A090"],
+        "section_rule": "D6C6B8", "font": "微软雅黑",
+        "family": "莫兰迪风", "scene": "包装设计 / 文创产品 / 展陈",
+        "layout": {"variant": "v2", "header": "sidebar", "card": "solid", "section": "light"},
+        "chart": ["#B08C7A", "#9C8AA5", "#7D8F69", "#C0A090", "#8E7C8F", "#A89283", "#6F7B63"],
+    },
+    "verdant": {
+        # 清新文艺·青绿：浅米绿底 + 薄荷绿主色 + 暖沙点缀，
+        # 文创/文旅/手作这类项目用深色科技风会"压死"作品，浅底留白才透气。
+        "label": "清新青绿（文艺清新 · 文创/文旅/手作）",
+        "chapter": ["4C9A8A", "7BA05B", "8FAF7E", "3E7C6E", "A8B86A", "5E8C7E", "C2A76B"],
+        "deep": "EDF4EE", "deep2": "D6E7DA",
+        "ink": "25392F", "body": "4A6153", "muted": "8AA392",
+        "primary": "4C9A8A", "accent": "E0A46B",
+        "card": "F7FBF7", "soft": "EAF3EA",
+        "cover_deco": ["4C9A8A", "7BA05B", "E0A46B"],
+        "section_rule": "A8C8B4", "font": "微软雅黑",
+        "family": "清新文艺风", "scene": "文创 / 文旅 / 手作 / 博物馆",
+        "layout": {"variant": "v3", "body": "minimal", "header": "rule",
+                   "card": "outline", "section": "light", "light_closing": True},
+        "chart": ["#4C9A8A", "#7BA05B", "#8FAF7E", "#3E7C6E", "#A8B86A", "#5E8C7E", "#C2A76B"],
+    },
+    "literary": {
+        # 清新文艺·暖米：米黄纸感底 + 黛蓝标题 + 赭石强调，
+        # 出版/展览/绘本这类内容本身"文气"重，配色要退到纸后面。
+        "label": "文艺暖米（清新文艺 · 出版/展览/绘本）",
+        "chapter": ["3E5C6B", "C87F4A", "7C6A55", "8C7BA6", "5E7C6B", "A88B5B", "6B5B73"],
+        "deep": "F6EFE2", "deep2": "E8DCC8",
+        "ink": "2C2A26", "body": "544E45", "muted": "948B7C",
+        "primary": "3E5C6B", "accent": "C87F4A",
+        "card": "FDFAF3", "soft": "F5EEE1",
+        "cover_deco": ["3E5C6B", "C87F4A", "8C7BA6"],
+        "section_rule": "D8C8AE", "font": "微软雅黑",
+        "family": "清新文艺风", "scene": "出版 / 展览 / 绘本 / 书店",
+        "layout": {"variant": "v4", "body": "minimal", "header": "sidebar",
+                   "card": "solid", "section": "light",
+                   "light_cover": True, "light_closing": True},
+        "chart": ["#3E5C6B", "#C87F4A", "#7C6A55", "#8C7BA6", "#5E7C6E", "#A88B5B", "#6B5B73"],
+    },
 }
 
-# 精品 15 套：主推，前端默认展示。tier=extra 的旧主题折叠进"更多风格"。
-PREMIUM_ORDER = ["ican", "tech", "circuit",              # 科技蓝 3 套
-                 "biz", "svc", "capital",                # 商务灰 3 套
-                 "paper", "math", "academic",            # 学术白底 3 套
-                 "redgold", "blackgold",                 # 红金 / 黑金 2 套
-                 "poster", "studio",                     # 设计风 2 套
-                 "cyber", "sec"]                         # 深色科技 2 套
-EXTRA_ORDER = ["ink", "medical", "edu", "agri", "finance", "craft", "social"]
+# 精品 15 套：主推，前端默认展示（按风格族分组，族内版式互不相同）。
+#   科技星空 2 / 扁平商务 3 / 简洁学术 3 / 莫兰迪 2 / 红金 2 / 清新文艺 2 / 中国风 1
+PREMIUM_ORDER = ["star", "cyber",                        # 科技星空风 2 套
+                 "flat", "biz", "capital",               # 扁平商务风 3 套
+                 "paper", "math", "academic",            # 简洁白底学术风 3 套
+                 "morandi", "clay",                      # 莫兰迪设计风 2 套
+                 "redgold", "blackgold",                 # 红金正式风 2 套
+                 "verdant", "literary",                  # 清新文艺风 2 套
+                 "ink"]                                  # 中国风 1 套
+# 旧主题不删（历史结果里可能还引用着这些 key），折叠进"更多备选风格"
+EXTRA_ORDER = ["tech", "ican", "circuit", "svc", "studio", "poster", "sec",
+               "medical", "edu", "agri", "finance", "craft", "social"]
 THEME_ORDER = PREMIUM_ORDER + EXTRA_ORDER
 # ============ 版式模板库 ============
 # 版式有 6 个维度，主题通过 layout 字段挑一套组合（不指定则用 VARIANTS 的默认值）：
@@ -410,7 +530,9 @@ def list_themes():
     return {
         "themes": [
             {"key": k, "label": THEMES[k]["label"],
-             "tier": THEMES[k].get("tier", "extra"),
+             "tier": ("premium" if k in PREMIUM_ORDER else "extra"),
+             "family": THEMES[k].get("family", "通用风格"),
+             "scene": THEMES[k].get("scene", ""),
              "colors": {
                  "deep": THEMES[k]["deep"], "deep2": THEMES[k]["deep2"],
                  "primary": THEMES[k]["primary"], "accent": THEMES[k]["accent"],
@@ -1116,8 +1238,90 @@ def _cover_paper(slide, meta, s):
         _add_rect(slide, 10.35 + i * 0.52, 6.25, 0.4, 0.4, col, round_=True)
 
 
+# 星空封面的星点坐标写死（不用 random）：同一份 PPT 反复导出长得一样，方便对版。
+# 位置都避开标题区（x 1.3~11.7 / y 2.0~4.1），免得星点压在字上。
+_STARS = [(0.62, 0.72, 0.07, 0.75), (1.62, 0.34, 0.05, 0.55), (3.24, 0.92, 0.06, 0.60),
+          (5.05, 0.40, 0.05, 0.50), (7.42, 0.82, 0.08, 0.70), (9.20, 0.30, 0.05, 0.50),
+          (11.15, 0.62, 0.07, 0.65), (12.45, 1.48, 0.05, 0.50), (12.82, 3.18, 0.06, 0.60),
+          (11.60, 4.62, 0.05, 0.50), (12.60, 6.20, 0.07, 0.60), (0.78, 4.82, 0.05, 0.45),
+          (0.52, 6.58, 0.06, 0.50), (2.20, 7.02, 0.05, 0.40), (6.80, 6.92, 0.05, 0.45),
+          (9.60, 7.00, 0.06, 0.50)]
+
+
+def _cover_star(slide, meta, s):
+    """星空封面：深空渐变底 + 星点 + 两团星云光晕，标题压在左侧。
+
+    星点只铺封面，内容页一律干净 —— 内容页再撒星星，投影出来就是一片噪点。
+    """
+    _bg_grad(slide, DEEP, DEEP2, 3150000)
+    for (cx, cy, cw, col, al) in ((9.9, -1.2, 5.2, COVER_DECO[0], 0.22),
+                                  (-1.6, 5.2, 4.6, COVER_DECO[1], 0.18)):
+        d = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx), Inches(cy), Inches(cw), Inches(cw))
+        d.fill.solid(); d.fill.fore_color.rgb = _rgb(col)
+        d.line.fill.background(); d.shadow.inherit = False
+        _set_alpha(d, al)
+    for (sx, sy, ss, al) in _STARS:
+        st = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(sx), Inches(sy), Inches(ss), Inches(ss))
+        st.fill.solid(); st.fill.fore_color.rgb = _rgb("FFFFFF")
+        st.line.fill.background(); st.shadow.inherit = False
+        _set_alpha(st, al)
+    for i, col in enumerate(COVER_DECO):
+        _add_rect(slide, 0.9, 2.02 + i * 0.78, 0.14, 0.62, col, round_=True)
+    tb, tf = _add_box(slide, 1.35, 2.0, 10.3, 1.5)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, WHITE, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.37, 3.35, 10, 0.7)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 17, _sub_text())
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.37, 6.35, 10, 0.5)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, _sub_text())
+
+
+def _cover_orient(slide, meta, s):
+    """中国风封面：宣纸底 + 右侧朱红竖条 + 朱印 + 回纹边框 + 墨色标题。
+
+    不用满屏云纹/毛笔字：评委看的是项目名，装饰压过标题就本末倒置了。
+    朱红面积控制在 8% 左右（竖条 + 印章 + 四角折线）。
+    """
+    _add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, SOFT)
+    _add_rect(slide, SLIDE_W - 1.05, 0, 1.05, SLIDE_H, PRIMARY)
+    _add_rect(slide, SLIDE_W - 1.18, 0, 0.06, SLIDE_H, ACCENT)
+    # 回纹边框：外框细线 + 四角 L 形折线（回纹的简化，打出来也不会糊）
+    _add_rect(slide, 0.55, 0.55, SLIDE_W - 1.10, SLIDE_H - 1.10, None,
+              line=_lighten(PRIMARY, 0.55), line_w=1)
+    for (cx, cy, w, h) in ((0.55, 0.55, 1.10, 0.05), (0.55, 0.55, 0.05, 0.90),
+                           (SLIDE_W - 1.65, SLIDE_H - 0.60, 1.10, 0.05),
+                           (SLIDE_W - 0.60, SLIDE_H - 1.45, 0.05, 0.90)):
+        _add_rect(slide, cx, cy, w, h, PRIMARY)
+    # 朱红印章
+    seal = _add_rect(slide, 0.95, 1.58, 0.62, 0.62, PRIMARY, round_=True)
+    tb_s, tf_s = _add_box(slide, 0.95, 1.58, 0.62, 0.62)
+    tf_s.vertical_anchor = MSO_ANCHOR.MIDDLE
+    ps = tf_s.paragraphs[0]; ps.alignment = PP_ALIGN.CENTER
+    rs = ps.add_run(); rs.text = "创"
+    _set_run_font(rs, 20, WHITE, bold=True)
+    tb, tf = _add_box(slide, 1.85, 2.30, 9.6, 1.6)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, INK, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.87, 3.80, 9.4, 0.8)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 18, BODY)
+    _add_rect(slide, 1.88, 4.62, 1.5, 0.04, _lighten(PRIMARY, 0.45))
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.88, 4.88, 9.0, 0.6)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED)
+
+
 _COVERS = {"gradient": _cover_gradient, "split": _cover_split,
-           "band": _cover_band, "center": _cover_center, "paper": _cover_paper}
+           "band": _cover_band, "center": _cover_center, "paper": _cover_paper,
+           "star": _cover_star, "orient": _cover_orient}
 
 
 def _slide_cover(prs, s, meta):

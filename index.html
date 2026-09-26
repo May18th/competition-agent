@@ -3718,29 +3718,29 @@ mark.wb-ph {
                  strong: ['视觉', '配色', '版式', '画面', '海报', '呈现', '物料', '字体', '构图']}
             ]
         };
-        // 赛事类型 → 推荐主题。顺序即优先级：iCAN 有官方指定的蓝白主题，必须最先命中，
-        // 数学建模 / 广告艺术 也比泛化的"科技"更具体，排在通用类前面。
+        // 赛事类型 → 推荐主题（主题 key 用 15 套精品里的，不再指向旧模板）。
+        // 顺序即优先级：iCAN 最先命中，数学建模 / 广告艺术 比泛化的"科技"更具体，排前面。
         var WB_COMP_TYPES = [
-            {type: 'ican',  name: 'iCAN 大赛', theme: 'ican',
+            {type: 'ican',  name: 'iCAN 大赛', theme: 'star',
              kw: ['iCAN', 'ican', 'Ican']},
-            {type: 'math',  name: '数学建模类', theme: 'academic',
+            {type: 'math',  name: '数学建模类', theme: 'math',
              rename: {feature: '模型应用', compete: '方法对比'},
              kw: ['数学建模', '数模', '建模', '运筹', '统计建模']},
-            {type: 'art',   name: '艺术设计类', theme: 'studio',
+            {type: 'art',   name: '艺术设计类', theme: 'morandi',
              // 不放泛化的"设计大赛"：中国大学生计算机设计大赛是软件类赛事，
              // 被它命中就会推成设计风，反而错
              kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视', '文创']},
-            {type: 'eng',   name: '工程硬件类', theme: 'tech',
+            {type: 'eng',   name: '工程硬件类', theme: 'star',
              kw: ['电子设计', '电赛', '蓝桥杯', '机器人', '智能制造', '西门子', '机械', '嵌入式',
                   '单片机', '硬件', '电路', '自动化', 'RoboMaster', '工程训练', '智能车']},
             // 国创/大创计划名称里带"创业"两字（创新创业训练计划），但它是科研训练类，
             // 排在经管类前面先命中，不然会被推成商务灰
-            {type: 'acad',  name: '学术科研类', theme: 'academic',
+            {type: 'acad',  name: '学术科研类', theme: 'paper',
              kw: ['创新创业训练', '国创计划', '大创']},
-            {type: 'biz',   name: '经管商业类', theme: 'biz',
+            {type: 'biz',   name: '经管商业类', theme: 'flat',
              kw: ['互联网+', '互联网＋', '创业', '小挑', '服务外包', '商业', '经管', '金融',
                   '供应链', '市场', '营销', '电商', '财务']},
-            {type: 'it',    name: '软件信息类', theme: 'tech',
+            {type: 'it',    name: '软件信息类', theme: 'star',
              kw: ['信息安全', '计算机设计', '软件', '程序', '算法', '网络', '大数据', '人工智能',
                   '信息技术', '金砖', '技能']},
             {type: 'acad',  name: '学术科研类', theme: 'academic',
@@ -3751,25 +3751,33 @@ mark.wb-ph {
         //   ① "创业计划/小挑" 必须排在 "挑战杯" 前面，否则小挑会被大挑的红金吃掉；
         //   ② "服务外包" 必须排在 "创业" 前面（服务外包大赛名字里也带"创新创业"）。
         // 最后一档是类型兜底，给"用户手输赛事名"的场合用。
+        // 主题全部落在 15 套精品上：科技星空 star/cyber、扁平商务 flat/biz/capital、
+        // 简洁学术 paper/math/academic、莫兰迪 morandi/clay、红金 redgold/blackgold、
+        // 清新文艺 verdant/literary、中国风 ink。
+        // 传统文化必须排在"文创"前面：非遗项目名字里也带"文创"，被文创吃掉就成了清新绿。
         var WB_COMP_THEME = [
-            {kw: ['ican'], theme: 'ican'},
-            {kw: ['互联网+', '互联网＋'], theme: 'biz'},
-            {kw: ['服务外包'], theme: 'svc'},
+            {kw: ['ican'], theme: 'star'},
+            {kw: ['传统文化', '非遗', '非物质文化', '国学', '汉服', '书法', '中医药',
+                  '国风', '文物', '戏曲', '古籍', '民俗', '汉字', '中医药'], theme: 'ink'},
+            {kw: ['绘本', '书籍', '出版', '展览', '书店', '文艺'], theme: 'literary'},
+            {kw: ['文创', '文旅', '手作', '博物馆', '文化创', '乡村振兴'], theme: 'verdant'},
+            {kw: ['互联网+', '互联网＋'], theme: 'flat'},
+            {kw: ['服务外包'], theme: 'biz'},
             {kw: ['创业计划', '小挑'], theme: 'blackgold'},
             {kw: ['课外学术科技作品', '大挑'], theme: 'redgold'},
             {kw: ['挑战杯'], theme: 'redgold'},
             {kw: ['创新创业训练', '国创计划', '大创'], theme: 'paper'},
             {kw: ['数学建模', '数模', '建模'], theme: 'math'},
-            {kw: ['电子设计', '电赛', '嵌入式', '单片机', '电路'], theme: 'circuit'},
-            {kw: ['西门子', '智能制造', '机械', '自动化', '工程训练', '智能车'], theme: 'circuit'},
-            {kw: ['蓝桥杯', '计算机设计', '软件', '程序', '算法'], theme: 'tech'},
-            {kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视', '文创'], theme: 'poster'},
-            {kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞'], theme: 'sec'},
+            {kw: ['电子设计', '电赛', '嵌入式', '单片机', '电路'], theme: 'star'},
+            {kw: ['西门子', '智能制造', '机械', '自动化', '工程训练', '智能车'], theme: 'star'},
+            {kw: ['蓝桥杯', '计算机设计', '软件', '程序', '算法'], theme: 'star'},
+            {kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视'], theme: 'morandi'},
+            {kw: ['包装', '平面', '品牌', '海报', '展陈', '文创产品'], theme: 'clay'},
+            {kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞'], theme: 'cyber'},
             {kw: ['机器人', 'robomaster', '人工智能', '深度学习', '机器学习', '神经网络'], theme: 'cyber'},
             {kw: ['金砖', '技能发展', '青年创客'], theme: 'capital'},
             {kw: ['创业', '商业', '融资', '创投', '经管', '金融', '供应链', '市场', '营销', '电商', '财务'], theme: 'biz'},
-            {kw: ['论文', '科研', '结题', '开题', '学术'], theme: 'academic'},
-            {kw: ['视觉', '海报', '平面', '品牌', '包装'], theme: 'studio'}
+            {kw: ['论文', '科研', '结题', '开题', '学术'], theme: 'academic'}
         ];
         // 赛事名来源：输入框 + 已生成结果里的赛事名（历史回看时输入框可能已被清空）
         function wbCompText() {
@@ -3785,7 +3793,7 @@ mark.wb-ph {
                     if (low.indexOf(String(t.kw[j]).toLowerCase()) >= 0) return t.theme;
                 }
             }
-            return 'tech';
+            return 'star';
         }
         // 赛事名 → 类型（找不到就 general）。类型是"页面结构"用（专项页/改名词），
         // 主题由 wbRecoTheme 单独定（同类型下不同赛事可以推不同模板）
@@ -4156,7 +4164,7 @@ mark.wb-ph {
             return {
                 project: proj, one_liner: one,
                 competition: _wbOne(src.competition || rd.competition || ''),
-                theme: src.theme || 'tech', variant: src.variant || 'v1',
+                theme: src.theme || 'star', variant: src.variant || 'v1',
                 slides: out
             };
         }
@@ -4222,7 +4230,15 @@ mark.wb-ph {
             cyber:    { deep: '#160826', deep2: '#3B2170', primary: '#7C3AED', accent: '#22D3EE', deco: ['#22D3EE', '#A855F7', '#F472B6'] },
             ican:     { deep: '#072C55', deep2: '#0F5C9E', primary: '#0E5EA8', accent: '#2AA9E0', deco: ['#2AA9E0', '#7FC4EE', '#0E5EA8'] },
             biz:      { deep: '#1E242C', deep2: '#3A4654', primary: '#374151', accent: '#6B7280', deco: ['#9AA5B1', '#6B7280', '#C0C8D2'] },
-            studio:   { deep: '#111318', deep2: '#2C303C', primary: '#C2185B', accent: '#00ACC1', deco: ['#FF4D6D', '#00E5C0', '#FFC94D'] }
+            studio:   { deep: '#111318', deep2: '#2C303C', primary: '#C2185B', accent: '#00ACC1', deco: ['#FF4D6D', '#00E5C0', '#FFC94D'] },
+            // 15 套精品（后端会回传 colors，这里是接口拿不到时的兜底）
+            star:     { deep: '#06152F', deep2: '#123A6B', primary: '#1F6FB2', accent: '#3FBFEA', deco: ['#3FBFEA', '#7CC4F5', '#1F6FB2'] },
+            flat:     { deep: '#0F4C9E', deep2: '#2E7BD6', primary: '#1B6AC9', accent: '#FFB020', deco: ['#FFB020', '#2E9E6B', '#E4572E'] },
+            morandi:  { deep: '#3E4C55', deep2: '#6B7A83', primary: '#7C95A6', accent: '#B08C7A', deco: ['#9DAE9E', '#B08C7A', '#A8998C'] },
+            clay:     { deep: '#5A4A46', deep2: '#8A736A', primary: '#B08C7A', accent: '#9C8AA5', deco: ['#9C8AA5', '#7D8F69', '#C0A090'] },
+            verdant:  { deep: '#EDF4EE', deep2: '#D6E7DA', primary: '#4C9A8A', accent: '#E0A46B', deco: ['#4C9A8A', '#7BA05B', '#E0A46B'] },
+            literary: { deep: '#F6EFE2', deep2: '#E8DCC8', primary: '#3E5C6B', accent: '#C87F4A', deco: ['#3E5C6B', '#C87F4A', '#8C7BA6'] },
+            ink:      { deep: '#F7F3E8', deep2: '#E8DFC9', primary: '#9E2B25', accent: '#B08D57', deco: ['#9E2B25', '#2F4858', '#B08D57'] }
         };
         function wbHex(c) { c = String(c || ''); return c && c.charAt(0) !== '#' ? '#' + c : c; }
         function wbThemeColors(t) {
@@ -4239,12 +4255,14 @@ mark.wb-ph {
         function wbThemeThumb(c, lay) {
             lay = lay || {};
             var cov = lay.cover || 'gradient';
-            var light = (cov === 'split' || cov === 'band' || cov === 'paper' ||
+            var light = (cov === 'split' || cov === 'band' || cov === 'paper' || cov === 'orient' ||
                          (cov === 'center' && lay.light_cover));
             var bg;
             if (cov === 'split')      bg = 'linear-gradient(90deg,' + c.deep + ' 0%,' + c.deep2 + ' 40%,#fff 40%,#fff 100%)';
             else if (cov === 'band')  bg = 'linear-gradient(180deg,' + c.primary + ' 0%,' + c.deep2 + ' 42%,#fff 42%,#fff 100%)';
             else if (cov === 'paper') bg = 'linear-gradient(90deg,' + c.primary + ' 0 7%,#fff 7% 100%)';
+            else if (cov === 'orient') bg = 'linear-gradient(90deg,#fff 0 86%,' + c.primary + ' 86% 100%)';
+            else if (cov === 'star')  bg = 'radial-gradient(circle at 76% 14%, ' + c.deep2 + ' 0%, ' + c.deep + ' 62%)';
             else                      bg = 'linear-gradient(135deg,' + c.deep + ' 0%,' + c.deep2 + ' 100%)';
             var bar = light ? c.primary : '#FFFFFF';
             var line = light ? 'rgba(20,35,61,.30)' : 'rgba(255,255,255,.55)';
@@ -4279,6 +4297,19 @@ mark.wb-ph {
                     h += '<div class="wb-theme-dot" style="background:' + c.deco[i] + '; right:' + (8 + i * 12) + 'px;"></div>';
                 }
             }
+            // 星空封面：缩略图上也撒几颗星，一眼能和"整页渐变"区分开
+            if (cov === 'star') {
+                var st = [[14, 16, 2], [40, 10, 1.6], [72, 20, 2], [104, 9, 1.4], [52, 54, 1.6], [96, 40, 1.8]];
+                for (var s = 0; s < st.length; s++) {
+                    h += '<div style="position:absolute; left:' + st[s][0] + 'px; top:' + st[s][1] +
+                         'px; width:' + st[s][2] + 'px; height:' + st[s][2] +
+                         'px; border-radius:50%; background:rgba(255,255,255,.9);"></div>';
+                }
+            }
+            // 中国风：右上角朱红竖条 + 左上角朱印方块
+            if (cov === 'orient') {
+                h += '<div style="position:absolute; left:8px; top:26px; width:8px; height:8px; background:' + c.primary + ';"></div>';
+            }
             h += '</div>';
             return h;
         }
@@ -4307,7 +4338,18 @@ mark.wb-ph {
             var show = premium.length ? premium : themes;
             var cnt = document.getElementById('deckThemeCount');
             if (cnt) cnt.textContent = show.length;
-            g.innerHTML = show.map(function (t) { return wbThemeCard(t, cur, reco); }).join('');
+            // 按风格族分组：15 套一屏排下来没有分类等于没排，用户看不出"哪套适合我"
+            var html = '', fam = '';
+            show.forEach(function (t) {
+                if ((t.family || '') !== fam) {
+                    fam = t.family || '';
+                    html += '<div style="grid-column:1/-1; display:flex; align-items:center; gap:8px; margin:8px 0 0;">' +
+                            '<span style="font-size:12px; font-weight:600;">' + _esc(fam || '内置模板') + '</span>' +
+                            '<span style="flex:1; height:1px; background:currentColor; opacity:.16;"></span></div>';
+                }
+                html += wbThemeCard(t, cur, reco);
+            });
+            g.innerHTML = html;
             // 旧主题折叠：不删（历史记录可能引用），但不占主视觉
             var eg = document.getElementById('deckThemeExtraGrid');
             if (eg) eg.innerHTML = extra.map(function (t) { return wbThemeCard(t, cur, reco); }).join('');
@@ -4397,7 +4439,7 @@ mark.wb-ph {
             const rd = window._lastData || {};
             // 主题：优先顶层 theme（后端若提供），回退 rich_deck.theme（当前实际版本）。
             // 版式不再由 variant 决定 —— 15 套模板各自带 layout，前端不提供版式下拉。
-            var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
+            var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'star';
             // 按赛事推荐模板：iCAN→蓝白科技、电赛→电路蓝、互联网+→商务灰、
             // 数模→白底建模、挑战杯→红金、广告艺术→海报撞色…用户手动点过就不再动
             if (!_themeManual) {
@@ -4420,7 +4462,8 @@ mark.wb-ph {
         function wbLayoutDesc(t) {
             var L = (t && t.layout) || {};
             var cov = {gradient: '整页渐变封面', split: '左色块封面', band: '顶部色带封面',
-                       center: '居中留白封面', paper: '白底学术封面'}[L.cover] || '';
+                       center: '居中留白封面', paper: '白底学术封面',
+                       star: '星空封面', orient: '中国风宣纸封面'}[L.cover] || '';
             var body = {cards: '卡片正文', minimal: '极简条目', numbered: '大号序号'}[L.body] || '';
             var out = [cov, body].filter(Boolean).join(' · ');
             return out || '';
