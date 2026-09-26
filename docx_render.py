@@ -400,9 +400,9 @@ def _header(doc, title):
 def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None,
            show_school_advisor=True):
     """封面：主标题黑体小初 / 副标题黑体二号 / 学校·团队·指导老师·日期黑体小三，全部居中。"""
-    # 把封面文字压到页面纵向约 1/3 处
+    # 封面文字压到纵向约 1/5 处（之前 150pt 把标题推太低，顶部留一大块空白）
     sp = doc.add_paragraph()
-    sp.paragraph_format.space_before = Pt(150)
+    sp.paragraph_format.space_before = Pt(60)
     sp.paragraph_format.space_after = Pt(0)
     sp.paragraph_format.line_spacing = 1.0
     _font(sp.add_run(''), 1)
@@ -436,7 +436,7 @@ def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=
 
     if info_lines:
         p = doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(36)
+        p.paragraph_format.space_after = Pt(18)
         p.paragraph_format.line_spacing = 1.0
         _font(p.add_run(''), SZ_XIAOSAN)
 
