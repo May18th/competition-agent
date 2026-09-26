@@ -342,3 +342,90 @@ POST 给 `/api/export_pptx` 和 `/api/export_zip` 的，下载前重排一次两
 白底主题走 `light_closing`（白底收尾 + 墨色标题），深底主题沿用主题色。
 另外白底主题配 band/split 封面时，渐变从白色起会把标题压成**白底白字**，
 已改成浅底时色带走纯色。
+
+---
+
+## 2026-09-26 18:30 · 报备④：15 套模板按风格族重做（WorkBuddy 改了后端 pptx_builder.py）
+
+来源：用户给了模板站分类（扁平 / 简洁 / 星空科技 / 莫兰迪 / 文艺 / 中国风 / 红金），
+要求按这些风格重做 15 套内置模板。**只动了 pptx_builder.py 的 THEMES 相关部分 + 前端映射**，
+页面渲染函数（_slide_* / _bullets_body / _metrics_body 等）逻辑没动。
+
+### 1. PREMIUM_ORDER 换成新的 15 套（按风格族分组）
+```
+科技星空 2：star（星海蓝）/ cyber（星云紫）
+扁平商务 3：flat（扁平蓝）/ biz（商务灰）/ capital（创投深灰金）
+简洁学术 3：paper / math / academic
+莫兰迪   2：morandi（雾霭蓝灰）/ clay（陶土藕粉）
+红金     2：redgold / blackgold
+清新文艺 2：verdant（清新青绿）/ literary（文艺暖米）
+中国风   1：ink（水墨朱丹）
+```
+旧 premium 的 7 套（tech / ican / circuit / svc / studio / poster / sec）**降级为 extra**，
+与原来的 medical/edu/agri/finance/craft/social 一起折叠进"更多备选风格"，不删（历史记录引用）。
+
+### 2. 两套新封面版式（_COVERS 新增）
+- `star`：星空封面 —— 深空渐变 + 16 颗星点 + 两团星云光晕。星点坐标写死在 `_STARS`
+  （不用 random，保证反复导出长得一样），位置全部避开标题区。**星点只铺封面**，内容页保持干净。
+- `orient`：中国风封面 —— 宣纸底（用主题的 `soft`）+ 右侧朱红通顶竖条 + 描金细线 +
+  朱红印章方块 + 回纹边框（外框细线 + 四角 L 形折线）。朱红面积控制在 8% 左右。
+
+### 3. list_themes() 多回传两个字段
+每项新增 `family`（风格族名，如"科技星空风"）和 `scene`（适配场景文案）。
+前端据此做**分组标题**（一屏 15 张卡没有分类等于没排）和推荐说明。
+`tier` 改成按 `PREMIUM_ORDER` 判定（`"premium" if k in PREMIUM_ORDER else "extra"`），
+不再依赖主题里手写的 tier 字段 —— 以后调顺序不用逐个改 tier。
+
+### 4. 15 套的 (cover, body, header, card) 四元组两两不同，族内至少错开两项
+已用脚本校验（`itertools.combinations`）：无完全相同的四元组，族内差异 <2 的组合为 0。
+以后新增主题请先跑这段校验，别再出现"换个颜色算一套"。
+
+### 5. 前端同步（index.html）
+- `WB_COMP_THEME` / `WB_COMP_TYPES` 的主题 key 全部换成新 15 套；
+  新增文创（verdant/literary）、传统文化（ink）的识别。传统文化必须排在"文创"前面，
+  否则非遗项目（名字里带"文创"）会被推成清新绿。
+- 默认兜底主题 `tech` → `star`。
+- `wbThemeThumb` 新增 star / orient 两种缩略图画法；`wbLayoutDesc` 同步。
+
+---
+
+## 2026-09-26 19:10 · 报备⑤：手机端体验修复（只动前端 index.html，后端没碰）
+
+来源：用户实测（微信 / 百度App / QQ浏览器 / 夸克）反馈四条 + 一个建议。
+
+### 1. 微信 / QQ 内置浏览器：打开即全屏引导（新增）
+- `wbUaKind()`：MicroMessenger / QQ(MQQBrowser+QQ/) / 微博 / 钉钉 → 返回类型；
+  夸克、百度App、普通 Chrome 一律返回空（**不误伤**，已用 node 跑 5 条 UA 验证）。
+- 命中就显示 `#wbUaMask` 全屏遮罩：右上角箭头指向 `···`，说明"不能上传文件 / 不能复制 /
+  不能下载"，给「复制网址」+「我知道了」两个出口（sessionStorage 关一次，不反复弹）。
+- 检测挂在页面启动的 IIFE 里（`wbUaCheck()` 先于 `wbGuideInit()`），不等用户点按钮才提示。
+
+### 2. 等待文案：不再报秒数
+`'AI正在生成：xx（已用 Ns）'` → `'深度版预计 2-3 分钟，正在生成内容，无需等待，可以先去做别的事'`。
+演讲稿阶段同理。原来"已用 120s + 较慢可点终止"会让用户以为卡住了。
+
+### 3. 手机端留白压缩（768 / 420 两档）
+hero padding 30→14(420:10)、card padding 20→14(420:12)、card margin 20→12、
+body padding 12→8、result-hero / quickExportBar / 占位符条一并收紧。
+主表单那个 `display:grid; gap:20px` 是内联样式（媒体查询压不住），加了 class `wb-formgrid`
+再用 `!important` 覆盖 —— 以后遇到内联 style 的间距，别在媒体查询里干写，压不过。
+
+### 4. 三步引导改左右滑动（修"只看到第 1、2 步"）
+矮视口（百度/QQ/夸克）里竖排三行会把首屏撑爆，露出不全。改成
+`display:flex + scroll-snap + flex:0 0 100%`，一屏一步左右滑，并显示"← 左右滑动看第 2、3 步 →"。
+**不用 flex gap**（QQ/夸克的老 Chromium 不支持），间距用 `margin-right` 兜底。
+
+### 5. 下载统一走 wbSaveBlob(blob, name)
+7 处 `createElement('a') + createObjectURL + click` 全部替换：
+内置浏览器 → 弹"请点右上角 ··· 用浏览器打开"而不是静默失败；
+正常浏览器 → a 挂到 DOM 上再 click（部分内核不触发游离元素 click）+ 4s 后回收 URL；
+iOS → 补一句"长按文件存储到文件"的兜底提示。
+
+### 6. 悬浮按钮加「回到生成内容」（用户建议）
+`wbBackToResult()`：切到「申报与评审」栏目 + 滚回结果区栏目栏（`#resultTabs` 加了 id）。
+结果区很长，读到一半换栏目要手动滑很久。
+
+### 7. ⚠️ 发现一个历史残留，我没动，交给你决定
+`exportSection()` 在 index.html 里有**两处同名定义**（2191 行、4526 行），
+第二个覆盖第一个。功能没坏（两者实现一样），但容易改错地方。
+`wbSaveBlob` 我插在第二个定义之前。你要清理的话删掉第一个即可。
