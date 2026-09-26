@@ -52,6 +52,10 @@ body {
     background: var(--bg-0);
     color: var(--text);
     min-height: 100vh;
+    /* 移动端地址栏收起/展开时 100vh 会比真实视口高出一截，背景就会多出一条
+       和其它区域不同色的色带（用户反馈的「界面上下颜色分层」）。
+       dvh 是动态视口高度，支持的浏览器直接用；不支持的自动回落到上面的 100vh。 */
+    min-height: 100dvh;
     padding: 20px;
     position: relative;
     overflow-x: hidden;
@@ -822,7 +826,15 @@ mark.wb-ph {
     position: relative;
     z-index: 1501;
     border-radius: 8px;
-    box-shadow: 0 0 0 3px var(--c-a), 0 0 0 100vmax rgba(3, 6, 20, .62);
+    box-shadow: 0 0 0 3px var(--c-a);
+}
+/* 全屏压暗用独立的 fixed 层：早先用 box-shadow: 0 0 0 100vmax 做蒙层，
+   祖先里只要有一个 overflow:hidden 就会把阴影裁掉，手机上看到的就是「上下颜色分层」。*/
+#wbCoachVeil {
+    position: fixed;
+    left: 0; top: 0; width: 100%; height: 100%;
+    z-index: 1500;
+    background: rgba(3, 6, 20, .62);
 }
 #coachTip {
     position: fixed;
@@ -1113,7 +1125,21 @@ mark.wb-ph {
         .version-card .wb-ico-ok{ width: .95em; height: .95em; }
         button .wb-ico{ transition: transform .25s; }
         button:hover .wb-ico{ transform: translateY(-1px); }
-    </style>
+    
+        /* 板块快速定位：横向可滑的锚点条（手机上不换行，滑着选） */
+        .wb-anchor-bar { margin: 0 0 12px; }
+        .wb-anchor-scroll { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch;
+                            scrollbar-width: none; padding: 2px 0 4px; }
+        .wb-anchor-scroll::-webkit-scrollbar { display: none; }
+        .wb-anchor-btn { flex: 0 0 auto; margin-right: 6px; padding: 6px 12px; font-size: 12.5px;
+                         border-radius: 999px; cursor: pointer; white-space: nowrap;
+                         border: 1px solid var(--line); background: var(--surface-solid);
+                         color: var(--text-dim); }
+        .wb-anchor-btn:active { background: var(--c-a); color: #fff; border-color: var(--c-a); }
+        @media (max-width: 420px) {
+            .wb-anchor-btn { padding: 5px 10px; font-size: 12px; }
+        }
+</style>
 </head>
 <body>
     <svg class="wb-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -1575,6 +1601,11 @@ mark.wb-ph {
                 <button class="tab" id="logsTab" style="display: none;" onclick="switchTab(event, 'logs')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 运行日志</button>
             </div>
 
+            <!-- 板块快速定位：结果很长，看完一块想看下一块不用来回翻 -->
+            <div id="wbAnchorBar" class="wb-anchor-bar" style="display: none;">
+                <div class="wb-anchor-scroll" id="wbAnchorScroll"></div>
+            </div>
+
             <div id="tab-analysis" class="tab-content active">
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 规则解析 <button onclick="copyText('parsedRules')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
@@ -1935,7 +1966,9 @@ mark.wb-ph {
         <div class="modal">
             <h2><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-history"/></svg> 历史记录</h2>
             <input id="historySearch" class="history-search" placeholder="搜索赛事名或创意关键词" oninput="loadHistory(0)">
-            <div id="historyList" style="max-height: 46vh; overflow-y: auto;">
+            <!-- 微信内置浏览器里 vh 会算错（地址栏一收就变），列表高度可能塌成 0，
+                 表现为「历史记录什么都看不到」。先用 px 兜底，再让支持的浏览器用 dvh。 -->
+            <div id="historyList" style="max-height: 380px; max-height: 46dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;">
                 <p style="color: var(--text-mute); text-align: center;">加载中...</p>
             </div>
             <div id="historyPager" class="history-pager"></div>
@@ -3131,6 +3164,8 @@ mark.wb-ph {
         function _coachClear() {
             var olds = document.querySelectorAll('.wb-coach-target');
             for (var i = 0; i < olds.length; i++) olds[i].classList.remove('wb-coach-target');
+            var veil = document.getElementById('wbCoachVeil');
+            if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
             var tip = document.getElementById('coachTip');
             if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
         }
@@ -3148,6 +3183,12 @@ mark.wb-ph {
             if (!el) { _coachIdx++; coachShow(); return; }
             try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
             setTimeout(function () {
+                if (!document.getElementById('wbCoachVeil')) {
+                    var veil = document.createElement('div');
+                    veil.id = 'wbCoachVeil';
+                    veil.addEventListener('click', function () { coachNext(); });
+                    document.body.appendChild(veil);
+                }
                 el.classList.add('wb-coach-target');
                 var tip = document.createElement('div');
                 tip.id = 'coachTip';
@@ -3179,7 +3220,8 @@ mark.wb-ph {
             var th = tip.offsetHeight || 90, tw = tip.offsetWidth || 260;
             var below = true;
             var top = r.bottom + 10;
-            if (top + th > window.innerHeight - 12) { top = r.top - th - 10; below = false; }
+            var vh = (typeof wbViewportHeight === 'function') ? wbViewportHeight() : window.innerHeight;
+            if (top + th > vh - 12) { top = r.top - th - 10; below = false; }
             if (top < 8) top = 8;
             var left = Math.max(10, Math.min(r.left, window.innerWidth - tw - 10));
             tip.style.top = top + 'px';
@@ -3290,6 +3332,30 @@ mark.wb-ph {
         }
         // 供下载逻辑判断：内置浏览器里点了下载只会"没反应"，要弹提示而不是静默失败
         function wbInApp() { return !!wbUaKind(); }
+
+        // 上传兜底：点「上传」之前先判能不能用。命中内置浏览器就别让用户白选一轮文件，
+        // 命中旧版 .doc 也提前说清（后端只读 pdf/docx/txt/md，选 .doc 必然失败）。
+        function wbUploadGuard(inputId) {
+            var el = document.getElementById(inputId);
+            if (!el) return;
+            el.addEventListener('click', function (ev) {
+                var k = wbUaKind();
+                if (!k) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                wbUaCheck();
+            }, true);
+            el.addEventListener('change', function (ev) {
+                var f = ev.target.files && ev.target.files[0];
+                if (!f) return;
+                var nm = String(f.name || '');
+                var ext = (nm.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+                if (ext === '.doc') {
+                    ev.target.value = '';
+                    wbToast('旧版 .doc 读不了：请在 Word 里「另存为 .docx」再上传，或直接粘贴文字', {type: 'warn', ms: 4200});
+                }
+            });
+        }
 
         function wbGuideInit() {
             var g = document.getElementById('wbGuide');
@@ -4783,6 +4849,31 @@ mark.wb-ph {
         }
 
         // 刷新占位符统计条：正文里高亮了几处【待你填写：xxx】
+        /* ---------- 结果区渲染队列：分帧补画，别让主线程一次锁死 ----------
+           15 个板块一起 marked.parse 会把低端机卡住（微信/夸克内核尤其明显：
+           卡顿、白屏、渲染到一半内容丢失）。这里按优先级排队，每帧只干 8ms，
+           干不完下一帧继续 —— 用户能立刻看到当前 tab，其余在后台慢慢补上。 */
+        function wbPaintQueue(q) {
+            if (!q || !q.length) return;
+            q.sort(function (a, b) { return a[0] - b[0]; });
+            var i = 0;
+            var raf = window.requestAnimationFrame ||
+                      function (f) { return setTimeout(f, 16); };
+            function now() {
+                return (window.performance && performance.now) ? performance.now() : Date.now();
+            }
+            function step() {
+                var t0 = now();
+                while (i < q.length) {
+                    try { q[i][1](); } catch (e) { /* 单个板块出错不能连累整份结果 */ }
+                    i++;
+                    if (now() - t0 > 8) break;   // 本帧时间用完了，剩下的下一帧
+                }
+                if (i < q.length) raf(step);
+            }
+            step();
+        }
+
         function wbRefreshPhBar() {
             var bar = document.getElementById('wbPhBar');
             var cnt = document.getElementById('wbPhCount');
@@ -4974,7 +5065,8 @@ mark.wb-ph {
                             .then(res2 => {
                                 if (!res2.success) {
                                     clearInterval(tick);
-                                    reject(new Error(res2.error || '任务已失效'));
+                                    reject(new Error((res2.error || '任务已失效') +
+                                        (res2.detail ? '（' + res2.detail + '）' : '')));
                                     return;
                                 }
                                 if (res2.status === 'running') {
@@ -5003,7 +5095,11 @@ mark.wb-ph {
                                 }
                                 clearInterval(tick);
                                 if (res2.status === 'error') {
-                                    reject(new Error(res2.error || '生成失败'));
+                                    // 后端 /api/status 会给 error + detail，detail 才是原始报错。
+                                    // 只弹 error 的话用户看到的是「生成失败」四个字，等于没说，
+                                    // 也没法判断是自己网络问题还是服务挂了
+                                    reject(new Error((res2.error || '生成失败') +
+                                        (res2.detail ? '（' + res2.detail + '）' : '')));
                                 } else if (res2.status === 'cancelled') {
                                     reject({ cancelled: true });
                                 } else {
@@ -5026,99 +5122,127 @@ mark.wb-ph {
                     if (data.success) {
                         document.getElementById('skeletonArea').style.display = 'none';
                         document.getElementById('resultArea').style.display = 'block';
-                        // 填四个核心内容
-                        document.getElementById('scoreNum').innerText = data.data.score;
-                        document.getElementById('parsedRules').innerHTML = marked.parse(data.data.parsed_rules);
-                        document.getElementById('similarityReport').innerHTML = marked.parse(data.data.similarity_report);
-                        if (data.data.proposal_outline) document.getElementById('proposalOutline').innerHTML = marked.parse(data.data.proposal_outline);
-                        (function () {
+                        // ===== 结果渲染：入队分帧，不一把梭 =====
+                        // 微信 / 夸克 / 百度App 的内核在手机上一次性跑 15 个板块的
+                        // marked.parse + innerHTML 会锁死主线程：卡顿、白屏、甚至渲染到一半丢内容。
+                        // 改成按优先级入队、每帧限时补画；依赖 DOM 的判断全排到渲染之后。
+                        window._lastData = data.data;
+                        const isDeep = mode === 'deep';
+                        var _Q = [];
+                        function _P(prio, fn) { _Q.push([prio, fn]); }
+
+                        // ---- 0：分数，第一眼要看到的 ----
+                        _P(0, function () { document.getElementById('scoreNum').innerText = data.data.score; });
+                        // ---- 1：当前 tab（默认「前期分析」）里的板块先画 ----
+                        _P(1, function () { document.getElementById('parsedRules').innerHTML = marked.parse(data.data.parsed_rules); });
+                        _P(1, function () { document.getElementById('similarityReport').innerHTML = marked.parse(data.data.similarity_report); });
+                        // ---- 2~5：核心内容 ----
+                        if (data.data.proposal_outline) _P(2, function () { document.getElementById('proposalOutline').innerHTML = marked.parse(data.data.proposal_outline); });
+                        _P(2, function () {
                             var sc = document.getElementById('proposalSelfcheck');
                             if (sc && data.data.proposal_selfcheck) {
                                 sc.textContent = data.data.proposal_selfcheck;
                                 sc.style.display = 'block';
                             }
-                        })();
-                        document.getElementById('proposalText').innerHTML = marked.parse(data.data.proposal);
-                        document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback);
-                        // 渲染多专家模拟评审
-                        renderExpertReview(data.data.expert_review);
-                        renderJudgeScores(data.data.judge_scores);      // 维度分 + 权重
-                        wbRefreshPhBar();                                // 统计占位符处数
-                        document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis);
-                        // 填充深度版额外内容
-                        if (data.data.competitor_analysis) document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis);
-                        if (data.data.business_model) document.getElementById('businessModel').innerHTML = marked.parse(data.data.business_model);
-                        if (data.data.risk_analysis) document.getElementById('riskAnalysis').innerHTML = marked.parse(data.data.risk_analysis);
-                        if (data.data.tech_solution) document.getElementById('techSolution').innerHTML = marked.parse(data.data.tech_solution);
+                        });
+                        _P(3, function () { document.getElementById('proposalText').innerHTML = marked.parse(data.data.proposal); });
+                        _P(3, function () { document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback); });
+                        _P(4, function () { renderExpertReview(data.data.expert_review); });
+                        _P(4, function () { renderJudgeScores(data.data.judge_scores); });
+                        _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis); });
+                        // ---- 6~8：深度版专属板块 ----
+                        if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis); });
+                        if (data.data.business_model) _P(6, function () { document.getElementById('businessModel').innerHTML = marked.parse(data.data.business_model); });
+                        if (data.data.risk_analysis) _P(6, function () { document.getElementById('riskAnalysis').innerHTML = marked.parse(data.data.risk_analysis); });
+                        if (data.data.tech_solution) _P(7, function () { document.getElementById('techSolution').innerHTML = marked.parse(data.data.tech_solution); });
                         // 实施计划：深度版独立产出，之前前端缺展示块，内容白白浪费
-                        if (data.data.implementation_plan) document.getElementById('implementationPlan').innerHTML = marked.parse(data.data.implementation_plan);
+                        if (data.data.implementation_plan) _P(7, function () { document.getElementById('implementationPlan').innerHTML = marked.parse(data.data.implementation_plan); });
                         // 社会价值 / 项目简介：后端已返回，之前漏了往这两个 div 写内容，导致一直空白
-                        if (data.data.social_value) document.getElementById('socialValue').innerHTML = marked.parse(data.data.social_value);
-                        if (data.data.project_summary) document.getElementById('projectSummary').innerHTML = marked.parse(data.data.project_summary);
-                        if (data.data.defense_questions) document.getElementById('defenseQuestions').innerHTML = marked.parse(data.data.defense_questions);
-                        if (data.data.ppt_outline) document.getElementById('pptOutline').innerHTML = marked.parse(data.data.ppt_outline);
-                        // 简洁版隐藏深度版板块
-                        const isDeep = mode === 'deep';
-                        window._lastData = data.data;
-                        // 悬浮导出按钮：只有跑完一次生成才有东西可导
+                        if (data.data.social_value) _P(7, function () { document.getElementById('socialValue').innerHTML = marked.parse(data.data.social_value); });
+                        if (data.data.project_summary) _P(7, function () { document.getElementById('projectSummary').innerHTML = marked.parse(data.data.project_summary); });
+                        if (data.data.defense_questions) _P(8, function () { document.getElementById('defenseQuestions').innerHTML = marked.parse(data.data.defense_questions); });
+                        if (data.data.ppt_outline) _P(8, function () { document.getElementById('pptOutline').innerHTML = marked.parse(data.data.ppt_outline); });
+                        // ---- 9：富媒体（图表 / 表格 / deck），DOM 最重，放最后 ----
+                        _P(9, function () { renderRich(data.data, isDeep); });
+
+                        // ---- 20：以下都要读已渲染的 DOM，必须排在所有渲染任务之后 ----
+                        _P(20, function () {
+                            // T2 深度版专属板块：显示时加高亮（左侧主题色竖条 + 浅底 + 「深度版专属」标签）
+                            let deepN = 0;
+                            document.querySelectorAll('.deep-only').forEach(el => {
+                                el.style.display = isDeep ? 'block' : 'none';
+                                if (isDeep) {
+                                    const cb = el.querySelector('.content-block');
+                                    if (cb && cb.innerHTML.trim().length > 20) deepN++;
+                                    el.classList.add('deep-hl');
+                                } else {
+                                    el.classList.remove('deep-hl');
+                                }
+                            });
+                            // auto-show 区块：简化版后台也产出的模块，有内容就显示（所见即所得）
+                            document.querySelectorAll('.auto-show').forEach(el => {
+                                const cb = el.querySelector('.content-block');
+                                el.style.display = (cb && cb.innerHTML.trim().length > 20) ? 'block' : 'none';
+                                if (cb && cb.innerHTML.trim().length > 20) deepN++;
+                            });
+                            // 答辩/PPT Tab：两档都显示（简化版同样生成答辩问题与 PPT 大纲）
+                            document.getElementById('defenseTab').style.display = 'block';
+                            // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
+                            if (!isDeep) {
+                                const UPSELL = [
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>约5000字 / 12章</b>，自动配数据图表'],
+                                    ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
+                                    ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
+                                    ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
+                                ];
+                                UPSELL.forEach(p => {
+                                    const el = document.getElementById(p[0]);
+                                    const box = el && el.parentElement;
+                                    if (!box || box.querySelector('.deep-upsell')) return;
+                                    const tip = document.createElement('div');
+                                    tip.className = 'deep-upsell';
+                                    tip.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> ' + p[1];
+                                    box.appendChild(tip);
+                                });
+                            } else {
+                                document.querySelectorAll('.deep-upsell').forEach(el => el.remove());
+                            }
+                            // T1 结果区顶部档位标识
+                            const badge = document.getElementById('tierBadge');
+                            if (badge) {
+                                badge.innerHTML = isDeep
+                                    ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>深度完整版 · 已生成 ' + deepN + ' 个模块</span>'
+                                    : '<span class="tier-tag">简洁快速版</span>';
+                            }
+                            // T3 共享产物标题旁标字数（去 Markdown 标记后统计，两档长短一眼可比）
+                            [['parsedRules', data.data.parsed_rules],
+                             ['similarityReport', data.data.similarity_report],
+                             ['proposalText', data.data.proposal],
+                             ['judgeFeedback', data.data.judge_feedback],
+                             ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
+                            // 占位符 / 赛道禁忌扫描：扫的是渲染后的正文，必须等画完再扫，
+                            // 否则扫到半截内容会漏报
+                            wbRefreshPhBar();
+                        });
+                        // 锚点条要等板块都画完（才知道哪些有内容）再生成
+                        _P(21, function () { wbRenderAnchorBar(); });
+
+                        // 不依赖渲染结果的：同步执行
                         wbFabShow(!!(data.data && data.data.rich_deck));
                         renderCompleteness(data.data.completeness);
-                        renderRich(data.data, isDeep);
                         initDeckThemeSelect();
-                        // T2 深度版专属板块：显示时加高亮（左侧主题色竖条 + 浅底 + 「深度版专属」标签）
-                        let deepN = 0;
-                        document.querySelectorAll('.deep-only').forEach(el => {
-                            el.style.display = isDeep ? 'block' : 'none';
-                            if (isDeep) {
-                                const cb = el.querySelector('.content-block');
-                                if (cb && cb.innerHTML.trim().length > 20) deepN++;
-                                el.classList.add('deep-hl');
-                            } else {
-                                el.classList.remove('deep-hl');
-                            }
-                        });
-                        // auto-show 区块：简化版后台也产出的模块，有内容就显示（所见即所得）
-                        document.querySelectorAll('.auto-show').forEach(el => {
-                            const cb = el.querySelector('.content-block');
-                            el.style.display = (cb && cb.innerHTML.trim().length > 20) ? 'block' : 'none';
-                            if (cb && cb.innerHTML.trim().length > 20) deepN++;
-                        });
-                        // 答辩/PPT Tab：两档都显示（简化版同样生成答辩问题与 PPT 大纲）
-                        document.getElementById('defenseTab').style.display = 'block';
-                        // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
-                        if (!isDeep) {
-                            const UPSELL = [
-                                ['proposalText', '升级深度版：申报书扩写至 <b>约5000字 / 12章</b>，自动配数据图表'],
-                                ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
-                                ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
-                                ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>'],
-                            ];
-                            UPSELL.forEach(p => {
-                                const el = document.getElementById(p[0]);
-                                const box = el && el.parentElement;
-                                if (!box || box.querySelector('.deep-upsell')) return;
-                                const tip = document.createElement('div');
-                                tip.className = 'deep-upsell';
-                                tip.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> ' + p[1];
-                                box.appendChild(tip);
-                            });
-                        } else {
-                            document.querySelectorAll('.deep-upsell').forEach(el => el.remove());
-                        }
-                        // T1 结果区顶部档位标识
-                        const badge = document.getElementById('tierBadge');
-                        if (badge) {
-                            badge.innerHTML = isDeep
-                                ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>深度完整版 · 已生成 ' + deepN + ' 个模块</span>'
-                                : '<span class="tier-tag">简洁快速版</span>';
-                        }
-                        // T3 共享产物标题旁标字数（去 Markdown 标记后统计，两档长短一眼可比）
-                        [['parsedRules', data.data.parsed_rules],
-                         ['similarityReport', data.data.similarity_report],
-                         ['proposalText', data.data.proposal],
-                         ['judgeFeedback', data.data.judge_feedback],
-                         ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
                         document.getElementById('chartsTab').style.display = isDeep ? 'block' : 'none';
+                        wbPaintQueue(_Q);
+                        // 接口说成功但一个字都没有：多半是某一步 LLM 静默失败。
+                        // 不提示的话用户就对着一堆空板块发呆，以为是自己的问题
+                        var _got = ['parsed_rules', 'proposal', 'judge_feedback', 'project_summary']
+                            .some(function (k) { return !!(data.data[k] && String(data.data[k]).trim()); });
+                        if (!_got) {
+                            wbToast('生成结束但没拿到内容，建议再生成一次', {
+                                type: 'warn', ms: 6000,
+                                sub: '若反复出现，请把「运行日志」里的报错发给我们'
+                            });
+                        }
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
                         if (isDeep && !(data.data.rich_charts || []).length) {
                             setTimeout(() => {
@@ -5263,6 +5387,12 @@ mark.wb-ph {
         }
 
         // tab切换
+        // 栏目按钮 id 表：锚点条要能不带 event 直接切栏目（原来是靠 event.currentTarget，
+        // 程序化调用时没有 event，会直接报错）
+        var WB_TAB_BTN = { export: 'exportTab', analysis: 'analysisTab', deep: 'deepTab',
+                           proposal: 'proposalTab', charts: 'chartsTab', defense: 'defenseTab',
+                           kb: 'kbTab', logs: 'logsTab' };
+
         function switchTab(event, tabName) {
             // 隐藏所有tab
             document.querySelectorAll('.tab-content').forEach(tab => {
@@ -5274,9 +5404,82 @@ mark.wb-ph {
             });
             // 显示当前tab
             document.getElementById('tab-' + tabName).classList.add('active');
-            event.currentTarget.classList.add('active');
+            var _btn = (event && event.currentTarget) ||
+                       document.getElementById(WB_TAB_BTN[tabName] || '');
+            if (_btn) _btn.classList.add('active');
             if (tabName === 'kb') { kbLoadTags(); kbList(); }
             if (tabName === 'logs') { loadLogs(); loadLessons(); }
+        }
+
+
+        /* ---------- 板块快速定位（结果区锚点条） ----------
+           结果区动辄上万字，看完一块要翻很久才到下一块。锚点条只列「当前真的有内容」
+           的板块，点一下自动切栏目 + 平滑滚过去。 */
+        var WB_ANCHORS = [
+            {n: '规则解析', t: 'analysis', id: 'parsedRules'},
+            {n: '查重',     t: 'analysis', id: 'similarityReport'},
+            {n: '项目简介', t: 'proposal', id: 'projectSummary'},
+            {n: '申报书',   t: 'proposal', id: 'proposalText'},
+            {n: '诊断',     t: 'proposal', id: 'proposalAnalysis'},
+            {n: '评审意见', t: 'proposal', id: 'judgeFeedback'},
+            {n: '竞品',     t: 'deep',     id: 'competitorAnalysis'},
+            {n: '商业',     t: 'deep',     id: 'businessModel'},
+            {n: '风险',     t: 'deep',     id: 'riskAnalysis'},
+            {n: '技术方案', t: 'deep',     id: 'techSolution'},
+            {n: '实施计划', t: 'deep',     id: 'implementationPlan'},
+            {n: '社会价值', t: 'deep',     id: 'socialValue'},
+            {n: '图表',     t: 'charts',   id: 'tab-charts'},
+            {n: '答辩',     t: 'defense',  id: 'defenseQuestions'},
+            {n: 'PPT大纲',  t: 'defense',  id: 'pptOutline'},
+            {n: '导出',     t: 'export',   id: 'tab-export'}
+        ];
+
+        function wbRenderAnchorBar() {
+            var bar = document.getElementById('wbAnchorBar');
+            var box = document.getElementById('wbAnchorScroll');
+            if (!bar || !box) return;
+            var h = '';
+            WB_ANCHORS.forEach(function (a) {
+                var el = document.getElementById(a.id);
+                if (!el) return;
+                // 整块被隐藏（简洁版没有深度板块）或压根没内容 → 不给锚点，
+                // 否则点过去是一片空白，反而更迷路
+                var wrap = el.closest ? (el.closest('.deep-only, .auto-show') || el) : el;
+                if (wrap.offsetParent === null && el.offsetParent === null) return;
+                var isPanel = (a.id.indexOf('tab-') === 0);
+                if (!isPanel && !(el.textContent || '').trim()) return;
+                h += '<button class="wb-anchor-btn" onclick="wbGoAnchor(\'' + a.t +
+                     '\',\'' + a.id + '\')">' + a.n + '</button>';
+            });
+            if (!h) { bar.style.display = 'none'; return; }
+            box.innerHTML = h;
+            bar.style.display = 'block';
+        }
+
+        function wbGoAnchor(tab, id) {
+            var btn = document.getElementById(WB_TAB_BTN[tab] || '');
+            if (btn && !btn.classList.contains('active')) {
+                try { switchTab(null, tab); } catch (e) {}
+            }
+            setTimeout(function () {
+                var el = document.getElementById(id);
+                if (!el) return;
+                // 滚到带标题的整块（content-block 的父 div），而不是光秃秃的正文块
+                var target = (el.closest && el.closest('div')) || el;
+                // 让开吸顶的导出条，不然标题被压在下面看不见
+                target.style.scrollMarginTop = '76px';
+                try {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } catch (e) {
+                    target.scrollIntoView();   // 老内核（QQ/夸克）不支持 smooth 的兜底
+                }
+                // 闪一下边框，让用户知道跳到哪了
+                try {
+                    var old = target.style.boxShadow;
+                    target.style.boxShadow = '0 0 0 2px var(--c-a)';
+                    setTimeout(function () { target.style.boxShadow = old; }, 1200);
+                } catch (e) {}
+            }, 60);
         }
 
         /* ---------- 首次进入引导：手机与电脑两套内容 ---------- */
@@ -5380,6 +5583,24 @@ mark.wb-ph {
             return h;
         }
 
+        // 真实视口高度：移动端不能用 vh 单位（地址栏收起时 vh 会比实际高，
+        // 蒙层/背景就会盖不满或溢出，出现色带错位）
+        function wbViewportHeight() {
+            return window.innerHeight || document.documentElement.clientHeight || 640;
+        }
+        (function () {
+            function refit() {
+                var box = document.getElementById('introBox');
+                var modal = document.getElementById('introModal');
+                if (!box || !modal || modal.style.display !== 'flex') return;
+                if (typeof WB_IS_MOBILE !== 'undefined' && WB_IS_MOBILE) {
+                    box.style.height = wbViewportHeight() + 'px';
+                }
+            }
+            window.addEventListener('resize', refit);
+            window.addEventListener('orientationchange', function () { setTimeout(refit, 300); });
+        })();
+
         function showIntro(force) {
             var modal = document.getElementById('introModal');
             var box = document.getElementById('introBox');
@@ -5390,11 +5611,14 @@ mark.wb-ph {
             }
             body.innerHTML = introHTML();
             if (WB_IS_MOBILE) {
-                // 手机做成全屏引导页：大按钮、可滚动
+                // 手机做成全屏引导页：大按钮、可滚动。
+                // ⚠️ 别用 100vh：移动端地址栏一收，vh 就和真实视口差几十像素，
+                // 蒙层盖不满，底部露出下层渐变 —— 就是用户说的「界面上下颜色分层」。
+                // 这里按 innerHeight 实测，转屏 / 地址栏变化时再量一次。
                 box.style.maxWidth = 'none';
-                box.style.width = '100vw';
-                box.style.maxHeight = '100vh';
-                box.style.height = '100vh';
+                box.style.width = '100%';
+                box.style.maxHeight = 'none';
+                box.style.height = wbViewportHeight() + 'px';
                 box.style.borderRadius = '0';
                 box.style.overflowY = 'auto';
             }
@@ -5909,6 +6133,8 @@ mark.wb-ph {
         wbLoadCompIndex();
         // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
         wbLoadProfiles();
+        // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
+        ['ruleFile', 'tplFile', 'ideaFile'].forEach(wbUploadGuard);
         checkHealth();
         setInterval(checkHealth, 30000);
 
