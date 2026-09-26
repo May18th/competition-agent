@@ -914,6 +914,22 @@ mark.wb-ph {
 }
 
 /* ===== Codex 接手：手机端 10 个小问题适配 ===== */
+/* 回到顶部按钮 */
+#wbTop {
+    position: fixed; right: 16px; bottom: 150px; z-index: 280;
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--surface-solid); color: var(--text); cursor: pointer;
+    font-size: 20px; font-weight: 700; box-shadow: 0 8px 22px rgba(0,0,0,.35);
+    display: none; align-items: center; justify-content: center;
+}
+/* 首屏骨架屏 */
+#pageSkeleton {
+    position: fixed; inset: 0; z-index: 9990; padding: 24px 18px;
+    background: var(--bg, #0a0f1f); pointer-events: none;
+    transition: opacity .35s ease;
+}
+#pageSkeleton.hide { opacity: 0; }
+
 /* 微信引导里「点右上角 ···」的上箭头：往右上角弹，提示用户去点 */
 .wb-point-arrow {
     display: inline-block; color: var(--c-b); font-size: 17px; font-weight: 700;
@@ -1237,6 +1253,14 @@ mark.wb-ph {
 </style>
 </head>
 <body>
+    <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
+    <div id="pageSkeleton" aria-hidden="true">
+        <div class="skeleton" style="height: 22px; width: 42%; margin: 0 auto 18px;"></div>
+        <div class="skeleton" style="height: 90px; margin-bottom: 14px;"></div>
+        <div class="skeleton" style="height: 18px; margin-bottom: 10px;"></div>
+        <div class="skeleton" style="height: 18px; margin-bottom: 10px; width: 82%;"></div>
+        <div class="skeleton" style="height: 160px;"></div>
+    </div>
     <svg class="wb-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
         <defs>
         <symbol id="wb-i-rocket" viewBox="0 0 24 24"><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></symbol>
@@ -2100,6 +2124,8 @@ mark.wb-ph {
         </div>
         <button id="wbFabMain" onclick="wbFabToggle()" aria-label="导出">导出</button>
     </div>
+    <!-- 回到顶部：长文档滑下去后，右下角出现小箭头一键回顶 -->
+    <button id="wbTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="回到顶部">↑</button>
 
     <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
         <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
@@ -5266,6 +5292,7 @@ mark.wb-ph {
             var text = document.getElementById(id).innerText;
             var blob = new Blob([text], {type: "text/plain"});
             wbSaveBlob(blob, name + ".txt");
+            wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2200 });
         }
         // 开始生成
         // ================= 分块流式渲染 =================
@@ -5524,7 +5551,12 @@ mark.wb-ph {
                     throw new Error(start.error || '任务创建失败');
                 }
                 _currentTaskId = start.task_id;
-                const t0 = Date.now();
+                let t0 = Date.now();
+                let _hiddenAt = 0;
+                document.addEventListener('visibilitychange', function () {
+                    if (document.hidden) { _hiddenAt = Date.now(); }
+                    else if (_hiddenAt) { t0 += Date.now() - _hiddenAt; _hiddenAt = 0; }
+                });
                 // 看门狗：轮询最多等 5 分钟，超时就停止并明确报错，绝不让页面无限转圈
                 const WATCHDOG_MS = 5 * 60 * 1000;
                 return new Promise((resolve, reject) => {
@@ -7051,6 +7083,46 @@ window.addEventListener('resize', function () {
     window.wbAgentReset = reset;
     window.twSet = twSet;          // paintPartial 内部调用，必须挂全局
     window.twReset = twReset;
+})();
+</script>
+<script>
+/* ===== Codex 接手：手机端 5 个细节优化 ===== */
+(function () {
+    // 1) 首屏骨架屏：JS 就绪后淡出（最迟 window load 兜底隐藏）
+    function hideSkeleton() {
+        var s = document.getElementById('pageSkeleton');
+        if (!s) return;
+        s.classList.add('hide');
+        setTimeout(function () { try { s.remove(); } catch (e) {} }, 400);
+    }
+    if (document.readyState === 'complete') { hideSkeleton(); }
+    else {
+        window.addEventListener('load', hideSkeleton);
+        setTimeout(hideSkeleton, 2500);  // 兜底：万一 load 迟迟不来也别一直挡着
+    }
+
+    // 2) 回到顶部按钮：下滑一段距离才出现
+    var topBtn = document.getElementById('wbTop');
+    function toggleTop() {
+        if (topBtn) topBtn.style.display = (window.scrollY || document.documentElement.scrollTop) > 800 ? 'flex' : 'none';
+    }
+    window.addEventListener('scroll', toggleTop, { passive: true });
+    toggleTop();
+
+    // 3) 虚拟键盘遮挡：输入框/文本域聚焦后，把页面往上顶，让输入框进入视口
+    document.addEventListener('focusin', function (e) {
+        var t = e.target;
+        if (!t || !/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+        setTimeout(function () {
+            try { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            catch (err) { try { t.scrollIntoView(); } catch (e2) {} }
+        }, 320);
+    });
+
+    // 4) 切后台回来：立即把可见状态唤醒（生成轮询会恢复；这里再触发一次 scroll 重算，避免键盘/高度错乱）
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { try { toggleTop(); } catch (e) {} }
+    });
 })();
 </script>
 </body>
