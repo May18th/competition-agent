@@ -130,8 +130,8 @@ if body_ps:
           '%spt 中文=%s 西文=%s' % (sz, cn_font(r), r.font.name))
     check('正文首行缩进 2 字符', body_ps[0]._p.xml.find('firstLineChars="200"') > 0)
 sec = d.sections[0]
-check('页边距 上下2.54 左右2.5cm',
-      abs(sec.top_margin.cm - 2.54) < 0.02 and abs(sec.left_margin.cm - 2.5) < 0.02,
+check('页边距 上下2.54 左右3.17cm',
+      abs(sec.top_margin.cm - 2.54) < 0.02 and abs(sec.left_margin.cm - 3.17) < 0.02,
       'T=%.2f L=%.2f' % (sec.top_margin.cm, sec.left_margin.cm))
 check('页脚有页码域', 'PAGE' in sec.footer.paragraphs[0]._p.xml if sec.footer.paragraphs else False)
 

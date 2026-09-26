@@ -98,13 +98,13 @@
         "拒绝简单 API 套壳、宏大空泛通用 AI。"
       ],
       "deduct": "(1)创新薄弱，仅简单调用 API，无业务逻辑改造 (2)原型无法现场演示，无实测案例 (3)场景模糊，目标用户不明确，属于玩具 Demo 无落地价值 (4)创新赛道材料泄露学校、导师信息，直接扣分 (5)过度堆砌商业融资、市场预测，偏离作品评审主线",
-      "chars": 690,
+      "chars": 753,
       "gaps": [],
       "tracks": [
         {
           "key": "创新",
           "name": "创新赛道",
-          "desc": "双盲评审，侧重原创原型，不强制商业化；材料不能出现学校、导师信息。",
+          "desc": "以应用创新为主要考察目标和评审原则，采用双盲评审方式，匿名化处理参赛团队的院校、指导老师等信息；鼓励学生激发创新思维，展示创新实践能力。",
           "ban": [
             "学校信息",
             "导师信息"
@@ -129,12 +129,12 @@
             "不足与后续计划"
           ],
           "derived": true,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "创业",
           "name": "创业赛道",
-          "desc": "侧重商业落地、市场与盈利，适合已有订单试点项目。",
+          "desc": "鼓励学生提升创业能力、投身创业实践，创造社会效益和商业价值；要求团队进一步完善项目作品，完成公司注册。",
           "ban": [],
           "ban_note": "",
           "focus": [
@@ -156,12 +156,12 @@
             "风险与应对"
           ],
           "derived": true,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "挑战",
           "name": "挑战赛道",
-          "desc": "企业联合命题专项赛道，包含 AI 应用、机器人、电子信息等赛项；创新 / 创业赛道可叠加报名挑战赛道。",
+          "desc": "面向各行业企业征集命题，企业根据真实发展需求设计实战创新项目；报名创新赛道或创业赛道可同时报名挑战赛道。",
           "ban": [],
           "ban_note": "",
           "focus": [
@@ -181,7 +181,7 @@
             "应用前景与迭代计划"
           ],
           "derived": true,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -248,7 +248,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "青年红色筑梦之旅",
@@ -260,7 +260,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "职教",
@@ -272,7 +272,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "产业命题",
@@ -284,7 +284,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -337,32 +337,32 @@
         "拒绝纯概念、简单开源工具打包。"
       ],
       "deduct": "(1)创新薄弱，直接使用开源工具简单二次封装，无自研安全机制 (2)缺少对比测试、攻防验证实验，无法证明防护效果 (3)缺少方案自身的安全漏洞评估 (4)文档描述模糊，原型无法现场演示 (5)使用开源项目不标注，知识产权不清 (6)夸大防护能力，无法通过评委现场攻防测试",
-      "chars": 592,
+      "chars": 635,
       "gaps": [],
       "tracks": [
         {
           "key": "作品赛",
           "name": "作品赛",
-          "desc": "提交创新安全作品。",
+          "desc": "提交信息安全作品，考察设计能力，分初赛与决赛。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
-          "key": "能力赛",
-          "name": "能力赛",
-          "desc": "CTF 攻防解题，不提交作品申报书。",
+          "key": "创新实践能力赛（能力赛）",
+          "name": "创新实践能力赛（能力赛）",
+          "desc": "形式类似CTF，采用线上初赛、线下决赛，考察实际操作能力，不提交作品申报书。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -379,7 +379,19 @@
       "intro": "教育部国家级教学训练项目（不是竞赛），分创新训练、创业训练、创业实践三类，给予国家经费支持，周期 1-2 年。",
       "doc_type": "结题报告",
       "scoring": [],
-      "sections": [],
+      "sections": [
+        "项目名称",
+        "项目类型",
+        "负责人与团队成员",
+        "指导教师",
+        "研究目标与内容",
+        "技术路线",
+        "预期成果",
+        "经费预算",
+        "研究过程记录",
+        "成果佐证",
+        "经费使用情况"
+      ],
       "preference": [
         "性质：国创是长线教学训练项目，有国家经费；竞赛是短期同台 PK 竞技，无赛事经费。",
         "容错：国创包容失败，重在过程；竞赛容错极低，原型 / 数据缺陷直接扣分。",
@@ -388,47 +400,46 @@
         "证书：国创为国家级结题证书；竞赛为金银铜获奖证书。"
       ],
       "deduct": "(1)选题空洞、无实际研究价值 (2)技术路线不清晰、目标过大难以完成 (3)缺乏创新性，重复已有项目 (4)团队投入不足、分工不明、无导师指导",
-      "chars": 784,
+      "chars": 1055,
       "gaps": [
-        "评分标准",
-        "章节要求"
+        "评分标准"
       ],
       "tracks": [
         {
-          "key": "创新训练",
-          "name": "创新训练",
-          "desc": "科研项目训练，周期 1-2 年，给予国家经费支持。",
+          "key": "创新训练项目",
+          "name": "创新训练项目",
+          "desc": "本科生个人或团队在导师指导下，自主完成创新性研究项目设计、研究条件准备和项目实施、研究报告撰写、成果（学术）交流等工作。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
-          "key": "创业训练",
-          "name": "创业训练",
-          "desc": "创业准备训练，周期 1-2 年，给予国家经费支持。",
+          "key": "创业训练项目",
+          "name": "创业训练项目",
+          "desc": "本科生团队在导师指导下，团队中每个学生在项目实施过程中扮演一个或多个具体角色，通过编制商业计划书、开展可行性研究、模拟企业运行、参加企业实践、撰写创业报告等工作。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
-          "key": "创业实践",
-          "name": "创业实践",
-          "desc": "创业实践落地，周期 1-2 年，给予国家经费支持。",
+          "key": "创业实践项目",
+          "name": "创业实践项目",
+          "desc": "学生团队在学校导师和企业导师共同指导下，采用创新训练项目或创新性实验等成果，提出一项具有市场前景的创新性产品或者服务，以此为基础开展创业实践活动。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -486,32 +497,32 @@
         "备赛产出：大挑核心是研究报告 + 实验数据；小挑核心是商业计划书"
       ],
       "deduct": "(1)商业模式不成立，盈利路径不清晰 (2)市场分析缺乏数据支撑，规模估算拍脑袋 (3)财务预测与融资计划不合理 (4)竞品分析不到位，差异化不突出 (5)团队分工与股权结构不合理",
-      "chars": 664,
+      "chars": 743,
       "gaps": [],
       "tracks": [
         {
-          "key": "甲类",
-          "name": "甲类",
-          "desc": "已注册企业的项目。",
+          "key": "甲类（已创业类）",
+          "name": "甲类（已创业类）",
+          "desc": "拥有或授权拥有产品或服务，已在工商、民政等政府部门注册登记为企业、个体工商户、民办非企业单位等组织形式，法人代表或经营者为在校学生，运营时间三个月以上。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
-          "key": "乙类",
-          "name": "乙类",
-          "desc": "创意项目，尚未注册企业。",
+          "key": "乙类（未创业类）",
+          "name": "乙类（未创业类）",
+          "desc": "尚未注册企业的创意项目。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -559,32 +570,32 @@
         "有社会话题度、易传播"
       ],
       "deduct": "- 创意平庸、同质化 - 与命题策略单脱节 - 制作粗糙、表现力弱 - 缺乏策略支撑、创意说明空洞",
-      "chars": 660,
+      "chars": 696,
       "gaps": [],
       "tracks": [
         {
           "key": "平面类",
           "name": "平面类",
-          "desc": "平面设计作品。",
+          "desc": "平面广告、产品与包装、IP与创意周边。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "视频类",
           "name": "视频类",
-          "desc": "视频作品。",
+          "desc": "影视广告、微电影广告、短视频。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "动画类",
@@ -596,31 +607,31 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "互动类",
           "name": "互动类",
-          "desc": "互动作品。",
+          "desc": "移动端H5广告、场景互动广告。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "广播类",
           "name": "广播类",
-          "desc": "广播作品。",
+          "desc": "广播广告。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "策划案类",
@@ -632,19 +643,19 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "文案类",
           "name": "文案类",
-          "desc": "文案作品。",
+          "desc": "长文案、创意脚本。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },
@@ -835,32 +846,56 @@
         "团队协作规范、有完整交付物"
       ],
       "deduct": "- 方案与需求脱节 - 功能不完整、无演示 - 忽视商业可行性 - 交付物缺失、文档不规范",
-      "chars": 610,
+      "chars": 683,
       "gaps": [],
       "tracks": [
         {
-          "key": "企业命题类",
-          "name": "企业命题类",
-          "desc": "围绕企业发布的真实需求命题。",
+          "key": "企业命题类（A类）",
+          "name": "企业命题类（A类）",
+          "desc": "由企业发布命题，参赛团队按要求完成。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
-          "key": "自主命题类",
-          "name": "自主命题类",
-          "desc": "团队自主选题。",
+          "key": "创业实践类（B类）",
+          "name": "创业实践类（B类）",
+          "desc": "创业实践项目。",
           "ban": [],
           "ban_note": "",
           "focus": [],
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
+        },
+        {
+          "key": "OPC创客类（C类）",
+          "name": "OPC创客类（C类）",
+          "desc": "创客类项目。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false,
+          "src": "official"
+        },
+        {
+          "key": "人工智能专项（D类）",
+          "name": "人工智能专项赛道（D类）",
+          "desc": "人工智能专项赛道暨腾讯开悟人工智能全球公开赛。",
+          "ban": [],
+          "ban_note": "",
+          "focus": [],
+          "avoid": [],
+          "sections": [],
+          "derived": false,
+          "src": "official"
         }
       ]
     },
@@ -1058,7 +1093,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "微课与AI辅助教学",
@@ -1070,7 +1105,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "物联网应用与物联网创新转化（创业实践）",
@@ -1082,7 +1117,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "大数据应用",
@@ -1094,7 +1129,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "人工智能应用",
@@ -1106,7 +1141,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "信息可视化设计",
@@ -1118,7 +1153,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "数媒静态设计",
@@ -1130,7 +1165,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "数媒动漫与短片",
@@ -1142,7 +1177,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "数媒游戏与交互设计",
@@ -1154,7 +1189,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "计算机音乐创作",
@@ -1166,7 +1201,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         },
         {
           "key": "国际生“汉学”（“中华优秀传统文化”数智创作）",
@@ -1178,7 +1213,7 @@
           "avoid": [],
           "sections": [],
           "derived": false,
-          "src": "kb"
+          "src": "official"
         }
       ]
     },

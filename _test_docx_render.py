@@ -111,7 +111,7 @@ def main():
         s = d.sections[0]
         if abs(s.page_width.cm - 21.0) > 0.1:
             errs.append('%s 页宽不是 A4' % label)
-        if abs(s.top_margin.cm - 2.54) > 0.01 or abs(s.left_margin.cm - 2.5) > 0.01:
+        if abs(s.top_margin.cm - 2.54) > 0.01 or abs(s.left_margin.cm - 3.17) > 0.01:
             errs.append('%s 页边距不符规范' % label)
         if not d.tables:
             errs.append('%s 表格没渲染成真表格' % label)

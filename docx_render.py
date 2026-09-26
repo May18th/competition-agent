@@ -3,7 +3,7 @@
 docx_render.py —— 把 Markdown 渲染成符合《全国大学生竞赛申报书统一字体格式标准》的 Word 文档。
 
 执行的标准（用户 2026-09-25 提供，优先级最高）：
-  页面   A4；上下 2.54cm、左右 2.5cm；全文 1.5 倍行距
+  页面   A4；上下 2.54cm、左右 3.17cm；全文 1.5 倍行距
   封面   主标题黑体小初加粗居中 / 副标题黑体二号居中 / 日期等黑体小三居中；无页码
   一级   黑体二号加粗左对齐无缩进      （一、二、三、）
   二级   黑体小三加粗左对齐            （（一）（二））
@@ -342,8 +342,8 @@ def _setup_page(doc, prof=None):
         sec.page_height = Cm(29.7)
         sec.top_margin = Cm(2.54)
         sec.bottom_margin = Cm(2.54)
-        sec.left_margin = Cm(2.5)
-        sec.right_margin = Cm(2.5)
+        sec.left_margin = Cm(3.17)
+        sec.right_margin = Cm(3.17)
         sec.header_distance = Cm(1.5)
         sec.footer_distance = Cm(1.5)
 
