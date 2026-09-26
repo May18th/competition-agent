@@ -555,7 +555,19 @@ def export_pdf():
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
-    return send_file(filepath, as_attachment=True, download_name=title + '.pdf')
+    resp = send_file(filepath, as_attachment=True, download_name=title + '.pdf')
+    # iCAN 应用方案硬性上限 20 页 / 50MB：导出后回传实测值，前端据此提示
+    try:
+        pages = len(PdfReader(filepath).pages)
+        mb = round(os.path.getsize(filepath) / 1024.0 / 1024.0, 2)
+        resp.headers['X-PDF-Pages'] = str(pages)
+        resp.headers['X-PDF-MB'] = str(mb)
+        comp = (data.get('competition_name') or '')
+        if 'iCAN' in comp or 'ican' in comp.lower() or 'AI应用创新' in comp:
+            resp.headers['X-PDF-Limit'] = '20'
+    except Exception:
+        pass
+    return resp
 
 
 @app.route('/api/export_defense')

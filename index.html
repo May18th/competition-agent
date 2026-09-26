@@ -934,6 +934,15 @@ mark.wb-ph {
 .wb-guide-flash { animation: wbGuideFlash 1.6s ease; }
 @keyframes wbGuideFlash { 0%, 100% { background: transparent; } 35% { background: var(--c-a-soft); } }
 
+/* ---------- 结果页用户打分 ---------- */
+#wbRateBox { margin-top: 22px; padding: 16px 18px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.wb-rate-q { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+.wb-rate-sub { font-size: 12px; color: var(--text-mute); font-weight: 400; }
+.wb-rate-star { width: 44px; height: 44px; font-size: 24px; line-height: 1; border-radius: 10px;
+    background: var(--surface-solid); border: 1px solid var(--line); color: var(--text-mute);
+    cursor: pointer; padding: 0; transition: transform .12s, color .12s, border-color .12s; }
+.wb-rate-star:hover { transform: translateY(-2px); }
+.wb-rate-star.on { color: #fbbf24; border-color: #fbbf24; }
 /* ---------- 结果区顶部导出条 ---------- */
 #quickExportBar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--c-a); }
 .qe-title { font-size: 13px; font-weight: 700; color: var(--text-dim); display: flex; align-items: center; }
@@ -980,6 +989,11 @@ mark.wb-ph {
 #wbFabPanel button { white-space: nowrap; text-align: left; padding: 9px 14px; font-size: 13px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
 
 /* ---------- 窄屏（375px 一类小屏）：全部竖排、字放大、不溢出 ---------- */
+@media (max-width: 768px) {
+    #wbRateBox { padding: 13px 14px; margin-top: 16px; }
+    .wb-rate-star { width: 40px; height: 40px; font-size: 21px; }
+    #wbRateStars { gap: 6px !important; }
+}
 @media (max-width: 420px) {
     body { padding: 6px; }
     .container { padding: 0; }
@@ -1962,6 +1976,33 @@ mark.wb-ph {
                     </div>
                 </div>
             </div>
+
+            <!-- 用户打分：放在结果最底部，看完内容顺手打，不打断生成流程 -->
+            <div id="wbRateBox">
+                <div class="wb-rate-q">这次生成对你有用吗？
+                    <span class="wb-rate-sub">评分不进申报书，只用来改这个工具</span>
+                </div>
+                <div id="wbRateStars" style="display: flex; gap: 8px; margin: 10px 0 12px; flex-wrap: wrap;">
+                    <button class="wb-rate-star" data-v="1" onclick="wbRateSet(1)" aria-label="1 星">★</button>
+                    <button class="wb-rate-star" data-v="2" onclick="wbRateSet(2)" aria-label="2 星">★</button>
+                    <button class="wb-rate-star" data-v="3" onclick="wbRateSet(3)" aria-label="3 星">★</button>
+                    <button class="wb-rate-star" data-v="4" onclick="wbRateSet(4)" aria-label="4 星">★</button>
+                    <button class="wb-rate-star" data-v="5" onclick="wbRateSet(5)" aria-label="5 星">★</button>
+                    <span id="wbRateLabel" style="align-self: center; font-size: 12.5px; color: var(--text-mute); margin-left: 2px;">还没打分</span>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <input type="text" id="wbRateInput" maxlength="200"
+                           placeholder="哪里不好？一句话就行（选填）"
+                           style="flex: 1 1 240px; height: 40px; padding: 0 12px; border: 1px solid var(--line);
+                                  border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 13px;">
+                    <button id="wbRateBtn" onclick="wbRateSubmit()"
+                            style="height: 40px; padding: 0 18px; background: var(--c-a); color: #fff; border: none;
+                                   border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">提交反馈</button>
+                </div>
+                <div id="wbRateDone" style="display: none; margin-top: 9px; font-size: 12.5px; color: var(--ok);">
+                    收到了，谢谢 —— 这条会直接进改进清单
+                </div>
+            </div>
         </div>
     </div>
 
@@ -2583,6 +2624,49 @@ mark.wb-ph {
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
+        }
+        /* ---------- 结果页用户打分 ---------- */
+        var wbRateVal = 0;
+        var WB_RATE_TXT = ['', '很差，没帮上忙', '一般，还得大改', '还行，能用', '不错，省了事', '很好，直接用'];
+        function wbRateSet(v) {
+            wbRateVal = v;
+            var bs = document.querySelectorAll('#wbRateStars .wb-rate-star');
+            for (var i = 0; i < bs.length; i++) {
+                var bv = parseInt(bs[i].getAttribute('data-v'), 10);
+                if (bv <= v) bs[i].classList.add('on'); else bs[i].classList.remove('on');
+            }
+            var lb = document.getElementById('wbRateLabel');
+            if (lb) lb.textContent = (WB_RATE_TXT[v] || '') + '（' + v + ' 星）';
+        }
+        function wbRateSubmit() {
+            if (!wbRateVal) { wbToast('先点一个星星再提交', { type: 'warn' }); return; }
+            var btn = document.getElementById('wbRateBtn');
+            var txt = (document.getElementById('wbRateInput') || {}).value || '';
+            if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+            var comp = '';
+            try { comp = (document.getElementById('competition') || {}).value || ''; } catch (e) {}
+            // 后端 /api/feedback 只收 content（+ history_id），星级拼进文本里一起入库
+            var line = '评分 ' + wbRateVal + ' 星（' + (WB_RATE_TXT[wbRateVal] || '') + '）'
+                     + (txt ? '｜' + txt : '')
+                     + (comp ? '｜赛事：' + comp : '');
+            fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: line,
+                                       history_id: (window._lastHistoryId || null) })
+            }).then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (j) {
+                  if (j && j.success === false) throw new Error(j.error || '提交失败');
+                  var d = document.getElementById('wbRateDone');
+                  if (d) d.style.display = '';
+                  if (btn) btn.textContent = '已提交';
+                  wbToast('收到了，谢谢', { type: 'ok' });
+                  try { localStorage.setItem('wbRatedV', String(wbRateVal)); } catch (e) {}
+              })
+              .catch(function () {
+                  if (btn) { btn.disabled = false; btn.textContent = '提交反馈'; }
+                  wbToast('没提交成功，网络问题', { type: 'error' });
+              });
         }
         async function exportOnePDF(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
