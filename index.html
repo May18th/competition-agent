@@ -1764,7 +1764,7 @@ mark.wb-ph {
                 <div class="score-number" id="scoreNum">86</div>
                 <div class="score-label">AI 模拟自评 / 100</div>
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
-                <div class="score-meta">正文字数：<span id="wordCount">—</span> 字 · 本地查重 <span id="simInfo">—</span></div>
+                <div class="score-meta">数据支撑论点：<span id="dpCount">—</span> 处 · 待补充：<span id="phCount">—</span> 项 · 本地查重 <span id="simInfo">—</span></div>
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
                     这个分数是模拟评委给的，帮你定位薄弱部分，<b>不用写进正式材料</b>。
                 </div>
@@ -4186,6 +4186,16 @@ mark.wb-ph {
         function renderCompleteness(comp) {
             var box = document.getElementById('completenessBox');
             if (!box) return;
+            // 可交付度指标（替代「正文字数」当卖点）：数据支撑点越多越好、待补占位越少越好
+            var dp = document.getElementById('dpCount');
+            if (dp) dp.innerText = (comp && typeof comp.data_points === 'number') ? comp.data_points : '—';
+            var ph = document.getElementById('phCount');
+            if (ph) {
+                var phn = (comp && typeof comp.placeholders === 'number') ? comp.placeholders : null;
+                ph.innerText = (phn === null) ? '—' : phn;
+                ph.style.color = (phn > 0) ? 'var(--warn-text)' : 'var(--ok)';
+                ph.title = (phn > 0) ? '正文还有「待补充」占位，导出前必须换成真实数据' : '正文无待补占位';
+            }
             var miss = (comp && comp.missing) || [];
             if (!miss.length) { box.style.display = 'none'; return; }
             box.style.display = 'block';
@@ -5787,8 +5797,6 @@ mark.wb-ph {
                         // ---- 0：分数，第一眼要看到的 ----
                         _P(0, function () { document.getElementById('scoreNum').innerText = data.data.score; });
                         _P(0, function () {
-                            var wc = document.getElementById('wordCount');
-                            if (wc) wc.innerText = (data.data.proposal_chars || 0);
                             var si = document.getElementById('simInfo');
                             if (si) {
                                 var s = data.data.similarity || {};
