@@ -1320,7 +1320,27 @@ def _official_chapters(state: dict) -> list:
     """
     profile = get_competition_profile(state.get("competition_name", ""))
     chapters = profile.get("chapters") or []
-    return [str(c).strip() for c in chapters if str(c).strip()]
+    _cn = "一二三四五六七八九十"
+
+    def _ordinal(i):
+        n = i + 1
+        if n <= 10:
+            return _cn[n - 1]
+        if n < 20:
+            return "十" + _cn[n - 11]
+        if n == 20:
+            return "二十"
+        return str(n)
+
+    out = []
+    for i, c in enumerate(chapters):
+        c = str(c).strip()
+        if not c:
+            continue
+        # 去掉可能残留的旧序号（「一、」「1.」「(1)」「①」等），避免双重编号
+        c = re.sub(r'^\s*(?:[一二三四五六七八九十]+、|\d+[.、]|\(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩]+)\s*', '', c)
+        out.append(f"{_ordinal(i)}、{c}")
+    return out
 
 
 def _competition_focus(state: dict) -> str:
@@ -1401,6 +1421,16 @@ def _chapter_block(state: dict) -> str:
         return "章节严格按以下官方申报书章节顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
                "\n".join("## " + c for c in official[:20])
     return "章节依次为：\n\n" + _DEFAULT_CHAPTERS
+
+
+def _fast_chapter_block(state: dict) -> str:
+    """简洁版章节：优先官方章节（已带「一、二、三、」序号），无官方章节退回精简 5 章。"""
+    official = _official_chapters(state)
+    if official:
+        return "\n".join("## " + c for c in official)
+    return "\n".join(
+        "## " + c for c in ["一、项目简介", "二、痛点分析", "三、解决方案", "四、核心创新点", "五、社会价值"]
+    )
 
 
 def _stream_llm(prompt, field, every=8):
@@ -1685,23 +1715,10 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_score_diagnosis_ref()}
 
 【篇幅硬性要求】
-1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。
-2. 结构固定为以下五章，不要增删章节、不要中途省略：
+1. 全文总字数按下方官方章节数浮动：每章 150～250 字；章节少约 1100 字、章节多约 2200 字，每章不足 150 字视为不合格。
+2. 章节严格按下方官方模板组织，标题原样使用（含「一、二、三、」序号），不要增删章节、不要中途省略、不要自造或合并章节：
 
-## 项目简介
-（约 200 字：做什么、给谁用、一句话定位如何落地）
-
-## 痛点分析
-（约 300 字：谁在什么场景下遇到什么麻烦，现有办法差在哪）
-
-## 解决方案
-（约 300 字：产品形态、核心功能、关键技术手段）
-
-## 核心创新点
-（约 300 字：与现有方案的两到三处具体差异，每处都要给依据）
-
-## 社会价值
-（约 200 字：落到具体受益对象和可验证的效果）
+{_fast_chapter_block(state)}
 
 【质量要求】
 1. 每章写成 1～2 个完整自然段，段内有论点、有展开、有依据；严禁一句话一段、严禁空小节。

@@ -525,18 +525,19 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
 
 
 def _official_chapter_titles(competition_name):
-    """读取结构化配置里的官方申报书章节标题列表（导出时用于自动排序）。"""
+    """读取结构化配置里的官方申报书章节标题列表（带「一、二、」序号，导出时用于自动排序）。"""
     if not competition_name:
         return []
     try:
-        from competition_agents import get_competition_profile
-        return get_competition_profile(competition_name).get("chapters") or []
+        from competition_agents import _official_chapters
+        return _official_chapters({"competition_name": competition_name})
     except Exception:
         return []
 
 
 def _normalize_heading_title(s):
-    """把「一、项目概述 / (1)项目概述 / 项目概述」归一成可用于匹配的关键词串。"""
+    """把「一、项目概述 / (1)项目概述 / 1.项目概述 / 项目概述」归一成可用于匹配的关键词串。"""
+    s = re.sub(r"^\s*(?:[一二三四五六七八九十]+、|\d+[.、]|\(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩]+)\s*", "", s or "")
     return re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", s or "")
 
 
