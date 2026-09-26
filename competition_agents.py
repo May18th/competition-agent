@@ -2023,9 +2023,15 @@ def one_liner_agent(state: CompetitionState) -> CompetitionState:
 
 直接输出一句话，不要解释。
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
+    # 一句话定位很短，max_tokens 压到 120 防止模型用 8192 的预算无限复读；
+    # 再兜底只取第一句，双保险杜绝「一句话循环几十遍」。
+    response = llm.invoke([HumanMessage(content=prompt)], max_tokens=120)
+    text = (response.content or "").strip()
+    parts = [s.strip() for s in re.split(r'[。！？!?\n]+', text) if s.strip()]
+    if parts:
+        text = parts[0] + '。'
     print(f"💡 一句话定位 Agent：已生成")
-    return {"one_liner": response.content.strip()}
+    return {"one_liner": text}
 
 
 # ============ 3. 路由 ============
