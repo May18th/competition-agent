@@ -1299,6 +1299,16 @@ h1{font-size:24px;margin:0 0 4px}
 <div id="insightScore" style="font-size:13px;color:#64748b;margin-top:6px">评分弱项：—</div>
 <div id="insightFail" style="font-size:13px;color:#64748b;margin-top:6px">失败模式：—</div>
 </div>
+<div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">AI 模拟评分分布</div><div id="vizScore" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
+</div>
+<div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败率：加载中…</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script>
 var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
 function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';AF(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
@@ -1310,6 +1320,37 @@ bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',functio
 bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
 function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
+function loadViz(){
+    AF('/api/admin/stats').then(function(r){return r.json()}).then(function(j){
+        if(!j||!j.success)return;
+        var el=document.getElementById('vizFail');
+        if(el)el.textContent='失败率：'+(j.failure?(''+j.failure.failed+'/'+j.failure.total+'（'+j.failure.rate+'%%）'):'—');
+        if(!window.echarts)return;
+        var dark={color:['#818cf8','#c084fc','#22d3ee','#f59e0b','#f87171','#34d399']};
+        // 生成趋势
+        try{
+            var t=echarts.init(document.getElementById('vizTrend'),dark);
+            t.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.trend.map(function(x){return x.date.slice(5);}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'line',smooth:true,data:j.trend.map(function(x){return x.count;}),areaStyle:{opacity:.15},itemStyle:{color:'#818cf8'}}]});
+        }catch(e){}
+        // 评分分布
+        try{
+            var s=echarts.init(document.getElementById('vizScore'),dark);
+            s.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.score_buckets.map(function(x){return x.range;}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.score_buckets.map(function(x){return x.count;}),barWidth:'55%%',itemStyle:{color:'#c084fc',borderRadius:[5,5,0,0]}}]});
+        }catch(e){}
+        // 反馈分类
+        try{
+            var f=echarts.init(document.getElementById('vizFeedback'),dark);
+            f.setOption({tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#94a3b8',fontSize:10}},series:[{type:'pie',radius:['40%%','65%%'],center:['50%%','45%%'],data:j.feedback.map(function(x){return {name:x.category,value:x.count};}),label:{color:'#cbd5e1',fontSize:10}}]});
+        }catch(e){}
+        // 用户评分
+        try{
+            var rr=echarts.init(document.getElementById('vizRating'),dark);
+            rr.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.rating.map(function(x){return x.rating+'星';}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.rating.map(function(x){return x.count;}),barWidth:'50%%',itemStyle:{color:'#22d3ee',borderRadius:[5,5,0,0]}}]});
+        }catch(e){}
+        window.addEventListener('resize',function(){try{t.resize();s.resize();f.resize();rr.resize();}catch(e){}});
+    });
+}
+loadViz();
 </script>
 </div></body></html>""" % (
         total_gen, today_gen,
@@ -2743,6 +2784,61 @@ def quota():
     except Exception as e:
         print(f"[quota] 状态读取失败：{e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/admin/stats')
+def admin_stats():
+    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        trend = c.execute(
+            "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
+            "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
+        total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+        fb = c.execute(
+            "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
+        rating = c.execute(
+            "SELECT rating, COUNT(*) AS n FROM history WHERE rating > 0 "
+            "GROUP BY rating ORDER BY rating").fetchall()
+        scores = c.execute("SELECT result_data FROM history").fetchall()
+        conn.close()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    buckets = {"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0}
+    for r in scores:
+        try:
+            d = json.loads(r["result_data"])
+            s = d.get("score")
+            if s is None:
+                continue
+            s = float(s)
+        except Exception:
+            continue
+        if s < 60:
+            buckets["0-59"] += 1
+        elif s < 70:
+            buckets["60-69"] += 1
+        elif s < 80:
+            buckets["70-79"] += 1
+        elif s < 90:
+            buckets["80-89"] += 1
+        else:
+            buckets["90-100"] += 1
+
+    denom = total + failed
+    return jsonify({
+        "success": True,
+        "trend": [{"date": r["d"], "count": r["n"]} for r in trend],
+        "failure": {"total": denom, "failed": failed,
+                    "rate": round(failed * 100.0 / denom, 1) if denom else 0},
+        "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
+        "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
+        "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
+    })
 
 
 @app.route('/api/health')
