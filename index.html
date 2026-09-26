@@ -1091,9 +1091,12 @@ mark.wb-ph {
                                 <button onclick="evReset()" style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">恢复默认</button>
                             </div>
                         </div>
+                        <!-- 匹配状态：这份要求是官方知识库来的，还是通用兜底 -->
+                        <div id="evMatchBar" style="margin-bottom: 10px; font-size: 12.5px;"></div>
                         <div id="evSections" style="font-size: 13px;"></div>
                         <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
                         <div id="evDeduct" style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
+                        <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                         <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                             章节可直接改（改动只存在你这台设备）。<br>
                             <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 1300 字），不套用这里的多章结构。
@@ -2423,33 +2426,95 @@ mark.wb-ph {
         // 当前文档名词（申报书 / 作品说明书 / 商业计划书），全站文案跟着它走
         var WB_DOC_LABEL = '申报书';
 
+        // ---- 赛事官方资料索引：选比赛就立刻看到真实资料，不等生成 ----
+        // 后端 knowledge/data/*.txt（15 个赛事）解析成的结构化索引，落在 /static/competition_index.json。
+        // 页面加载时拉一次并缓存进 localStorage，之后选赛事纯本地查表 —— 0 延迟，不占生成时间。
+        var WB_COMP_INDEX = null;
+        var WB_COMP_IDX_KEY = 'wbCompIndexV1';
+
+        function wbLoadCompIndex() {
+            // 先读缓存，让首屏就能立刻匹配（哪怕这次 fetch 还没回来）
+            try {
+                var c = JSON.parse(localStorage.getItem(WB_COMP_IDX_KEY) || 'null');
+                if (c && c.items && c.items.length) WB_COMP_INDEX = c;
+            } catch (e) {}
+            fetch('/static/competition_index.json', { cache: 'no-cache' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (!d || !d.items || !d.items.length) return;
+                    var oldV = WB_COMP_INDEX && WB_COMP_INDEX.version;
+                    WB_COMP_INDEX = d;
+                    try { localStorage.setItem(WB_COMP_IDX_KEY, JSON.stringify(d)); } catch (e) {}
+                    // 版本变了说明后端资料更新过，重画一次要求卡
+                    if (oldV !== d.version) { try { renderEventCard(); } catch (e) {} }
+                })
+                .catch(function () { /* 拉不到就用缓存，再不行回落内置规则 */ });
+        }
+
+        // 从索引匹配赛事：keys 完全相等优先，其次互相包含；取最优命中，避免「挑战杯」串到小挑
+        function wbMatchIndex(name) {
+            if (!WB_COMP_INDEX || !WB_COMP_INDEX.items) return null;
+            var n = String(name || '').toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+            if (!n) return null;
+            var best = null, bs = 0;
+            WB_COMP_INDEX.items.forEach(function (it) {
+                var s = 0;
+                (it.keys || []).forEach(function (k) {
+                    var kk = String(k).toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+                    if (!kk) return;
+                    if (n === kk) s = Math.max(s, 100);
+                    else if (n.indexOf(kk) >= 0 || kk.indexOf(n) >= 0) s = Math.max(s, 80);
+                });
+                if (s > bs) { bs = s; best = it; }
+            });
+            return bs >= 80 ? best : null;
+        }
+
+        // 官方资料 + 内置规则合并：官方优先，官方缺哪块就用内置的补哪块
+        function wbMergeEvent(idx, req) {
+            var base = req || EV_DEFAULT;
+            return {
+                label: (idx && idx.doc_type) || base.label,
+                doc_type: (idx && idx.doc_type) || base.doc_type,
+                sections: ((idx && idx.sections && idx.sections.length) ? idx.sections : base.sections).slice(),
+                scoring: ((idx && idx.scoring && idx.scoring.length) ? idx.scoring : base.scoring),
+                deduct: (idx && idx.deduct) || base.deduct,
+                _idx: idx || null,
+                _src: idx ? 'index' : (req ? 'builtin' : 'default')
+            };
+        }
+
         function wbMatchEvent(name) {
             var n = String(name || '').toLowerCase().replace(/[""'']/g, '');
             if (!n) return null;
+            // 先查官方资料索引（后端知识库解析来的，是真资料）
+            var idx = wbMatchIndex(name);
+            // 再查前端内置规则，只用来补官方资料的缺口
+            var builtin = null;
             for (var k in EVENT_REQ) {
-                if (n === k.toLowerCase()) return EVENT_REQ[k];
+                if (n === k.toLowerCase()) { builtin = EVENT_REQ[k]; break; }
                 var al = EVENT_REQ[k].alias || [];
                 for (var i = 0; i < al.length; i++) {
-                    if (n.indexOf(al[i]) >= 0 || al[i].indexOf(n) >= 0) return EVENT_REQ[k];
+                    if (n.indexOf(al[i]) >= 0 || al[i].indexOf(n) >= 0) { builtin = EVENT_REQ[k]; break; }
                 }
+                if (builtin) break;
             }
-            return null;
+            if (!idx && !builtin) return null;
+            return wbMergeEvent(idx, builtin);
         }
 
         function evCurrent() {
             var name = (document.getElementById('competition') || {}).value || '';
             var req = wbMatchEvent(name);
+            var base = req || EV_DEFAULT;
             var key = 'wbEventReq_' + (req ? (req.label + name) : name);
             var custom = null;
             try { custom = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
-            if (custom && custom.sections && custom.sections.length) {
-                return { label: (req || EV_DEFAULT).label, doc_type: (req || EV_DEFAULT).doc_type,
-                         sections: custom.sections, scoring: (req || EV_DEFAULT).scoring,
-                         deduct: (req || EV_DEFAULT).deduct, key: key };
-            }
-            var r = req || EV_DEFAULT;
-            return { label: r.label, doc_type: r.doc_type, sections: r.sections.slice(),
-                     scoring: r.scoring, deduct: r.deduct, key: key };
+            var sections = (custom && custom.sections && custom.sections.length)
+                ? custom.sections : base.sections.slice();
+            return { label: base.label, doc_type: base.doc_type, sections: sections,
+                     scoring: base.scoring, deduct: base.deduct, key: key,
+                     _idx: base._idx || null, _src: base._src || 'default' };
         }
 
         function evSave() {
@@ -2517,6 +2582,46 @@ mark.wb-ph {
             }
             var dd = document.getElementById('evDeduct');
             if (dd) dd.textContent = c.deduct || '';
+
+            // 匹配状态：这份要求到底是官方知识库来的、还是通用兜底——必须让学生看见，
+            // 否则他会以为「官方资料」四个字适用于任何比赛，选个没收录的也照信不误
+            var mb = document.getElementById('evMatchBar');
+            if (mb) {
+                var idx = c._idx;
+                if (idx) {
+                    var g = '';
+                    if (idx.gaps && idx.gaps.length) {
+                        g = '<div style="color: var(--warn-text); font-size: 12px; margin-top: 3px;">' +
+                            '这份官方资料还缺：' + _esc(idx.gaps.join('、')) + '，已用通用规则补齐</div>';
+                    }
+                    mb.innerHTML = '<div style="padding: 7px 10px; border-radius: 6px; background: var(--info-bg-2); ' +
+                        'color: var(--text-dim); line-height: 1.6;">' +
+                        '<b style="color: var(--ok);">已检索到官方资料</b> · ' + _esc(idx.title || '') +
+                        '<span style="color: var(--text-mute);">（' + _esc(String(idx.chars || 0)) + ' 字）</span>' +
+                        g + '</div>';
+                } else {
+                    mb.innerHTML = '<div style="padding: 7px 10px; border-radius: 6px; background: var(--warn-bg); ' +
+                        'color: var(--text-dim); line-height: 1.6;">' +
+                        '<b style="color: var(--warn-text);">这个比赛我们还没收录官方资料</b>，' +
+                        '下面按通用模板生成。' +
+                        '<div style="color: var(--text-mute); font-size: 12px; margin-top: 3px;">' +
+                        '把官方文件传上来，AI 会按真实的评分标准写，比通用模板准得多。</div></div>';
+                }
+            }
+
+            // 评委偏好：官方知识库里有，之前前端没地方显示，白白浪费
+            var pf = document.getElementById('evPref');
+            if (pf) {
+                var pref = (c._idx && c._idx.preference) ? c._idx.preference : [];
+                if (pref.length) {
+                    pf.innerHTML = '<b style="color: var(--text-dim);">评委偏好：</b>' + _esc(pref.join('；'));
+                    pf.style.display = 'block';
+                } else {
+                    pf.innerHTML = '';
+                    pf.style.display = 'none';
+                }
+            }
+
             card.style.display = 'block';
         }
 
@@ -4304,6 +4409,8 @@ mark.wb-ph {
         
         // 页面加载后拉取一次知识库状态（失败也不影响主流程）
         loadKnowledgeStatus();
+        // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
+        wbLoadCompIndex();
         checkHealth();
         setInterval(checkHealth, 30000);
 
