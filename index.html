@@ -1341,7 +1341,7 @@ mark.wb-ph {
                         <option value="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）"></option>
                     </datalist>
                     <!-- 横滑一排：换行会占掉半屏，手机上还得滑很久才找得到 -->
-                    <div style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
+                    <div id="compQuickRow" style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
                                 -webkit-overflow-scrolling: touch; padding-bottom: 2px;">
                         <span onclick="wbPickComp('iCAN大学生创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
                         <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
@@ -3946,7 +3946,26 @@ mark.wb-ph {
             box.style.display = show ? 'block' : 'none';
             if (ar) ar.textContent = show ? '▴' : '▾';
         }
+        // 赛事 quick-pick 横排 chip 高亮：当前选中的赛事对应 chip 亮成主色，其余保持灰
+        function wbSyncCompChips() {
+            var cur = String((document.getElementById('competition') || {}).value || '').trim();
+            var row = document.getElementById('compQuickRow');
+            if (!row) return;
+            var chips = row.children;
+            for (var i = 0; i < chips.length; i++) {
+                var sp = chips[i];
+                var m = /wbPickComp\('([^']*)'\)/.exec(sp.getAttribute('onclick') || '');
+                var name = m ? m[1] : '';
+                var on = !!name && name === cur;
+                sp.style.background = on ? 'var(--c-a)' : 'var(--surface-2)';
+                sp.style.color = on ? '#fff' : 'var(--text)';
+                sp.style.borderColor = on ? 'var(--c-a)' : 'var(--line)';
+                sp.style.fontWeight = on ? '600' : '400';
+            }
+        }
+
         function onCompetitionChange() {
+            wbSyncCompChips();
             renderKbStatus();
             try { renderEventCard(); } catch (e) {}   // 换赛事 → 要求卡自动换成该赛事的文档类型与章节
             // 换赛事 → 主题重新推荐 + 页序说明/状态条跟着变（数学建模会多两页）
