@@ -1162,6 +1162,26 @@ mark.wb-ph {
         @media (max-width: 420px) {
             .wb-anchor-btn { padding: 5px 10px; font-size: 12px; }
         }
+
+/* ---------- 多智能体流程面板 ---------- */
+.wb-agent-panel { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.wb-agent-hd { font-size: 12px; color: var(--text-mute); margin-bottom: 6px; letter-spacing: .5px; display: flex; align-items: center; gap: 6px; }
+.wb-agent-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; color: var(--text-mute); border-top: 1px dashed rgba(128,128,128,.16); }
+.wb-agent-row:first-of-type { border-top: none; }
+.wb-agent-dot { flex: 0 0 auto; width: 14px; text-align: center; font-size: 13px; line-height: 1; }
+.wb-agent-nm { flex: 0 0 auto; }
+.wb-agent-row.run { color: var(--c-a); font-weight: 600; }
+.wb-agent-row.run .wb-agent-dot { animation: wbAgentBlink 1s linear infinite; }
+.wb-agent-row.done { color: var(--ok); }
+.wb-agent-row.err { color: var(--err-text); }
+.wb-agent-act, .wb-agent-ms, .wb-agent-wait { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--text-dim); }
+@keyframes wbAgentBlink { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+/* 结果页顶部风格切换 */
+#wbStyleBar { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+#wbStyleBar .sb-title { font-size: 12.5px; font-weight: 600; color: var(--text-dim); flex: none; }
+#wbStyleBar select { flex: 1 1 160px; min-width: 140px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 13px; }
+#wbStyleBar button { flex: none; padding: 7px 12px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+#wbStyleBar .sb-note { flex: 1 1 100%; font-size: 12px; color: var(--text-mute); }
 </style>
 </head>
 <body>
@@ -1533,32 +1553,7 @@ mark.wb-ph {
                     </div>
                 </div>
                 <!-- 深度版步骤 -->
-                <div id="deepSteps" style="display: none;">
-                    <div class="progress-step" id="step1">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 规则解析 Agent</span>
-                    </div>
-                    <div class="progress-step" id="step2">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 同质化检测 Agent</span>
-                    </div>
-                    <div class="progress-step" id="step3">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书生成 Agent</span>
-                    </div>
-                    <div class="progress-step" id="step4">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 模拟评委 Agent</span>
-                    </div>
-                    <div class="progress-step" id="step5">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩问题预测 Agent</span>
-                    </div>
-                    <div class="progress-step" id="step6">
-                        <span class="step-icon"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clock"/></svg></span>
-                        <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 大纲生成 Agent</span>
-                    </div>
-                </div>
+                <div id="agentPanel" class="wb-agent-panel" style="display: none;"></div>
                 <!-- 终止生成 -->
                 <div id="cancelWrap" style="text-align: center; margin-top: 14px; display: none;">
                     <button onclick="cancelGeneration()" style="padding: 8px 18px; background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-line); border-radius: 8px; cursor: pointer; font-size: 13px;">终止生成</button>
@@ -1588,6 +1583,12 @@ mark.wb-ph {
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
 
+<div id="wbStyleBar">
+                <span class="sb-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 风格</span>
+                <select id="styleQuickSel" onchange="wbStyleQuick()" aria-label="PPT 风格"></select>
+                <button onclick="wbGoExport()">更多风格 →</button>
+                <span class="sb-note">切换后下方 PPT 预览实时刷新，下载前随时可改</span>
+            </div>
             <!-- 档位标识：由 JS 按 mode 填充（简洁快速版 / 深度完整版 · 已生成 N 个模块） -->
             <div id="tierBadge" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;"></div>
             <div class="result-hero">
@@ -5305,7 +5306,7 @@ mark.wb-ph {
                 if (txt.length <= prev) return;      // 没有新增就别重渲染，省掉闪烁
                 _streamLen[key] = txt.length;
                 fresh += txt.length - prev;
-                el.innerHTML = marked.parse(txt);
+                twSet(key, txt);          // 交给打字机逐字揭示，不再整块覆盖
                 el.classList.add('streaming');
                 // 该区块所属 Tab 打上脉冲点（提示用户在别的页签有内容流入）
                 var tb = document.querySelector('.tab[onclick*="' + tab + '"]');
@@ -5449,6 +5450,7 @@ mark.wb-ph {
                                     const sec = Math.round((Date.now() - t0) / 1000);
                                     // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
                                     paintPartial(res2.partial);
+                                    try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
                                     _setBar(res2.pct || 0,
                                         (isOptimize ? '优化' : '深度版') + '预计 2-3 分钟，正在生成内容，无需等待，可以先去做别的事'
                                         + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
@@ -5488,6 +5490,7 @@ mark.wb-ph {
             })
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
+                try { wbAgentFinish(true); } catch (e) {}
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
@@ -5722,6 +5725,7 @@ mark.wb-ph {
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
                 streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
+                try { wbAgentFinish(false); } catch (e) {}
                 document.getElementById('skeletonArea').style.display = 'none';
                 document.getElementById('cancelWrap').style.display = 'none';
                 document.getElementById('progressSteps').style.display = 'none';
@@ -6670,6 +6674,267 @@ window.addEventListener('resize', function () {
     if (window._advT) return;
     window._advT = setTimeout(function () { window._advT = 0; wbAdvInit(); }, 300);
 });
+</script>
+
+<script>
+/* ================= 多智能体流程可视化 + 打字机 =================
+   后端 /api/stream/<task_id> 已实现 SSE（stage / partial / done 事件），
+   但前端一直只轮询 /api/status，所以是「一块一块跳」而不是逐字流出。
+   这里接上 SSE 做增量；SSE 不通时轮询照旧，两条路都调同一批幂等函数。 */
+(function () {
+    var ESC = (typeof _esc === 'function') ? _esc : function (x) {
+        return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+        });
+    };
+
+    /* ---------- 1. Agent 面板 ---------- */
+    var AGENTS = [
+        { k: 'rules',    n: '规则解析 Agent',   s: ['start', 'parsing_rules'] },
+        { k: 'similar',  n: '竞品检索 Agent',   s: ['similarity'] },
+        { k: 'idea',     n: '创意定位 Agent',   s: ['idea_scoring'] },
+        { k: 'analysis', n: '方案分析 Agent',   s: ['analysis'] },
+        { k: 'assets',   n: '素材生成 Agent',   s: ['rich_assets'] },
+        { k: 'write',    n: '申报书写作 Agent', s: ['writing'] },
+        { k: 'judge',    n: '模拟评委 Agent',   s: ['judging', 'expert_review', 'diagnosis', 'revision'] },
+        { k: 'defense',  n: '答辩预测 Agent',   s: ['defense'] },
+        { k: 'road',     n: '路演生成 Agent',   s: ['ppt', 'speech', 'done'] }
+    ];
+    // 后端 SSE 的 stage 事件只带代号，本地补一份中文动作
+    var STAGE_LABEL = {
+        start: '正在启动', parsing_rules: '解析评分规则', similarity: '检索同质化项目',
+        idea_scoring: '提炼一句话定位', analysis: '分析赛题与方案', rich_assets: '生成图表与 PPT 素材',
+        writing: '撰写申报书正文', judging: '模拟评委打分', expert_review: '多专家交叉评审',
+        diagnosis: '诊断短板', revision: '按意见定向改写', defense: '预测答辩问题',
+        ppt: '生成 PPT 大纲', speech: '撰写路演稿', done: '收尾'
+    };
+    var st = {}, timer = 0;
+
+    function reset() {
+        st = {};
+        AGENTS.forEach(function (a) { st[a.k] = { s: 'wait', label: '', t0: 0, ms: 0 }; });
+        if (timer) { clearTimeout(timer); timer = 0; }
+        var p = document.getElementById('agentPanel');
+        if (p) p.style.display = 'block';
+        render();
+    }
+
+    function stage(code, label) {
+        if (!code) return;
+        var hit = null, hi = -1;
+        for (var i = 0; i < AGENTS.length; i++) {
+            if (AGENTS[i].s.indexOf(code) >= 0) { hit = AGENTS[i]; hi = i; break; }
+        }
+        if (!hit) return;
+        var now = Date.now();
+        // 后端前几个节点并行跑、stage 会乱序跳变：只把「排在它前面」的收尾，
+        // 后面的保持原状，免得把还没跑的标成已完成
+        for (var j = 0; j < hi; j++) {
+            var o = st[AGENTS[j].k];
+            if (o && o.s === 'run') { o.s = 'done'; o.ms = o.t0 ? (now - o.t0) : 0; }
+        }
+        var cur = st[hit.k];
+        if (cur.s !== 'run') { cur.s = 'run'; cur.t0 = now; }
+        cur.label = label || STAGE_LABEL[code] || '';
+        render();
+        // 运行中每秒重绘一次，让耗时数字自己走
+        if (!timer) timer = setTimeout(function () { timer = 0; render(); }, 1000);
+    }
+
+    function finish(ok) {
+        var now = Date.now();
+        Object.keys(st).forEach(function (k) {
+            var o = st[k];
+            if (o.s === 'run') { o.s = ok === false ? 'err' : 'done'; o.ms = o.t0 ? (now - o.t0) : 0; }
+        });
+        if (timer) { clearTimeout(timer); timer = 0; }
+        render();
+        setTimeout(function () {
+            var p = document.getElementById('agentPanel');
+            if (p) p.style.display = 'none';
+        }, 2600);
+    }
+
+    function render() {
+        var box = document.getElementById('agentPanel');
+        if (!box) return;
+        var runCnt = 0, doneCnt = 0;
+        var html = '<div class="wb-agent-hd"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 多智能体协同流程 · 实时</div>';
+        AGENTS.forEach(function (a) {
+            var o = st[a.k] || { s: 'wait' };
+            if (o.s === 'run') runCnt++;
+            if (o.s === 'done') doneCnt++;
+            var cls = o.s, dot = cls === 'done' ? '●' : (cls === 'run' ? '◐' : (cls === 'err' ? '✕' : '○'));
+            var tail = '';
+            if (cls === 'run') tail = '<span class="wb-agent-act">' + ESC(o.label) + '</span>';
+            else if (cls === 'done') tail = '<span class="wb-agent-ms">' + (o.ms ? (o.ms / 1000).toFixed(1) + 's' : '✓') + '</span>';
+            else if (cls === 'err') tail = '<span class="wb-agent-ms">中断</span>';
+            else tail = '<span class="wb-agent-wait">等待</span>';
+            html += '<div class="wb-agent-row ' + cls + '"><span class="wb-agent-dot">' + dot +
+                '</span><span class="wb-agent-nm">' + a.n + '</span>' + tail + '</div>';
+        });
+        html = html.replace('多智能体协同流程 · 实时',
+            '多智能体协同流程 · 实时（已完成 ' + doneCnt + '/' + AGENTS.length + '）');
+        box.innerHTML = html;
+        if (runCnt && !timer) timer = setTimeout(function () { timer = 0; render(); }, 1000);
+    }
+
+    /* ---------- 2. 打字机 ---------- */
+    // key -> { full: 后端已产出的全文, shown: 已揭示字数, painted: 已渲染字数 }
+    var tw = {}, raf = 0;
+    var rAF = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+
+    function twReset() { tw = {}; }
+
+    function fieldMeta(key) {
+        if (typeof _STREAM_MAP === 'undefined') return null;
+        for (var i = 0; i < _STREAM_MAP.length; i++) if (_STREAM_MAP[i][0] === key) return _STREAM_MAP[i];
+        return null;
+    }
+
+    function twSet(key, text) {
+        if (!key || typeof text !== 'string') return;
+        var m = fieldMeta(key);
+        if (!m) return;
+        var o = tw[key];
+        if (!o) o = tw[key] = { full: '', shown: 0, painted: -1, id: m[1], tab: m[2] };
+        if (text.length < o.full.length) {           // 内容被重写（少见），直接对齐
+            o.full = text; o.shown = Math.min(o.shown, text.length); return;
+        }
+        o.full = text;
+        if (o.full.length - o.shown > 6000) o.shown = o.full.length;   // 落后太多就不动画，直接追上
+        if (!raf) raf = rAF(tick);
+    }
+
+    // 切断处可能剩下半截 ** 或 `，去掉一个，免得渲染时闪出符号
+    function twSlice(t, n) {
+        return t.slice(0, n).replace(/(\*{1,3})$/, '').replace(/`+$/, '');
+    }
+
+    function twPaint(o, txt) {
+        var el = document.getElementById(o.id);
+        if (!el) return;
+        if (!window.marked) { el.textContent = txt; return; }
+        el.innerHTML = marked.parse(txt);
+        el.classList.add('streaming');
+        var tb = document.querySelector('.tab[onclick*="' + o.tab + '"]');
+        if (tb) {
+            if (o.tab === 'defense') tb.style.display = 'block';
+            if (!tb.classList.contains('active')) tb.classList.add('has-stream');
+        }
+        // 第一次有真内容就把骨架屏换成结果区
+        if (typeof _streamShown !== 'undefined' && !_streamShown) {
+            _streamShown = true;
+            var sk = document.getElementById('skeletonArea');
+            var ra = document.getElementById('resultArea');
+            if (sk) sk.style.display = 'none';
+            if (ra) ra.style.display = 'block';
+        }
+    }
+
+    function tick() {
+        raf = 0;
+        var busy = false;
+        Object.keys(tw).forEach(function (k) {
+            var o = tw[k];
+            var rem = o.full.length - o.shown;
+            if (rem > 0) {
+                // 自适应步长：约 1.2s 内追平当前积压，最少 2 字/帧
+                o.shown = Math.min(o.full.length, o.shown + Math.max(2, Math.ceil(rem / 72)));
+                busy = true;
+            }
+            if (o.shown === o.full.length) {
+                if (o.shown !== o.painted) { twPaint(o, o.full); o.painted = o.shown; }
+                return;
+            }
+            if (o.shown - o.painted >= 8) {
+                twPaint(o, twSlice(o.full, o.shown));
+                o.painted = o.shown;
+            }
+        });
+        if (busy) raf = rAF(tick);
+    }
+
+    /* ---------- 3. SSE（拿不到就靠轮询兜底） ---------- */
+    var es = null, esId = null;
+    function sseOpen(tid) {
+        if (!tid || esId === tid || typeof EventSource === 'undefined') return;
+        if (es) { try { es.close(); } catch (e) {} }
+        esId = tid;
+        try { es = new EventSource('/api/stream/' + tid); } catch (e) { es = null; return; }
+        es.addEventListener('stage', function (ev) {
+            try { var d = JSON.parse(ev.data); stage(d.stage, ''); } catch (e) {}
+        });
+        es.addEventListener('partial', function (ev) {
+            try {
+                var d = JSON.parse(ev.data);
+                var prev = (tw[d.field] && tw[d.field].full) || '';
+                twSet(d.field, prev + (d.delta || ''));
+            } catch (e) {}
+        });
+        es.addEventListener('done', function () { sseClose(); });
+        es.onerror = function () { sseClose(); };
+    }
+    function sseClose() {
+        if (es) { try { es.close(); } catch (e) {} }
+        es = null; esId = null;
+    }
+
+    /* ---------- 4. 挂到现有流程上 ---------- */
+    if (typeof window.streamPrepare === 'function') {
+        var _p = window.streamPrepare;
+        window.streamPrepare = function () { reset(); twReset(); sseOpen(window._currentTaskId); return _p.apply(this, arguments); };
+    }
+    if (typeof window.paintPartial === 'function') {
+        var _q = window.paintPartial;
+        // 轮询拿到第一个 partial 时才拿到 task_id，这里补开 SSE
+        window.paintPartial = function () {
+            var r = _q.apply(this, arguments);
+            sseOpen(window._currentTaskId);
+            return r;
+        };
+    }
+    if (typeof window.streamFinish === 'function') {
+        var _f = window.streamFinish;
+        window.streamFinish = function () { sseClose(); return _f.apply(this, arguments); };
+    }
+
+    /* ---------- 5. 结果页顶部风格切换 ---------- */
+    function styleFill() {
+        var bar = document.getElementById('wbStyleBar');
+        var sel = document.getElementById('styleQuickSel');
+        if (!bar || !sel) return;
+        var lib = window._themeLib || [];
+        if (!lib.length) { bar.style.display = 'none'; return; }
+        var cur = (document.getElementById('deckTheme') || {}).value || '';
+        sel.innerHTML = lib.map(function (t) {
+            var nm = t.name || t.label || t.key;
+            return '<option value="' + ESC(t.key) + '"' + (t.key === cur ? ' selected' : '') + '>' +
+                   ESC(nm) + '</option>';
+        }).join('');
+        bar.style.display = '';
+    }
+    window.wbStyleQuick = function () {
+        var sel = document.getElementById('styleQuickSel');
+        var d = document.getElementById('deckTheme');
+        if (!sel || !d) return;
+        d.value = sel.value;
+        try { _themeManual = true; } catch (e) {}
+        if (typeof onThemeChange === 'function') onThemeChange();
+        if (typeof wbToast === 'function') wbToast('已切到「' + sel.options[sel.selectedIndex].text + '」，下方预览已刷新', { type: 'ok', ms: 2000 });
+    };
+    if (typeof window.previewDeckStyle === 'function') {
+        var _d = window.previewDeckStyle;
+        window.previewDeckStyle = function () { var r = _d.apply(this, arguments); styleFill(); return r; };
+    }
+
+    // 导出给外部（paintPartial / 轮询路径直接用）
+    window.wbAgentStage = stage;
+    window.wbAgentFinish = finish;
+    window.wbAgentReset = reset;
+    window.twSet = twSet;          // paintPartial 内部调用，必须挂全局
+    window.twReset = twReset;
+})();
 </script>
 </body>
 </html>
