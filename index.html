@@ -5477,6 +5477,9 @@ mark.wb-ph {
             if (olTxt) {
                 var ol = document.getElementById('oneLiner');
                 if (ol && ol.innerText !== olTxt) ol.innerText = olTxt;
+                // 关键：更新已见长度，否则 cursor 里永远没有 one_liner，
+                // 后端每轮都回全量、前端每轮都追加，导致「一句话定位」越滚越长
+                _streamLen['one_liner'] = olTxt.length;
             }
             if (fresh > 0) {
                 _streamTotal += fresh;
