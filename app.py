@@ -724,15 +724,6 @@ def _strip_identifying_info(obj):
     return obj
 
 
-def _ensure_risk_notice(text):
-    """在申报书末尾追加统一的风险提示（AI 生成初稿声明），已存在则不重复追加。"""
-    notice = "\n\n风险提示：本内容为 AI 生成初稿，请替换真实项目数据后提交。"
-    t = (text or "").rstrip()
-    if "风险提示" in t:
-        return text
-    return t + notice
-
-
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -794,9 +785,6 @@ def _run_generation(data):
                 print(f"[rich] 富媒体生成失败（不影响正文）：{e}")
         else:
             result = _run_graph(fast_app, state)
-
-        # 统一在申报书末尾追加「风险提示」声明，保证简洁版 / 深度版最终提交稿都带
-        result["proposal"] = _ensure_risk_notice(result.get("proposal", ""))
 
         # ===== 富媒体解析（表格/图表/PPT）：三种来源统一归一，失败不阻断 =====
         # 来源1：rich_pipeline 直接写在 result 上的三个字段（当前主链路）
