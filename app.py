@@ -13,6 +13,7 @@ import io
 import os
 import sqlite3
 import re
+import gzip as _gzip
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, make_response
 from werkzeug.utils import secure_filename
@@ -28,6 +29,33 @@ import app_log
 
 app = Flask(__name__)
 START_TIME = time.time()
+
+
+# ===== gzip 压缩 =====
+# 首页 index.html 约 400KB，gzip 后约 100KB，加载快一倍。
+# 只压缩文本类响应且 >500 字节；流式预览接口不压缩（避免影响实时性）。
+@app.after_request
+def _gzip_response(resp):
+    if request.path.startswith('/api/speech_stream'):
+        return resp
+    if getattr(resp, 'direct_passthrough', False):
+        return resp
+    if resp.headers.get('Content-Encoding'):
+        return resp
+    if 'gzip' not in (request.headers.get('Accept-Encoding') or '').lower():
+        return resp
+    ctype = (resp.headers.get('Content-Type') or '').lower()
+    if not any(t in ctype for t in ('text/', 'json', 'javascript', 'css', 'svg', 'xml')):
+        return resp
+    data = resp.get_data()
+    if len(data) < 500:
+        return resp
+    resp.set_data(_gzip.compress(data, 6))
+    resp.headers['Content-Encoding'] = 'gzip'
+    resp.headers['Content-Length'] = str(len(resp.get_data()))
+    resp.headers.setdefault('Vary', 'Accept-Encoding')
+    return resp
+
 
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮
 MAX_CONCURRENT_GEN = 4
@@ -1485,6 +1513,12 @@ def _run_generation(data):
         completeness = check_proposal_completeness(result.get("proposal", ""), data.get("mode", "fast"))
     except Exception:
         completeness = {"ok": True, "missing": [], "detail": {}, "chars": 0}
+    # 正文字数（去掉 Markdown 标记的有效字数，用户一眼看到写了多少字）
+    try:
+        from competition_agents import _cjk_len
+        proposal_chars = _cjk_len(result.get("proposal", ""))
+    except Exception:
+        proposal_chars = len(re.sub(r'\s', '', result.get("proposal", "") or ""))
 
     payload = {
         "parsed_rules": result.get("parsed_rules", ""),
@@ -1515,6 +1549,7 @@ def _run_generation(data):
         "rich_charts": rich_charts,
         "rich_tables": rich_tables,
         "rich_deck": rich_deck,
+        "proposal_chars": proposal_chars,
         "completeness": completeness
     }
 
