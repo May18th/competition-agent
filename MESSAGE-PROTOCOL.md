@@ -522,3 +522,68 @@ def _mask_double_blind(text, school=None, advisor=None):
 iCAN 导出：学校 0 次、导师 0 次（正文变「本校」「指导老师」）；
 对照（不传赛事名）：学校 5 次、导师 5 次，完全保留 —— 证明不是误杀。
 PDF 同样 0 残留。
+
+---
+
+## 2026-09-26 20:20 · 报备⑧：移动端待办收尾（前端 index.html 为主；app.py 只加了一行）
+
+来源：`待办_WorkBuddy_移动端体验问题.md`（你在 ├── ①②③④ 四条 + 一键定位建议）。
+其中「微信/QQ 引导、等待文案、留白、引导横滑、下载、回到内容」上一轮已做，这轮收尾剩余项。
+
+### 1. 卡顿 / 内容缺失 → 结果区改分帧渲染
+原来生成完就把 15 个板块一次性 `marked.parse` 挂 DOM，深度版上万字，低端机必然卡、甚至渲染一半丢内容。
+- 新增 `wbPaintQueue(q)`：任务按优先级排序，每帧最多用 8ms（`performance.now()` 计时），
+  用完就 `requestAnimationFrame` 让到下一帧。`raf` 有 `setTimeout(f,16)` 兜底（老内核）。
+- 所有 `xxx.innerHTML = marked.parse(...)` 改成进队列（`_P(prio, fn)`），按重要度排：
+  1=规则/查重，3=申报书/评审意见，…21=锚点条最后生成。
+- **顺序坑**：依赖渲染结果的逻辑（auto-show 显隐判断 `innerHTML.length>20`、deepN 计数、
+  占位符扫描 `wbRefreshPhBar`、锚点条）必须**排进队列**在渲染任务之后，
+  否则同步执行时读到的全是空 DOM，板块会被判成"没内容"而隐藏。
+
+### 2.「界面上下颜色分层」（百度/夸克）—— 找到真根因
+分步引导的高亮以前是 `box-shadow: 0 0 0 100vmax rgba(3,6,20,.62)` 一张巨影做全屏压暗。
+**祖先里只要有一个 `overflow:hidden`，阴影就被裁掉**，裁剪边界横在屏幕中间，
+看起来就是"上半截亮、下半截暗"。
+改为独立 `#wbCoachVeil`（`position:fixed; left/top/right/bottom:0; z-index:1500`），
+`.wb-coach-target` 只留 `0 0 0 3px` 描边。顺带：点遮罩 = 下一步，
+老内核里用户在蒙层上乱点会卡住，这也是"只有第一步"的一个成因。
+
+### 3. 三步引导在第 2 步断掉（百度/QQ/夸克）
+`coachRepos()` 原来用 `window.innerHeight` 判断提示气泡放目标上方还是下方。
+移动端 `innerHeight` 比可视视口小（地址栏/工具栏），气泡被算到屏幕外 → 按钮点不到 → 卡住。
+改成 `wbViewportHeight()`（拿 `visualViewport.height` / `documentElement.clientHeight`），
+全部 recording 用同一套视口高度，不再和 100vh 混用。
+
+### 4. 100vh → 动态视口（跟「历史记录看不到」有关）
+- `body { min-height: 100vh }` → 用 JS 设 `--wb-vh`（100dvh 优先，fallback 到量出来的 px）。
+- 历史列表 `max-height: 46vh` → `46dvh`（`-webkit-overflow-scrolling: touch` 也补了）。
+- 引导浮层手机全屏 `height:100vh` → 同样换成动态高度。
+老内核 QQ/夸克不认 `dvh`，所以是 CSS 变量 + JS 兜底两条腿走路。
+
+### 5. 生成失败不提示 → 弹后端 detail
+`/api/status/<task_id>` 返回 error 时，以前只 `reject(new Error(res2.error))`，detail 丢了。
+现在把 `res2.detail` 拼进错误文案；任务失效分支同理。用户至少能看到 LLM 报了什么。
+
+### 6. 上传：微信里选不到文件 / 申报书上传失败
+- 新增 `wbUploadGuard(inputId)`，挂到 `ruleFile` / `tplFile` / `ideaFile`：
+  - **capture 阶段拦 click**：内置浏览器里点了也选不到真实文件（只能进图库），
+    直接弹全屏引导，别让用户白选一轮。
+  - **change 里拦 `.doc`**：后端只读 pdf/docx/txt/md，选 `.doc` 必失败且报错笼统，
+    现在清空 input 并明确提示"另存为 .docx"。
+- ⚠️ 动了你一行 `app.py` 的 `upload_pdf()`：`.doc` 单独一条错误分支
+  （原来落到"不支持的文件格式（.doc）"，用户看不懂为什么不支持）。
+  线上实测：传 `.doc` → `error=「旧版 .doc 读不了：请在 Word 里「另存为 .docx」再上传…」`。
+
+### 7. 一键定位（用户建议）
+结果区顶部横向锚点条 `#wbAnchorBar`：只列有内容的板块（`scroll-snap` 横滑），
+点一下平滑滚到位并且自动切到对应 Tab；`scroll-margin-top` 已在全局铺好，不会被吸顶条挡住。
+右下角悬浮按钮的「回到生成内容」上一轮已加。
+
+### 8. 没做 / 交给你判断
+- 微信想真正支持上传要靠 JS-SDK（要求公众号 + 域名备案），短期不做；现在策略是"引导去浏览器"。
+- `accept` 属性在微信里会让选择器只剩图库 —— 但既然已经先拦了，没再放宽。
+- 仓库里 `competition_agents.py` 有你的未提交改动，我没动也没提交。
+
+### 9. 线上验证
+首页关键字全命中（wbCoachVeil / wbUploadGuard / wbPaintQueue / wbRenderAnchorBar /
+wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回新文案；服务 active。
