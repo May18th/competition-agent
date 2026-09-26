@@ -640,3 +640,21 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
    现有轮询 /api/status 保留作 SSE 断开时的兜底。
 2. partial 事件的 delta 是「本段新增文本」，直接 append 到对应字段即可，不要整段替换。
 3. 申报书「项目介绍」里可写「基于 RAG 的赛事规则精准匹配」（后端已实现，无需前端改）。
+
+
+---
+
+## 2026-09-27 追加三（Codex，重复率初检 + 多风格切换的前端配合）
+
+后端已完成：
+- **重复率初检**：生成结果 payload 新增 similarity 字段，结构
+  {"percent": 12.3, "checked": 53, "note": "本地初检，非正式查重"}。
+  是与本地范文库（53 条）做字符 5-gram 重叠率，**不是知网/全网正式查重**，前端展示务必带上「本地初检」字样，别让学生误以为是正式查重结果。
+- **多风格切换**：新增 POST /api/restyle，入参 {"text": <申报书正文>, "style": "formal|academic|startup"}，
+  返回 {"success": true, "text": <改写后全文>, "style": ...}。三种风格：
+  - ormal 正式公文风 / cademic 学术严谨风 / startup 创业融资风
+
+需 WorkBuddy 配合前端：
+1. 结果区显示相似度：window._lastData.similarity.percent，文案「本内容与公开材料相似度 X%（本地初检）」。
+2. 结果区加风格切换按钮（正式公文/学术严谨/创业融资），点击调 /api/restyle（传当前 proposal 全文 + style），
+   成功后把返回的 	ext 替换进申报书结果区；切换是「改写」不是重跑生成，秒回。

@@ -1519,6 +1519,7 @@ def _run_generation(data):
         proposal_chars = _cjk_len(result.get("proposal", ""))
     except Exception:
         proposal_chars = len(re.sub(r'\s', '', result.get("proposal", "") or ""))
+    similarity = _similarity_check(result.get("proposal", ""))
 
     payload = {
         "parsed_rules": result.get("parsed_rules", ""),
@@ -1550,11 +1551,43 @@ def _run_generation(data):
         "rich_tables": rich_tables,
         "rich_deck": rich_deck,
         "proposal_chars": proposal_chars,
+        "similarity": similarity,
         "completeness": completeness
     }
 
     payload = _strip_identifying_info(payload)
     return payload
+
+
+def _similarity_check(text):
+    """简单重复率初检：与本地范文库做字符 5-gram 重叠率，返回百分比。
+
+    这是「本地初检」，只和知识库里收录的范文对比，不等同于知网/全网正式查重。
+    """
+    try:
+        from kb_samples import list_samples
+        samples = list_samples(limit=500)
+        refs = [s.get('content', '') for s in samples if s.get('content')]
+        if not refs or not (text or '').strip():
+            return {"percent": 0.0, "checked": len(refs), "note": "本地初检，非正式查重"}
+        n = 5
+
+        def _ngrams(s):
+            s = re.sub(r'\s+', '', s)
+            return set(s[i:i + n] for i in range(len(s) - n + 1))
+
+        tg = _ngrams(text)
+        if not tg:
+            return {"percent": 0.0, "checked": len(refs), "note": "本地初检，非正式查重"}
+        rg = set()
+        for r in refs:
+            rg |= _ngrams(r)
+        overlap = len(tg & rg)
+        percent = round(overlap / len(tg) * 100, 1)
+        return {"percent": percent, "checked": len(refs), "note": "本地初检，非正式查重"}
+    except Exception as e:
+        print(f"[similarity] 检测失败：{e}")
+        return {"percent": None, "checked": 0, "note": "检测失败"}
 
 
 def _friendly_error(e):
@@ -1705,6 +1738,44 @@ def retry_generation(task_id):
     if err is not None:
         return err, 429
     return jsonify({"success": True, "task_id": task_id2})
+
+
+_RESTYLE_STYLES = {
+    "formal": "正式公文风（庄重规范、多用书面语、结构清晰、避免口语与夸张表述）",
+    "academic": "学术严谨风（逻辑严密、用词精准、客观严谨、强调研究方法与数据支撑）",
+    "startup": "创业融资风（突出商业价值、市场机会、增长潜力与团队执行力，面向投资人）",
+}
+
+
+@app.route('/api/restyle', methods=['POST'])
+def restyle():
+    """多风格一键切换：把整份申报书改写成目标语言风格，不动章节结构与数据。"""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get('text', '')
+    style = data.get('style', 'formal')
+    if not text or not text.strip():
+        return jsonify({"success": False, "error": "内容为空"}), 400
+    if style not in _RESTYLE_STYLES:
+        return jsonify({"success": False, "error": "未知风格"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        desc = _RESTYLE_STYLES[style]
+        prompt = f"""请把下面这份申报书整体改写成【{desc}】的风格。
+
+硬性要求：
+1. 保留所有章节标题、层级结构、数字、数据、占位符【待你填写：xxx】原样不变；
+2. 只改语言风格与表述方式，不改内容事实、不改章节顺序、不增删任何要点；
+3. 篇幅与原文相当，不要扩写或缩水；
+4. 直接输出改写后的完整正文，不要任何解释说明。
+
+原文：
+{text[:14000]}
+"""
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        return jsonify({"success": True, "text": resp.content, "style": style})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
 @app.route('/api/cancel/<task_id>', methods=['POST'])
