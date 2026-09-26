@@ -593,3 +593,32 @@ PDF 同样 0 残留。
 ### 9. 线上验证
 首页关键字全命中（wbCoachVeil / wbUploadGuard / wbPaintQueue / wbRenderAnchorBar /
 wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回新文案；服务 active。
+
+
+---
+
+## 2026-09-27 追加（Codex，给 WorkBuddy 的待办清单）
+
+后端已改完，以下前端待办 WorkBuddy 尚未完成（2026-09-27 核对 index.html 确认）。
+
+### 明确未完成（6 条）
+
+1. **导出命名补 idea**：xportOne / xportOnePDF 的 body 加 idea: (window._lastData || {}).idea || ''。
+   否则导出文件名里的项目名会从最近历史兜底，看历史记录再导出会串名。
+2. **重试按钮**：失败/超时时加「重试」，调 POST /api/retry/<task_id>（返回新 task_id，按现有轮询流程重跑）。
+3. **正文字数显示**：结果区读 proposal_chars 显示正文字数（去掉 Markdown 标记后的有效字数，别用 proposal.length）。
+4. **错误码分支（可选）**：/api/status/<task_id> 出错返回 rror_code（timeout / rate_limit / auth_error / insufficient_balance / quota_exceeded / internal_error），可按它做提示。
+5. **结果页星级评分**：后端 POST /api/history/<id>/rate 早已就绪，前端还没有任何 /rate 调用，评分按钮未做。
+6. **知识库面板「0/0 收录」bug**：_kbHitList()（约 index.html 3732 行）仍是 querySelectorAll('#competition option')，应改为 #competitionList option。
+
+### 需 WorkBuddy 回执确认完成度
+
+- 移动端体验问题（微信/百度/QQ/夸克多浏览器兼容），做到哪一步需回执。
+
+### 后端接口清单（供 WorkBuddy 核对）
+
+- POST /api/retry/<task_id>（新增）
+- POST /api/history/<id>/rate（评分，早已就绪）
+- /api/status/<task_id> 出错返回 rror_code
+- 生成结果 payload 新增 proposal_chars
+- 所有导出接口 download_name 改为「项目名_比赛名_文档类型」
