@@ -923,6 +923,7 @@ mark.wb-ph {
     left: 0; top: 0; width: 100%; height: 100%;
     z-index: 1500;
     background: rgba(3, 6, 20, .62);
+    cursor: pointer;
 }
 #coachTip {
     position: fixed;
@@ -1591,7 +1592,7 @@ mark.wb-ph {
                 </div>
 
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 关键词<span class="wb-opt">（可选，用于匹配范文库中同类型的高分写法）</span></label>
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 关键词<span class="wb-opt">（可选，用于匹配范文库中同类型的示范写法）</span></label>
                     <input type="text" id="keywords" placeholder="关键词（选填，逗号分隔）：如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
                 </div>
 
@@ -1890,7 +1891,7 @@ mark.wb-ph {
                 <div style="padding: 20px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</h3>
                     <div style="background: var(--surface-2); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-dim); line-height: 1.7;">
-                        收录高分申报书片段并打上标签。生成时会检索同标签范文作为写作参考——<b>关键词检索，不是模型微调</b>，所以持续往里加范文就能持续提升生成质量。
+                        收录 <b>AI 撰写的示范范文</b>片段并打上标签（示范性质，非真实获奖原文）。生成时会检索同标签范文作为写法参考——<b>关键词检索，不是模型微调</b>，所以持续往里加范文就能持续提升生成质量。你也可以粘贴自己打磨过的优质片段。
                     </div>
 
                     <div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
@@ -3585,8 +3586,11 @@ mark.wb-ph {
             if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
         }
 
+        function _coachEsc(e) { if (e && e.key === 'Escape') coachEnd(); }
+
         function coachStart() {
             _coachIdx = 0;
+            try { document.addEventListener('keydown', _coachEsc); } catch (e) {}
             coachShow();
         }
 
@@ -3601,7 +3605,7 @@ mark.wb-ph {
                 if (!document.getElementById('wbCoachVeil')) {
                     var veil = document.createElement('div');
                     veil.id = 'wbCoachVeil';
-                    veil.addEventListener('click', function () { coachNext(); });
+                    veil.addEventListener('click', function () { coachEnd(); });
                     document.body.appendChild(veil);
                 }
                 el.classList.add('wb-coach-target');
@@ -3614,7 +3618,8 @@ mark.wb-ph {
                             (_coachIdx + 1) + ' / ' + COACH_STEPS.length + '</span>' +
                         '<button onclick="coachNext()" style="padding: 5px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">知道了</button>' +
                         '<span onclick="coachEnd()" style="font-size: 12px; color: var(--text-mute); cursor: pointer;">跳过</span>' +
-                    '</div>';
+                    '</div>' +
+                    '<div style="margin-top: 6px; font-size: 11px; color: var(--text-mute);">点击暗处任意位置或按 Esc 即可退出引导</div>';
                 document.body.appendChild(tip);
                 coachRepos();
                 // 点被指向的元素也算「知道了」，符合「指一下就消失」
@@ -3648,6 +3653,7 @@ mark.wb-ph {
 
         function coachEnd() {
             _coachClear();
+            try { document.removeEventListener('keydown', _coachEsc); } catch (e) {}
             try { localStorage.setItem('wbCoachDone', '1'); } catch (e) {}
         }
 
@@ -6216,7 +6222,7 @@ mark.wb-ph {
             if (!m) {
                 h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">还能干什么</div>';
                 h += '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.9; margin-bottom: 18px;">' +
-                     '· <b>范文库</b>：加高分范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
+                     '· <b>范文库</b>：加 AI 示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
                      '· <b>导出中心</b>：Word / PDF / PPT / 一键打包，申报书按标准格式排版<br>' +
                      '· <b>原格式导出</b>：上传学校模板 .docx，优化后保留你原来的版式<br>' +
                      '· <b>历史记录</b>：之前生成的随时打开回看，可继续导出' +
@@ -6543,7 +6549,7 @@ mark.wb-ph {
                     var items = (d && d.items) || [];
                     if (cnt) cnt.innerText = items.length;
                     if (!items.length) {
-                        box.innerHTML = '<div style="color:var(--text-mute);padding:16px;background:var(--surface-2);border-radius:8px;">范文库还是空的。在上面粘贴一段高分申报书片段并打上标签即可。</div>';
+                        box.innerHTML = '<div style="color:var(--text-mute);padding:16px;background:var(--surface-2);border-radius:8px;">范文库还是空的。在上面粘贴一段示范片段并打上标签即可。</div>';
                         return;
                     }
                     var html = '';
