@@ -125,6 +125,66 @@ def _rate_limited():
                     del _rate_hits[k]
         return False
 
+
+# 后台/管理接口鉴权：配置 ADMIN_TOKEN 后，需在请求头带 X-Admin-Token 才能访问。
+# 未配置时保持开放（兼容本地开发/旧部署）；上线公网强烈建议配置。
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+
+
+def _require_admin():
+    """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
+
+    支持 X-Admin-Token 请求头，或 ?token= 查询参数（浏览器直接访问后台页时用）。
+    """
+    if not ADMIN_TOKEN:
+        return None
+    tok = (request.headers.get("X-Admin-Token") or "").strip() or \
+        (request.args.get("token") or "").strip()
+    if tok == ADMIN_TOKEN:
+        return None
+    resp = jsonify({"success": False, "error": "无权限，需要 X-Admin-Token 或 ?token="})
+    resp.status_code = 401
+    return resp
+
+
+# 蒸馏接口限流：蒸馏每次烧 1 次 LLM 调用，比生成更贵，单独收紧到 3 次 / 10 分钟 / IP。
+_DISTILL_WINDOW_SEC = 600
+_DISTILL_LIMIT = 3
+_distill_lock = threading.Lock()
+_distill_hits = {}
+
+
+def _distill_rate_limited():
+    ip = _client_ip()
+    now = time.time()
+    with _distill_lock:
+        hits = [t for t in _distill_hits.get(ip, []) if now - t < _DISTILL_WINDOW_SEC]
+        if len(hits) >= _DISTILL_LIMIT:
+            _distill_hits[ip] = hits
+            return True
+        hits.append(now)
+        _distill_hits[ip] = hits
+        return False
+
+
+@app.before_request
+def _admin_guard():
+    """后台/管理接口统一鉴权 + 蒸馏接口限流。"""
+    p = request.path
+    if p.startswith("/api/distill"):
+        if _distill_rate_limited():
+            resp = jsonify({"success": False, "error": "蒸馏太频繁，请 10 分钟后再试"})
+            resp.status_code = 429
+            return resp
+        return _require_admin()
+    if (p.startswith("/admin") or p.startswith("/monitor")
+            or p in ("/api/kb/add", "/api/kb/delete", "/api/failure/patterns",
+                     "/api/feedback/priority", "/api/score/diagnosis",
+                     "/api/competition/gaps", "/api/feedback/export")):
+        return _require_admin()
+    return None
+
+
 # ===== 媒体模块（表格 / 图表 / PPT）=====
 # 由 media_routes.py 提供，WorkBuddy 注册。
 # ⚠️ 改 app.py 时请不要删这段，删了前端的图表和 PPT 下载会 404。
@@ -678,11 +738,10 @@ def upload_pdf():
         except Exception as e:
             app_log.warn("kb", f"保存官方资料失败：{e}")
     elif purpose == 'fanwen':
-        # 版权整改：不再收集他人获奖原文（需原作者书面授权），一律按「材料」入库
-        _record_upload(text, raw_name)
+        # 版权整改：不再收集/入库他人获奖原文（需原作者书面授权）
         return jsonify({"success": True, "text": text[:20000], "purpose": "fanwen",
-                        "note": "已按官方资料入库；收集他人范文需原作者书面授权"})
-    _record_upload(text, raw_name)
+                        "note": "收集他人范文需原作者书面授权，暂不收录"})
+    # 默认（draft 草稿）：只返回解析文本用于「优化申报书」，不存入共享知识库（保护隐私）
     return jsonify({"success": True, "text": text[:20000]})
 
 
@@ -1198,14 +1257,15 @@ h1{font-size:24px;margin:0 0 4px}
 <div id="insightFail" style="font-size:13px;color:#64748b;margin-top:6px">失败模式：—</div>
 </div>
 <script>
-function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';fetch(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
+var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
+function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';AF(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
 bindDistill('distillBtn','distillMsg','/api/distill',function(j){return '完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';});
 bindDistill('distillDefenseBtn','distillDefenseMsg','/api/distill/defense',function(j){return '完成：用了 '+j.questions_used+' 道题、'+j.pattern_count+' 条必问套路';});
 bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j){return '完成：提炼 '+j.criticism_count+' 条高频扣分点';});
 bindDistill('distillAnalysisBtn','distillAnalysisMsg','/api/distill/analysis',function(j){return '完成：竞品/商业/风险/技术要点已更新';});
 bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',function(j){return '完成：PPT结构+演讲稿套路已更新';});
 bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
-function loadInsights(){fetch('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});fetch('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});fetch('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});fetch('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
+function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
 </script>
 </div></body></html>""" % (
@@ -2406,7 +2466,7 @@ def upload_file():
         import re
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
-        _record_upload(text, file.filename)
+        # 草稿上传：只返回解析文本，不存入共享知识库（保护隐私；官方资料请走 /api/upload_pdf purpose=reference）
         return jsonify({"success": True, "text": text})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
