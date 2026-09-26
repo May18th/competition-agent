@@ -438,8 +438,6 @@ def upload_pdf():
     # 手机端（尤其微信内置浏览器）容易只让选图片/视频，这里把提示写清楚，别只说"不支持"
     if ext in ('.jpg', '.jpeg', '.png', '.heic', '.gif', '.webp', '.mp4', '.mov', '.avi'):
         return jsonify({"success": False, "error": "图片/视频读不出文字：请在 Safari 里点「浏览」选文件 App 里的 PDF 或 Word，或把文字直接粘贴到草稿框"})
-    if ext == '.doc':
-        return jsonify({"success": False, "error": "旧版 .doc 读不了：请在 Word 里「另存为 .docx」再上传，或把内容另存为 TXT / PDF"})
     if ext not in ('.pdf', '.docx', '.txt', '.md'):
         return jsonify({"success": False, "error": "不支持的文件格式（" + (ext or '无扩展名') + "），请上传 PDF / DOCX / TXT / MD"})
     base = secure_filename(os.path.splitext(raw_name)[0]) or 'upload'
@@ -824,7 +822,10 @@ def _run_generation(data):
                     _charts_raw = _d.get("charts") or _charts_raw
 
             if isinstance(_charts_raw, dict) and _charts_raw:
-                from chart_renderer import render_charts
+                try:
+                    from chart_renderer_pro import render_charts
+                except Exception:
+                    from chart_renderer import render_charts
                 rich_charts = render_charts(_charts_raw)
             elif isinstance(_charts_raw, list):
                 rich_charts = _charts_raw

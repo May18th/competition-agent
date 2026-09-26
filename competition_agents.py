@@ -1687,17 +1687,42 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     return {"defense_questions": response.content}
 
 
+def _media_context(state: dict) -> str:
+    """PPT/演讲稿节点共享：把已产出的分析结果 + 申报书拼成参考块，避免内容空洞。"""
+    blocks = []
+    for label, key, cap in [
+        ("项目简介", "project_summary", 600),
+        ("竞品分析", "competitor_analysis", 1200),
+        ("商业模式", "business_model", 1200),
+        ("风险分析", "risk_analysis", 800),
+        ("技术方案", "tech_solution", 1200),
+        ("社会价值", "social_value", 800),
+        ("实施计划", "implementation_plan", 800),
+    ]:
+        v = (state.get(key) or "").strip()
+        if v:
+            blocks.append(f"{label}：\n{v[:cap]}")
+    proposal_brief = (state.get("proposal") or "").strip()
+    if proposal_brief:
+        blocks.append(f"申报书正文（提炼用，不照抄）：\n{proposal_brief[:3000]}")
+    return "\n\n".join(blocks)
+
+
 def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
     """📊 PPT 大纲 Agent：生成路演 PPT 大纲"""
     _report_stage("ppt")
-    prompt = f"""你是科创赛事路演 PPT 专家。请根据以下项目，生成路演 PPT 大纲。
+    prompt = f"""你是科创赛事路演 PPT 专家。请根据下面的项目与已产出的申报书/分析结果，生成路演 PPT 大纲。
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
+评委意见（PPT 要回应或补齐的短板）：{state.get('judge_feedback') or '（无）'}
+
+【已产出的内容 —— 每页要点必须从中提炼具体数据/场景/结论，不要脱离这些空编】
+{_media_context(state)}
 
 {_tier_hint(state,
 "生成 3 分钟路演大纲（8～10 页），每页只写标题 + 2～3 个要点短语，不要写完整句子。",
-"生成 15～20 页路演大纲，每页写标题 + 要点 + 一段 50～80 字的讲解稿。"
+"生成 15～20 页路演大纲，每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。"
 )}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -1715,6 +1740,9 @@ def speech_agent(state: CompetitionState) -> CompetitionState:
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
 PPT大纲：{state['ppt_outline']}
+
+【已产出的内容 —— 讲稿里的数据、场景、竞品对比必须来自下面这些，不要脱离空编】
+{_media_context(state)}
 
 请写：
 1. 开场：抓眼球，讲痛点

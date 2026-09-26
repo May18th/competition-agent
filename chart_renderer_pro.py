@@ -558,3 +558,54 @@ def render(chart, out_dir, theme=None):
     except Exception as e:
         print(f"[chart_renderer_pro] render 失败：{e}")
         return None
+
+
+def render_charts(chart_data):
+    """与 chart_renderer.render_charts 同输入输出：{budget, market, timeline} → [{url, title, caption}]。
+
+    内部改用本文件的「路演级」渲染（dpi 200 / 渐变 / 环形 / 卡片底），app.py 可直接替换 import 无缝切换。
+    """
+    if not isinstance(chart_data, dict) or not chart_data:
+        return []
+    out_dir = "generated"
+    os.makedirs(out_dir, exist_ok=True)
+    results = []
+
+    # 1) 预算构成 → 环形图
+    budget = chart_data.get("budget") or []
+    if isinstance(budget, list) and budget:
+        labels = [str(b.get("name", "") or "") for b in budget]
+        values = [_cr._f(b.get("value", 0)) for b in budget]
+        if labels and any(v > 0 for v in values):
+            spec = {"id": "budget", "type": "donut", "title": "预算构成",
+                    "caption": "成本结构占比",
+                    "data": {"labels": labels, "values": values}}
+            if render(spec, out_dir):
+                results.append({"url": "/generated/chart_budget.png",
+                                "title": "预算构成", "caption": "成本结构占比"})
+
+    # 2) 市场规模 → 柱状图
+    market = chart_data.get("market") or {}
+    years = [str(y) for y in (market.get("years") or [])]
+    values = [_cr._f(v) for v in (market.get("values") or [])]
+    if years and values and len(years) == len(values):
+        spec = {"id": "market", "type": "bar", "title": "市场规模预测",
+                "caption": "逐年市场空间（万元）",
+                "data": {"categories": years, "values": values, "unit": "万元"}}
+        if render(spec, out_dir):
+            results.append({"url": "/generated/chart_market.png",
+                            "title": "市场规模预测", "caption": "逐年市场空间（万元）"})
+
+    # 3) 实施进度 → 折线图
+    timeline = chart_data.get("timeline") or {}
+    stages = [str(s) for s in (timeline.get("stages") or [])]
+    progress = [_cr._f(v) for v in (timeline.get("progress") or [])]
+    if stages and progress and len(stages) == len(progress):
+        spec = {"id": "timeline", "type": "line", "title": "实施进度",
+                "caption": "分阶段推进节奏",
+                "data": {"x": stages, "series": [{"name": "进度", "values": progress}]}}
+        if render(spec, out_dir):
+            results.append({"url": "/generated/chart_timeline.png",
+                            "title": "实施进度", "caption": "分阶段推进节奏"})
+
+    return results
