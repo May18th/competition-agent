@@ -212,18 +212,64 @@ _migrate_history_json()
 
 
 # ============ API ============
+def _is_double_blind(competition_name):
+    """该赛事是否双盲评审（封面不能出现学校 / 单位 / 指导老师）。"""
+    if not competition_name:
+        return False
+    try:
+        from competition_agents import get_competition_profile
+        return bool(get_competition_profile(competition_name).get("double_blind"))
+    except Exception:
+        return False
+
+
+def _mask_double_blind(text, school=None, advisor=None):
+    """双盲赛事的正文脱敏：学校名 →「本校」，指导老师姓名 →「指导老师」。
+
+    只隐封面是不够的 —— 正文里写一句「依托 XX 大学实验室」评委照样能认出学校，
+    所以要连正文一起处理。只动学校 / 导师这两个字段命中的字符串，不碰其它内容。
+    """
+    if not text:
+        return text
+    out = str(text)
+    if school:
+        s = str(school).strip()
+        # 正文里常写简称（「中南」而不是「中南大学」），所以全称和去后缀的核心词都要替换
+        cands = {s}
+        core = re.sub(r'(大学|学院|学校|职业技术学院|高等专科学校|附中|中学)$', '', s)
+        if len(core) >= 2:
+            cands.add(core)
+        for c in sorted([x for x in cands if x], key=len, reverse=True):
+            out = out.replace(c, '本校')
+    if advisor:
+        a = str(advisor).strip()
+        name = re.sub(r'(老师|教授|副教授|讲师|导师)$', '', a)
+        title = r'(指导老师|指导教师|导师|教授)'
+        # A. 称谓后面已经跟着姓名（「指导老师张伟」「指导教师李伟教授」）→ 只保留称谓，
+        #    不能整段换成「指导老师」，否则变成「指导老师指导老师」
+        for pat in ([a] if a else []) + ([name] if len(name) >= 2 else []):
+            out = re.sub(title + r'[ \t]*' + re.escape(pat) + r'[ \t]*(老师|教授|导师)?', r'\1', out)
+        # B. 其余位置（「李伟认为」「李伟老师指出」）→ 换成称谓。
+        #    必须带可选称谓一起吃掉再替换，否则「李伟老师」会先被 replace 成
+        #    「指导老师老师」，多出一个「老师」
+        if len(name) >= 2:
+            out = re.sub(re.escape(name) + r'[ \t]*(老师|教授|导师)?', '指导老师', out)
+        if a and a != name:
+            out = out.replace(a, '指导老师')
+    # 兜底：显式写「指导老师：XXX」的整行，无论 XXX 是不是上面那个字段都隐掉
+    out = re.sub(r'^([>\-\s\*]*)(指导老师|指导教师|导师)[ \t]*[：:].*$',
+                 r'\1\2：（按双盲评审要求隐去）', out, flags=re.M)
+    return out
+
+
 def _build_docx(title, text, doc_type='report', subtitle=None,
                 school=None, team=None, advisor=None, competition_name=None):
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
     show_school_advisor = True
-    if competition_name:
-        try:
-            from competition_agents import get_competition_profile
-            if get_competition_profile(competition_name).get("double_blind"):
-                show_school_advisor = False
-        except Exception:
-            pass
+    if _is_double_blind(competition_name):
+        show_school_advisor = False
+        text = _mask_double_blind(text, school=school, advisor=advisor)
     return build_docx(
         title, text,
         subtitle=subtitle,
@@ -481,6 +527,11 @@ def export_pdf():
         chapter_order = _official_chapter_titles(data.get('competition_name'))
     if chapter_order:
         text = _reorder_markdown_by_chapters(text, chapter_order)
+    # PDF 不走 _build_docx，双盲脱敏要在这里单独做一遍，否则封面省了正文照样漏
+    if _is_double_blind(data.get('competition_name')):
+        text = _mask_double_blind(text,
+                                  school=data.get('school'),
+                                  advisor=data.get('advisor'))
     try:
         from pdf_render import render_markdown_to_pdf
         filepath = 'tmp_export.pdf'
