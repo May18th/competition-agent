@@ -2604,7 +2604,17 @@ mark.wb-ph {
                 }
                 const blob = await res.blob();
                 wbSaveBlob(blob, name + ".pdf");
-                wbToast('「' + name + '」PDF已开始下载', { type: 'ok', ms: 2600 });
+                // 官方硬性上限校验（iCAN 应用方案 ≤20 页 / ≤50MB）
+                var _pg = parseInt(res.headers.get('X-PDF-Pages') || '0', 10);
+                var _mb = parseFloat(res.headers.get('X-PDF-MB') || '0');
+                var _lim = parseInt(res.headers.get('X-PDF-Limit') || '0', 10);
+                if (_lim && _pg > _lim) {
+                    wbToast('共 ' + _pg + ' 页，超出官方 ' + _lim + ' 页上限，建议压缩「使用说明」截图或合并功能清单', { type: 'warn', ms: 5200 });
+                } else if (_mb > 50) {
+                    wbToast('文件 ' + _mb + 'MB，超出 50MB 上限，请压缩图片后重导', { type: 'warn', ms: 5200 });
+                } else {
+                    wbToast('「' + name + '」PDF已开始下载' + (_pg ? '（' + _pg + ' 页）' : ''), { type: 'ok', ms: 2600 });
+                }
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
@@ -2743,14 +2753,17 @@ mark.wb-ph {
         // 数据与 data/event_requirements.json 同源（改那边记得同步这里）
         var EVENT_REQ = {
             "iCAN大学生创新创业大赛": {
-                label: "作品说明书", doc_type: "作品说明书（参赛项目计划书）",
-                alias: ["ican", "ican大赛", "ican大学生", "创新创业"],
-                sections: ["一、项目概述", "二、市场与需求分析", "三、项目创新性分析",
-                           "四、技术方案与系统架构", "五、产品形态与现场演示方案",
-                           "六、商业模式", "七、实施路径与团队规划", "八、与大赛评审标准对标", "结语"],
-                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/技术实现30/实用价值20/用户体验10/应用前景10
-                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["应用前景", 10]],
-                deduct: "扣分点：缺乏原创性 / 技术方案空洞 / 只讲概念没有 demo / 章节缺失 / 痛点无数据"
+                label: "应用方案", doc_type: "应用方案（PDF，不超过 20 页 / 50MB）",
+                alias: ["ican", "ican大赛", "ican大学生", "创新创业", "AI应用创新挑战赛", "iCAN AI挑战赛"],
+                sections: ["一、项目背景与痛点", "二、需求分析与目标用户", "三、开发工具与技术选型",
+                           "四、技术方案与系统架构", "五、功能说明与 AI 核心作用",
+                           "六、使用说明", "七、应用前景与商业模式", "八、团队分工与知识产权"],
+                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/技术实现30/实用价值20/用户体验10/展示效果10
+                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["展示效果", 10]],
+                deduct: "扣分点：AI 只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
+                // 官方提交物（AI 应用创新挑战赛）：应用方案 PDF + 演示视频 + 可运行程序
+                submit: ["应用方案 PDF（≤20页、≤50MB）", "演示视频 MP4（≤5分钟）",
+                         "可运行程序链接或源码", "硬件赛道另交：硬件设计说明 + 实物原型照片"]
             },
             "挑战杯全国大学生课外学术科技作品竞赛": {
                 label: "申报书", doc_type: "申报书（学术论文 / 科技发明类）",

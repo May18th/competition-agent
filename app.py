@@ -54,7 +54,12 @@ def init_db():
                   idea TEXT,
                   mode TEXT,
                   result_data TEXT,
-                  created_time TEXT)''')
+                  created_time TEXT,
+                  rating INTEGER DEFAULT 0)''')
+    # 旧库迁移：给已有的 history 表补 rating 列（CREATE IF NOT EXISTS 不会改老表结构）
+    cols = [r[1] for r in c.execute("PRAGMA table_info(history)").fetchall()]
+    if "rating" not in cols:
+        c.execute("ALTER TABLE history ADD COLUMN rating INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -128,7 +133,7 @@ import json
 from datetime import datetime
 
 def _row_to_item(row):
-    rid, comp, idea, mode, result_data, created_time = row
+    rid, comp, idea, mode, result_data, created_time, rating = row
     try:
         data = json.loads(result_data)
     except Exception:
@@ -136,6 +141,7 @@ def _row_to_item(row):
     return {
         "id": rid, "time": created_time, "competition_name": comp,
         "idea": idea, "mode": mode, "score": data.get("score", ""), "data": data,
+        "rating": rating or 0,
     }
 
 
@@ -143,7 +149,7 @@ def load_history(limit=200, offset=0, q=None):
     """从 SQLite 读取历史记录（新的在前），返回兼容旧接口的 list"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    sql = "SELECT id, competition_name, idea, mode, result_data, created_time FROM history"
+    sql = "SELECT id, competition_name, idea, mode, result_data, created_time, rating FROM history"
     params = []
     if q:
         sql += " WHERE competition_name LIKE ? OR idea LIKE ?"
@@ -606,7 +612,8 @@ def get_history():
     history = load_history(limit=limit, offset=offset, q=q)
     total = count_history(q)
     # 只返回摘要，不返回完整数据
-    summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"], "idea": h["idea"], "score": h["score"]} for h in history]
+    summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"],
+                "idea": h["idea"], "score": h["score"], "rating": h.get("rating", 0)} for h in history]
     return jsonify({"success": True, "history": summary, "total": total, "limit": limit, "offset": offset})
 
 
@@ -614,7 +621,7 @@ def get_history():
 def get_history_detail(history_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT result_data FROM history WHERE id = ?", (history_id,))
+    c.execute("SELECT result_data, rating FROM history WHERE id = ?", (history_id,))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -623,7 +630,28 @@ def get_history_detail(history_id):
         data = json.loads(row[0])
     except Exception:
         data = {}
-    return jsonify({"success": True, "data": data})
+    return jsonify({"success": True, "data": data, "rating": row[1] or 0})
+
+
+@app.route('/api/history/<int:history_id>/rate', methods=['POST'])
+def rate_history(history_id):
+    """给某条历史记录打 1-5 星（覆盖式保存，存 SQLite）。"""
+    payload = request.get_json(silent=True) or {}
+    try:
+        rating = int(payload.get("rating"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
+    if rating < 1 or rating > 5:
+        return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE history SET rating = ? WHERE id = ?", (rating, history_id))
+    conn.commit()
+    updated = c.rowcount
+    conn.close()
+    if not updated:
+        return jsonify({"success": False, "error": "记录不存在"}), 404
+    return jsonify({"success": True, "id": history_id, "rating": rating})
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
