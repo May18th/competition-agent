@@ -665,6 +665,54 @@ def _record_upload(text, source_name="", force_fanwen=False):
         app_log.warn("kb", f"记录上传失败：{e}")
 
 
+def _docx_to_md(filepath):
+    """把 .docx 解析成带标题层级的 Markdown，保留段落/标题结构。"""
+    from docx import Document
+    doc = Document(filepath)
+    lines = []
+    for para in doc.paragraphs:
+        t = (para.text or "").strip()
+        if not t:
+            lines.append("")
+            continue
+        style = (para.style.name or "").lower()
+        if "heading 1" in style or style == "title":
+            lines.append("# " + t)
+        elif "heading 2" in style:
+            lines.append("## " + t)
+        elif "heading 3" in style:
+            lines.append("### " + t)
+        elif "heading" in style:
+            lines.append("#### " + t)
+        else:
+            lines.append(t)
+    # 表格也抽出来，保留表格结构（每行用 | 分隔）
+    for tb in doc.tables:
+        lines.append("")
+        for row in tb.rows:
+            cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+            lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def _pdf_to_text(filepath):
+    """把 PDF 解析成文本，优先用 pdfplumber（保留换行/层级更好），退回 pypdf。"""
+    text = ""
+    try:
+        import pdfplumber
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text() or ""
+                if t:
+                    text += t + "\n"
+    except Exception:
+        from pypdf import PdfReader
+        reader = PdfReader(filepath)
+        for page in reader.pages:
+            text += (page.extract_text() or "") + "\n"
+    return text
+
+
 @app.route('/api/upload_pdf', methods=['POST'])
 def upload_pdf():
     if 'file' not in request.files:
@@ -710,14 +758,9 @@ def upload_pdf():
     text = ""
     try:
         if ext == '.pdf':
-            reader = PdfReader(filepath)
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
+            text = _pdf_to_text(filepath)
         elif ext == '.docx':
-            from docx import Document
-            doc = Document(filepath)
-            for para in doc.paragraphs:
-                text += para.text + "\n"
+            text = _docx_to_md(filepath)
         else:  # .txt / .md
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
                 text = f2.read()
@@ -2066,22 +2109,41 @@ def _start_generation(data):
 
     def worker():
         set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
+        attempts = 3                       # 1 次主尝试 + 2 次自动重试
+        last_err = None
+        last_code = "internal_error"
         try:
-            rd = _run_generation(data)
-            if progress.is_cancelled(task_id):
-                return
-            progress.mark_done(task_id, data=rd)
+            for attempt in range(1, attempts + 1):
+                try:
+                    rd = _run_generation(data)
+                    if progress.is_cancelled(task_id):
+                        return
+                    progress.mark_done(task_id, data=rd)
+                    return
+                except TaskCancelled:
+                    raise
+                except Exception as e:
+                    last_err = e
+                    last_code = _error_code(e)
+                    # 只有「可重试」错误才自动重试：超时/限流/通用内部错误；
+                    # 鉴权失败、余额不足、配额耗尽重试无意义，直接上抛
+                    retryable = last_code in ("timeout", "rate_limit", "internal_error")
+                    if retryable and attempt < attempts:
+                        wait = 2 * attempt
+                        print(f"[generate_async] 第 {attempt} 次失败（{last_code}），{wait}s 后自动重试")
+                        time.sleep(wait)
+                        continue
+                    raise
         except TaskCancelled:
             print(f"[generate_async] 任务 {task_id} 已取消")
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
-            code = _error_code(e)
-            msg = _friendly_error(e)
+            msg = _friendly_error(last_err)
             app_log.error("generate", f"task={task_id[:8]} {msg} | {traceback.format_exc(limit=2)}")
-            record_gen_failure(task_id, msg, str(e))
-            progress.mark_error(task_id, error=msg, detail=str(e))
-            tasks[task_id]["error_code"] = code
+            record_gen_failure(task_id, msg, str(last_err))
+            progress.mark_error(task_id, error=msg, detail=str(last_err))
+            tasks[task_id]["error_code"] = last_code
         finally:
             clear_speech_stream(task_id)
             clear_current_task()
@@ -2453,8 +2515,21 @@ def upload_file():
             import io
             doc = Document(io.BytesIO(file.read()))
             for para in doc.paragraphs:
-                if para.text.strip():
-                    text += para.text.strip() + "\n"
+                t = para.text.strip()
+                if not t:
+                    text += "\n"
+                    continue
+                style = (para.style.name or "").lower()
+                if "heading 1" in style or style == "title":
+                    text += "# " + t + "\n"
+                elif "heading 2" in style:
+                    text += "## " + t + "\n"
+                elif "heading 3" in style:
+                    text += "### " + t + "\n"
+                elif "heading" in style:
+                    text += "#### " + t + "\n"
+                else:
+                    text += t + "\n"
             for table in doc.tables:
                 text += "\n[表格数据]\n"
                 for row in table.rows:
