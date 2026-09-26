@@ -916,10 +916,16 @@ mark.wb-ph {
 .wb-theme-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
 .wb-theme-card.on { border-color: var(--c-a); box-shadow: 0 0 0 2px rgba(34, 211, 238, .22); }
 .wb-theme-thumb { position: relative; height: 84px; border-radius: 6px; overflow: hidden; }
+/* 顶部 5px 强调条 = 该主题的页眉样式（topbar）；sidebar 换成左侧竖条，rule 则两者都不画，
+   缩略图因此能看出"这一套的页眉长什么样"，不只是颜色不同 */
 .wb-theme-thumb::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--t-accent); }
-.wb-theme-bar { position: absolute; height: 7px; border-radius: 3px; background: var(--t-primary); }
-.wb-theme-line { position: absolute; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .32); }
+.wb-theme-thumb.nobar::after { display: none; }
+.wb-theme-thumb.sidebar::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--t-accent); }
+.wb-theme-bar { position: absolute; height: 7px; border-radius: 3px; background: var(--t-bar, var(--t-primary)); }
+.wb-theme-line { position: absolute; height: 4px; border-radius: 2px; background: var(--t-line, rgba(255, 255, 255, .32)); }
 .wb-theme-dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; bottom: 8px; }
+.wb-theme-sq { position: absolute; width: 9px; height: 9px; border-radius: 2px; }
+.wb-theme-cardblk { position: absolute; border-radius: 3px; }
 .wb-theme-name { margin-top: 7px; font-size: 12px; line-height: 1.45; color: var(--text-dim); text-align: center; }
 .wb-theme-card.on .wb-theme-name { color: var(--text); font-weight: 600; }
 
@@ -1766,19 +1772,26 @@ mark.wb-ph {
                             <div id="deckThemeSelWrap" style="display:none;">
                                 <select id="deckTheme" onchange="onThemeChange()"></select>
                             </div>
-                            <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim);">
-                                版式
-                                <select id="deckVariant" onchange="previewDeckStyle()"
-                                    style="padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:var(--surface-solid); color:var(--text); font-size:12px;"></select>
+                            <!-- 版式下拉隐藏：15 套模板各自定好了封面/正文/页眉/卡片，
+                                 再让用户拼 v1-v4 等于把设计冲掉（用户要的是"选比赛就出风格"）。
+                                 select 保留是因为 previewDeckStyle 还读它的值做兜底。 -->
+                            <div style="display:none;">
+                                <select id="deckVariant" onchange="previewDeckStyle()"></select>
                             </div>
                             <button onclick="exportPptx()" style="padding:8px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 下载 PPT</button>
                         </div>
                     </div>
-                    <!-- 10 套主题带缩略图：下拉里只有名字，选的时候根本不知道长什么样 -->
+                    <!-- 15 套精品模板带缩略图：下拉里只有名字，选的时候根本不知道长什么样 -->
                     <div id="deckThemeWrap" style="margin-bottom: 14px;">
-                        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">PPT 主题（<span id="deckThemeCount">0</span> 套，点一下就换，下载前随时可改）</div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">PPT 模板（<span id="deckThemeCount">0</span> 套精品，点一下就换，下载前随时可改）</div>
                         <div id="deckThemeReco" style="font-size: 12px; color: var(--text-mute); margin-bottom: 8px;"></div>
                         <div id="deckThemeGrid" class="wb-theme-grid"></div>
+                        <!-- 旧主题不删（历史记录可能引用），但折叠进这里，不占主视觉 -->
+                        <div id="deckThemeExtraWrap" style="display:none; margin-top: 10px;">
+                            <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 6px;">更多备选风格（按项目内容自选，非赛事推荐）</div>
+                            <div id="deckThemeExtraGrid" class="wb-theme-grid"></div>
+                        </div>
+                        <button id="deckThemeMoreBtn" onclick="wbToggleExtraThemes()" style="display:none; margin-top: 8px; padding: 5px 12px; font-size: 12px; color: var(--text-dim); background: var(--btn-ghost); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">展开更多备选风格</button>
                     </div>
                     <div id="deckThemeHint" style="display:none; font-size:12px; color:var(--text-mute); margin-bottom:10px;"></div>
                     <!-- 页面结构：固定 8 页路演逻辑 + 申报书回填。
@@ -3733,20 +3746,60 @@ mark.wb-ph {
             {type: 'acad',  name: '学术科研类', theme: 'academic',
              kw: ['挑战杯', '课外学术', '国创', '创新创业训练', '科研', '论文', '学术']}
         ];
-        // 赛事名 → 类型（找不到就 general）。同时看输入框和已生成结果里的赛事名，
-        // 因为历史回看时输入框可能已经被清空
-        function wbCompType() {
+        // 赛事 → 模板：15 个赛事逐个钉死一套，用户不用自己挑风格。
+        // 顺序即优先级（先命中的赢），两个坑：
+        //   ① "创业计划/小挑" 必须排在 "挑战杯" 前面，否则小挑会被大挑的红金吃掉；
+        //   ② "服务外包" 必须排在 "创业" 前面（服务外包大赛名字里也带"创新创业"）。
+        // 最后一档是类型兜底，给"用户手输赛事名"的场合用。
+        var WB_COMP_THEME = [
+            {kw: ['ican'], theme: 'ican'},
+            {kw: ['互联网+', '互联网＋'], theme: 'biz'},
+            {kw: ['服务外包'], theme: 'svc'},
+            {kw: ['创业计划', '小挑'], theme: 'blackgold'},
+            {kw: ['课外学术科技作品', '大挑'], theme: 'redgold'},
+            {kw: ['挑战杯'], theme: 'redgold'},
+            {kw: ['创新创业训练', '国创计划', '大创'], theme: 'paper'},
+            {kw: ['数学建模', '数模', '建模'], theme: 'math'},
+            {kw: ['电子设计', '电赛', '嵌入式', '单片机', '电路'], theme: 'circuit'},
+            {kw: ['西门子', '智能制造', '机械', '自动化', '工程训练', '智能车'], theme: 'circuit'},
+            {kw: ['蓝桥杯', '计算机设计', '软件', '程序', '算法'], theme: 'tech'},
+            {kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视', '文创'], theme: 'poster'},
+            {kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞'], theme: 'sec'},
+            {kw: ['机器人', 'robomaster', '人工智能', '深度学习', '机器学习', '神经网络'], theme: 'cyber'},
+            {kw: ['金砖', '技能发展', '青年创客'], theme: 'capital'},
+            {kw: ['创业', '商业', '融资', '创投', '经管', '金融', '供应链', '市场', '营销', '电商', '财务'], theme: 'biz'},
+            {kw: ['论文', '科研', '结题', '开题', '学术'], theme: 'academic'},
+            {kw: ['视觉', '海报', '平面', '品牌', '包装'], theme: 'studio'}
+        ];
+        // 赛事名来源：输入框 + 已生成结果里的赛事名（历史回看时输入框可能已被清空）
+        function wbCompText() {
             var el = document.getElementById('competition');
-            var txt = _wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
-                      ' ' + _wbT((window._lastData || {}).competition_name);
-            var low = txt.toLowerCase();
+            return (_wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
+                    ' ' + _wbT((window._lastData || {}).competition_name)).toLowerCase();
+        }
+        function wbRecoTheme() {
+            var low = wbCompText();
+            for (var i = 0; i < WB_COMP_THEME.length; i++) {
+                var t = WB_COMP_THEME[i];
+                for (var j = 0; j < t.kw.length; j++) {
+                    if (low.indexOf(String(t.kw[j]).toLowerCase()) >= 0) return t.theme;
+                }
+            }
+            return 'tech';
+        }
+        // 赛事名 → 类型（找不到就 general）。类型是"页面结构"用（专项页/改名词），
+        // 主题由 wbRecoTheme 单独定（同类型下不同赛事可以推不同模板）
+        function wbCompType() {
+            var low = wbCompText();
             for (var i = 0; i < WB_COMP_TYPES.length; i++) {
                 var t = WB_COMP_TYPES[i];
                 for (var j = 0; j < t.kw.length; j++) {
-                    if (low.indexOf(String(t.kw[j]).toLowerCase()) >= 0) return t;
+                    if (low.indexOf(String(t.kw[j]).toLowerCase()) >= 0) {
+                        return {type: t.type, name: t.name, rename: t.rename, kw: t.kw, theme: wbRecoTheme()};
+                    }
                 }
             }
-            return {type: 'general', name: '通用', theme: 'tech', kw: []};
+            return {type: 'general', name: '通用', theme: wbRecoTheme(), kw: []};
         }
         // 最终页序：基础 8 页 + 该赛事类型的专项页（插在指定页之后）
         function wbRoadPages() {
@@ -4180,48 +4233,107 @@ mark.wb-ph {
             }
             return WB_THEME_COLORS[t && t.key] || WB_THEME_COLORS.tech;
         }
-        // 画一张迷你封面：底色是主题封面渐变，顶条用强调色，中间是标题条 + 两行正文条，
-        // 右下角三个点是该主题的装饰色 —— 选之前就知道大概长什么样
-        function wbThemeThumb(c) {
-            var h = '<div class="wb-theme-thumb" style="background: linear-gradient(135deg, ' + c.deep + ' 0%, ' + c.deep2 + ' 100%); --t-primary: ' + c.primary + '; --t-accent: ' + c.accent + ';">';
-            h += '<div class="wb-theme-bar" style="left: 13%; top: 27%; width: 54%;"></div>';
-            h += '<div class="wb-theme-line" style="left: 13%; top: 46%; width: 66%;"></div>';
-            h += '<div class="wb-theme-line" style="left: 13%; top: 58%; width: 42%;"></div>';
-            for (var i = 0; i < (c.deco || []).length; i++) {
-                h += '<div class="wb-theme-dot" style="background: ' + c.deco[i] + '; right: ' + (10 + i * 13) + 'px;"></div>';
+        // 画一张迷你封面：底色/构图按这套的 cover 版式（整页渐变 / 左色块 / 顶部色带 / 白底），
+        // 页眉样式体现在顶条或左竖条，正文按 cards / 序号 / 极简三种画法 ——
+        // 缩略图之间能看出结构差异，而不是 15 张只是颜色不同的方块
+        function wbThemeThumb(c, lay) {
+            lay = lay || {};
+            var cov = lay.cover || 'gradient';
+            var light = (cov === 'split' || cov === 'band' || cov === 'paper' ||
+                         (cov === 'center' && lay.light_cover));
+            var bg;
+            if (cov === 'split')      bg = 'linear-gradient(90deg,' + c.deep + ' 0%,' + c.deep2 + ' 40%,#fff 40%,#fff 100%)';
+            else if (cov === 'band')  bg = 'linear-gradient(180deg,' + c.primary + ' 0%,' + c.deep2 + ' 42%,#fff 42%,#fff 100%)';
+            else if (cov === 'paper') bg = 'linear-gradient(90deg,' + c.primary + ' 0 7%,#fff 7% 100%)';
+            else                      bg = 'linear-gradient(135deg,' + c.deep + ' 0%,' + c.deep2 + ' 100%)';
+            var bar = light ? c.primary : '#FFFFFF';
+            var line = light ? 'rgba(20,35,61,.30)' : 'rgba(255,255,255,.55)';
+            var blk = light ? 'rgba(20,35,61,.07)' : 'rgba(255,255,255,.14)';
+            var cls = 'wb-theme-thumb' + (lay.header === 'sidebar' ? ' sidebar'
+                                          : (lay.header === 'rule' ? ' nobar' : ''));
+            var h = '<div class="' + cls + '" style="background:' + bg + '; --t-primary:' + c.primary +
+                    '; --t-accent:' + c.accent + '; --t-bar:' + bar + '; --t-line:' + line + ';">';
+            h += '<div class="wb-theme-bar" style="left:12%; top:24%; width:52%;"></div>';
+            var body = lay.body || 'cards';
+            if (body === 'numbered') {
+                h += '<div class="wb-theme-sq" style="background:' + c.accent + '; left:12%; top:44%;"></div>' +
+                     '<div class="wb-theme-line" style="left:26%; top:46%; width:46%;"></div>' +
+                     '<div class="wb-theme-sq" style="background:' + c.accent + '; left:12%; top:64%;"></div>' +
+                     '<div class="wb-theme-line" style="left:26%; top:66%; width:34%;"></div>';
+            } else if (body === 'minimal') {
+                h += '<div class="wb-theme-dot" style="background:' + c.accent + '; left:12%; top:45%; bottom:auto;"></div>' +
+                     '<div class="wb-theme-line" style="left:26%; top:46%; width:54%;"></div>' +
+                     '<div class="wb-theme-dot" style="background:' + c.accent + '; left:12%; top:65%; bottom:auto;"></div>' +
+                     '<div class="wb-theme-line" style="left:26%; top:66%; width:38%;"></div>';
+            } else {
+                // cards：两条带底色的卡片块，左侧一条强调色竖条
+                h += '<div class="wb-theme-cardblk" style="left:12%; top:42%; width:74%; height:13px; background:' + blk + ';"></div>' +
+                     '<div class="wb-theme-sq" style="background:' + c.accent + '; left:13%; top:44%; width:3px; height:9px;"></div>' +
+                     '<div class="wb-theme-line" style="left:18%; top:45%; width:56%;"></div>' +
+                     '<div class="wb-theme-cardblk" style="left:12%; top:62%; width:74%; height:13px; background:' + blk + ';"></div>' +
+                     '<div class="wb-theme-sq" style="background:' + c.accent + '; left:13%; top:64%; width:3px; height:9px;"></div>' +
+                     '<div class="wb-theme-line" style="left:18%; top:65%; width:40%;"></div>';
+            }
+            if (!light) {
+                for (var i = 0; i < (c.deco || []).length && i < 3; i++) {
+                    h += '<div class="wb-theme-dot" style="background:' + c.deco[i] + '; right:' + (8 + i * 12) + 'px;"></div>';
+                }
             }
             h += '</div>';
             return h;
         }
+        function wbThemeCard(t, cur, reco) {
+            var lb = String(t.label || t.key);
+            var name = lb, sub = '';
+            var p = lb.indexOf('（');
+            if (p > 0) { name = lb.slice(0, p); sub = lb.slice(p).replace(/[（）]/g, ''); }
+            var isReco = (t.key === reco);
+            return '<div class="wb-theme-card' + (t.key === cur ? ' on' : '') + '" data-key="' + _esc(t.key) + '"' +
+                   ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb) + '">' +
+                   (isReco ? '<span style="position:absolute; top:6px; left:6px; z-index:2; padding:1px 6px; border-radius:8px;' +
+                             ' font-size:10.5px; background:var(--c-a); color:#fff;">推荐</span>' : '') +
+                   wbThemeThumb(wbThemeColors(t), t.layout) +
+                   '<div class="wb-theme-name">' + _esc(name) +
+                   (sub ? '<div style="font-weight: 400; color: var(--text-mute); font-size: 11px; margin-top: 2px;">' + _esc(sub) + '</div>' : '') +
+                   '</div></div>';
+        }
         function renderThemeGrid(themes, cur) {
             var g = document.getElementById('deckThemeGrid');
             if (!g) return;
-            var cnt = document.getElementById('deckThemeCount');
-            if (cnt) cnt.textContent = (themes || []).length;
             var reco = wbCompType().theme;
-            g.innerHTML = (themes || []).map(function (t) {
-                var lb = String(t.label || t.key);
-                var name = lb, sub = '';
-                var p = lb.indexOf('（');
-                if (p > 0) { name = lb.slice(0, p); sub = lb.slice(p).replace(/[（）]/g, ''); }
-                var c = wbThemeColors(t);
-                var isReco = (t.key === reco);
-                return '<div class="wb-theme-card' + (t.key === cur ? ' on' : '') + '" data-key="' + _esc(t.key) + '"' +
-                       ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb) + '">' +
-                       (isReco ? '<span style="position:absolute; top:6px; left:6px; z-index:2; padding:1px 6px; border-radius:8px;' +
-                                 ' font-size:10.5px; background:var(--c-a); color:#fff;">推荐</span>' : '') +
-                       wbThemeThumb(c) +
-                       '<div class="wb-theme-name">' + _esc(name) +
-                       (sub ? '<div style="font-weight: 400; color: var(--text-mute); font-size: 11px; margin-top: 2px;">' + _esc(sub) + '</div>' : '') +
-                       '</div></div>';
-            }).join('');
+            themes = themes || [];
+            var premium = themes.filter(function (t) { return t.tier === 'premium'; });
+            var extra = themes.filter(function (t) { return t.tier !== 'premium'; });
+            var show = premium.length ? premium : themes;
+            var cnt = document.getElementById('deckThemeCount');
+            if (cnt) cnt.textContent = show.length;
+            g.innerHTML = show.map(function (t) { return wbThemeCard(t, cur, reco); }).join('');
+            // 旧主题折叠：不删（历史记录可能引用），但不占主视觉
+            var eg = document.getElementById('deckThemeExtraGrid');
+            if (eg) eg.innerHTML = extra.map(function (t) { return wbThemeCard(t, cur, reco); }).join('');
+            var btn = document.getElementById('deckThemeMoreBtn');
+            if (btn) btn.style.display = extra.length ? '' : 'none';
             wbRenderReco(reco, cur);
         }
-        // 推荐语：说清楚"按什么推荐、现在用的哪套、能改"，别让用户以为是锁死的
+        function wbToggleExtraThemes() {
+            var w = document.getElementById('deckThemeExtraWrap');
+            var b = document.getElementById('deckThemeMoreBtn');
+            if (!w) return;
+            var on = w.style.display === 'none';
+            w.style.display = on ? 'block' : 'none';
+            if (b) b.textContent = on ? '收起备选风格' : '展开更多备选风格';
+        }
+        // 选中态要在两个网格里同步（精品区 + 备选区各有一批卡片）
+        function wbSyncThemeCards(k) {
+            var cards = document.querySelectorAll('#deckThemeGrid .wb-theme-card, #deckThemeExtraGrid .wb-theme-card');
+            for (var i = 0; i < cards.length; i++) {
+                cards[i].classList.toggle('on', cards[i].getAttribute('data-key') === k);
+            }
+        }
+        // 推荐语：说清楚"按哪个赛事推荐、现在用的哪套、能改"，别让用户以为是锁死的
         function wbRenderReco(reco, cur) {
             var el = document.getElementById('deckThemeReco');
             if (!el) return;
-            var ct = wbCompType();
             var t = (_themeLib || []).filter(function (x) { return x.key === reco; })[0];
             var curT = (_themeLib || []).filter(function (x) { return x.key === cur; })[0];
             var nm = function (x) {
@@ -4229,13 +4341,12 @@ mark.wb-ph {
                 var p = s.indexOf('（');
                 return p > 0 ? s.slice(0, p) : (s || '');
             };
-            if (ct.type === 'general') {
-                el.innerHTML = '按赛事类型自动推荐风格（当前赛事未匹配到专项类型，用通用科技蓝）；点任意主题即可覆盖。';
-                return;
-            }
-            el.innerHTML = '识别为<b>' + _esc(ct.name) + '</b>，推荐 <b>' + _esc(nm(t) || reco) + '</b>' +
+            var comp = _wbT((document.getElementById('competition') || {}).value) ||
+                       _wbT((window._lastData || {}).competition);
+            var head = comp ? '已按 <b>' + _esc(_wbTrim(comp, 22)) + '</b> 推荐 ' : '推荐 ';
+            el.innerHTML = head + '<b>' + _esc(nm(t) || reco) + '</b>' +
                            (curT && cur !== reco ? '（当前用的是 ' + _esc(nm(curT)) + '）' : '') +
-                           '；点任意主题即可覆盖，换赛事会重新推荐。';
+                           '；点任意一套即可覆盖，换赛事会重新推荐。每套的封面/正文/页眉版式都已定好，不用再单独选。';
         }
         var _themeManual = false;            // 用户手动点过主题后，不再自动改
         // 换赛事时重新按类型推荐主题（用户手动点过就以手动为准）
@@ -4247,20 +4358,14 @@ mark.wb-ph {
             var has = (_themeLib || []).filter(function (x) { return x.key === reco; })[0];
             if (!has) return;
             sel.value = reco;
-            var cards = document.querySelectorAll('#deckThemeGrid .wb-theme-card');
-            for (var i = 0; i < cards.length; i++) {
-                cards[i].classList.toggle('on', cards[i].getAttribute('data-key') === reco);
-            }
+            wbSyncThemeCards(reco);
             onThemeChange();
         }
         function wbPickTheme(k) {
             _themeManual = true;
             var sel = document.getElementById('deckTheme');
             if (sel) sel.value = k;
-            var cards = document.querySelectorAll('#deckThemeGrid .wb-theme-card');
-            for (var i = 0; i < cards.length; i++) {
-                cards[i].classList.toggle('on', cards[i].getAttribute('data-key') === k);
-            }
+            wbSyncThemeCards(k);
             onThemeChange();
         }
 
@@ -4290,11 +4395,11 @@ mark.wb-ph {
                 return;
             }
             const rd = window._lastData || {};
-            // 主题/模板：优先顶层 theme/variant（后端若提供），回退 rich_deck.theme（当前实际版本）
+            // 主题：优先顶层 theme（后端若提供），回退 rich_deck.theme（当前实际版本）。
+            // 版式不再由 variant 决定 —— 15 套模板各自带 layout，前端不提供版式下拉。
             var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
-            const curVariant = rd.variant || (rd.rich_deck && rd.rich_deck.variant) || 'v1';
-            // 按赛事类型推荐主题：工程类→科技蓝、经管类→商务灰、艺术类→设计风、
-            // 数学建模→学术答辩、iCAN→蓝白科技。用户手动点过就不再动
+            // 按赛事推荐模板：iCAN→蓝白科技、电赛→电路蓝、互联网+→商务灰、
+            // 数模→白底建模、挑战杯→红金、广告艺术→海报撞色…用户手动点过就不再动
             if (!_themeManual) {
                 var reco = wbCompType().theme;
                 if (themes.filter(function (x) { return x.key === reco; }).length) cur = reco;
@@ -4302,18 +4407,23 @@ mark.wb-ph {
             _fillSelect(document.getElementById('deckTheme'),
                         themes.map(function (t) { return {key: t.key, name: t.label}; }), cur);
             renderThemeGrid(themes, cur);
-            onThemeChange(curVariant);
+            onThemeChange();
         }
-        function onThemeChange(variant) {
+        function onThemeChange() {
             const tk = document.getElementById('deckTheme') && document.getElementById('deckTheme').value;
-            const t = (_themeLib || []).find(function (x) { return x.key === tk; });
-            const vs = (t && t.variants) || [{key: 'v1', name: '流光 · 卡片'}];
-            _fillSelect(document.getElementById('deckVariant'), vs, variant || 'v1');
             if (window._lastData && window._lastData.rich_deck) {
                 window._lastData.rich_deck.theme = tk;
-                window._lastData.rich_deck.variant = document.getElementById('deckVariant').value;
             }
             previewDeckStyle();
+        }
+        // 版式的中文说明：告诉用户这套"长什么样"，而不是让他自己拼
+        function wbLayoutDesc(t) {
+            var L = (t && t.layout) || {};
+            var cov = {gradient: '整页渐变封面', split: '左色块封面', band: '顶部色带封面',
+                       center: '居中留白封面', paper: '白底学术封面'}[L.cover] || '';
+            var body = {cards: '卡片正文', minimal: '极简条目', numbered: '大号序号'}[L.body] || '';
+            var out = [cov, body].filter(Boolean).join(' · ');
+            return out || '';
         }
         function previewDeckStyle() {
             // 把选择写回 deck，下载时后端据此渲染
@@ -4322,12 +4432,17 @@ mark.wb-ph {
             const vk = document.getElementById('deckVariant') && document.getElementById('deckVariant').value;
             window._lastData.rich_deck.theme = tk;
             window._lastData.rich_deck.variant = vk;
+            if (vk) window._lastData.rich_deck.variant = vk;
             const t = (_themeLib || []).find(function (x) { return x.key === tk; });
-            const v = ((t && t.variants) || []).find(function (x) { return x.key === vk; });
             const hint = document.getElementById('deckThemeHint');
             if (hint) {
+                var nm = String((t && t.label) || tk);
+                var p = nm.indexOf('（');
+                if (p > 0) nm = nm.slice(0, p);
+                var d = wbLayoutDesc(t);
                 hint.style.display = 'block';
-                hint.innerHTML = '当前：<b>' + _esc((t && t.label) || tk) + '</b> · <b>' + _esc((v && v.name) || vk) + '</b>（切换后点"下载 PPT"即生效，不必重新生成）';
+                hint.innerHTML = '当前：<b>' + _esc(nm) + '</b>' + (d ? '（' + _esc(d) + '）' : '') +
+                                 '　字体：微软雅黑；切换后点"下载 PPT"即生效，不必重新生成';
             }
         }
         // ---- 下载 AI 生成的路演 PPT ----
