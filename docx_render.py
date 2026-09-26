@@ -705,22 +705,22 @@ def _set_tbl_layout(table, widths_cm):
 
 
 def _render_table(doc, header, rows):
-    """表格：三线表（顶线 / 表头线 / 底线，无竖线无底色，符合格式红线），
-    表头黑体小四加粗居中，表内宋体小四；列宽按内容自适应；行不跨页断开。"""
+    """表格：全框线（与 iCAN 官方计划书模板一致，红头文件优先），无底色无阴影；
+    表头黑体小四加粗居中，表内宋体小四；列宽按内容自适应；行不跨页断开。
+
+    注：曾试过改三线表（顶线/表头线/底线），但官方模板用的是 Table Grid 全框线，
+    与红头文件冲突时以红头文件为准，故保留全框线，只优化列宽与对齐。
+    """
     cols = len(header)
     if cols == 0:
         return
     norm = [(r + [''] * cols)[:cols] for r in rows]
 
     table = doc.add_table(rows=1, cols=cols)
+    table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     _set_cell_margins(table, top=60, bottom=60, left=100, right=100)
-    # 三线表：只留顶线（1.5pt）和底线（1.5pt），中间靠表头下细线分隔
-    _tbl_borders(table._tbl.tblPr, {
-        'top': ('single', 12, '000000'),
-        'bottom': ('single', 12, '000000'),
-    })
 
     widths = _col_widths(header, norm)
     _set_tbl_layout(table, widths)
@@ -737,7 +737,6 @@ def _render_table(doc, header, rows):
     for j, txt in enumerate(header):
         cell = hdr.cells[j]
         cell.width = Cm(widths[j])
-        _cell_borders(cell, bottom_sz=6)
         cell.text = ''
         p = cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER

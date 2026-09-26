@@ -1222,6 +1222,8 @@ def export_zip():
     # 素材打包里的申报书也要按官方章节排序 / 走 iCAN 双盲，
     # 否则单独下载是官方顺序、打包里又是另一套顺序，用户会以为系统不稳定。
     comp = (data.get('competition_name') or '').strip()
+    # 前端打包时把本轮的图表一起带过来（rich_charts），申报书正文里才插得进图
+    charts_in = data.get('rich_charts') or []
 
     def build_doc(title, text):
         dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
@@ -1231,12 +1233,21 @@ def export_zip():
             order = _official_chapter_titles(comp)
             if order:
                 tt = _reorder_markdown_by_chapters(tt, order)
-        return _build_docx(title, tt, doc_type=dt,
-                           subtitle=comp if is_prop else None,
-                           school=data.get('school'),
-                           team=data.get('team'),
-                           advisor=data.get('advisor'),
-                           competition_name=comp if is_prop else None)
+        d = _build_docx(title, tt, doc_type=dt,
+                        subtitle=comp if is_prop else None,
+                        school=data.get('school'),
+                        team=data.get('team'),
+                        advisor=data.get('advisor'),
+                        competition_name=comp if is_prop else None)
+        # 打包里的申报书同样要插图：不然单独下载有图、打包里没图，用户会以为系统不稳。
+        # 图表文件是本轮生成时落在 generated/ 下的，前端通过 rich_charts 传回来。
+        if is_prop and charts_in:
+            try:
+                from docx_charts import inject_charts
+                inject_charts(d, charts_in)
+            except Exception as e:
+                print(f"[export_zip] 申报书插图失败（不影响导出）：{e}")
+        return d
 
     with zipfile.ZipFile(zippath, 'w', zipfile.ZIP_DEFLATED) as zf:
         for filename, title, text in mappings:

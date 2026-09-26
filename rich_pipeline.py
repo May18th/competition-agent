@@ -14,7 +14,10 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 
-from chart_renderer import render as render_chart
+try:
+    from chart_renderer_pro import render as render_chart
+except Exception:
+    from chart_renderer import render as render_chart
 
 GEN_DIR = os.path.join(os.path.dirname(__file__), "generated")
 
@@ -69,6 +72,7 @@ def _invoke_json(prompt):
 CHART_FORMAT = """
 各 type 的 data 格式（严格遵守）：
 - bar/column: {"categories":["A","B"],"values":[123,456],"ylabel":"单位"}
+- hbar/rank: {"categories":["竞品A","竞品B","我们"],"values":[80,70,95],"xlabel":"评分/性能"}
 - line/trend: {"x":["2024","2025"],"series":[{"name":"我们的","values":[1,2]}],"ylabel":"单位"}
 - pie/donut: {"labels":["A","B"],"values":[30,70]}
 - radar: {"labels":["技术","成本","体验","合规","扩展"],"series":[{"name":"我们","values":[9,7,8,6,8]}]}
@@ -76,6 +80,7 @@ CHART_FORMAT = """
 - architecture/arch: {"layers":[{"name":"应用层","boxes":["用户端","管理后台"]},{"name":"模型层","boxes":["DeepSeek"]}]}
 - timeline/gantt: {"stages":[{"name":"需求调研","start":0,"end":2,"label":"第1-2月"}],"xlabel":"时间（月）"}
 - funnel: {"labels":["曝光","注册","付费"],"values":[1000,300,80]}
+- heatmap/risk: {"rows":["技术风险","市场风险","资金风险"],"cols":["低","中","高"],"values":[[0,1,2],[1,0,1],[0,0,2]]}
 每张 chart 顶层字段：id / type / title / caption / source / data。
 source 写「来源 + 统计年份」（如「教育部 2024」「中国信通院 2025」），
 材料里没有来源的测算值写「行业测算」，并在 caption 里点明是测算口径。
@@ -129,7 +134,15 @@ def _gen_assets(result, competition, idea, kb_data=""):
 2. 深色科技蓝底（#0F1535），高亮主色 #818CF8，系列色 #22B8CF / #C084FC / #F59E0B / #34D399 / #FB7185 / #A3E635。
 3. 每张图都要「结论式标题 + 一句话洞察 + 数据来源」：标题直接给结论（如「目标市场规模三年翻三倍」），caption 是 20 字内的洞察，source 写来源+年份。
 4. 数字必须来自材料或「可引用的行业真实数据」，优先引用上面给的真实数据并标注 source；测算值标「行业测算」并写清口径。
-5. 图表类型覆盖项目关键结论：预算用 donut、市场规模用 bar、增长用 line、竞品用 radar、竞争力定位用 matrix、转化用 funnel、实施用 timeline、技术用 architecture，按需选 6-8 种，不要重复。
+5. 图表类型必须多样（至少 7 张），且硬性覆盖下面 7 类，缺一不可：
+   - radar 竞品/能力多维对比（1 张）
+   - matrix 竞争力定位象限（1 张）
+   - funnel 转化漏斗 或 architecture 系统架构（至少 1 张）
+   - timeline 实施甘特（1 张）
+   - hbar 竞品/能力排名（1 张）
+   - heatmap 风险热力矩阵（1 张，rows=风险类型，cols=低/中/高）
+   - 其余用 donut / bar / line 补充
+   严禁只出 bar / pie / line 三种；预算用 donut、市场规模用 bar、增长用 line、竞品用 radar、竞争力定位用 matrix、转化用 funnel、实施用 timeline、技术用 architecture、排名用 hbar、风险用 heatmap，不要重复。
 
 只能输出一个 JSON 对象，不要任何解释文字。格式：
 {{

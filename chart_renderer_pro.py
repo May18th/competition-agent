@@ -220,6 +220,73 @@ def _bar(ax, data, S, t):
     return True
 
 
+def _hbar(ax, data, S, t):
+    """横向条形图：适合竞品/能力排名对比（从上到下按值递减展示）。"""
+    cats = [str(x) for x in (data.get("categories") or [])]
+    vals = [_cr._f(x) for x in (data.get("values") or [])]
+    if not cats or not vals:
+        return False
+    unit = str(data.get("unit") or "")
+    # 反转，让最大值排在最上面
+    cats = cats[::-1]
+    vals = vals[::-1]
+    y = np.arange(len(cats))
+    w = 0.56
+    xmax = max(vals) or 1
+    ax.set_xlim(0, xmax * 1.18)
+    for i, (yi, v) in enumerate(zip(y, vals)):
+        if any(k in cats[i] for k in ("我们的项目", "本项目", "我们")):
+            col = ACCENT
+        else:
+            col = S[i % len(S)]
+        radius = min(w * 0.32, v * 0.06) if v > 0 else 0
+        ax.add_patch(FancyBboxPatch((0, yi - w / 2), v, w,
+                                    boxstyle=f"round,pad=0,rounding_size={radius}",
+                                    facecolor=col, edgecolor="none", zorder=3))
+        _grad_round(ax, 0, yi - w / 2, v, w, col, radius, vertical=False, zorder=4)
+        ax.text(v + xmax * 0.02, yi, f"{_fmt(v)}{unit}", va="center",
+                fontsize=12.5, color=FG, fontweight="bold", zorder=6)
+    ax.set_yticks(y)
+    ax.set_yticklabels(cats, color=FG, fontsize=11.5)
+    ax.set_ylim(-0.6, len(cats) - 0.4)
+    if data.get("xlabel"):
+        ax.set_xlabel(str(data["xlabel"]), color=FG_DIM, fontsize=11.5)
+    return True
+
+
+def _heatmap(ax, data, S, t):
+    """风险热力矩阵：rows × cols 的格子，强度 0~3 → 空/绿/黄/红。"""
+    rows = [str(x) for x in (data.get("rows") or [])]
+    cols = [str(x) for x in (data.get("cols") or [])]
+    vals = data.get("values") or []
+    if not rows or not cols:
+        return False
+    R, C = len(rows), len(cols)
+    cmap = {0: "#26304E", 1: "#1F8A70", 2: "#B07A18", 3: "#C0392B"}
+    for i in range(R):
+        for j in range(C):
+            try:
+                v = float(vals[i][j])
+            except Exception:
+                v = 0.0
+            lvl = 0 if v <= 0 else (1 if v < 1.5 else (2 if v < 2.5 else 3))
+            col = cmap[lvl]
+            ax.add_patch(Rectangle((j, R - 1 - i), 1, 1,
+                                   facecolor=to_rgba(col, 0.92),
+                                   edgecolor=t["card"], linewidth=2.5, zorder=2))
+            ax.text(j + 0.5, R - 1 - i + 0.5, _fmt(v), ha="center", va="center",
+                    fontsize=13, fontweight="bold",
+                    color=("#0B1026" if lvl in (2, 3) else FG), zorder=3)
+    ax.set_xlim(0, C)
+    ax.set_ylim(0, R)
+    ax.set_xticks([j + 0.5 for j in range(C)])
+    ax.set_xticklabels(cols, color=FG, fontsize=11.5)
+    ax.set_yticks([i + 0.5 for i in range(R)])
+    ax.set_yticklabels(rows[::-1], color=FG, fontsize=11.5)
+    ax.tick_params(length=0)
+    return True
+
+
 def _line(ax, data, S, t):
     xs = [str(x) for x in (data.get("x") or [])]
     series = data.get("series") or []
@@ -536,6 +603,10 @@ def render(chart, out_dir, theme=None):
             ok = _pie(ax, data, t["series"], t, donut=(ctype == "donut" or True))
         elif ctype in ("bar", "column"):
             ok = _bar(ax, data, t["series"], t)
+        elif ctype in ("hbar", "hcolumn", "rank"):
+            ok = _hbar(ax, data, t["series"], t)
+        elif ctype in ("heatmap", "risk", "riskmap"):
+            ok = _heatmap(ax, data, t["series"], t)
         elif ctype in ("line", "trend"):
             ok = _line(ax, data, t["series"], t)
         elif ctype in ("timeline", "gantt"):
