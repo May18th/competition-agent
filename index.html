@@ -698,6 +698,28 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     box-shadow: inset 0 0 0 1px var(--line-strong), 0 6px 20px rgba(34,211,238,.16);
 }
 .tab-content { display: none; animation: wbFadeUp .5s cubic-bezier(.2,.7,.2,1); }
+/* AI 模拟自评面板内的二级标签：原来整个面板是一个 <details> 折叠条，
+   8 个板块全藏在「展开 ▾」后面，用户不知道里面有什么。改成常驻标签导航后，
+   内容分类一目了然；为避免本来重要的自查提醒被藏起来，标签上带了未处理项红点。 */
+.wb-subtabs {
+    display: flex; gap: 8px; padding: 10px 16px 0;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.wb-subtabs::-webkit-scrollbar { display: none; }
+.wb-subtab {
+    flex: 0 0 auto; position: relative;
+    padding: 6px 14px; font-size: 12.5px; line-height: 1.4; white-space: nowrap;
+    color: var(--text-mute); background: var(--surface-solid);
+    border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+}
+.wb-subtab:hover { color: var(--text); background: var(--surface-2); }
+.wb-subtab.active { color: #fff; background: var(--c-a); border-color: var(--c-a); }
+.wb-subtab .wb-subdot {
+    display: none; margin-left: 6px; min-width: 16px; padding: 0 4px;
+    font-size: 11px; line-height: 16px; text-align: center; border-radius: 8px;
+    background: var(--c-red, #e5484d); color: #fff;
+}
+.wb-subtab.has-issue .wb-subdot { display: inline-block; }
 .tab-content.active { display: block; }
 @keyframes wbFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
@@ -1773,13 +1795,23 @@ mark.wb-ph {
             </div>
             <!-- 档位标识：由 JS 按 mode 填充（简洁快速版 / 深度完整版 · 已生成 N 个模块） -->
             <!-- 自评/评分维度/提交检查：默认收起，不糊用户脸上 -->
-            <details id="scorePanel" style="margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
-                <summary style="cursor: pointer; padding: 12px 16px; font-size: 14px; color: var(--text); list-style: none; display: flex; align-items: center; gap: 8px; user-select: none;">
+            <!-- 原来是 <details> 折叠条：8 个板块全藏在「展开 ▾」后面，用户不知道里面有什么。
+                 改成常驻二级标签；自查类面板可能藏住重要提醒，所以标签上挂未处理项红点。 -->
+            <section id="scorePanel" style="margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 12px 16px 0; font-size: 14px; color: var(--text);">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
-                    <span>AI 模拟自评 · 评分维度 · 提交前检查</span>
-                    <span style="margin-left: auto; color: var(--text-mute); font-size: 12px;">展开 ▾</span>
-                </summary>
-                <div style="padding: 0 16px 16px;">
+                    <span>AI 模拟自评</span>
+                    <span style="margin-left: auto; color: var(--text-mute); font-size: 12px;">分数不必写进正式材料</span>
+                </div>
+                <div class="wb-subtabs" id="scoreSubTabs">
+                    <button class="wb-subtab active" id="wbSubTabScore" onclick="switchScoreTab(event, 'score')">评分总览</button>
+                    <button class="wb-subtab" id="wbSubTabJudge" onclick="switchScoreTab(event, 'judge')">评分依据</button>
+                    <button class="wb-subtab" id="wbSubTabCheck" onclick="switchScoreTab(event, 'check')">提交前自查<span class="wb-subdot" id="wbSubCheckDot">0</span></button>
+                </div>
+                <div style="padding: 12px 16px 16px;">
+
+                    <!-- ① 评分总览：一眼看目前的评分与体量 -->
+                    <div id="wbSubPanel-score">
             <div id="tierBadge" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;"></div>
             <div class="result-hero">
                 <div class="score-number" id="scoreNum">86</div>
@@ -1790,9 +1822,15 @@ mark.wb-ph {
                     这个分数是模拟评委给的，帮你定位薄弱部分，<b>不用写进正式材料</b>。
                 </div>
             </div>
+                <!-- 一句话定位 -->
+                <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 16px; margin-top: 16px;">
+                    <div style="font-size: 14px; color: var(--info-strong); font-weight: 600; margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一句话项目定位<span class="wb-opt">（路演开场用）</span></div>
+                    <div id="oneLiner" style="font-size: 16px; color: var(--info-text); line-height: 1.6;"></div>
+                </div>
+                    </div>
 
-            <!-- 评分维度明细：judge_scores 带权重，说明「这个分数是怎么算出来的」。
-                 后端已把 judge_scores 存进历史记录，这里同步渲染（权重来自赛事要求卡） -->
+                    <!-- ② 评分依据：这个分数是怎么算出来的 -->
+                    <div id="wbSubPanel-judge" style="display: none;">
             <div id="judgeScoresBox" style="display: none; margin-bottom: 18px; padding: 14px 16px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);">
                 <div style="font-size: 13px; font-weight: 700; color: var(--text-dim); margin-bottom: 10px;">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
@@ -1801,8 +1839,10 @@ mark.wb-ph {
                 </div>
                 <div id="judgeScoresList"></div>
             </div>
+                    </div>
 
-            <!-- 提交前自查：查重风险 + 事实校验（评委视角最在意的两条硬伤） -->
+                    <!-- ③ 提交前自查：三条硬伤 + 占位符 + 双盲禁忌 + 缺章节 -->
+                    <div id="wbSubPanel-check" style="display: none;">
             <div style="background: var(--warn-bg); border-left: 4px solid var(--warn-line); padding: 14px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.85; color: var(--text-dim);">
                 <div style="font-weight: 700; color: var(--warn-text); margin-bottom: 6px;">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 交作品前，这三件事必须自己做
@@ -1811,9 +1851,6 @@ mark.wb-ph {
                 <div style="margin-top:4px;">② 核数：正文数字逐条换成你真实的数据</div>
                 <div style="margin-top:4px;">③ 补场景：改成具体的人和具体时刻</div>
             </div>
-
-            <!-- 占位符统计：后端严禁编数据后，拿不准的会写成【待你填写：xxx】。
-                 高亮散落在正文里还不够，这里给一个总数，学生知道自己要补多少处 -->
             <div id="wbPhBar">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
                 正文里有 <b id="wbPhCount">0</b> 处标黄的
@@ -1821,9 +1858,6 @@ mark.wb-ph {
                 —— 这些是 AI 编不出来的真实数据，<b>必须换成你自己跑出来的</b>再交。
                 带着占位符交上去，评委一问就穿帮。
             </div>
-
-            <!-- 赛道禁忌扫描：iCAN 创新赛道是双盲评审，正文里出现学校/导师信息直接扣分。
-                 这条规则写进 prompt 也可能漏，所以再在成品上扫一遍兜底——漏了就是真扣分 -->
             <div id="wbBanBar" style="display: none; background: #FDECEA; border-left: 4px solid #C0392B; padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.8; color: #7B241C;">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
                 <b>正文里疑似出现了 <span id="wbBanCount">0</span> 处学校／导师信息</b>
@@ -1832,15 +1866,12 @@ mark.wb-ph {
                     你选的赛道是<b>双盲评审</b>，材料里出现学校、导师信息<b>直接扣分</b>。请删掉后再导出。
                 </div>
             </div>
-                <!-- 一句话定位 -->
-                <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                    <div style="font-size: 14px; color: var(--info-strong); font-weight: 600; margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一句话项目定位<span class="wb-opt">（路演开场用）</span></div>
-                    <div id="oneLiner" style="font-size: 16px; color: var(--info-text); line-height: 1.6;"></div>
+            <!-- 申报书章节完整性校验 -->
+            <div id="completenessBox" style="display: none; margin-bottom: 16px; padding: 14px 16px; border-radius: 8px; font-size: 13.5px;"></div>
+                    </div>
+
                 </div>
-                <!-- 申报书章节完整性校验 -->
-                <div id="completenessBox" style="display: none; margin-bottom: 16px; padding: 14px 16px; border-radius: 8px; font-size: 13.5px;"></div>
-                </div>
-            </details>
+            </section>
 
             <div style="margin-bottom: 20px; text-align: right;">
 
@@ -4219,6 +4250,8 @@ mark.wb-ph {
                 ph.title = (phn > 0) ? '正文还有「待补充」占位，导出前必须换成真实数据' : '正文无待补占位';
             }
             var miss = (comp && comp.missing) || [];
+            _wbCheckIssues.miss = miss.length;
+            wbScoreTabBadge();
             if (!miss.length) { box.style.display = 'none'; return; }
             box.style.display = 'block';
             box.style.background = 'var(--err-bg)';
@@ -5533,6 +5566,7 @@ mark.wb-ph {
             cnt.textContent = n;
             bar.style.display = n > 0 ? 'block' : 'none';
             wbRefreshBanBar();
+            wbScoreTabBadge();   // 占位符数量变了，自评面板标签上的红点要跟着更新
         }
 
         // 赛道禁忌扫描：只对「有明文禁令」的赛道生效（目前只有 iCAN 创新赛道）。
@@ -5633,6 +5667,34 @@ mark.wb-ph {
                 })
                 .catch(function () {});
         }
+        /* ---- AI 模拟自评：面板内二级标签 ---- */
+        var WB_SUB_TABS = [['score', 'wbSubTabScore'], ['judge', 'wbSubTabJudge'], ['check', 'wbSubTabCheck']];
+        function switchScoreTab(ev, name) {
+            WB_SUB_TABS.forEach(function (t) {
+                // ⚠️ 必须显式写 block/none：写 '' 会回落到样式表里的 none，面板永远不会显示
+                var p = document.getElementById('wbSubPanel-' + t[0]);
+                if (p) p.style.display = (t[0] === name) ? 'block' : 'none';
+                var b = document.getElementById(t[1]);
+                if (b) b.classList.toggle('active', t[0] === name);
+            });
+        }
+        // 自查面板默认不在眼前，未处理项要显示在标签上，否则重要提醒等于被藏起来
+        var _wbCheckIssues = { ph: 0, ban: 0, miss: 0 };
+        function wbScoreTabBadge() {
+            try {
+                var phBar = document.getElementById('wbPhBar'), phEl = document.getElementById('wbPhCount');
+                _wbCheckIssues.ph = (phBar && phEl && phBar.style.display !== 'none')
+                    ? (parseInt(phEl.textContent, 10) || 0) : 0;
+                var banEl = document.getElementById('wbBanBar');
+                _wbCheckIssues.ban = (banEl && banEl.style.display === 'block') ? 1 : 0;
+            } catch (e) {}
+            var n = _wbCheckIssues.ph + _wbCheckIssues.ban + _wbCheckIssues.miss;
+            var dot = document.getElementById('wbSubCheckDot');
+            var tab = document.getElementById('wbSubTabCheck');
+            if (dot) dot.textContent = n;
+            if (tab) tab.classList.toggle('has-issue', n > 0);
+        }
+
         // ---- 实测数据：拼给后端的 user_data（纯文本，后端按最高优先级事实来源注入 prompt）----
         // 后端是 str(ud)[:3000] 直接进 prompt，所以这里拼成「字段名：值」的自然文本，别传对象（会被 str() 成字典样子）
         var WB_UD_FIELDS = [
