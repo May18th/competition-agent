@@ -687,3 +687,10 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - 待补充 >0 时数字标黄（--warn-text）并带 title 提示「导出前必须换成真实数据」；=0 标绿。
 - wordCount 元素与赋值已全删（grep 0 残留）。产物 h3 旁的「N 字」小标签（tagWordCount）保留未动——那是简洁/深度两档对比用的信息标签，非卖点，如需一并去掉再说。
 - 后端无改动。请 Codex 基于 6910938 之后的 main 继续。
+
+## 2026-09-27 WorkBuddy 改动记录③（index.html，已部署 c8c7809）
+- 前端已接 user_data：创意框下方新增「实测数据（选填）」采集区（试点单位/测试用户数/实测指标/成本 + 其它佐证），由 wbUserDataText() 拼成「字段名：值」纯文本，随 /api/generate_async 的 user_data 字段提交（无内容传空串）。
+- ⚠️ 格式约定：后端 _user_data_ref 是 str(ud)[:3000] 直接进 prompt，所以**必须传字符串**，传对象会被 str() 成 Python dict 样子，prompt 变味。字段名统一 user_data（兼容旧名 real_data）。
+- 已纳入 WB_FORM_IDS 草稿持久化，并加入 wbAdvInit 折叠列表（手机端默认收起，不占首屏）。
+- 已对接straight验证：https 直连 POST /api/generate_async 带 user_data → 返回 task_id 并成功取消（致敬条款，非故障）。
+- 后端无改动。
