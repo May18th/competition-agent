@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>赛创助手</title>
     <style>
 /* ===== WB-TECH-THEME v2 ===== */
@@ -913,6 +913,58 @@ mark.wb-ph {
     button { font-size: 14px; }
 }
 
+/* ===== Codex 接手：手机端 10 个小问题适配 ===== */
+/* 微信引导里「点右上角 ···」的上箭头：往右上角弹，提示用户去点 */
+.wb-point-arrow {
+    display: inline-block; color: var(--c-b); font-size: 17px; font-weight: 700;
+    animation: wbPointUp 1.1s ease-in-out infinite; transform-origin: 50% 50%;
+}
+@keyframes wbPointUp {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(3px, -4px); }
+}
+
+@media (max-width: 768px) {
+    /* 1) 底部赛事快捷 chip：横向可滑 + 藏滚动条，右边不再被裁掉 */
+    #compQuickRow {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+    }
+    #compQuickRow::-webkit-scrollbar { display: none; }
+    #compQuickRow > span { flex: 0 0 auto; }
+
+    /* 2) 折叠板块展开后别被 .card 的 overflow:hidden 裁掉内容 */
+    .card { overflow: visible; }
+    .card::after { display: none; }
+
+    /* 3) 右下角悬浮导出按钮抬高，避开系统导航键 */
+    #wbFab { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+
+    /* 4) 再压一轮留白，一屏多显示内容 */
+    body { padding: max(8px, env(safe-area-inset-top, 0px)) 4px 150px 4px; }
+    .hero { padding: 8px 8px 4px; margin-bottom: 6px; }
+    .hero h1 { font-size: 18px; }
+    .hero p { font-size: 12px; margin-top: 3px; }
+    .card { padding: 10px 10px; margin-bottom: 8px; }
+    .card-title { margin-bottom: 8px; }
+    .form-group { margin-bottom: 10px; }
+
+    /* 5) 微信/QQ 内置浏览器顶部导航遮挡：给 body 加顶部留白 */
+    body.in-app { padding-top: 44px; }
+
+    /* 6) 「清空重写」按钮放大，手指好点 */
+    #wbRestoreTip button { padding: 10px 16px; font-size: 14px; }
+
+    /* 7) 项目创意输入框加高，打字能看到完整内容 */
+    #idea { min-height: 150px !important; }
+
+    /* 8) 选中比赛更明显：chip 加一圈高亮 + 输入框匹配后描边 */
+    #compQuickRow > span[data-on="1"] { box-shadow: 0 0 0 2px var(--c-a); }
+    #competition.wb-matched { border-color: var(--c-a) !important; box-shadow: 0 0 0 3px rgba(34,211,238,.18); }
+}
+
 /* ---------- 首页三步引导（新用户进来不懵） ---------- */
 /* 做成三步卡片而不是弹窗：弹窗一上来就糊脸，用户会直接关掉 */
 #wbGuide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 18px; }
@@ -1239,7 +1291,7 @@ mark.wb-ph {
         <div id="wxBanner" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--c-b); border-radius: 12px; font-size: 13px; color: var(--text); line-height: 1.75;">
             <div style="font-weight: 600; color: var(--c-b); margin-bottom: 4px;">当前在微信内置浏览器里，上传只能选到图片和视频</div>
             <div style="color: var(--text-dim);">这是微信的限制，改不了。要传 Word / PDF：<br>
-                ① 点右上角 <b>···</b> → <b>在 Safari 中打开</b>（推荐）；<br>
+                ① 点右上角 <b>···</b> <span class="wb-point-arrow">↗</span> → <b>在 Safari 中打开</b>（推荐）；<br>
                 ② 或者把文字复制好，回来点「粘贴文本」直接粘到草稿框，不用传文件。</div>
             <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                 <button onclick="wbCopyLink()" style="padding: 6px 12px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">复制网址</button>
@@ -2186,6 +2238,7 @@ mark.wb-ph {
         (function () {
             var ua = navigator.userAgent || '';
             WB_IN_APP = /MicroMessenger|QQ\//i.test(ua);
+            if (WB_IN_APP) { try { document.body.classList.add('in-app'); } catch (e) {} }
             var box = document.getElementById('mobileUploadTip');
             if (box && /iPhone|iPad|iPod|Android|Mobile/i.test(ua)) {
                 box.style.display = 'block';
@@ -3949,18 +4002,27 @@ mark.wb-ph {
         // 赛事 quick-pick 横排 chip 高亮：当前选中的赛事对应 chip 亮成主色，其余保持灰
         function wbSyncCompChips() {
             var cur = String((document.getElementById('competition') || {}).value || '').trim();
+            var el = document.getElementById('competition');
             var row = document.getElementById('compQuickRow');
-            if (!row) return;
-            var chips = row.children;
-            for (var i = 0; i < chips.length; i++) {
-                var sp = chips[i];
-                var m = /wbPickComp\('([^']*)'\)/.exec(sp.getAttribute('onclick') || '');
-                var name = m ? m[1] : '';
-                var on = !!name && name === cur;
-                sp.style.background = on ? 'var(--c-a)' : 'var(--surface-2)';
-                sp.style.color = on ? '#fff' : 'var(--text)';
-                sp.style.borderColor = on ? 'var(--c-a)' : 'var(--line)';
-                sp.style.fontWeight = on ? '600' : '400';
+            if (row) {
+                var chips = row.children;
+                for (var i = 0; i < chips.length; i++) {
+                    var sp = chips[i];
+                    var m = /wbPickComp\('([^']*)'\)/.exec(sp.getAttribute('onclick') || '');
+                    var name = m ? m[1] : '';
+                    var on = !!name && name === cur;
+                    sp.setAttribute('data-on', on ? '1' : '0');
+                    sp.style.background = on ? 'var(--c-a)' : 'var(--surface-2)';
+                    sp.style.color = on ? '#fff' : 'var(--text)';
+                    sp.style.borderColor = on ? 'var(--c-a)' : 'var(--line)';
+                    sp.style.fontWeight = on ? '600' : '400';
+                }
+            }
+            // 输入框本身也给一个「已匹配」描边，选中状态更明显
+            if (el) {
+                var matched = false;
+                try { matched = !!(evCurrent() || {})._idx; } catch (e) {}
+                if (matched) el.classList.add('wb-matched'); else el.classList.remove('wb-matched');
             }
         }
 
