@@ -1393,6 +1393,20 @@ def _stream_llm(prompt, field, every=8):
     return "".join(buf).strip()
 
 
+def _stream_llm_guarded(prompt, field, max_retry=1):
+    """流式生成 + 复读兜底：检测到「循环复读」时，追加强约束重跑一轮。"""
+    text = _stream_llm(prompt, field)
+    for _ in range(max_retry):
+        if not _is_repetitive(text):
+            break
+        print(f"[antiloop] {field} 检测到循环复读，追加强约束重跑")
+        guarded = (prompt +
+                   "\n\n【重要警告：你上一版输出出现了「同一句话反复循环重复」的严重问题，"
+                   "本次必须每一段写不同内容、每一句都不重复，否则判不合格。】")
+        text = _stream_llm(guarded, field)
+    return text
+
+
 def _build_outline(state: CompetitionState) -> str:
     """Step 1 · 构思纲要：先论证站位与创新点、分配各章要点，再动笔写正文。"""
     prompt = f"""你是科创赛事申报书的主笔。在动笔写正文之前，先为下面这个项目构思一份**写作纲要**。
@@ -1587,7 +1601,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_humanize_spec(state)}
 {_PROPOSAL_SPEC}
 """
-    proposal = _stream_llm(prompt, "proposal")
+    proposal = _stream_llm_guarded(prompt, "proposal")
 
     # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
     proposal, patch_count = _selfcheck_proposal(state, proposal)
@@ -1664,7 +1678,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_competition_focus(state)}
 """
     proposal, n = _expand_to_length(
-        _stream_llm(prompt, "proposal"), 1100,
+        _stream_llm_guarded(prompt, "proposal"), 1100,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
