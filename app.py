@@ -698,6 +698,33 @@ def list_feedback():
     return jsonify({"success": True, "feedback": items, "total": len(items)})
 
 
+@app.route('/api/feedback/export')
+def export_feedback():
+    """一键导出全部反馈为 CSV（UTF-8 BOM，Excel 直接打开不乱码）。"""
+    import csv
+    from io import BytesIO
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, history_id, content, created_time FROM feedback ORDER BY id ASC").fetchall()
+    conn.close()
+
+    buf = BytesIO()
+    # 用 BOM 前缀让 Excel 正确识别 UTF-8 中文
+    text = "\ufeff"
+    text += "ID,关联历史ID,反馈内容,提交时间\r\n"
+    for r in rows:
+        content = (r["content"] or "").replace('"', '""')
+        text += '%d,%s,"%s",%s\r\n' % (
+            r["id"], r["history_id"] if r["history_id"] is not None else "",
+            content, r["created_time"] or "")
+    buf.write(text.encode("utf-8"))
+    buf.seek(0)
+    fname = "feedback_%s.csv" % datetime.now().strftime("%Y%m%d_%H%M")
+    return send_file(buf, mimetype="text/csv", as_attachment=True, download_name=fname)
+
+
 @app.route('/admin')
 def admin_dashboard():
     """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
@@ -717,6 +744,19 @@ def admin_dashboard():
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 10").fetchall()
     conn.close()
 
+    # 今日大模型调用额度
+    quota_calls = 0
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "quota.json"),
+                  encoding="utf-8") as _f:
+            _q = json.load(_f)
+        if _q.get("date") == today:
+            quota_calls = int(_q.get("calls", 0) or 0)
+    except Exception:
+        pass
+    quota_limit = 500
+    quota_remaining = max(0, quota_limit - quota_calls)
+
     fb_items = []
     for r in feedbacks:
         fb_items.append('<li><div class="t">%s</div><div>%s</div></li>'
@@ -734,6 +774,7 @@ h1{font-size:22px;margin:0 0 18px}
 .card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .num{font-size:26px;font-weight:700;color:#2563eb}
 .label{font-size:12px;color:#6b7280;margin-top:4px}
+.banner{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:10px;padding:12px 14px;font-size:15px;font-weight:600;margin-bottom:16px}
 h2{font-size:16px;margin:18px 0 10px}
 ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
@@ -741,15 +782,19 @@ li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
 li.empty{color:#9ca3af;text-align:center;padding:22px}
 </style></head><body><div class="wrap">
 <h1>赛创助手 · 后台数据</h1>
+<div class="banner">🟢 服务运行正常</div>
 <div class="cards">
 <div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
 <div class="card"><div class="num">%d</div><div class="label">今日生成</div></div>
+<div class="card"><div class="num">%d</div><div class="label">今日剩余额度</div></div>
 <div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 </div>
 <h2>最近 10 条反馈</h2>
 <ul>%s</ul>
-</div></body></html>""" % (total_gen, today_gen, avg_rating, rated_count, feedback_total, fb_html)
+<div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 CSV</a></div>
+</div></body></html>""" % (total_gen, today_gen, quota_remaining,
+                              avg_rating, rated_count, feedback_total, fb_html)
     return html
 
 
