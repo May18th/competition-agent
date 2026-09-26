@@ -5601,8 +5601,12 @@ mark.wb-ph {
                                     });
                                     paintPartial(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
+                                    var _eta = parseInt(res2.eta_seconds || 0, 10);
+                                    var _etaTxt = _eta > 0
+                                        ? '预计还需 ' + (_eta >= 60 ? ('约 ' + Math.round(_eta / 60) + ' 分钟') : ('约 ' + _eta + ' 秒'))
+                                        : '';
                                     _setBar(res2.pct || 0,
-                                        (isOptimize ? '优化' : '深度版') + '预计 2-3 分钟，正在生成内容，无需等待，可以先去做别的事'
+                                        (isOptimize ? '优化' : '深度版') + (_etaTxt || '预计 2-3 分钟') + '，正在生成内容，无需等待，可以先去做别的事'
                                         + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
                                         + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
                                         + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
@@ -6607,6 +6611,8 @@ mark.wb-ph {
                     area.style.display = 'block';
                     area.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
+                // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
+                try { switchTab(null, 'proposal'); } catch (e) {}
                 if (modal) modal.style.display = 'none';
                 wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
             } catch (e) {
@@ -7063,7 +7069,9 @@ window.addEventListener('resize', function () {
             return '<option value="' + ESC(t.key) + '"' + (t.key === cur ? ' selected' : '') + '>' +
                    ESC(nm) + '</option>';
         }).join('');
-        bar.style.display = '';
+        // 注意：样式表里 #wbStyleBar 初始是 display:none，
+        // 这里必须显式写 flex —— 写成 '' 会回落到样式表的 none，条子永远不出现
+        bar.style.display = 'flex';
     }
     window.wbStyleQuick = function () {
         var sel = document.getElementById('styleQuickSel');
