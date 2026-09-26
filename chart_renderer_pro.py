@@ -287,6 +287,63 @@ def _heatmap(ax, data, S, t):
     return True
 
 
+def _stacked(ax, data, S, t):
+    """堆叠柱状图：展示构成/占比随类别变化（收入结构、成本结构、渠道结构）。"""
+    cats = [str(x) for x in (data.get("categories") or [])]
+    series = data.get("series") or []
+    if not cats or not series:
+        return False
+    x = np.arange(len(cats))
+    w = 0.52
+    bottom = np.zeros(len(cats))
+    for i, s in enumerate(series[:4]):
+        vals = [_cr._f(v) for v in (s.get("values") or [])][: len(cats)]
+        vals = np.array(vals + [0.0] * (len(cats) - len(vals)))
+        col = S[i % len(S)]
+        ax.bar(x, vals, width=w, bottom=bottom, color=col,
+               edgecolor=t["card"], linewidth=1.5, zorder=3)
+        bottom = bottom + vals
+    ax.set_xticks(x)
+    ax.set_xticklabels(cats, color=FG)
+    if data.get("ylabel"):
+        ax.set_ylabel(str(data["ylabel"]), color=FG_DIM, fontsize=11.5)
+    ax.legend([str(s.get("name") or f"系列{i+1}") for i, s in enumerate(series[:4])],
+              fontsize=10, frameon=False, labelcolor=FG_DIM)
+    return True
+
+
+def _gauge(ax, data, S, t):
+    """进度环：单个指标完成度/评分，中心大字显示数值。"""
+    val = _cr._f(data.get("value"))
+    mx = _cr._f(data.get("max")) or 100.0
+    if mx <= 0:
+        return False
+    ratio = max(0.0, min(1.0, val / mx))
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.xaxis.grid(False)
+    ax.yaxis.grid(False)
+    r = 0.62
+    theta_bg = np.linspace(0, 2 * np.pi, 320)
+    ax.plot(np.cos(theta_bg) * r, np.sin(theta_bg) * r,
+            color=AXIS, linewidth=16, zorder=2)
+    if ratio > 0:
+        theta = np.linspace(-np.pi / 2, -np.pi / 2 + ratio * 2 * np.pi, 240)
+        ax.plot(np.cos(theta) * r, np.sin(theta) * r, color=ACCENT,
+                linewidth=16, solid_capstyle="round", zorder=3)
+    ax.text(0, 0.06, f"{_fmt(val)}{str(data.get('unit') or '')}",
+            ha="center", va="center", fontsize=32, color=FG,
+            fontweight="bold", zorder=4)
+    ax.text(0, -0.3, str(data.get("label") or ""), ha="center", va="center",
+            fontsize=13, color=FG_DIM, zorder=4)
+    ax.set_xlim(-1.15, 1.15)
+    ax.set_ylim(-1.15, 1.15)
+    ax.set_aspect("equal")
+    return True
+
+
 def _line(ax, data, S, t):
     xs = [str(x) for x in (data.get("x") or [])]
     series = data.get("series") or []
@@ -607,6 +664,10 @@ def render(chart, out_dir, theme=None):
             ok = _hbar(ax, data, t["series"], t)
         elif ctype in ("heatmap", "risk", "riskmap"):
             ok = _heatmap(ax, data, t["series"], t)
+        elif ctype in ("stacked", "stackbar"):
+            ok = _stacked(ax, data, t["series"], t)
+        elif ctype in ("gauge", "progress", "ring"):
+            ok = _gauge(ax, data, t["series"], t)
         elif ctype in ("line", "trend"):
             ok = _line(ax, data, t["series"], t)
         elif ctype in ("timeline", "gantt"):
