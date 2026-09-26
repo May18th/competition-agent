@@ -700,9 +700,10 @@ def list_feedback():
 
 @app.route('/api/feedback/export')
 def export_feedback():
-    """一键导出全部反馈为 CSV（UTF-8 BOM，Excel 直接打开不乱码）。"""
-    import csv
+    """一键导出全部反馈为格式化 Excel（表头加粗底色、列宽自适应、冻结表头、斑马纹）。"""
     from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -710,19 +711,52 @@ def export_feedback():
         "SELECT id, history_id, content, created_time FROM feedback ORDER BY id ASC").fetchall()
     conn.close()
 
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "用户反馈"
+
+    headers = ["提交时间", "反馈内容", "关联历史ID"]
+    header_fill = PatternFill("solid", fgColor="2563EB")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    thin = Side(style="thin", color="D9D9D9")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    zebra_fill = PatternFill("solid", fgColor="F3F4F6")
+
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    for i, r in enumerate(rows, start=2):
+        vals = [r["created_time"] or "",
+                r["content"] or "",
+                r["history_id"] if r["history_id"] is not None else ""]
+        for col, v in enumerate(vals, 1):
+            cell = ws.cell(row=i, column=col, value=v)
+            cell.border = border
+            cell.font = Font(size=11)
+            cell.alignment = Alignment(vertical="top", wrap_text=(col == 2))
+            if i % 2 == 0:
+                cell.fill = zebra_fill
+
+    if not rows:
+        ws.cell(row=2, column=2, value="暂无反馈")
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 14
+    ws.freeze_panes = "A2"
+
     buf = BytesIO()
-    # 用 BOM 前缀让 Excel 正确识别 UTF-8 中文
-    text = "\ufeff"
-    text += "ID,关联历史ID,反馈内容,提交时间\r\n"
-    for r in rows:
-        content = (r["content"] or "").replace('"', '""')
-        text += '%d,%s,"%s",%s\r\n' % (
-            r["id"], r["history_id"] if r["history_id"] is not None else "",
-            content, r["created_time"] or "")
-    buf.write(text.encode("utf-8"))
+    wb.save(buf)
     buf.seek(0)
-    fname = "feedback_%s.csv" % datetime.now().strftime("%Y%m%d_%H%M")
-    return send_file(buf, mimetype="text/csv", as_attachment=True, download_name=fname)
+    fname = "用户反馈_%s.xlsx" % datetime.now().strftime("%Y%m%d_%H%M")
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name=fname)
 
 
 @app.route('/admin')
@@ -792,7 +826,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 </div>
 <h2>最近 10 条反馈</h2>
 <ul>%s</ul>
-<div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 CSV</a></div>
+<div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
 </div></body></html>""" % (total_gen, today_gen, quota_remaining,
                               avg_rating, rated_count, feedback_total, fb_html)
     return html

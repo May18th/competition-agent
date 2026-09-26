@@ -23,8 +23,8 @@ import time
 CHECK_INTERVAL = 20          # 探活间隔（秒）
 STARTUP_WAIT = 25            # 拉起后最多等它多久
 
-# 2026-09-26 置 True：站点在云上，本机守护退役（详见文件头说明）
-RETIRED = True
+# 2026-09-26 重新启用：用户仍用本机 8080 调试，守护接管自动重启（详见文件头说明）
+RETIRED = False
 
 PYW = r'C:\Users\34984\.conda\envs\rag-dev\pythonw.exe'
 PY = r'C:\Users\34984\.conda\envs\rag-dev\python.exe'
