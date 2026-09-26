@@ -2126,8 +2126,9 @@ mark.wb-ph {
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>window.marked || document.write('<script src="/static/marked.min.js"><\/script>');</script>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="/static/echarts.min.js"><\/script>');</script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
     <script>
     if (typeof marked === 'undefined') {
@@ -2148,6 +2149,20 @@ mark.wb-ph {
         var PH_RE = /【[^】]{2,60}】/g;
         window.marked.parse = function (t) {
             var h = _origParse(String(t == null ? '' : t));
+            // XSS 防护：LLM 输出可能夹带原始 HTML，先过白名单过滤（DOMPurify 会自动拦 javascript: 等危险 URL）
+            if (window.DOMPurify) {
+                try {
+                    h = DOMPurify.sanitize(h, {
+                        ALLOWED_TAGS: ['p','br','h1','h2','h3','h4','h5','h6','ul','ol','li','strong','em','b','i','u','s','blockquote','table','thead','tbody','tr','th','td','hr','code','pre','a','img','mark','span','div'],
+                        ALLOWED_ATTR: ['href','src','alt','title','class','colspan','rowspan']
+                    });
+                } catch (e) { /* 过滤失败不能影响正文 */ }
+            } else {
+                // 兜底：CDN 没加载 DOMPurify 时，至少去掉 script / on* 事件 / javascript: 链接
+                h = h.replace(/<script[\s\S]*?<\/script>/gi, '')
+                     .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+                     .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*\2/gi, '$1="#"');
+            }
             try {
                 h = h.replace(PH_RE, function (m) {
                     return '<mark class="wb-ph" title="AI 编不出来的内容，必须你自己填">'
@@ -5195,11 +5210,12 @@ mark.wb-ph {
             ['speech_script',       'speechScript',       'defense']
         ];
         var _streamLen = {};          // 字段 -> 已渲染字数，用于判断是否有新增
+        var _streamAccum = {};        // 字段 -> 已累积全文（配合后端 cursor 增量，只拉新增后缀）
         var _streamShown = false;     // 结果区是否已因流式内容提前展开
         var _streamTotal = 0;         // 已产出总字数（给进度条显示）
 
         function streamReset() {
-            _streamLen = {}; _streamShown = false; _streamTotal = 0;
+            _streamLen = {}; _streamAccum = {}; _streamShown = false; _streamTotal = 0;
             document.querySelectorAll('.content-block.streaming').forEach(function (el) {
                 el.classList.remove('streaming');
             });
@@ -5437,7 +5453,7 @@ mark.wb-ph {
                             reject(new Error('等待超时（5 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
                             return;
                         }
-                        fetch('/api/status/' + start.task_id)
+                        fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)))
                             .then(r => r.json())
                             .then(res2 => {
                                 if (!res2.success) {
@@ -5449,7 +5465,12 @@ mark.wb-ph {
                                 if (res2.status === 'running') {
                                     const sec = Math.round((Date.now() - t0) / 1000);
                                     // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
-                                    paintPartial(res2.partial);
+                                    // cursor 增量：后端只回每个字段「新增后缀」，这里累加成全文再渲染
+                                    var _p = res2.partial || {};
+                                    Object.keys(_p).forEach(function (f) {
+                                        _streamAccum[f] = (_streamAccum[f] || '') + (_p[f] || '');
+                                    });
+                                    paintPartial(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
                                     _setBar(res2.pct || 0,
                                         (isOptimize ? '优化' : '深度版') + '预计 2-3 分钟，正在生成内容，无需等待，可以先去做别的事'
