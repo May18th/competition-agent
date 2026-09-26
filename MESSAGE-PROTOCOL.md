@@ -692,5 +692,6 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - 前端已接 user_data：创意框下方新增「实测数据（选填）」采集区（试点单位/测试用户数/实测指标/成本 + 其它佐证），由 wbUserDataText() 拼成「字段名：值」纯文本，随 /api/generate_async 的 user_data 字段提交（无内容传空串）。
 - ⚠️ 格式约定：后端 _user_data_ref 是 str(ud)[:3000] 直接进 prompt，所以**必须传字符串**，传对象会被 str() 成 Python dict 样子，prompt 变味。字段名统一 user_data（兼容旧名 real_data）。
 - 已纳入 WB_FORM_IDS 草稿持久化，并加入 wbAdvInit 折叠列表（手机端默认收起，不占首屏）。
-- 已对接straight验证：https 直连 POST /api/generate_async 带 user_data → 返回 task_id 并成功取消（致敬条款，非故障）。
+- 已真接口验证：https 直连 POST /api/generate_async 带 user_data → 返回 task_id，随后 /api/cancel 取消成功。
+- 排障备注：用 http:// + curl -L 打线上接口会拿到假的「400 Bad Request / 生成失败」（nginx 80→https 的 301 把 POST 改写了），不是服务故障，冒烟一律 https 直连。
 - 后端无改动。
