@@ -62,6 +62,58 @@ DOC_TYPE_MAP = {
     "金砖": "申报书",
 }
 
+# 赛道：只有知识库里真的写了赛道差异的赛事才配，其余一律不填（宁缺毋滥）。
+# 字段来源严格区分：
+#   desc / ban / ban_note  —— 来自 data/*.txt 官方原文，不要改写
+#   focus / avoid / sections —— 由赛道定位推导的建议，_derived 标记为 True，前端需注明「建议」
+TRACKS = {
+    "iCAN": [
+        {
+            "key": "创新",
+            "name": "创新赛道",
+            "desc": "双盲评审，侧重原创原型，不强制商业化",
+            "ban": ["学校名称", "学院/专业", "导师姓名与职称", "指导教师信息"],
+            "ban_note": "创新赛道为双盲评审，材料里出现学校、导师信息直接扣分",
+            "focus": ["与现有方案的具体差异（说清差在哪，不说「更优」）",
+                      "原型能跑、能现场演示，附实测数据",
+                      "技术实现细节：用了什么方法、为什么这么选"],
+            "avoid": ["商业融资计划", "市场空间预测", "盈利模式长篇论述"],
+            "sections": ["项目背景与要解决的问题", "现有方案与不足",
+                         "技术方案与创新点", "原型实现与测试结果",
+                         "应用价值与落地场景", "不足与后续计划"],
+        },
+        {
+            "key": "创业",
+            "name": "创业赛道",
+            "desc": "侧重商业落地、市场与盈利，适合已有订单试点项目",
+            "ban": [],
+            "ban_note": "",
+            "focus": ["可核对的商业数据：试点单位、测试用户数、客单价、成本结构",
+                      "已有订单或合作意向（写清哪一家、什么阶段）",
+                      "与竞品的具体差异与壁垒"],
+            "avoid": ["只有愿景没有数据的市场描述", "融资额、估值等无依据的数字"],
+            "sections": ["项目概述与市场机会", "目标用户与需求验证",
+                         "产品方案与核心壁垒", "商业模式与盈利路径",
+                         "试点进展与真实数据", "团队与执行计划", "风险与应对"],
+        },
+        {
+            "key": "挑战",
+            "name": "挑战赛道",
+            "desc": "企业联合命题专项赛道，含 AI 应用、机器人、电子信息等赛项；"
+                    "创新 / 创业赛道可叠加报名挑战赛道",
+            "ban": [],
+            "ban_note": "",
+            "focus": ["紧扣命题方的具体命题：命题是什么、你如何满足",
+                      "对照命题要求的逐条响应（评委按命题完成情况打分）",
+                      "原型针对命题场景的实测表现"],
+            "avoid": ["脱离命题自说自话", "把通用方案换个名字当成命题应答"],
+            "sections": ["命题理解与需求分析", "技术方案与命题对应",
+                         "实现与测试验证", "命题指标达成情况",
+                         "应用前景与迭代计划"],
+        },
+    ],
+}
+
 # 文档类型：能推断就推断，推断不出留给前端兜底
 DOC_TYPE_HINT = [
     ("作品说明书", "作品说明书"),
@@ -76,6 +128,26 @@ DOC_TYPE_HINT = [
 RE_PCT = re.compile(r"^[(\[]?\s*\d+\s*[)\].、]?\s*(.+?)\s*[：:]\s*(\d+(?:\.\d+)?)\s*%")
 RE_ITEM = re.compile(r"^[(\[]?\s*\d+\s*[)\].、]?\s*(.+)$")
 RE_DASH = re.compile(r"^[-*]\s*(.+)$")
+
+
+def norm_head(h):
+    """
+    标题归一化：去掉「（补充说明）」后缀。
+    知识库里出现了 `## 评分标准（AI 应用挑战赛）`，精确匹配「评分标准」会失配，
+    导致整块评分解析成 0 项——按归一化后的名字再匹配一次。
+    """
+    h = (h or "").strip()
+    h = re.sub(r"[（(].*?[)）]\s*$", "", h).strip()
+    return h
+
+
+def sec_get(sec, name):
+    """按归一化标题取块；同名多块（RoboMaster）内容合并"""
+    out = []
+    for k, v in sec.items():
+        if norm_head(k) == name:
+            out.extend(v)
+    return out
 
 
 def split_sections(text):
@@ -156,11 +228,62 @@ def guess_doc_type(key, title, intro):
     return ""
 
 
+RE_TRACK = re.compile(r"^[(（]?\s*\d+\s*[)）、.]\s*(.+?)\s*[：:]\s*(.+)$")
+
+
+def parse_tracks(key, sec):
+    """
+    赛道：官方描述以知识库 `## 赛道设置` 为准（Codex 改了 txt 就自动跟上），
+    TRACKS 里的 ban / focus / avoid / sections 作为结构化补充。
+    知识库没写赛道的赛事 → 返回空数组，前端不显示赛道选择（宁缺毋滥）。
+    """
+    raw = clean_items(sec_get(sec, "赛道设置"))
+    if not raw:
+        return []
+    tpl = {t["key"]: t for t in TRACKS.get(key, [])}
+
+    out = []
+    for ln in raw:
+        m = RE_TRACK.match(ln)
+        if not m:
+            continue
+        name, desc = m.group(1).strip(), m.group(2).strip()
+        tk = name.replace("赛道", "").strip()
+        ext = tpl.get(tk, {})
+        out.append({
+            "key": tk,
+            "name": name,
+            # 官方原文（知识库），不改写
+            "desc": desc,
+            "ban": ext.get("ban", []),
+            "ban_note": ext.get("ban_note", ""),
+            "focus": ext.get("focus", []),
+            "avoid": ext.get("avoid", []),
+            "sections": ext.get("sections", []),
+            # 告诉前端：后面这些是我们推导的，不是官方原文，显示时要标注
+            "derived": bool(ext),
+        })
+    return out
+
+
+def title_of(s):
+    """
+    从一条内容里取出「章节标题」本体。
+    知识库常见写法：`(2)市场与需求分析（行业 / 人群规模、目标人群构成、核心痛点场景…）`
+    括号里是写作要点，不是标题的一部分。
+    之前直接按整条长度过滤，把这类真章节（括号很长）误杀了——现在只取括号前的部分。
+    """
+    s = (s or "").strip()
+    s = re.sub(r"^[(（]?\s*\d+\s*[)）、.]\s*", "", s)   # 去编号
+    s = re.split(r"[（(]", s, 1)[0]                     # 去括号内的要点
+    return s.strip(" ：:，,。")
+
+
 def is_real_section(s):
     """
-    判断一条内容是不是真的「章节标题」。
+    判断一条内容是不是真的「章节标题」（调用前先过 title_of 取标题本体）。
     知识库里有些块标题写着「申报书章节」，内容却是一整句说明
-    （例：iCAN 写的是「创新赛道：双盲评审，侧重原创原型，不强制商业化…」）。
+    （例：iCAN 旧版写的是「创新赛道：双盲评审，侧重原创原型，不强制商业化…」）。
     这种不能当章节显示给学生——他会照着写成章节名。
     章节标题的特征：短、没有句号分号、不是一句完整的话。
     """
@@ -190,17 +313,20 @@ def main():
 
         intro = " ".join(x.strip() for x in sec.get("比赛介绍", []) if x.strip()).strip()
 
-        scoring, orphan = parse_scoring(sec.get("评分标准", []))
-        sections = clean_items(sec.get("申报书章节", []))
+        # 用 sec_get 而非 sec.get：标题可能带括号后缀（如「评分标准（AI 应用挑战赛）」），
+        # 精确匹配会整块失配，解析成 0 项
+        scoring, orphan = parse_scoring(sec_get(sec, "评分标准"))
+        sections = clean_items(sec_get(sec, "申报书章节"))
         # 认不出来的行多半是写错标题的章节（RoboMaster），放到章节前面
         if orphan:
             sections = orphan + sections
-        # 丢掉明显是整句的条目：知识库里 iCAN / 国创 的「申报书章节」块
-        # 实际写的是赛道说明、结题要求，直接显示会让学生把一整句当章节名
-        sections = [s for s in sections if is_real_section(s)]
+        # 先取标题本体（去编号 + 去括号要点），再判断是不是真章节：
+        # 知识库里 iCAN / 国创 的「申报书章节」块曾写过赛道说明、结题要求，
+        # 直接显示会让学生把一整句当章节名
+        sections = [t for t in (title_of(s) for s in sections) if is_real_section(t)]
 
-        pref = clean_items(sec.get("偏好方向", []))
-        deduct = " ".join(x.strip() for x in sec.get("常见扣分点", []) if x.strip()).strip()
+        pref = clean_items(sec_get(sec, "偏好方向"))
+        deduct = " ".join(x.strip() for x in sec_get(sec, "常见扣分点") if x.strip()).strip()
 
         keys = [key, title.replace('"', "").strip()] + ALIAS.get(key, [])
         keys = list(dict.fromkeys([k for k in keys if k]))
@@ -221,10 +347,12 @@ def main():
             "gaps": ([] if scoring else ["评分标准"]) +
                     ([] if sections else ["章节要求"]) +
                     ([] if deduct else ["常见扣分点"]),
+            # 赛道：只有知识库真写了 `## 赛道设置` 的才有（目前仅 iCAN），其余为空数组
+            "tracks": parse_tracks(key, sec),
         })
 
     data = {
-        "version": "2026-09-26",
+        "version": "2026-09-26.2",
         "source": "由 data/*.txt 解析生成（后端知识库）",
         "count": len(items),
         "items": items,
@@ -235,9 +363,10 @@ def main():
 
     print("生成 %s（%d 个赛事）\n" % (OUT, len(items)))
     for it in items:
-        print("%-12s 评分%d项 章节%d项 扣分点:%s 文档:%s" % (
+        print("%-12s 评分%d项 章节%d项 扣分点:%s 文档:%s 赛道:%s" % (
             it["key"], len(it["scoring"]), len(it["sections"]),
-            "有" if it["deduct"] else "无", it["doc_type"] or "(待定)"))
+            "有" if it["deduct"] else "无", it["doc_type"] or "(待定)",
+            "%d个" % len(it["tracks"]) if it["tracks"] else "-"))
 
 
 if __name__ == "__main__":

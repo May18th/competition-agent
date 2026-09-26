@@ -266,7 +266,7 @@ def _assess_and_summarize(text, max_len=4000):
         return ((text or "")[:60] + "…") if len(text or "") > 60 else (text or ""), 0, "评估失败"
 
 
-def _record_upload(text, source_name=""):
+def _record_upload(text, source_name="", force_fanwen=False):
     """把用户上传的文本自动记录进记忆库（去重 + 自动打标签 + 质量评估 + 摘要）。"""
     if not text or not text.strip():
         return
@@ -281,8 +281,12 @@ def _record_upload(text, source_name=""):
         if not tags:
             tags = ["材料"]
         summary, score, reason = _assess_and_summarize(text)
-        # 质量门：≥75 分才归为「范文」，否则归「材料」
-        mem_type = "范文" if score >= 75 else "材料"
+        if force_fanwen:
+            # 官方获奖作品：绕过启发式打分，强制归为范文
+            mem_type, score = "范文", 90
+        else:
+            # 质量门：≥75 分才归为「范文」，否则归「材料」
+            mem_type = "范文" if score >= 75 else "材料"
         sid, _ = add_sample(text.strip(), tags, source=source_name or "用户上传",
                             type=mem_type, summary=summary, score=score)
         print(f"[kb] 已记录上传 #{sid}，类型={mem_type}，质量={score}分，摘要={summary}，理由={reason}")
@@ -344,6 +348,10 @@ def upload_pdf():
                             "competition_name": competition_name})
         except Exception as e:
             app_log.warn("kb", f"保存官方资料失败：{e}")
+    elif purpose == 'fanwen':
+        # 真实获奖稿：绕过启发式打分，强制归为「范文」（见材料清单 P0）
+        _record_upload(text, raw_name, force_fanwen=True)
+        return jsonify({"success": True, "text": text[:20000], "purpose": "fanwen"})
     _record_upload(text, raw_name)
     return jsonify({"success": True, "text": text[:20000]})
 
@@ -941,6 +949,7 @@ def upload_file():
     file = request.files['file']
     if not file or not file.filename:
         return jsonify({"success": False, "error": "没有文件"})
+    purpose = (request.form.get('purpose') or 'draft').strip()
     
     filename = secure_filename(file.filename)
     ext = filename.split('.')[-1].lower()
@@ -985,7 +994,10 @@ def upload_file():
         import re
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
-        _record_upload(text, file.filename)
+        if purpose == 'fanwen':
+            _record_upload(text, file.filename, force_fanwen=True)
+        else:
+            _record_upload(text, file.filename)
         return jsonify({"success": True, "text": text})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})

@@ -343,7 +343,7 @@ def parse_knowledge(content: str) -> dict:
     """把知识库 txt 解析成结构化字段（按 ## 标题切分）"""
     result = {
         "title": "", "intro": "", "scoring": "", "sections": "",
-        "preference": "", "penalty": "", "raw": content or "",
+        "preference": "", "penalty": "", "requirements": "", "raw": content or "",
     }
     if not content:
         return result
@@ -362,23 +362,25 @@ def parse_knowledge(content: str) -> dict:
             buf[current].append(line)
 
     def _join(keywords):
+        parts = []
         for k, v in buf.items():
             if any(kw in k for kw in keywords):
-                return "\n".join(v).strip()
-        return ""
+                parts.append("\n".join(v).strip())
+        return "\n".join(p for p in parts if p)
 
     result["intro"] = _join(["介绍", "简介"])
     result["scoring"] = _join(["评分", "打分"])
     result["sections"] = _join(["章节", "申报书", "结构", "必须包含"])
-    result["preference"] = _join(["偏好", "方向", "喜欢"])
+    result["preference"] = _join(["偏好", "方向", "喜欢", "区别"])
     result["penalty"] = _join(["扣分", "注意", "误区"])
+    result["requirements"] = _join(["立项", "选题", "结题", "赛道", "要求"])
     return result
 
 
 def get_competition_knowledge_structured(competition_name: str) -> dict:
     """按比赛名匹配，返回结构化知识库字段（matched=False 表示未收录）"""
     empty = {"matched": False, "matched_name": "", "title": "", "intro": "",
-             "scoring": "", "sections": "", "preference": "", "penalty": ""}
+             "scoring": "", "sections": "", "preference": "", "penalty": "", "requirements": ""}
     if not competition_knowledge:
         return empty
     scored = []
@@ -657,6 +659,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 - 申报书必须包含的章节：{kb['sections'] or '（知识库未提供，请按通用竞赛常识推断）'}
 - 偏好方向：{kb['preference'] or '（无）'}
 - 常见扣分点：{kb['penalty'] or '（无）'}
+- 立项/结题/赛道等其他要求：{kb.get('requirements') or '（无）'}
 """
     else:
         kb_block = "（知识库未收录该赛事，请根据用户上传的规则或通用竞赛常识分析）"
