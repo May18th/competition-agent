@@ -3404,6 +3404,29 @@ button:hover { transform: translateY(-1px); }
                      '</div>';
             }
 
+            // 三个上传入口（最容易传错的地方，写清楚）
+            h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">三个上传入口，别传错</div>';
+            h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
+                 '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
+                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，AI 在原文上优化</div>' +
+                 '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
+                 '· <b>选择文件</b>（赛事规则区）：比赛的官方文件，AI 按它的评分标准写</div>' +
+                 '<div style="padding: 6px 0;">' +
+                 '· <b>导入模板</b>（草稿区）：学校/官方模板，自动识别章节按它写</div>' +
+                 '<div style="margin-top: 6px; color: var(--text-mute);">支持 PDF / Word / TXT / Markdown；' +
+                 '图片和扫描版 PDF 读不出文字。</div>' +
+                 '</div>';
+
+            // 常见问题
+            h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">常见问题</div>';
+            h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
+                 '· 页面看着是旧的 → 刷新一下（电脑 Ctrl+F5）<br>' +
+                 '· 微信里只能选图片 → 换 Safari 打开，或直接复制文字粘贴<br>' +
+                 '· 深度版约 2 分钟属正常，卡住可点「终止生成」<br>' +
+                 '· 只有深度版才有 PPT 和图表<br>' +
+                 '· 出问题看「运行日志」页签，点「复制报告」发给开发' +
+                 '</div>';
+
             h += '<div style="padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-mute); font-size: 12.5px; line-height: 1.7; margin-bottom: 16px;">' +
                  '创意与草稿仅用于本次生成，不做模型训练、不外传；生成内容归你所有。' +
                  'AI 生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
