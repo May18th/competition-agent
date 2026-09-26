@@ -849,20 +849,37 @@ mark.wb-ph {
 
 /* ---------- 响应式（统一放最后） ---------- */
 @media (max-width: 768px) {
-    body { padding: 12px; }
+    /* 手机上把留白压掉：原来一屏只能看到标题 + 半张卡，要滑很久才摸到输入框 */
+    body { padding: 8px; }
     .container { padding: 0; }
-    .hero { padding: 30px 12px 22px; }
-    .hero h1 { font-size: 25px; }
-    .hero p { font-size: 14px; }
-    .card { padding: 20px; border-radius: 15px; }
+    .hero { padding: 14px 10px 10px; margin-bottom: 12px; }
+    .hero h1 { font-size: 21px; line-height: 1.35; }
+    .hero p { font-size: 13.5px; margin-top: 6px; }
+    .card { padding: 14px 12px; border-radius: 14px; margin-bottom: 12px; }
+    .card-title { font-size: 16px; margin-bottom: 12px; gap: 8px; }
+    .content-block { margin-bottom: 12px; }
+    .wb-formgrid { gap: 12px !important; }
+    .result-hero { padding: 14px 10px; }
+    #quickExportBar { padding: 12px; margin-bottom: 12px; }
+    #wbPhBar, #wbBanBar { padding: 10px 12px !important; margin-bottom: 12px !important; }
+    .tabs { padding: 4px; }
+    .tab { padding: 7px 9px; font-size: 12px; }
     .score-number { font-size: 42px; }
     /* 页签在手机上横向可滑，且藏掉滚动条，避免一整排挤在一起 */
     .tabs { padding: 5px; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
     .tab { white-space: nowrap; font-size: 12.5px; padding: 8px 10px; }
     .btn-primary { padding: 15px 20px; font-size: 16px; }
-    /* 三步引导在手机上竖排（横排三列会挤成一团） */
-    #wbGuide { grid-template-columns: 1fr; gap: 8px; }
+    /* 三步引导在手机上改成一屏一步、左右可滑：
+       竖排三行会把首屏撑爆，百度 / QQ / 夸克这类矮视口里常常只露出第 1、2 步 */
+    #wbGuide {
+        display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory; scrollbar-width: none; gap: 0; margin-bottom: 10px;
+    }
+    #wbGuide::-webkit-scrollbar { display: none; }
+    /* 不用 gap：部分旧内核（QQ/夸克的老 Chromium）不支持 flex gap，用 margin 兜底 */
+    .wb-guide-step { flex: 0 0 100%; margin-right: 8px; scroll-snap-align: start; padding: 11px 12px; }
+    .wb-guide-hint { display: block; }
     /* 手机上的快捷导出条：竖排 + 按钮全宽（手指点得到） */
     #quickExportBar { flex-direction: column; align-items: stretch !important; gap: 8px; }
     #quickExportBar button { width: 100%; padding: 13px 16px; font-size: 15px; }
@@ -952,15 +969,17 @@ mark.wb-ph {
 
 /* ---------- 窄屏（375px 一类小屏）：全部竖排、字放大、不溢出 ---------- */
 @media (max-width: 420px) {
-    body { padding: 10px 8px; }
+    body { padding: 6px; }
     .container { padding: 0; }
-    .hero { padding: 22px 4px 14px; }
-    .hero h1 { font-size: 22px; }
-    .hero p { font-size: 13.5px; }
-    .card { padding: 16px 13px; border-radius: 14px; }
-    /* 三步引导竖排，字号放大到 14px */
-    #wbGuide { grid-template-columns: 1fr; gap: 8px; }
-    .wb-guide-step { padding: 13px 14px; }
+    .hero { padding: 10px 4px 8px; margin-bottom: 10px; }
+    .hero h1 { font-size: 20px; line-height: 1.3; }
+    .hero p { font-size: 13px; }
+    .card { padding: 12px 10px; border-radius: 12px; margin-bottom: 10px; }
+    .card-title { font-size: 15px; margin-bottom: 10px; }
+    .result-hero { padding: 12px 8px; }
+    #tierBadge { margin-bottom: 10px !important; }
+    /* 三步引导：420px 下同样一屏一步横滑，字号适当放大 */
+    .wb-guide-step { padding: 12px 13px; }
     .wb-guide-txt { font-size: 14px; }
     .wb-guide-txt b { font-size: 14.5px; }
     /* 挤在一起的按钮组一律竖排全宽 */
@@ -989,6 +1008,39 @@ mark.wb-ph {
     .modal { padding: 14px; }
     .history-pager { flex-wrap: wrap; }
 }
+
+/* ---------- 微信 / QQ 内置浏览器引导 ---------- */
+#wbUaMask {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10000;
+    display: none; align-items: center; justify-content: center; padding: 18px;
+    background: rgba(6, 8, 14, .93);
+}
+#wbUaMask.on { display: flex; }
+.wb-ua-box {
+    width: 100%; max-width: 420px; padding: 20px; border-radius: 16px;
+    background: var(--surface-solid); border: 1px solid var(--line);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+.wb-ua-box h3 { font-size: 18px; color: var(--text); }
+.wb-ua-box ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.95; color: var(--text-dim); }
+.wb-ua-do {
+    margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    background: var(--c-a-soft); font-size: 13.5px; line-height: 1.75; color: var(--text);
+}
+.wb-ua-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.wb-ua-btns button {
+    padding: 13px; font-size: 15px; font-weight: 600; border: none; border-radius: 10px;
+    cursor: pointer; color: #fff; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%);
+}
+.wb-ua-btns button.ghost { background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); font-weight: 400; }
+/* 右上角箭头：指向「···」菜单的位置（不用 env()，老内核不支持会整条失效） */
+.wb-ua-arrow { position: absolute; top: 10px; right: 14px; display: flex; align-items: center; gap: 6px; color: #fff; }
+.wb-ua-arrow span {
+    padding: 3px 9px; border-radius: 20px; font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    background: rgba(255, 255, 255, .14); border: 1px dashed rgba(255, 255, 255, .55);
+}
+.wb-ua-arrow b { font-size: 26px; line-height: 1; }
+.wb-guide-hint { display: none; font-size: 12px; color: var(--text-mute); margin: 0 0 10px; }
 
 /* ---------- 全局提示 Toast ---------- */
 #wbToast {
@@ -1152,6 +1204,7 @@ mark.wb-ph {
                 <span class="wb-guide-ok">✓</span>
             </div>
         </div>
+        <div class="wb-guide-hint">← 左右滑动看第 2、3 步 →</div>
         <div id="wbGuideBar">
             <span>① 输创意 → ② 选简洁/深度版 → ③ 点生成</span>
             <button onclick="wbGuideExpand()">展开三步</button>
@@ -1177,7 +1230,7 @@ mark.wb-ph {
                 <span id="wbRestoreText"></span>
                 <button onclick="wbClearForm()" style="padding: 4px 10px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清空重写</button>
             </div>
-            <div style="display: grid; gap: 20px;">
+            <div class="wb-formgrid" style="display: grid; gap: 20px;">
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 赛事名称</label>
                     <!-- 既能下拉选，也能自己填（手机上没法从下拉里挑未收录的赛事） -->
@@ -1509,7 +1562,7 @@ mark.wb-ph {
 
             </div>
 
-            <div class="tabs">
+            <div class="tabs" id="resultTabs">
                 <button class="tab" id="exportTab" onclick="switchTab(event, 'export')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出中心</button>
                 <button class="tab active" id="analysisTab" onclick="switchTab(event, 'analysis')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 前期分析</button>
                 <button class="tab" id="deepTab" onclick="switchTab(event, 'deep')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 深度分析</button>
@@ -1864,6 +1917,7 @@ mark.wb-ph {
             <button onclick="exportOnePDF('proposalText', '项目申报书全文')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
             <button id="wbFabPpt" onclick="exportPptx()"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 下载路演 PPT</button>
             <button onclick="exportAll()"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
+            <button onclick="wbBackToResult()"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 回到生成内容</button>
             <button onclick="wbFabToggle()">收起</button>
         </div>
         <button id="wbFabMain" onclick="wbFabToggle()" aria-label="导出">导出</button>
@@ -2191,10 +2245,7 @@ mark.wb-ph {
         function exportSection(id, name) {
             var text = document.getElementById(id).innerText;
             var blob = new Blob([text], {type: "text/plain;charset=utf-8"});
-            var a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = name + ".txt";
-            a.click();
+            wbSaveBlob(blob, name + ".txt");
         }
         // DOM id -> 生成结果里的字段名（隐藏 tab 的 innerText 会是空串，必须走原始数据）
         var _DOM_TO_KEY = {
@@ -2270,10 +2321,7 @@ mark.wb-ph {
                     return;
                 }
                 var blob = await res.blob();
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = (mode === 'reformat' ? '申报书_标准排版.docx' : '优化后的申报书.docx');
-                a.click();
+                wbSaveBlob(blob, (mode === 'reformat' ? '申报书_标准排版.docx' : '优化后的申报书.docx'));
                 wbToast('已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
@@ -2397,7 +2445,10 @@ mark.wb-ph {
             setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
         })();
         // 三步引导卡片的打勾状态与折叠（做过的步骤自动打勾，全做完收成一行）
-        (function () { try { wbGuideInit(); } catch (e) {} })();
+        (function () {
+            try { wbUaCheck(); } catch (e) {}
+            try { wbGuideInit(); } catch (e) {}
+        })();
         // 顶部固定导出条（滚动时才出现）
         (function () {
             try { wbDockInit(); } catch (e) {}
@@ -2425,10 +2476,7 @@ mark.wb-ph {
                     return;
                 }
                 const blob = await res.blob();
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = name + ".docx";
-                a.click();
+                wbSaveBlob(blob, name + ".docx");
                 wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
@@ -2454,10 +2502,7 @@ mark.wb-ph {
                     return;
                 }
                 const blob = await res.blob();
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = name + ".pdf";
-                a.click();
+                wbSaveBlob(blob, name + ".pdf");
                 wbToast('「' + name + '」PDF已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
@@ -2512,10 +2557,7 @@ mark.wb-ph {
                     body: JSON.stringify(data)
                 });
                 const blob = await res.blob();
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = "科创赛事项目材料包.zip";
-                a.click();
+                wbSaveBlob(blob, "科创赛事项目材料包.zip");
                 wbToast('材料包已开始下载', { type: 'ok', ms: 3000 });
             } catch (e) {
                 wbToast('打包失败：' + (e && e.message ? e.message : e), { type: 'error' });
@@ -3123,6 +3165,54 @@ mark.wb-ph {
             setTimeout(function () { el.classList.remove('wb-guide-flash'); }, 1700);
             if (i === 0) { try { document.getElementById('idea').focus(); } catch (e) {} }
         }
+        /* ---------- 微信 / QQ 内置浏览器：打开就提示，不等用户踩坑 ---------- */
+        // 这些内核：不支持上传文件、复制、下载。必须一进页面就说清楚 + 给复制网址的出口，
+        // 否则用户会一直卡在"传不了 / 下不了"，还以为是我们坏了。
+        function wbUaKind() {
+            var ua = navigator.userAgent || '';
+            if (/micromessenger/i.test(ua)) return 'wechat';
+            if (/\bqq\//i.test(ua) || (/mqqbrowser/i.test(ua) && !/micromessenger/i.test(ua))) return 'qq';
+            if (/\bweibo/i.test(ua)) return 'weibo';
+            if (/dingtalk/i.test(ua)) return 'dingtalk';
+            return '';
+        }
+        function wbUaCheck() {
+            var k = wbUaKind();
+            if (!k) return false;
+            try { if (sessionStorage.getItem('wbUaTip') === '1') return true; } catch (e) {}
+            var m = document.getElementById('wbUaMask');
+            if (!m) return true;
+            var who = {wechat: '当前是 微信 内置浏览器', qq: '当前是 QQ 内置浏览器',
+                       weibo: '当前是 微博 内置浏览器', dingtalk: '当前是 钉钉 内置浏览器'}[k] || '';
+            var el = document.getElementById('wbUaWho');
+            if (el) el.textContent = who + '，这三件事做不了：';
+            m.className = 'on';
+            return true;
+        }
+        function wbUaClose() {
+            var m = document.getElementById('wbUaMask');
+            if (m) m.className = '';
+            try { sessionStorage.setItem('wbUaTip', '1'); } catch (e) {}
+        }
+        function wbUaCopy() {
+            var url = location.href;
+            function ok() { wbToast('网址已复制，去浏览器里粘贴打开', {type: 'ok', ms: 3200}); }
+            function fallback() {
+                try {
+                    var ta = document.createElement('textarea');
+                    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta); ok();
+                } catch (e) { wbToast('复制失败，请手动长按地址栏复制网址', {type: 'warn', ms: 3600}); }
+            }
+            // 微信里 navigator.clipboard 常常不可用，必须留 execCommand 兜底
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try { navigator.clipboard.writeText(url).then(ok, fallback); } catch (e) { fallback(); }
+            } else { fallback(); }
+        }
+        // 供下载逻辑判断：内置浏览器里点了下载只会"没反应"，要弹提示而不是静默失败
+        function wbInApp() { return !!wbUaKind(); }
+
         function wbGuideInit() {
             var g = document.getElementById('wbGuide');
             if (!g) return;
@@ -3149,6 +3239,19 @@ mark.wb-ph {
             }
             var sb = document.getElementById('startBtn');
             if (sb) sb.addEventListener('click', function () { wbGuideDone(2); });
+        }
+
+        /* ---------- 一键回到生成内容 ---------- */
+        // 结果区很长（评分 / 自查 / 校验 / 正文 / 图表…），读到一半想换栏目得手动往上滑很久。
+        // 这个按钮直接切到「申报与评审」并滚回结果区顶部的栏目栏。
+        function wbBackToResult() {
+            var t = document.getElementById('proposalTab');
+            if (t) { try { t.click(); } catch (e) {} }
+            var head = document.getElementById('resultTabs') || document.getElementById('resultArea');
+            if (!head) return;
+            try { head.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+            catch (e) { window.scrollTo(0, 0); }
+            try { if (document.getElementById('wbFab').className.indexOf('open') >= 0) wbFabToggle(); } catch (e) {}
         }
 
         /* ---------- 悬浮导出按钮 ---------- */
@@ -4512,10 +4615,7 @@ mark.wb-ph {
                     return;
                 }
                 var blob = await res.blob();
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = '路演PPT.pptx';
-                a.click();
+                wbSaveBlob(blob, '路演PPT.pptx');
                 wbToast('路演 PPT 已开始下载', { type: 'ok', ms: 3000 });
             } catch (e) {
                 wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
@@ -4523,13 +4623,32 @@ mark.wb-ph {
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
+        // 统一保存入口：内置浏览器里点了下载只会"没反应"，这里弹提示而不是静默失败；
+        // 正常手机浏览器把 a 挂到 DOM 上再点（部分内核不触发游离元素的 click），
+        // iOS 对 blob 下载的兼容也一般，补一句兜底提示。
+        function wbSaveBlob(blob, name) {
+            if (wbInApp()) {
+                wbUaCheck();
+                wbToast('微信 / QQ 里下载不了文件，请点右上角 ··· 用浏览器打开', {type: 'warn', ms: 4200});
+                return;
+            }
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = name; a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(function () { URL.revokeObjectURL(url); try { document.body.removeChild(a); } catch (e) {} }, 4000);
+            if (/iP(hone|ad|od)/.test(navigator.userAgent || '')) {
+                setTimeout(function () {
+                    wbToast('没弹出下载的话：长按文件 → 选「存储到文件」', {type: 'info', ms: 5000});
+                }, 1200);
+            }
+        }
+
         function exportSection(id, name) {
             var text = document.getElementById(id).innerText;
             var blob = new Blob([text], {type: "text/plain"});
-            var a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = name + ".txt";
-            a.click();
+            wbSaveBlob(blob, name + ".txt");
         }
         // 开始生成
         // ================= 分块流式渲染 =================
@@ -4785,10 +4904,10 @@ mark.wb-ph {
                                     // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
                                     paintPartial(res2.partial);
                                     _setBar(res2.pct || 0,
-                                        'AI正在' + (isOptimize ? '优化' : '生成') + '：'
-                                        + (res2.stage_label || '处理中') + '（已用 ' + sec + 's）'
+                                        (isOptimize ? '优化' : '深度版') + '预计 2-3 分钟，正在生成内容，无需等待，可以先去做别的事'
+                                        + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
                                         + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
-                                        + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
+                                        + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
                                     // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
                                     if (res2.stage === 'speech') {
                                         fetch('/api/speech_stream/' + start.task_id)
@@ -4796,8 +4915,8 @@ mark.wb-ph {
                                             .then(function (ss) {
                                                 if (ss && ss.success && ss.text) {
                                                     _setBar(res2.pct || 0,
-                                                        '正在撰写演讲稿：已生成 ' + ss.text.length + ' 字（已用 ' + sec + 's）'
-                                                        + (sec >= 120 ? '，较慢可点「终止生成」' : ''));
+                                                        '正在撰写演讲稿：已生成 ' + ss.text.length +
+                                                        ' 字（预计 2-3 分钟，无需等待，可以先去做别的事）');
                                                 }
                                             })
                                             .catch(function () {});
@@ -5804,6 +5923,27 @@ mark.wb-ph {
 </script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
+
+<!-- 微信 / QQ 内置浏览器：一进来就全屏引导去浏览器打开。
+     这些内核不支持上传文件、复制到剪贴板、下载文件；不先说清楚，
+     用户会卡在「传不了申报书」「下载没反应」两处，还以为是我们坏了 -->
+<div id="wbUaMask" role="dialog" aria-modal="true">
+    <div class="wb-ua-arrow"><span>···</span><b>↗</b></div>
+    <div class="wb-ua-box">
+        <h3>请用手机浏览器打开</h3>
+        <p id="wbUaWho" style="font-size: 13px; color: var(--text-dim); margin-top: 6px;"></p>
+        <ul>
+            <li>✗ 不能上传申报书（Word / PDF）</li>
+            <li>✗ 不能一键复制生成的内容</li>
+            <li>✗ 生成的 Word / PDF / PPT 下载不下来</li>
+        </ul>
+        <p class="wb-ua-do">请点右上角 <b>···</b> → <b>在浏览器打开</b>（iPhone 选 Safari，安卓选 Chrome / 夸克 / 百度浏览器）</p>
+        <div class="wb-ua-btns">
+            <button onclick="wbUaCopy()">复制网址，去浏览器粘贴</button>
+            <button class="ghost" onclick="wbUaClose()">我知道了，先随便看看</button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
