@@ -975,6 +975,13 @@ mark.wb-ph {
     font-size: 20px; font-weight: 700; box-shadow: 0 8px 22px rgba(0,0,0,.35);
     display: none; align-items: center; justify-content: center;
 }
+/* 选中段落改写按钮：随选区浮现 */
+#wbRewriteBtn {
+    position: fixed; z-index: 290; display: none;
+    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--c-a);
+    background: var(--c-a); color: #fff; cursor: pointer; font-size: 13px; font-weight: 600;
+    box-shadow: 0 8px 22px rgba(0,0,0,.4);
+}
 /* 首屏骨架屏 */
 #pageSkeleton {
     position: fixed; inset: 0; z-index: 9990; padding: 24px 18px;
@@ -1382,6 +1389,7 @@ mark.wb-ph {
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
+            <p>输入创意，3 分钟生成按比赛规则写的申报书初稿</p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -1543,6 +1551,7 @@ mark.wb-ph {
                     <textarea id="idea" placeholder="目标用户 · 应用场景 · 核心问题" rows="3" style="min-height: 80px;"></textarea>
                     <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
                         信息越具体，生成内容越精准
+                        <span style="color: var(--text-mute); opacity: .75;"> · 输入内容已自动保存，刷新不丢失</span>
                     </div>
                 </div>
 
@@ -1688,6 +1697,14 @@ mark.wb-ph {
                 <span class="sb-note">切换后下方 PPT 预览实时刷新，下载前随时可改</span>
             </div>
             <!-- 档位标识：由 JS 按 mode 填充（简洁快速版 / 深度完整版 · 已生成 N 个模块） -->
+            <!-- 自评/评分维度/提交检查：默认收起，不糊用户脸上 -->
+            <details id="scorePanel" style="margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+                <summary style="cursor: pointer; padding: 12px 16px; font-size: 14px; color: var(--text); list-style: none; display: flex; align-items: center; gap: 8px; user-select: none;">
+                    <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
+                    <span>AI 模拟自评 · 评分维度 · 提交前检查</span>
+                    <span style="margin-left: auto; color: var(--text-mute); font-size: 12px;">展开 ▾</span>
+                </summary>
+                <div style="padding: 0 16px 16px;">
             <div id="tierBadge" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;"></div>
             <div class="result-hero">
                 <div class="score-number" id="scoreNum">86</div>
@@ -1695,8 +1712,7 @@ mark.wb-ph {
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
                 <div class="score-meta">正文字数：<span id="wordCount">—</span> 字 · 本地查重 <span id="simInfo">—</span></div>
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
-                    这是本工具按该赛事评分维度做的<b>模拟自评</b>，不是真实评委打分，
-                    <b>不要把这个数字写进申报书</b>。
+                    这个分数是模拟评委给的，帮你定位薄弱部分，<b>不用写进正式材料</b>。
                 </div>
             </div>
 
@@ -1716,9 +1732,9 @@ mark.wb-ph {
                 <div style="font-weight: 700; color: var(--warn-text); margin-bottom: 6px;">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 交作品前，这三件事必须自己做
                 </div>
-                <div>① <b>查重风险</b>：AI 生成的文字在知网等系统里「AI 生成率」可能偏高，直接交有被判不合格的风险。用<b>「去 AI 味」档位</b>重跑，并把自己的话、自己的调研补进去。</div>
-                <div>② <b>核实数字</b>：正文里的测试数据、样本量、成本、文献，凡是模型可能编的，<b>逐条换成你真实跑出来的</b>。申报书里一个假数据，整个项目可信度就没了。</div>
-                <div>③ <b>补具体的人和场景</b>：把「广大大学生」改成「大二学生凌晨 2 点改申报书、翻了 20 篇论文仍写不出摘要」。评委看的就是这种具体的痛。</div>
+                <div style="margin-top:4px;">① 查重：用「去 AI 味」重跑，补进自己的话</div>
+                <div style="margin-top:4px;">② 核数：正文数字逐条换成你真实的数据</div>
+                <div style="margin-top:4px;">③ 补场景：改成具体的人和具体时刻</div>
             </div>
 
             <!-- 占位符统计：后端严禁编数据后，拿不准的会写成【待你填写：xxx】。
@@ -1741,6 +1757,8 @@ mark.wb-ph {
                     你选的赛道是<b>双盲评审</b>，材料里出现学校、导师信息<b>直接扣分</b>。请删掉后再导出。
                 </div>
             </div>
+                </div>
+            </details>
 
             <!-- 一句话定位 -->
             <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
@@ -2150,6 +2168,8 @@ mark.wb-ph {
     </div>
     <!-- 回到顶部：长文档滑下去后，右下角出现小箭头一键回顶 -->
     <button id="wbTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="回到顶部">↑</button>
+    <!-- 选中段落改写：在正文里选中文字后浮现，点一下让 AI 局部改写 -->
+    <button id="wbRewriteBtn" onclick="wbRewriteSelection()" aria-label="改写选中文字">✏️ 改写选中</button>
 
     <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
         <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
@@ -5663,6 +5683,8 @@ mark.wb-ph {
                     if (data.success) {
                         document.getElementById('skeletonArea').style.display = 'none';
                         document.getElementById('resultArea').style.display = 'block';
+                        // 默认直接看「申报与评审」（正文），不把规则解析/评委打分糊在用户脸上
+                        try { switchTab(null, 'proposal'); } catch (e) {}
                         // ===== 结果渲染：入队分帧，不一把梭 =====
                         // 微信 / 夸克 / 百度App 的内核在手机上一次性跑 15 个板块的
                         // marked.parse + innerHTML 会锁死主线程：卡顿、白屏、甚至渲染到一半丢内容。
