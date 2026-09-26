@@ -277,6 +277,27 @@ def get_official_doc(competition_name):
         return ""
 
 
+_INDUSTRY_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "knowledge_base", "industry_data.txt")
+_industry_cache = None
+
+
+def get_industry_data() -> str:
+    """读取可引用的真实行业/赛事数据（来源：权威公开数据，仅作背景/市场/社会价值引用）。"""
+    global _industry_cache
+    if _industry_cache is not None:
+        return _industry_cache
+    try:
+        if os.path.exists(_INDUSTRY_DATA_PATH):
+            with open(_INDUSTRY_DATA_PATH, encoding="utf-8") as f:
+                _industry_cache = f.read()
+        else:
+            _industry_cache = ""
+    except Exception:
+        _industry_cache = ""
+    return _industry_cache
+
+
 # 知识库格式要求（队友提交资料需包含的关键章节）
 KNOWLEDGE_SECTIONS = {
     "比赛介绍": ["介绍", "比赛"],
@@ -927,6 +948,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
 
 项目创意：{state['idea']}
 {_ref_block(state, '社会价值')}
+{_industry_ref()}
 
 请写：
 1. 社会价值（解决了什么社会问题，惠及哪些人群）
@@ -997,6 +1019,16 @@ def _official_ref(state: dict) -> str:
         return ""
     except Exception:
         return ""
+
+
+def _industry_ref() -> str:
+    """注入可引用的真实行业/赛事数据（封顶 2500 字）；无则空串。"""
+    data = get_industry_data()
+    if not data:
+        return ""
+    return ("\n【可引用的真实行业/赛事数据（权威公开数据，引用时保留原始口径、不改写数字；"
+            "只用于行业背景、市场前景、社会价值等宏观段落，不要硬塞进与本项目无关处）】\n"
+            + data[:2500] + "\n")
 
 
 _DEFAULT_CHAPTERS = """## 一、项目概述
@@ -1321,6 +1353,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {analysis_block}
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
+{_industry_ref()}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -1382,6 +1415,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 一句话定位：{state.get('one_liner','')}
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
+{_industry_ref()}
 
 【篇幅硬性要求】
 1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。

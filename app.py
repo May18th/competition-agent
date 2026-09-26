@@ -266,6 +266,7 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
                 school=None, team=None, advisor=None, competition_name=None):
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
+    text = _strip_identifying_text(text or "")
     show_school_advisor = True
     if _is_double_blind(competition_name):
         show_school_advisor = False
@@ -489,6 +490,7 @@ def export_word():
     charts = data.get('charts') or []
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
+    text = _strip_identifying_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
@@ -522,6 +524,7 @@ def export_pdf():
     title = data.get('title', '申报书')
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
+    text = _strip_identifying_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
@@ -686,13 +689,20 @@ def _run_graph(app, state):
 
 
 def _strip_identifying_text(t):
-    """剔除文本里的院校名称、指导教师姓名（高置信度模式，后处理兜底）。"""
+    """脱敏兜底：剔除院校、指导教师/负责人姓名、手机号、邮箱、身份证等身份信息。"""
     import re
     if not t:
         return t
-    # 指导教师 + 姓名（含职称）
+    # 手机号 / 座机
+    t = re.sub(r'1[3-9]\d{9}', '（手机号隐去）', t)
+    t = re.sub(r'0\d{2,3}[- ]?\d{7,8}', '（电话隐去）', t)
+    # 邮箱
+    t = re.sub(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '（邮箱隐去）', t)
+    # 身份证号（18 位）
+    t = re.sub(r'\b\d{17}[\dXx]\b', '（身份证号隐去）', t)
+    # 指导教师 / 负责人 + 姓名（含职称）
     t = re.sub(
-        r'(指导老师|指导教师)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
+        r'(指导老师|指导教师|负责人|队长|联系人)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
         '指导教师（隐去）', t)
     # 院校全称（高置信度，避免误伤「大学生」「商学院」等）
     t = re.sub(r'[\u4e00-\u9fa5]{2,4}(?:大学|学校)', '（隐去）', t)
