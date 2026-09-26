@@ -140,7 +140,6 @@ print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.j
 
 _ALIAS_GROUPS = [
     ["国创", "国创项目", "国创计划", "大创", "国家级大学生创新创业训练计划"],
-    ["挑战杯", "大挑", "小挑"],
     ["互联网+", "互联网加", "互联网＋"],
 ]
 
@@ -152,32 +151,55 @@ def _same_alias_group(a, b):
     return False
 
 
-def _competition_match(known, query):
-    """宽松匹配比赛名：去掉通用词后看是否有共同关键词"""
+_COMMON_WORDS = ["大学生", "全国", "中国", "国际", "大赛", "竞赛", "训练计划", "计划", "创新创业", "创业"]
+
+
+def _tokens(s):
+    for w in _COMMON_WORDS:
+        s = s.replace(w, " ")
+    return {t for t in s.split() if len(t) >= 2}
+
+
+def _match_score(known, query):
+    """匹配打分（0=不匹配）：精确=100，括号内子串=100，普通子串=90，token 相同=70，token 交集=50+，别名=40。"""
     if not known or not query:
-        return False
-    if known in query or query in known:
-        return True
+        return 0
+    if known == query:
+        return 100
+    if known in query:
+        # 出现在括号里（如「（小挑）」）说明是更具体的赛事名，加满分，避免品牌前缀串台
+        if re.search(r'[（(]' + re.escape(known) + r'[)）]', query):
+            return 100
+        return 90
+    if query in known:
+        return 80
     if _same_alias_group(known, query):
-        return True
-    common_words = ["大学生", "全国", "中国", "国际", "大赛", "竞赛", "训练计划", "计划", "创新创业", "创业"]
-    def _tokens(s):
-        for w in common_words:
-            s = s.replace(w, " ")
-        return {t for t in s.split() if len(t) >= 2}
-    return bool(_tokens(known) & _tokens(query))
+        return 40
+    kt, qt = _tokens(known), _tokens(query)
+    if kt and qt:
+        inter = kt & qt
+        if kt == qt:
+            return 70
+        if inter:
+            return 50 + len(inter)
+    return 0
 
 
 def get_competition_knowledge(competition_name: str) -> str:
     """根据比赛名称，匹配对应的知识库内容"""
     if not competition_knowledge:
         return ""
-    
-    # 宽松匹配：包含关系 或 关键词重叠
+    scored = []
     for known_name, content in competition_knowledge.items():
-        if _competition_match(known_name, competition_name):
-            return f"\n【知识库中关于{known_name}的资料】\n{content}\n"
-    
+        s = _match_score(known_name, competition_name)
+        if s > 0:
+            scored.append((s, len(known_name), known_name, content))
+    if not scored:
+        return ""
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    best = scored[0]
+    print(f"📚 知识库命中：{best[2]}（匹配度 {best[0]}），候选 {len(scored)} 个")
+    return f"\n【知识库中关于{best[2]}的资料】\n{best[3]}\n"
     return ""
 
 
@@ -359,13 +381,19 @@ def get_competition_knowledge_structured(competition_name: str) -> dict:
              "scoring": "", "sections": "", "preference": "", "penalty": ""}
     if not competition_knowledge:
         return empty
+    scored = []
     for known_name, content in competition_knowledge.items():
-        if _competition_match(known_name, competition_name):
-            parsed = parse_knowledge(content)
-            parsed["matched"] = True
-            parsed["matched_name"] = known_name
-            return parsed
-    return empty
+        s = _match_score(known_name, competition_name)
+        if s > 0:
+            scored.append((s, len(known_name), known_name, content))
+    if not scored:
+        return empty
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    known_name, content = scored[0][2], scored[0][3]
+    parsed = parse_knowledge(content)
+    parsed["matched"] = True
+    parsed["matched_name"] = known_name
+    return parsed
 
 
 # ============ 1. 定义共享状态 ============
