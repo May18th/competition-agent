@@ -1764,9 +1764,9 @@ mark.wb-ph {
 
             <div class="tabs" id="resultTabs">
                 <button class="tab" id="exportTab" onclick="switchTab(event, 'export')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出中心</button>
-                <button class="tab active" id="analysisTab" onclick="switchTab(event, 'analysis')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 前期分析</button>
+                <button class="tab" id="analysisTab" onclick="switchTab(event, 'analysis')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 前期分析</button>
                 <button class="tab" id="deepTab" onclick="switchTab(event, 'deep')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 深度分析</button>
-                <button class="tab" id="proposalTab" onclick="switchTab(event, 'proposal')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报与评审</button>
+                <button class="tab active" id="proposalTab" onclick="switchTab(event, 'proposal')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报与评审</button>
                 <button class="tab" id="chartsTab" style="display:none;" onclick="switchTab(event, 'charts')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-linechart"/></svg> 可视化图表</button>
                 <button class="tab" id="defenseTab" style="display:none;" onclick="switchTab(event, 'defense')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩准备</button>
                 <button class="tab" id="kbTab" onclick="switchTab(event, 'kb')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</button>
@@ -1779,7 +1779,7 @@ mark.wb-ph {
                 <div class="wb-anchor-scroll" id="wbAnchorScroll"></div>
             </div>
 
-            <div id="tab-analysis" class="tab-content active">
+            <div id="tab-analysis" class="tab-content">
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 规则解析 <button onclick="copyText('parsedRules')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="parsedRules"></div>
@@ -1948,7 +1948,7 @@ mark.wb-ph {
                     </div>
                 </div>
             </div>
-            <div id="tab-proposal" class="tab-content">
+            <div id="tab-proposal" class="tab-content active">
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
                     <div class="content-block" id="projectSummary"></div>
