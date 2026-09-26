@@ -6726,6 +6726,7 @@ window.addEventListener('resize', function () {
             if (AGENTS[i].s.indexOf(code) >= 0) { hit = AGENTS[i]; hi = i; break; }
         }
         if (!hit) return;
+        if (!st[hit.k]) st[hit.k] = { s: 'wait', label: '', t0: 0, ms: 0 };   // 未 reset 就先被调到的防御
         var now = Date.now();
         // 后端前几个节点并行跑、stage 会乱序跳变：只把「排在它前面」的收尾，
         // 后面的保持原状，免得把还没跑的标成已完成
@@ -6923,9 +6924,23 @@ window.addEventListener('resize', function () {
         if (typeof onThemeChange === 'function') onThemeChange();
         if (typeof wbToast === 'function') wbToast('已切到「' + sel.options[sel.selectedIndex].text + '」，下方预览已刷新', { type: 'ok', ms: 2000 });
     };
+    // 主题库是异步拉的，renderRich 之后再补一次，避免下拉框是空的
+    function styleFillSoon() {
+        styleFill();
+        setTimeout(styleFill, 900);
+        setTimeout(styleFill, 2500);
+    }
     if (typeof window.previewDeckStyle === 'function') {
         var _d = window.previewDeckStyle;
         window.previewDeckStyle = function () { var r = _d.apply(this, arguments); styleFill(); return r; };
+    }
+    if (typeof window.renderRich === 'function') {
+        var _r = window.renderRich;
+        window.renderRich = function () { var r = _r.apply(this, arguments); styleFillSoon(); return r; };
+    }
+    if (typeof window.wbPickTheme === 'function') {
+        var _t = window.wbPickTheme;
+        window.wbPickTheme = function () { var r = _t.apply(this, arguments); styleFill(); return r; };
     }
 
     // 导出给外部（paintPartial / 轮询路径直接用）
