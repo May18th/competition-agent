@@ -2696,7 +2696,29 @@ mark.wb-ph {
                         ti.style.display = 'block';
                     }
                 } else {
-                    tb.style.display = 'none';
+                    // 没赛道数据，但官方介绍里明明提到了赛道划分
+                    // （蓝桥杯「软件类/电子类」、西门子杯「工程设计/创新研发」、计算机设计「11 大类」）。
+                    // 这种情况必须说清楚：不然学生以为该比赛没有赛道，或者以为我们给的就是按赛道来的。
+                    var intro = (c._idx && c._idx.intro) || '';
+                    var mentioned = /赛道|大类|类（|软件类|电子类/.test(intro);
+                    if (mentioned) {
+                        tb.style.display = 'block';
+                        var chips2 = document.getElementById('evTrackChips');
+                        if (chips2) chips2.innerHTML = '';
+                        var ti2 = document.getElementById('evTrackInfo');
+                        if (ti2) {
+                            ti2.innerHTML =
+                                '<div style="color: var(--warn-text);">⚠ 这个比赛按官方划分是有赛道的，' +
+                                '但我们还没收录各赛道的差异规则 —— 现在按<b>通用要求</b>生成。</div>' +
+                                '<div style="margin-top: 4px; color: var(--text-mute); font-size: 12px;">' +
+                                _esc(intro) + '</div>' +
+                                '<div style="margin-top: 4px; color: var(--text-mute); font-size: 12px;">' +
+                                '赛道选错容易偏题，建议上传本赛事官方文件后再生成。</div>';
+                            ti2.style.display = 'block';
+                        }
+                    } else {
+                        tb.style.display = 'none';
+                    }
                 }
             }
 
