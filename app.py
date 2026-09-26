@@ -2108,6 +2108,27 @@ def get_task_status(task_id):
         t["updated_at"] = time.time()
     _stage = t.get("stage", "start")
     _label, _pct = stage_meta(_stage)
+    # 流式增量：前端传 cursor={字段:已见长度}，这里只回「新增后缀」，避免每次轮询都拉全量正文。
+    # 不传 cursor 时退回全量 partial，兼容旧前端。
+    _cursor = {}
+    _cursor_raw = request.args.get("cursor", "").strip()
+    if _cursor_raw:
+        try:
+            import json as _json_cursor
+            _c = _json_cursor.loads(_cursor_raw)
+            if isinstance(_c, dict):
+                _cursor = {str(k): int(v or 0) for k, v in _c.items()}
+        except Exception:
+            _cursor = {}
+    _partial = t.get("partial") or {}
+    if _cursor:
+        _delta = {}
+        for _f, _txt in _partial.items():
+            _txt = _txt or ""
+            _prev = _cursor.get(_f, 0)
+            if len(_txt) > _prev:
+                _delta[_f] = _txt[_prev:]
+        _partial = _delta
     # 预计剩余时间：按阶段进度百分比外推（已完成比例 -> 剩余比例）
     _eta = 0
     if t.get("status") == "running" and _pct and _pct > 0:
@@ -2121,7 +2142,7 @@ def get_task_status(task_id):
         "stage_label": _label,
         "pct": _pct,
         "eta_seconds": _eta,
-        "partial": t.get("partial"),
+        "partial": _partial,
         "updated_at": t["updated_at"]
     }
     if t["status"] == "done":
