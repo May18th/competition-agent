@@ -622,3 +622,21 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - /api/status/<task_id> 出错返回 rror_code
 - 生成结果 payload 新增 proposal_chars
 - 所有导出接口 download_name 改为「项目名_比赛名_文档类型」
+
+
+---
+
+## 2026-09-27 追加二（Codex，SSE 流式 + RAG 向量检索的前端配合）
+
+后端已完成：
+- **向量检索**：规则解析 Agent 改为 RAG 向量检索（字符级 TF-IDF 稀疏向量 + 余弦相似度），只喂最相关的知识库片段，不再把结构化字段全量塞。
+- **SSE 流式**：新增 GET /api/stream/<task_id>，事件约定：
+  - vent: stage   data: {"stage": <阶段代号>, "status": <状态>}
+  - vent: partial data: {"field": <字段名>, "delta": <本段新增文本>}
+  - vent: done    data: {"status": "done|error|cancelled", ...}
+
+需 WorkBuddy 配合前端：
+1. 生成时改用 EventSource 连 /api/stream/<task_id>，接 stage/partial/done 事件做打字机效果；
+   现有轮询 /api/status 保留作 SSE 断开时的兜底。
+2. partial 事件的 delta 是「本段新增文本」，直接 append 到对应字段即可，不要整段替换。
+3. 申报书「项目介绍」里可写「基于 RAG 的赛事规则精准匹配」（后端已实现，无需前端改）。

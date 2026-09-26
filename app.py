@@ -1745,6 +1745,64 @@ def get_task_status(task_id):
     return jsonify(resp)
 
 
+@app.route('/api/stream/<task_id>')
+def stream_generation(task_id):
+    """SSE 流式输出：生成过程边生成边推送，前端 EventSource 接打字机效果。
+
+    事件约定：
+      event: stage    data: {"stage": <阶段代号>, "status": <状态>}
+      event: partial  data: {"field": <字段名>, "delta": <本段新增文本>}
+      event: done     data: {"status": "done|error|cancelled", ...}
+    轮询 /api/status 仍保留，作为 SSE 断开时的兜底。
+    """
+    from flask import Response, stream_with_context
+    import json as _json
+
+    def gen():
+        t = tasks.get(task_id)
+        if not t:
+            yield 'event: error\ndata: {"error":"任务不存在或已过期"}\n\n'
+            return
+        sent = {}          # field -> 上次已推送的完整内容
+        last_stage = None
+        while True:
+            t = tasks.get(task_id)
+            if not t:
+                break
+            stage = t.get('stage', 'start')
+            if stage != last_stage:
+                last_stage = stage
+                yield 'event: stage\ndata: %s\n\n' % _json.dumps(
+                    {"stage": stage, "status": t.get("status")}, ensure_ascii=False)
+            partial = t.get('partial') or {}
+            for field, text in partial.items():
+                text = text or ''
+                prev = sent.get(field, '')
+                if text == prev:
+                    continue
+                # 逐段增量推送（打字机），字段被整体重写时才退化为全量
+                delta = text[len(prev):] if text.startswith(prev) else text
+                sent[field] = text
+                yield 'event: partial\ndata: %s\n\n' % _json.dumps(
+                    {"field": field, "delta": delta}, ensure_ascii=False)
+            status = t.get('status')
+            if status in ('done', 'error', 'cancelled'):
+                payload = {"status": status}
+                if status == 'done':
+                    payload["data"] = t.get("data")
+                else:
+                    payload["error"] = t.get("error")
+                    payload["error_code"] = t.get("error_code", "internal_error")
+                yield 'event: done\ndata: %s\n\n' % _json.dumps(payload, ensure_ascii=False)
+                break
+            time.sleep(0.3)
+
+    return Response(stream_with_context(gen()), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache',
+                             'X-Accel-Buffering': 'no',
+                             'Connection': 'keep-alive'})
+
+
 @app.route('/api/speech_stream/<task_id>')
 def speech_stream(task_id):
     """演讲稿流式预览：返回当前已生成的演讲稿片段。"""

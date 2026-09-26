@@ -12,6 +12,7 @@ from stage_reporter import report_stage as _report_stage, set_partial_field
 # ============ 配置 ============
 import os
 import re
+import math
 import threading
 
 from dotenv import load_dotenv
@@ -460,6 +461,91 @@ def get_competition_knowledge_structured(competition_name: str) -> dict:
     return parsed
 
 
+# ============ 知识库向量检索（RAG 精准匹配）============
+# 把知识库按章节切成片段，字符级 TF-IDF 稀疏向量化，按余弦相似度检索最相关片段。
+# 不引入深度学习 embedding（知识库小，TF-IDF 足够；避免模型下载/启动慢）。
+_kbv_chunks = []
+_kbv_term_df = {}
+_kbv_ready = False
+
+
+def _kbv_char_terms(text):
+    out = set()
+    for m in re.finditer(r'[a-zA-Z0-9]+|[\u4e00-\u9fff]', (text or '').lower()):
+        out.add(m.group(0))
+    return out
+
+
+def _kbv_build():
+    global _kbv_chunks, _kbv_term_df, _kbv_ready
+    _kbv_chunks = []
+    for comp, content in competition_knowledge.items():
+        parsed = parse_knowledge(content)
+        for field in ('scoring', 'sections', 'requirements', 'intro', 'preference', 'penalty'):
+            text = (parsed.get(field) or '').strip()
+            if not text:
+                continue
+            _kbv_chunks.append({
+                "competition": comp, "section": field,
+                "text": text, "terms": _kbv_char_terms(text),
+            })
+    _kbv_term_df = {}
+    for c in _kbv_chunks:
+        for t in c["terms"]:
+            _kbv_term_df[t] = _kbv_term_df.get(t, 0) + 1
+    _kbv_ready = True
+
+
+def _kbv_idf(term):
+    n = len(_kbv_chunks) or 1
+    return math.log((n + 1.0) / (1.0 + _kbv_term_df.get(term, 0))) + 1.0
+
+
+def _kbv_cosine(qterms, doc_terms):
+    q = {t: _kbv_idf(t) for t in qterms}
+    d = {t: _kbv_idf(t) for t in doc_terms}
+    common = set(q) & set(d)
+    dot = sum(q[t] * d[t] for t in common)
+    qn = math.sqrt(sum(v * v for v in q.values())) or 1.0
+    dn = math.sqrt(sum(v * v for v in d.values())) or 1.0
+    return dot / (qn * dn)
+
+
+def retrieve_knowledge(competition_name, query, top_k=3, max_chars=2500):
+    """检索与查询最相关的知识库片段；无命中返回空串。"""
+    global _kbv_ready
+    if not _kbv_ready:
+        try:
+            _kbv_build()
+        except Exception as e:
+            print(f"[kb_vector] 构建失败：{e}")
+            return ""
+    cands = [c for c in _kbv_chunks if c["competition"] == competition_name]
+    if not cands:
+        cands = _kbv_chunks
+    qterms = _kbv_char_terms(query)
+    if not qterms:
+        order = {"scoring": 0, "sections": 1, "requirements": 2, "intro": 3, "preference": 4, "penalty": 5}
+        cands.sort(key=lambda c: order.get(c["section"], 9))
+        sel = cands[:top_k]
+    else:
+        scored = []
+        for c in cands:
+            s = _kbv_cosine(qterms, c["terms"])
+            if s > 0:
+                scored.append((s, c))
+        scored.sort(key=lambda x: -x[0])
+        sel = [c for _, c in scored[:top_k]]
+    parts, total = [], 0
+    for c in sel:
+        t = c["text"]
+        if total + len(t) > max_chars:
+            continue
+        parts.append(t)
+        total += len(t)
+    return "\n\n".join(parts)
+
+
 # ============ 1. 定义共享状态 ============
 def merge_state(old, new):
     """并行的时候，后写的覆盖先写的"""
@@ -731,9 +817,19 @@ def _expand_to_length(text, min_chars, topic, rounds=2):
 def rule_parser_agent(state: CompetitionState) -> CompetitionState:
     """📋 规则解析 Agent：提取评分标准"""
     _report_stage("parsing_rules")
-    # 先查知识库（结构化，缺失字段明确标注，避免模型瞎编）
+    # 先按比赛名 + 创意做向量检索，取最相关的知识库片段（RAG 精准匹配）
+    comp = state.get('competition_name', '')
+    query = f"{comp} {state.get('idea', '')} 评分标准 申报书章节 偏好方向 扣分点 立项结题要求"
+    hits = ""
+    try:
+        hits = retrieve_knowledge(comp, query, top_k=5, max_chars=3200)
+    except Exception as e:
+        print(f"[kb] 向量检索跳过（退回结构化兜底）：{e}")
+    # 结构化字段兜底（匹配比赛名；缺失字段明确标注，避免模型瞎编）
     kb = get_competition_knowledge_structured(state['competition_name'])
-    if kb.get("matched"):
+    if hits:
+        kb_block = f"【基于 RAG 向量检索命中的知识库片段（{kb.get('matched_name') or comp}）】\n{hits}\n"
+    elif kb.get("matched"):
         kb_block = f"""【知识库中关于{kb['matched_name']}的资料】
 - 比赛介绍：{kb['intro'] or '（无）'}
 - 评分标准：{kb['scoring'] or '（无）'}
