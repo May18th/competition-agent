@@ -1160,6 +1160,14 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box"><h2>最近失败</h2><ul>%s</ul></div>
 </div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
+<div class="box" style="margin-top:14px"><h2>🧠 写作范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从当前范文库重新提炼「获奖写法共性规律」，注入生成 prompt（约耗 1 次 LLM 调用）。</p>
+<button id="distillBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏</button>
+<span id="distillMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
+<script>
+document.getElementById('distillBtn').onclick=function(){var b=this,m=document.getElementById('distillMsg');b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';fetch('/api/distill',{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent='完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};
+</script>
 </div></body></html>""" % (
         total_gen, today_gen,
         "good" if avg_rating >= 4 else ("bad" if avg_rating and avg_rating < 3 else ""),
@@ -2753,6 +2761,20 @@ def kb_delete(sample_id):
         return jsonify({"success": ok})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/distill', methods=['POST'])
+def distill_paradigm():
+    """后台一键重新蒸馏写作范式：读当前范文库，用 LLM 提炼共性规律写回 writing_paradigm.json。
+
+    成功后注入生成 prompt 的写作范式立即更新；失败返回错误且不覆盖旧范式。
+    """
+    try:
+        from kb_distill import distill_from_samples
+        result = distill_from_samples()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
 
 
 @app.route('/api/kb/tags')

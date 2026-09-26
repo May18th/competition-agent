@@ -150,25 +150,11 @@ def _flow(text):
 
 def render_markdown_to_pdf(markdown_text, out_path, title="作品说明书"):
     """把 Markdown 文本渲染成 A4 PDF。成功返回 out_path，失败抛异常。"""
-    def _watermark(canvas, doc):
-        """每页居中加浅灰斜向水印「可创无限团队」。"""
-        canvas.saveState()
-        canvas.setFont(_FONT, 44)
-        try:
-            canvas.setFillAlpha(0.18)
-        except Exception:
-            pass
-        canvas.setFillColor(colors.HexColor("#B9C0D4"))
-        canvas.translate(doc.pagesize[0] / 2, doc.pagesize[1] / 2)
-        canvas.rotate(42)
-        canvas.drawCentredString(0, 0, "可创无限团队")
-        canvas.restoreState()
-
     doc = SimpleDocTemplate(
         out_path, pagesize=A4,
         leftMargin=2.2 * cm, rightMargin=2.2 * cm,
         topMargin=2.0 * cm, bottomMargin=2.0 * cm,
         title=title,
     )
-    doc.build(_flow(markdown_text or ""), onFirstPage=_watermark, onLaterPages=_watermark)
+    doc.build(_flow(markdown_text or ""))
     return out_path
