@@ -794,6 +794,29 @@ button:hover { transform: translateY(-1px); }
     border: 1px solid rgba(34,211,238,.28) !important;
 }
 
+/* ---------- 占位符【待你填写：xxx】：必须一眼看见，别当真数据交上去 ---------- */
+mark.wb-ph {
+    background: rgba(245, 158, 11, .18);
+    color: #F59E0B;
+    border-bottom: 2px dashed #F59E0B;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    cursor: help;
+}
+#wbPhBar {
+    display: none;
+    background: rgba(245, 158, 11, .10);
+    border: 1px solid rgba(245, 158, 11, .35);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-dim);
+}
+#wbPhBar b { color: #F59E0B; }
+
 /* ---------- 分步引导：箭头指向 + 一句话，点一下就走 ---------- */
 .wb-coach-target {
     position: relative;
@@ -1041,6 +1064,11 @@ button:hover { transform: translateY(-1px); }
                         <option value="全国大学生广告艺术大赛"></option>
                         <option value="中国大学生服务外包创新创业大赛"></option>
                         <option value="全国大学生信息安全竞赛"></option>
+                        <!-- 队友补的官方资料，后端 data/ 已有对应文件；value 必须与文件名能匹配上 -->
+                        <option value="挑战杯中国大学生创业计划竞赛（小挑）"></option>
+                        <option value="西门子杯中国智能制造挑战赛"></option>
+                        <option value="RoboMaster全国大学生机器人大赛"></option>
+                        <option value="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）"></option>
                     </datalist>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
                         <span onclick="wbPickComp('iCAN大学生创新创业大赛')" style="padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
@@ -1272,6 +1300,17 @@ button:hover { transform: translateY(-1px); }
                 </div>
             </div>
 
+            <!-- 评分维度明细：judge_scores 带权重，说明「这个分数是怎么算出来的」。
+                 后端已把 judge_scores 存进历史记录，这里同步渲染（权重来自赛事要求卡） -->
+            <div id="judgeScoresBox" style="display: none; margin-bottom: 18px; padding: 14px 16px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);">
+                <div style="font-size: 13px; font-weight: 700; color: var(--text-dim); margin-bottom: 10px;">
+                    <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
+                    这个分数是怎么来的
+                    <span style="font-weight: 400; color: var(--text-mute); font-size: 12px;">按该赛事的评分维度加权</span>
+                </div>
+                <div id="judgeScoresList"></div>
+            </div>
+
             <!-- 提交前自查：查重风险 + 事实校验（评委视角最在意的两条硬伤） -->
             <div style="background: var(--warn-bg); border-left: 4px solid var(--warn-line); padding: 14px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.85; color: var(--text-dim);">
                 <div style="font-weight: 700; color: var(--warn-text); margin-bottom: 6px;">
@@ -1280,6 +1319,16 @@ button:hover { transform: translateY(-1px); }
                 <div>① <b>查重风险</b>：AI 生成的文字在知网等系统里「AI 生成率」可能偏高，直接交有被判不合格的风险。用<b>「去 AI 味」档位</b>重跑，并把自己的话、自己的调研补进去。</div>
                 <div>② <b>核实数字</b>：正文里的测试数据、样本量、成本、文献，凡是模型可能编的，<b>逐条换成你真实跑出来的</b>。申报书里一个假数据，整个项目可信度就没了。</div>
                 <div>③ <b>补具体的人和场景</b>：把「广大大学生」改成「大二学生凌晨 2 点改申报书、翻了 20 篇论文仍写不出摘要」。评委看的就是这种具体的痛。</div>
+            </div>
+
+            <!-- 占位符统计：后端严禁编数据后，拿不准的会写成【待你填写：xxx】。
+                 高亮散落在正文里还不够，这里给一个总数，学生知道自己要补多少处 -->
+            <div id="wbPhBar">
+                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
+                正文里有 <b id="wbPhCount">0</b> 处标黄的
+                <b>【待你填写：xxx】</b>／<b>【示例值，需核实】</b>
+                —— 这些是 AI 编不出来的真实数据，<b>必须换成你自己跑出来的</b>再交。
+                带着占位符交上去，评委一问就穿帮。
             </div>
 
             <!-- 一句话定位 -->
@@ -1706,6 +1755,28 @@ button:hover { transform: translateY(-1px); }
         var _noopChart = { setOption: function () {}, resize: function () {}, dispose: function () {} };
         window.echarts = { init: function () { return _noopChart; }, getInstanceByDom: function () { return null; } };
     }
+    // 占位符高亮：后端「严禁编造假数据」后，拿不准的数字会写成【待你填写：xxx】/【示例值，需核实】。
+    // 这些必须让学生一眼看见——混在正文里被当成真数据交上去，比没有更危险。
+    // 这里包一层 marked.parse，全站 17 处调用自动生效，不用逐个改。
+    (function () {
+        if (!window.marked || !window.marked.parse) return;
+        var _origParse = window.marked.parse.bind(window.marked);
+        var PH_RE = /【[^】]{2,60}】/g;
+        window.marked.parse = function (t) {
+            var h = _origParse(String(t == null ? '' : t));
+            try {
+                h = h.replace(PH_RE, function (m) {
+                    return '<mark class="wb-ph" title="AI 编不出来的内容，必须你自己填">'
+                         + m + '</mark>';
+                });
+            } catch (e) { /* 高亮失败也不能影响正文显示 */ }
+            return h;
+        };
+        // 统计当前页面上真实存在的占位符数量（流式渲染会重复 parse，所以数 DOM 不数 parse 次数）
+        window.wbCountPlaceholders = function () {
+            return document.querySelectorAll('mark.wb-ph').length;
+        };
+    })();
     </script>
     <script>
 
@@ -2710,6 +2781,48 @@ button:hover { transform: translateY(-1px); }
                 '<span style="display:block; width:' + s + '%; height:100%; border-radius:3px; background:' + _erColor(s) + ';"></span></span>';
         }
 
+        // 评分维度明细：judge_scores 带权重，把「86 分」拆成「创新性 30% × 86 → 25.8」。
+        // 评委视角最在意「这分数怎么来的」，光一个总数没有说服力。
+        // 后端正则解析失败时 score 是 null，显示「—」而不是 0——显示 0 会让学生以为自己拿了零分
+        function renderJudgeScores(list) {
+            var box = document.getElementById('judgeScoresBox');
+            var ul = document.getElementById('judgeScoresList');
+            if (!box || !ul) return;
+            if (!Array.isArray(list) || !list.length) {
+                box.style.display = 'none';
+                ul.innerHTML = '';
+                return;
+            }
+            var h = '', sum = 0, wsum = 0;
+            list.forEach(function (it) {
+                var name = it.name || '维度';
+                var w = Number(it.weight) || 0;
+                var sc = (it.score === null || it.score === undefined || it.score === '') ? null : Number(it.score);
+                if (sc !== null && isNaN(sc)) sc = null;
+                var contrib = (sc === null) ? null : sc * w / 100;
+                if (contrib !== null) { sum += contrib; wsum += w; }
+                var col = (sc === null) ? 'var(--text-mute)' : _erColor(sc);
+                h += '<div style="display:flex; align-items:center; gap:10px; margin-bottom:9px; flex-wrap:wrap;">' +
+                     '<span style="flex:0 0 88px; font-size:12.5px; color:var(--text-dim);">' + _esc(name) + '</span>' +
+                     '<span style="flex:0 0 40px; font-size:11.5px; color:var(--text-mute); text-align:right;">' +
+                        (w ? _esc(String(w)) + '%' : '') + '</span>' +
+                     '<span style="flex:1; min-width:70px;">' + _erBar(sc === null ? 0 : sc) + '</span>' +
+                     '<span style="flex:0 0 34px; text-align:right; font-size:13px; font-weight:700; color:' + col + ';">' +
+                        (sc === null ? '<span style="font-weight:400; color:var(--text-mute);">—</span>' : _esc(String(sc))) + '</span>' +
+                     '<span style="flex:0 0 60px; text-align:right; font-size:11.5px; color:var(--text-mute);">' +
+                        (contrib === null ? '' : '→ ' + contrib.toFixed(1)) + '</span>' +
+                     '</div>';
+            });
+            if (wsum > 0) {
+                h += '<div style="margin-top:9px; padding-top:9px; border-top:1px dashed var(--line); ' +
+                     'font-size:12px; color:var(--text-mute);">加权合计 ' +
+                     '<b style="color:var(--text-dim); font-size:14px;">' + Math.round(sum) + '</b>' +
+                     '<span style="margin-left:6px;">（权重合计 ' + _esc(String(wsum)) + '%）</span></div>';
+            }
+            ul.innerHTML = h;
+            box.style.display = 'block';
+        }
+
         function renderExpertReview(er) {
             var panel = document.getElementById('expertReviewPanel');
             var box = document.getElementById('expertReviewContent');
@@ -2742,7 +2855,9 @@ button:hover { transform: translateY(-1px); }
             (d.experts || []).forEach(function (exp) {
                 h += '<div style="border:1px solid var(--line); border-radius:8px; padding:14px; background:var(--surface-2);">';
                 h += '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">' +
-                     '<b style="font-size:14.5px;">' + _esc(exp.role || '专家') + '</b>' +
+                     // role 现在是具体身份（如「某高校自动化学院副教授，研究方向…」），比原来的「技术视角」长得多，
+                     // 给 flex:1 让它换行，不跟右边的分数抢位置
+                     '<b style="font-size:14.5px; flex:1; line-height:1.45;">' + _esc(exp.role || '专家') + '</b>' +
                      '<span style="font-size:16px; font-weight:700; color:' + _erColor(exp.score) + ';">' + _esc(exp.score) + '</span></div>';
                 if (exp.focus) h += '<div style="font-size:12px; color:var(--text-mute); margin:4px 0 10px;">关注：' + _esc(exp.focus) + '</div>';
 
@@ -2825,6 +2940,15 @@ button:hover { transform: translateY(-1px); }
                     });
                 h += '</div>';
             }
+
+            // 底部免责声明：专家身份是虚构的，必须写明，否则学生可能以为真有这三位评委审过
+            var dcl = d.disclaimer
+                || '本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
+            h += '<div style="margin-top:14px; padding:10px 12px; border-radius:6px; ' +
+                 'background:var(--surface-2); border:1px dashed var(--line); ' +
+                 'font-size:12px; color:var(--text-mute); line-height:1.6;">' +
+                 '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> ' +
+                 _esc(dcl) + '</div>';
 
             box.innerHTML = h;
             panel.style.display = 'block';
@@ -3099,6 +3223,16 @@ button:hover { transform: translateY(-1px); }
             if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
         }
 
+        // 刷新占位符统计条：正文里高亮了几处【待你填写：xxx】
+        function wbRefreshPhBar() {
+            var bar = document.getElementById('wbPhBar');
+            var cnt = document.getElementById('wbPhCount');
+            if (!bar || !cnt) return;
+            var n = (window.wbCountPlaceholders ? window.wbCountPlaceholders() : 0);
+            cnt.textContent = n;
+            bar.style.display = n > 0 ? 'block' : 'none';
+        }
+
         // 把后端返回的 partial 渲染进页面；返回本次是否产出了新内容
         function paintPartial(partial) {
             if (!partial || typeof partial !== 'object' || !window.marked) return false;
@@ -3122,6 +3256,7 @@ button:hover { transform: translateY(-1px); }
                     if (!tb.classList.contains('active')) tb.classList.add('has-stream');
                 }
             });
+            if (fresh > 0) wbRefreshPhBar();
             var olTxt = partial.one_liner;
             if (olTxt) {
                 var ol = document.getElementById('oneLiner');
@@ -3309,6 +3444,8 @@ button:hover { transform: translateY(-1px); }
                         document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback);
                         // 渲染多专家模拟评审
                         renderExpertReview(data.data.expert_review);
+                        renderJudgeScores(data.data.judge_scores);      // 维度分 + 权重
+                        wbRefreshPhBar();                                // 统计占位符处数
                         document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis);
                         // 填充深度版额外内容
                         if (data.data.competitor_analysis) document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis);
@@ -4086,6 +4223,8 @@ button:hover { transform: translateY(-1px); }
                 set('defenseQuestions', data.defense_questions);
                 set('pptOutline', data.ppt_outline);
                 try { renderExpertReview(data.expert_review); } catch (e) {}
+                try { renderJudgeScores(data.judge_scores); } catch (e) {}
+                try { wbRefreshPhBar(); } catch (e) {}
                 try { renderCompleteness(data.completeness); } catch (e) {}
                 try { renderRich(data, isDeep); } catch (e) {}
                 try { initDeckThemeSelect(); } catch (e) {}
