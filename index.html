@@ -7164,6 +7164,8 @@ window.addEventListener('resize', function () {
     document.addEventListener('focusin', function (e) {
         var t = e.target;
         if (!t || !/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+        // 排除 radio/checkbox，否则点「简洁版/深度版」会触发 scrollIntoView 往上跳
+        if (t.type === 'radio' || t.type === 'checkbox') return;
         setTimeout(function () {
             try { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
             catch (err) { try { t.scrollIntoView(); } catch (e2) {} }
