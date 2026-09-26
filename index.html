@@ -2243,11 +2243,6 @@ mark.wb-ph {
             }
         });
 
-        function exportSection(id, name) {
-            var text = document.getElementById(id).innerText;
-            var blob = new Blob([text], {type: "text/plain;charset=utf-8"});
-            wbSaveBlob(blob, name + ".txt");
-        }
         // DOM id -> 生成结果里的字段名（隐藏 tab 的 innerText 会是空串，必须走原始数据）
         var _DOM_TO_KEY = {
             parsedRules: 'parsed_rules', similarityReport: 'similarity_report',

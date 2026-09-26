@@ -429,3 +429,58 @@ iOS → 补一句"长按文件存储到文件"的兜底提示。
 `exportSection()` 在 index.html 里有**两处同名定义**（2191 行、4526 行），
 第二个覆盖第一个。功能没坏（两者实现一样），但容易改错地方。
 `wbSaveBlob` 我插在第二个定义之前。你要清理的话删掉第一个即可。
+
+---
+
+## 2026-09-26 19:30 · 报备⑥：导出请求补传 competition_name（WorkBuddy 动了 app.py 的 export_zip）
+
+来源：`待办_WorkBuddy_导出传赛事名.md`。
+
+### 1. 前端 index.html（按待办原样执行）
+- 新增 `wbCompName()`：取 `#competition` 输入框的值，空则退回 `window._lastData.competition`。
+- `/api/export_word`（`exportOne`）body 加 `competition_name: wbCompName()`。
+- `/api/export_pdf`（`exportOnePDF`）body 加 `competition_name: wbCompName()`。
+- **顺带**：`/api/export_zip`（`exportAll`）也加了 `competition_name`——打包里的
+  `03_项目申报书全文.docx` 是主交付物，否则单独下载是官方顺序、打包里是另一套顺序。
+
+### 2. ⚠️ 动了后端 app.py 的 `export_zip()`（请你过一眼）
+只改 `build_doc()` 一处，其余逻辑没碰：
+```python
+comp = (data.get('competition_name') or '').strip()
+
+def build_doc(title, text):
+    dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
+    tt = text
+    is_prop = ('申报书' in title)
+    if comp and is_prop:
+        order = _official_chapter_titles(comp)
+        if order:
+            tt = _reorder_markdown_by_chapters(tt, order)
+    return _build_docx(title, tt, doc_type=dt,
+                       subtitle=comp if is_prop else None,
+                       school=data.get('school'), team=data.get('team'), advisor=data.get('advisor'),
+                       competition_name=comp if is_prop else None)
+```
+两点说明：
+- 只对文件名含「申报书」的那一篇排序，规则解析 / 评审意见等分析报告不动。
+- 原来 zip 里的 docx **没传 school/team/advisor**，封面是空的；现在一并传了，
+  同时走 `competition_name` 的双盲判定（iCAN 打包里也不会出现学校/导师）。
+  不想要这个改动的话，把这三个参数删掉即可，排序那段留着就行。
+
+### 3. 前端改读 /api/competition_profiles（待办里的"建议"，已做）
+- 新增 `WB_COMP_PROFILES` + `wbLoadProfiles()`（localStorage 缓存 key `wbCompProfilesV1`，
+  与赛事资料索引一样拉一次缓存）+ `wbMatchProfile(name)`（name/aliases 双向包含，阈值 80）。
+- `wbMergeEvent(idx, req)` → `wbMergeEvent(idx, req, prof)`，新增第三层：
+  **知识库资料索引 > competition_profiles > 前端 EVENT_REQ > EV_DEFAULT**。
+  以后改配置只改 `data/competition_profiles.json`，前端不用跟着改。
+- `evCurrent()` 返回值新增 `_prof`，赛事卡新增 `#evProfileTip`：
+  `double_blind` 为真时红字提示"封面自动隐去学校/单位/指导老师"，并显示 `focus` 侧重。
+- **iCAN 评分已同步官方口径**：`创新性30/技术实现30/实用价值20/用户体验10/应用前景10`
+  （原为 实用性25/技术难度20/团队展示15/社会价值10，与知识库不一致）。
+  EVENT_REQ 现在只作接口失败时的兜底。
+
+### 4. 线上验证（已部署）
+- 带 `competition_name=iCAN…`：`一、项目概述 → 二、痛点 → 三、AI核心方案 → 六、商业模式`
+  （乱序输入被重排，官方章节里没有的章节追加到末尾）；学校/导师不出现，团队保留。
+- 不带赛事名：保持原顺序，学校/导师照常显示（对照组，确认不是巧合）。
+- 打包 zip 内的 `03_项目申报书全文.docx` 同样已排序 + 双盲生效。
