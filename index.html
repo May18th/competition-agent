@@ -9,22 +9,22 @@
 :root{
     --bg-0:#050816;
     --bg-1:#0a0f2b;
-    --c-a:#818cf8;
-    --c-b:#c084fc;
-    --c-a-soft:rgba(129,140,248,.14);
+    --c-a:#6672d8;
+    --c-b:#a878d8;
+    --c-a-soft:rgba(102,114,216,.14);
     --grad:linear-gradient(120deg,#22d3ee 0%,#6366f1 48%,#c084fc 100%);
     --grad-soft:linear-gradient(120deg,rgba(34,211,238,.16) 0%,rgba(192,132,252,.16) 100%);
-    --text:#e9eefc;
-    --text-soft:#c7cfe8;
-    --text-dim:#93a0c4;
-    --text-mute:#6b7899;
+    --text:#c9d2ea;
+    --text-soft:#aeb8d8;
+    --text-dim:#8491b8;
+    --text-mute:#5d6a8c;
     --surface:rgba(255,255,255,.045);
     --surface-2:rgba(255,255,255,.07);
     --surface-3:rgba(255,255,255,.10);
     --surface-solid:#0d1330;
     --btn-ghost:rgba(255,255,255,.08);
-    --line:rgba(148,163,255,.13);
-    --line-strong:rgba(148,163,255,.28);
+    --line:rgba(148,163,255,.22);
+    --line-strong:rgba(148,163,255,.40);
     /* 提示级文字：比正文更浅更小，用于拉开层级 */
     --hint-size:12.5px;
     --track:rgba(148,163,255,.14);
@@ -74,6 +74,13 @@ body.light {
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* 滚动条：深灰，与卡片同色系 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(120,135,180,.35); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(120,135,180,.5); }
+* { scrollbar-width: thin; scrollbar-color: rgba(120,135,180,.35) transparent; }
 
 html { scroll-behavior: smooth; }
 
@@ -1248,10 +1255,10 @@ mark.wb-ph {
         .wb-ico-ok{ color: var(--ok); }
         .wb-ico-warn{ color: var(--warn-text); }
         .wb-opt{ font-weight: 400; opacity: .62; font-size: .88em; }
-        label .wb-ico{ color: var(--c-a); }
+        label .wb-ico{ color: #8b95e8; }
         .tab .wb-ico{ margin-right: .34em; opacity: .85; }
         .tab.active .wb-ico{ color: var(--info-strong); opacity: 1; }
-        h3 .wb-ico{ color: var(--c-a); }
+        h3 .wb-ico{ color: #8b95e8; }
         .step-icon .wb-ico{ margin-right: 0; color: inherit; }
         .version-card .wb-ico-ok{ width: .95em; height: .95em; }
         button .wb-ico{ transition: transform .25s; }
@@ -1349,7 +1356,9 @@ mark.wb-ph {
         <span class="hd-inner"></span>
         <span id="healthText">服务检测中…</span>
     </div>
-    <button id="themeToggle" onclick="wbToggleTheme()" aria-label="切换日间/夜间模式" title="切换日间/夜间">🌙</button>
+    <button id="themeToggle" onclick="wbToggleTheme()" aria-label="切换日间/夜间模式" title="切换日间/夜间">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
 
     <div class="container">
         <!-- 微信 / QQ 内置浏览器提示：微信的 file 选择器只给「图片 / 视频」，选不到 PDF/Word -->
@@ -7135,19 +7144,21 @@ window.addEventListener('resize', function () {
     function applyTheme(light) {
         document.body.classList.toggle('light', !!light);
         var b = document.getElementById('themeToggle');
-        if (b) b.textContent = light ? '☀️' : '🌙';
+        if (b) {
+            b.innerHTML = light
+                ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>'
+                : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+        }
         try { localStorage.setItem('wbLight', light ? '1' : '0'); } catch (e) {}
     }
     window.wbToggleTheme = function () {
         applyTheme(!document.body.classList.contains('light'));
     };
     (function initTheme() {
-        var saved = '0';
-        try { saved = localStorage.getItem('wbLight') || '0'; } catch (e) {}
-        // 跟随系统：没手动选过时，看系统是否偏好浅色
-        var sys = false;
-        try { sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches; } catch (e) {}
-        applyTheme(saved === '1' || (!localStorage.getItem('wbLight') && sys));
+        // 默认夜间，读取本地记忆；用户选过夜间则下次进来直接暗色
+        var light = false;
+        try { light = localStorage.getItem('wbLight') === '1'; } catch (e) {}
+        applyTheme(light);
     })();
 })();
 </script>
