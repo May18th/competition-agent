@@ -2776,14 +2776,16 @@ def kb_add():
     if not content.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
 
-    # 未显式指定 score/type 时自动判定（队友手工上传的常规路径）
+    # 版权整改：不再自动把上传内容归为「范文」，只允许「材料/模板」
     score = data.get('score')
     stype = data.get('type')
     auto_scored = score is None
     if auto_scored:
         score = _auto_score(content)
-    if not stype:
-        stype = '范文' if int(score or 0) >= 75 else '材料'
+    if not stype or stype == '范文':
+        stype = '材料'
+    elif stype not in ('材料', '模板'):
+        stype = '材料'
     summary = data.get('summary') or _auto_summary(content)
 
     try:
