@@ -2122,6 +2122,9 @@ def _extract_project_name(text):
     """从正文提取项目名：取第一个非空行，去掉 Markdown 标记和「项目名/作品名」前缀。"""
     if not text:
         return ''
+    _CHAPTER_WORDS = ("项目背景", "痛点", "需求分析", "解决方案", "技术方案", "创新点",
+                      "社会价值", "商业模式", "应用前景", "团队", "项目简介", "项目概述",
+                      "使用说明", "功能说明", "系统架构", "执行摘要", "市场分析", "财务")
     for line in str(text).strip().split('\n'):
         s = line.strip()
         if not s:
@@ -2130,6 +2133,11 @@ def _extract_project_name(text):
         s = re.sub(r'^[>·•\-—\s]+', '', s)
         s = re.sub(r'^(项目名称|作品名称|项目名|作品名|标题)\s*[:：]\s*', '', s)
         s = re.sub(r'\*+', '', s).strip()
+        # 跳过明显是章节标题的行（一、项目背景 / 第X章 / 痛点分析 等）
+        if re.match(r'^[一二三四五六七八九十]+[、.．]', s) or re.match(r'^第[一二三四五六七八九十\d]+章', s):
+            continue
+        if any(s.startswith(w) for w in _CHAPTER_WORDS):
+            continue
         if s and len(s) >= 2:
             return s[:40]
     return ''
