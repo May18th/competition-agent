@@ -1598,9 +1598,8 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
         source = f"项目创意：{state['idea']}"
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
 
-这一档的定位是「短而准」：用尽量短的篇幅把项目讲清楚，供快速判断创意是否站得住脚。
-完整详实、可直接提交的申报书由深度版输出（约 5000 字、十二章），
-所以这里**刻意不展开成长篇**，写太长反而违背这一档的用途。
+这一档的定位是「短而实」：篇幅比深度版短，但内容不能薄——每章都要写满具体数字、
+具体场景名、具体技术名词，禁止用套话凑字数。完整详实的提交版由深度版输出（约 5000 字、十二章）。
 
 赛事：{state['competition_name']}
 {source}
@@ -1800,7 +1799,9 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
             state["score"] = int(m3.group(1)) if m3 else 60
 
     state["score"] = max(0, min(100, state["score"]))
-    state["approved"] = state["score"] >= 70
+    # 简洁版 75 分及格线、深度版 85 分及格线：低分自动触发定向补写
+    _threshold = 75 if state.get("tier") == "fast" else 85
+    state["approved"] = state["score"] >= _threshold
     print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
     return {"judge_feedback": state["judge_feedback"], "judge_scores": state["judge_scores"],
             "score": state["score"], "approved": state["approved"]}
@@ -2055,9 +2056,7 @@ def should_iterate(state: CompetitionState):
 
 
 def should_iterate_fast(state: CompetitionState):
-    """简洁版可选迭代：仅当用户开启 iterate 且低分且未迭代过时返工一轮"""
-    if not state.get("iterate", False):
-        return ["defense", "ppt"]
+    """简洁版也接评委反馈：低于及格线时定向补写一轮（最多 1 轮，保持快速）。"""
     if state["approved"] or (state.get("revision_count") or 0) >= 2:
         return ["defense", "ppt"]
     return ["revise"]
