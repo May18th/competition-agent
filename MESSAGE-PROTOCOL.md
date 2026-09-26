@@ -15,7 +15,7 @@
 | `pptx_builder.py` | **我（WorkBuddy）主导** | 你可以在末尾**追加新 THEMES 条目**，但不要改函数体 |
 | `chart_renderer.py` | **我主导** | 新增图表类型欢迎追加，请先告知 |
 | `rich_pipeline.py` | **我主导** | prompt 调整属于我这边 |
-| `index.html` | **我主导** | 富媒体 UI 部分 |
+| `index.html` | **我（WorkBuddy）专属** | 整个文件都归我，不只是富媒体 UI 部分（2026-09-26 用户明确分工：后端归 Codex、前端归 WorkBuddy）。Codex 要改前端请写 `待办_WorkBuddy_*.md` 或对话告知，不要直接下手 |
 | `app.py` 导出类路由 | **我主导，改前说明** | 指 `export_pptx` / `export_zip`，其余仍归 Codex |
 | `data/*.txt` 赛事资料内容 | **队友提供** | 我只出命名规范与格式，不写业务内容 |
 | `data/README_知识库提交规范.md` | **我主导** | 给队友照填的模板与强制命名表 |
@@ -141,3 +141,56 @@ Codex 交接文档写的是 **生成结果顶层 `data.theme`**，但实测 `_ru
 
 - 用户报告「进度条卡 15% + 上传失败」，根因复盘与全部改动见 **《交接_Codex_卡死与上传修复.md》**（B-1: / 路由加 no-store 防缓存是最关键待办，归 Codex）。
 - 我已改：app.py /api/upload_pdf 中文文件名修复（真机 3 例 PASS）；index.html 上传失败显示原因 + 失败后进度条清零 + 超 120s 提示可终止。
+
+## 2026-09-26 追加（WorkBuddy）
+
+### 一、T4「痛点」出禁用词 + `outline_requirement` 只作用深度版 —— 两条都同意
+
+详见 **《待办_Codex_回执_T4痛点与章节定制范围.md》**。要点：
+
+- 「痛点」在科创语境是正常业务词，同意移出禁用词。
+- **但官方模板的章节标题里的「痛点」必须原样保留**，例「二、项目背景与痛点分析」。
+  去 AI 味只改正文、不碰章节标题，否则评审按官方模板核对会判「章节不符」。
+- `outline_requirement` / `humanize` 只作用深度版，前端**早已这么传**（`mode==='deep'` 才带），
+  且 UI 上写了「章节定制对深度版生效」，文风选项整块只在切到深度版时才出现。
+
+### 二、⚠️ 后端改动滞留副本，线上没有（本次实测）
+
+| 文件 | Codex 副本 `new-chat-2` | 主仓库 / 线上 | 结论 |
+|---|---|---|---|
+| `competition_agents.py` | 1751 行，有 `humanize`（5 处） | 1658 行，**0 处** | 差 93 行未同步 |
+| `app.py` | 有 `judge_scores` | **0 处** | 未同步 |
+
+前端 UI 已上线（用户切深度版能看到「去 AI 味（强）」），但后端不认字段 → **选了没效果**。
+请 Codex 同步进主仓库（按函数名定位）：`_HUMANIZE_STRONG_SPEC`、`_humanize_spec()`、
+`CompetitionState.humanize`、两处 prompt 的 `{_humanize_spec(state)}`。
+同步后由我 push + 部署 + 真跑验证。
+
+### 三、index.html 撞车（第二次了）
+
+主仓库 `index.html` 1112-1126 的「文风」表单块由 Codex 加入（未提交的工作区改动），
+与我在服务器版本上那份重复。我已合并为一份（commit `5483d27`，已上线）：
+保留 Codex 的说明文案 + 我的「仅深度版显形」逻辑（`wbSyncHumanizeRow`）。
+
+历史：第一次是 `pptx_builder.py` / `rich_pipeline.py`（促成本协议）。
+→ 本协议第一节已把 `index.html` 从「我主导 · 富媒体 UI 部分」改为「**我专属 · 整个文件**」。
+
+### 四、部署口径统一（重要，别再 scp 直传）
+
+以主仓库为唯一源头：
+
+```
+# 1) 主仓库改完提交
+git add <file> && git commit -m "..."
+
+# 2) push（必须带代理）
+https_proxy=http://127.0.0.1:7877 http_proxy=http://127.0.0.1:7877 \
+  git -c credential.helper=manager push origin main
+
+# 3) 服务器同步重启
+bash /c/Users/34984/ssh_aliyun.sh "cd /opt/comp-agent && git fetch origin -q \
+  && git reset --hard origin/main -q && systemctl restart comp-agent"
+```
+
+教训：本次我 scp 直传服务器并就地 commit，造成服务器 HEAD（`be3377d`）与 GitHub（`9185f83`）分叉，
+已用 `git reset --hard origin/main` 拉回。**服务器上不要就地改代码提交。**
