@@ -1367,33 +1367,6 @@ mark.wb-ph {
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>科创竞赛申报材料，一站式生成</p>
-
-        </div>
-
-        <!-- 新手引导：三步。做成卡片而不是弹窗（弹窗糊脸，用户会直接关掉），
-             点任意一步就跳到对应位置并高亮；做过的步骤打勾，全做完折叠成一行 -->
-        <div id="wbGuide">
-            <div class="wb-guide-step" id="wbGuideStep0" onclick="wbGuideGo(0)">
-                <span class="wb-guide-num">1</span>
-                <span class="wb-guide-txt"><b>输创意 / 传申报书</b></span>
-                <span class="wb-guide-ok">✓</span>
-            </div>
-            <div class="wb-guide-step" id="wbGuideStep1" onclick="wbGuideGo(1)">
-                <span class="wb-guide-num">2</span>
-                <span class="wb-guide-txt"><b>选简洁 / 深度版</b></span>
-                <span class="wb-guide-ok">✓</span>
-            </div>
-            <div class="wb-guide-step" id="wbGuideStep2" onclick="wbGuideGo(2)">
-                <span class="wb-guide-num">3</span>
-                <span class="wb-guide-txt"><b>点生成</b></span>
-                <span class="wb-guide-ok">✓</span>
-            </div>
-        </div>
-        <div class="wb-guide-hint">← 左右滑动看第 2、3 步 →</div>
-        <div id="wbGuideBar">
-            <span>① 输创意 → ② 选简洁/深度版 → ③ 点生成</span>
-            <button onclick="wbGuideExpand()">展开三步</button>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -1412,7 +1385,7 @@ mark.wb-ph {
                 <span class="step-badge">1</span>
                 填写赛事信息
             </div>
-            <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; color: var(--text-dim); align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; font-size: 11.5px; color: var(--text-mute); align-items: center; gap: 8px;">
                 <span id="wbRestoreText"></span>
                 <button onclick="wbClearForm()" style="padding: 4px 10px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清空重写</button>
             </div>
@@ -1464,12 +1437,7 @@ mark.wb-ph {
                         <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
                         <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
                         <span onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
-                        <span onclick="wbPickComp('国家级大学生创新创业训练计划')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">国创计划</span>
                         <span onclick="wbPickComp('全国大学生数学建模竞赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
-                        <span onclick="wbPickComp('全国大学生电子设计竞赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">电赛</span>
-                        <span onclick="wbPickComp('全国大学生广告艺术大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大广赛</span>
-                        <span onclick="wbPickComp('中国大学生服务外包创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">服务外包</span>
-                        <span onclick="wbPickComp('蓝桥杯全国软件和信息技术专业人才大赛')" style="flex: 0 0 auto; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">蓝桥杯</span>
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -1523,7 +1491,7 @@ mark.wb-ph {
                         赛事规则与官方文件（可选）<span id="kbAdvBodyArrow">▾</span>
                     </div>
                     <div id="kbAdvBody">                    <div class="wb-note">
-                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 内置知识库，自动匹配评分标准
+                        <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 已内置 15 个比赛评分标准
                     </div>
                     <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
                     <div id="kbStatusBox" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); font-size: 13px;">
