@@ -833,9 +833,18 @@ button:hover { transform: translateY(-1px); }
     .hero p { font-size: 14px; }
     .card { padding: 20px; border-radius: 15px; }
     .score-number { font-size: 42px; }
-    .tabs { padding: 5px; gap: 4px; }
-    .tab { white-space: nowrap; font-size: 13px; padding: 8px 12px; }
+    /* 页签在手机上横向可滑，且藏掉滚动条，避免一整排挤在一起 */
+    .tabs { padding: 5px; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { white-space: nowrap; font-size: 12.5px; padding: 8px 10px; }
     .btn-primary { padding: 15px 20px; font-size: 16px; }
+    /* 手机上的快捷导出条：竖排 + 按钮全宽（手指点得到） */
+    #quickExportBar { flex-direction: column; align-items: stretch !important; gap: 8px; }
+    #quickExportBar button { width: 100%; padding: 13px 16px; font-size: 15px; }
+    #quickExportBar > span { line-height: 1.6; }
+    .result-hero { padding: 18px 12px; }
+    /* 表格在手机上可横滑，不会被裁掉 */
+    .content-block table { display: block; overflow-x: auto; white-space: nowrap; }
     .wb-orb { filter: blur(64px); }
     .modal { padding: 18px; }
     button { font-size: 14px; }
@@ -1286,6 +1295,15 @@ button:hover { transform: translateY(-1px); }
 
             </div>
 
+            <!-- 导出前置：不用切到「导出中心」tab 也能直接下载。
+                 之前导出藏在第一个 tab 里，而默认打开的是「前期分析」，新用户根本找不到 -->
+            <div id="quickExportBar" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 14px 16px; background: var(--surface-2); border-radius: 10px;">
+                <span style="font-size: 13px; color: var(--text-dim); font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 拿走成果</span>
+                <button onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
+                <button onclick="exportAll()" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
+                <span style="font-size: 12px; color: var(--text-mute);">PDF / PPT / 分项下载在下方「导出中心」</span>
+            </div>
+
             <div class="tabs">
                 <button class="tab" id="exportTab" onclick="switchTab(event, 'export')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出中心</button>
                 <button class="tab active" id="analysisTab" onclick="switchTab(event, 'analysis')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 前期分析</button>
@@ -1294,7 +1312,8 @@ button:hover { transform: translateY(-1px); }
                 <button class="tab" id="chartsTab" style="display:none;" onclick="switchTab(event, 'charts')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-linechart"/></svg> 可视化图表</button>
                 <button class="tab" id="defenseTab" style="display:none;" onclick="switchTab(event, 'defense')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩准备</button>
                 <button class="tab" id="kbTab" onclick="switchTab(event, 'kb')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</button>
-                <button class="tab" id="logsTab" onclick="switchTab(event, 'logs')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 运行日志</button>
+                <!-- 运行日志是排查用的，普通用户用不上，默认藏起来；加 ?debug=1 才显示 -->
+                <button class="tab" id="logsTab" style="display: none;" onclick="switchTab(event, 'logs')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 运行日志</button>
             </div>
 
             <div id="tab-analysis" class="tab-content active">
@@ -2023,6 +2042,16 @@ button:hover { transform: translateY(-1px); }
             if (box) box.style.display = 'none';
             wbToast('已清空表单和本地草稿', { type: 'ok', ms: 2200 });
         }
+
+        // 排查用的「运行日志」页签默认隐藏，URL 带 ?debug=1 才露出来（普通用户不需要，少一个 tab 少一分乱）
+        (function () {
+            try {
+                if (/[?&]debug=1/.test(location.search)) {
+                    var t = document.getElementById('logsTab');
+                    if (t) t.style.display = '';
+                }
+            } catch (e) {}
+        })();
 
         // 文风选项只在深度版露出：简洁版不显示，避免用户选了却不起作用（后端也只在深度版处理）
         function wbSyncHumanizeRow() {
