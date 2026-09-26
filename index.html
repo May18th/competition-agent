@@ -869,6 +869,15 @@ mark.wb-ph {
     .hero p { font-size: 13.5px; margin-top: 6px; }
     .card { padding: 14px 12px; border-radius: 14px; margin-bottom: 12px; }
     .card-title { font-size: 16px; margin-bottom: 12px; gap: 8px; }
+    /* 现场演示再收一轮：实测首屏被引导区吃掉 546px，表单被挤到屏幕外 */
+    .hero { padding: 10px 10px 6px; margin-bottom: 8px; }
+    .hero h1 { font-size: 19px; margin-bottom: 4px; }
+    .hero p { font-size: 12.5px; margin-top: 4px; }
+    .card { padding: 12px 11px; margin-bottom: 10px; }
+    .card-title { margin-bottom: 10px; }
+    .form-group { margin-bottom: 12px; }
+    .wb-guide-hint { margin: 6px 0 0; }
+    .wb-guide-step { padding: 9px 11px; }
     .content-block { margin-bottom: 12px; }
     .wb-formgrid { gap: 12px !important; }
     .result-hero { padding: 14px 10px; }
@@ -1251,7 +1260,7 @@ mark.wb-ph {
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 20px; flex-wrap: wrap;">
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap;">
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
                 <span class="wb-dot"></span>这是什么 / 使用说明
             </button>
@@ -3453,6 +3462,17 @@ mark.wb-ph {
             if (g) g.style.display = 'none';
             if (b) b.style.display = 'flex';
         }
+        // 手机上默认收起三步引导：实测它占掉首屏 546px，把创意输入框挤到
+        // 屏幕外（要滚 760px 才看得见）。评委进来要一眼看到输入区，不是先看教程。
+        // 收起后 wbGuideBar 那一行还留着「展开三步」，想看随时能展开。
+        (function () {
+            try {
+                if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches
+                    && !localStorage.getItem('wbGuideKeep')) {
+                    wbGuideCollapse();
+                }
+            } catch (e) {}
+        })();
         function wbGuideExpand() {
             var g = document.getElementById('wbGuide'), b = document.getElementById('wbGuideBar');
             if (g) g.style.display = '';
