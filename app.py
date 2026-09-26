@@ -1811,6 +1811,7 @@ def _run_generation(data):
             "rule_content": data.get("rule_content", ""),
             "idea": idea,
             "proposal_draft": proposal_draft,
+            "user_data": data.get("user_data", "") or data.get("real_data", ""),
             "user_keywords": data.get("keywords", ""),
             "outline_requirement": data.get("outline_requirement") or [],
             "scoring_weights": data.get("scoring_weights") or [],

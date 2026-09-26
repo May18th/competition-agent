@@ -570,6 +570,7 @@ class CompetitionState(TypedDict):
     rule_content: str
     idea: str
     proposal_draft: str
+    user_data: str
     user_keywords: str
     outline_requirement: list
     scoring_weights: list
@@ -947,6 +948,7 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 
 赛事：{state['competition_name']}
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_similarity_paradigm_ref()}
 
 请分析：
@@ -969,6 +971,7 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创赛事分析专家。请根据以下项目，一次性完成所有分析。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 
 请分四部分输出：
 
@@ -1024,6 +1027,7 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深市场分析专家。请只负责分析竞品情况，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_analysis_paradigm_ref('competitor')}
 
 请只写以下内容：
@@ -1047,6 +1051,7 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深商业模式专家。请只负责设计商业模式，不要写竞品分析、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_ref_block(state, '商业模式')}
 {_analysis_paradigm_ref('business')}
 
@@ -1072,6 +1077,7 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深风险评估专家。请只负责分析风险，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_ref_block(state, '风险分析')}
 {_analysis_paradigm_ref('risk')}
 
@@ -1097,6 +1103,7 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深技术架构师。请只负责写技术方案，不要写竞品、商业模式、风险等其他内容。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_analysis_paradigm_ref('tech')}
 
 请只写以下内容：
@@ -1121,6 +1128,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目规划专家。请为以下项目制定详细的实施计划。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_ref_block(state, '实践过程')}
 
 请写：
@@ -1145,6 +1153,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目价值分析专家。请分析这个项目的社会价值和应用前景。
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 {_ref_block(state, '社会价值')}
 {_industry_ref()}
 
@@ -1170,6 +1179,7 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""请根据以下项目，写一段300字左右的项目简介：
 
 项目创意：{state['idea']}
+{_user_data_ref(state)}
 一句话定位：{state.get('one_liner', '')}
 
 要求：
@@ -1206,6 +1216,24 @@ def _ref_block(state: dict, module_tag: str) -> str:
     except Exception as e:
         print(f"[kb] 范文检索跳过：{e}")
         return ""
+
+
+def _user_data_ref(state: dict) -> str:
+    """注入用户填写的真实实测数据（数据采集表），让正文用实测值而不是测算值。
+
+    用户数据是最高优先级的事实来源：凡用户明确给出的数字，必须原样使用并标注「实测值」，
+    禁止再用「测算值/示例值」把它泛化掉。
+    """
+    ud = (state or {}).get("user_data") or ""
+    ud = str(ud).strip()
+    if not ud:
+        return ""
+    return (
+        "\n【用户提供的真实实测数据 —— 最高优先级事实来源，必须优先使用】\n"
+        "凡下面明确给出的数字/测试结果/试点信息，都要原样写进对应章节并标注「实测值」，"
+        "禁止再用「测算值/示例值」把它泛化或忽略；只有用户没给到的数字才允许用测算值。\n"
+        f"{ud[:3000]}\n"
+    )
 
 
 def _official_ref(state: dict) -> str:
@@ -1665,6 +1693,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
 {_industry_ref()}
+{_user_data_ref(state)}
 {_paradigm_ref()}
 {_score_diagnosis_ref()}
 
@@ -1729,6 +1758,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
 {_industry_ref()}
+{_user_data_ref(state)}
 {_paradigm_ref()}
 {_score_diagnosis_ref()}
 
