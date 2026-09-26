@@ -121,6 +121,19 @@ THEMES = {
         "section_rule": "B8D4F0", "font": "微软雅黑",
         "chart": ["#002FA7", "#2E75B6", "#4A7FB5", "#5B8C5A", "#8B6914", "#6B5B73", "#7E93AB"],
     },
+    "ican": {
+        # iCAN 大赛专用：蓝白科技风。全色轮只走蓝色系，封面深蓝渐变 + 亮蓝强调，
+        # 不用撞色不用花哨装饰，答辩/路演大屏投影也稳（深底白字，对比度够）。
+        "label": "iCAN 蓝白科技（iCAN 大赛 · 正式路演场合）",
+        "chapter": ["0E5EA8", "2AA9E0", "124C86", "4E93CE", "1E7FB8", "2F5E9E", "6FB3E0"],
+        "deep": "072C55", "deep2": "0F5C9E",
+        "ink": "0B2E52", "body": "3A5B7E", "muted": "93A8C2",
+        "primary": "0E5EA8", "accent": "2AA9E0",
+        "card": "F4F8FE", "soft": "EAF2FB",
+        "cover_deco": ["2AA9E0", "7FC4EE", "0E5EA8"],
+        "section_rule": "C4DEF5", "font": "微软雅黑",
+        "chart": ["#0E5EA8", "#2AA9E0", "#124C86", "#4E93CE", "#6FB3E0", "#1E7FB8", "#9CCBEF"],
+    },
     "cyber": {
         "label": "科技紫·AI（人工智能/大数据/赛博未来类）",
         "chapter": ["6D28D9", "7C3AED", "A855F7", "4B0082", "22D3EE", "F472B6", "8B5CF6"],
@@ -133,7 +146,7 @@ THEMES = {
         "chart": ["#7C3AED", "#22D3EE", "#A855F7", "#F472B6", "#8B5CF6", "#4B0082", "#F59E0B"],
     },
 }
-THEME_ORDER = ["tech", "ink", "medical", "edu", "agri", "finance", "craft", "social", "academic", "cyber"]
+THEME_ORDER = ["tech", "ink", "medical", "edu", "agri", "finance", "craft", "social", "academic", "cyber", "ican"]
 
 # ============ 版式模板库：每个主题都可套 4 套模板 ============
 # cover  封面样式：gradient 流光大块 / split 左色块 / band 顶部色带 / center 居中留白
@@ -151,10 +164,19 @@ THEME_NAME = "tech"
 
 
 def list_themes():
-    """给前端用的主题/模板清单"""
+    """给前端用的主题/模板清单。
+
+    顺带把配色回传（deep/deep2/primary/accent/deco），前端画缩略图就不用再维护一份
+    和 THEMES 重复的对照表——以后新增主题，前端自动就能画出来。
+    """
     return {
         "themes": [
             {"key": k, "label": THEMES[k]["label"],
+             "colors": {
+                 "deep": THEMES[k]["deep"], "deep2": THEMES[k]["deep2"],
+                 "primary": THEMES[k]["primary"], "accent": THEMES[k]["accent"],
+                 "deco": list(THEMES[k].get("cover_deco", [])),
+             },
              "variants": [{"key": v["key"], "name": v["name"]} for v in VARIANTS]}
             for k in THEME_ORDER
         ]
@@ -638,7 +660,9 @@ def _metrics_body(slide, metrics, top=2.35, height=2.5, accent=PRIMARY):
     for i, m in enumerate(metrics):
         m = str(m)
         num, label = m, ""
-        mm = re.match(r"^\s*([\d.]+\s*[%万亿倍年个天元周亿]?)\s*[：:、\s]\s*(.+)$", m)
+        # 单位放宽到 人/家/台/项/次 等：申报书里挖出来的数字带这些单位时，
+        # 不会整串被当成"大号数字"排版（原来只认 %万亿倍年个天元周亿）
+        mm = re.match(r"^\s*([\d.]+\s*[%万亿倍年个天元周亿人家台套项次所校]?)\s*[：:、\s]\s*(.+)$", m)
         if mm:
             num, label = mm.group(1).strip(), mm.group(2).strip()
         x = 0.72 + i * (card_w + gap)

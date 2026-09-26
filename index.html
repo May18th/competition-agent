@@ -1780,6 +1780,19 @@ mark.wb-ph {
                         <div id="deckThemeGrid" class="wb-theme-grid"></div>
                     </div>
                     <div id="deckThemeHint" style="display:none; font-size:12px; color:var(--text-mute); margin-bottom:10px;"></div>
+                    <!-- 页面结构：固定 8 页路演逻辑 + 申报书回填。
+                         之前页数和顺序全看 AI 心情，经常缺「痛点页」或「数据页空着」，
+                         这里导出前把结构钉死，每页有几条内容直接显示出来，缺哪页一眼看到 -->
+                    <div id="deckRoadWrap" style="margin-bottom: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px;">
+                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
+                                <input type="checkbox" id="chkRoadshow" checked onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
+                                按标准路演结构导出（固定 8 页）
+                            </label>
+                            <span style="font-size:12px; color:var(--text-mute);">封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢，缺内容的页自动从申报书补</span>
+                        </div>
+                        <div id="deckRoadPlan" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+                    </div>
                     <div id="deckPreview" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;"></div>
                 </div>
             </div>
@@ -2448,6 +2461,8 @@ mark.wb-ph {
             var rd = window._lastData || {};
             var _m = wbMeta();
             var deck = rd.rich_deck || null;
+            // 与「下载 PPT」同一套结构：打包里的 PPT 也走固定 8 页 + 申报书回填
+            if (deck && wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
             var tk = (document.getElementById('deckTheme') || {}).value;
             var vk = (document.getElementById('deckVariant') || {}).value;
             const data = {
@@ -3503,6 +3518,11 @@ mark.wb-ph {
             var charts = rd.rich_charts || [];
             var tables = rd.rich_tables || [];
             var deck = rd.rich_deck;
+            // 开关开着时预览与导出都用重排后的 8 页 deck，做到"所见即所下载"
+            var showDeck = deck;
+            if (deck && deck.slides && deck.slides.length && wbRoadshowOn()) {
+                try { showDeck = wbRoadshowDeck(rd); } catch (e) { showDeck = deck; }
+            }
             var rcw = document.getElementById('richChartsWrap');
             var dcw = document.getElementById('demoChartsWrap');
             if (!rcw || !dcw) return;
@@ -3572,17 +3592,17 @@ mark.wb-ph {
                         ? '<div style="font-size:9.5px; color:var(--text-mute); margin-top:3px;">共 ' + tb.rows.length + ' 行</div>' : '';
                     return '<table class="dc-mini">' + head + rows + '</table>' + more;
                 }
-                document.getElementById('deckPreview').innerHTML = deck.slides.map((s, i) => {
+                document.getElementById('deckPreview').innerHTML = showDeck.slides.map((s, i) => {
                     var t = String(s.type || 'bullets').toLowerCase();
                     var isDark = (t === 'cover' || t === 'section' || t === 'closing');
                     var label = typeLabel[t] || t;
                     var title = s.title || label;
                     var body = '';
                     if (t === 'cover') {
-                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(deck.one_liner || s.note || '') + '</div>' +
+                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(showDeck.one_liner || s.note || '') + '</div>' +
                                bulletsHtml(s.bullets, 2, true);
                     } else if (t === 'closing') {
-                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(deck.one_liner || '') + '</div>' +
+                        body = '<div style="font-size:10.5px; line-height:1.55; color:#C6CFEF;">' + _md(showDeck.one_liner || '') + '</div>' +
                                bulletsHtml(s.bullets, 2, true);
                     } else if (t === 'metrics' || (s.metrics && s.metrics.length)) {
                         body = '<div class="dc-chips">' + (s.metrics || []).slice(0, 4).map(function (m) {
@@ -3612,16 +3632,355 @@ mark.wb-ph {
                         (s.kicker ? '<div class="dc-kicker" style="color:' + (isDark ? '#22B8CF' : 'var(--c-a)') + ';">' + _esc(s.kicker) + '</div>' : '') +
                         '<div class="dc-title" style="color:' + titleColor + ';">' + _esc(title) + '</div>' +
                         '<div class="dc-body">' + body + '</div>' +
-                        '<div class="dc-foot" style="color:' + muteColor + ';">' + _esc(deck.project || '') + '</div>' +
+                        '<div class="dc-foot" style="color:' + muteColor + ';">' + _esc(showDeck.project || '') + '</div>' +
                         '</div>';
                 }).join('');
+                wbRenderRoadPlan(showDeck);
             } else {
                 dw.style.display = 'none';
             }
         }
+        // ============ 标准路演结构：8 页固定 + 申报书回填 ============
+        // 为什么在前端做：deck 本来就是前端拿去 POST 给 /api/export_pptx 的，
+        // 在下载前重排一次，"下载 PPT" 和"一键打包"两条路同时生效，后端不用改。
+        var WB_ROAD_PAGES = [
+            {key: 'cover',    type: 'cover',   name: '封面',     kicker: '',                 kw: [], strong: []},
+            {key: 'pain',     type: 'bullets', name: '项目痛点', kicker: '01 / 项目痛点',
+             kw: ['痛点', '问题', '现状', '背景', '需求', '挑战', '难点', '困难', '刚需', '为什么'],
+             strong: ['痛点', '难点', '难以', '无法', '不足', '缺失', '缺少', '成本高', '效率低', '信息不对称']},
+            {key: 'solution', type: 'bullets', name: '解决方案', kicker: '02 / 解决方案',
+             kw: ['解决方案', '方案', '技术', '原理', '思路', '路径', '方法', '路线', '架构', '创新点', '实现'],
+             strong: ['采用', '通过', '本方案', '本平台', '架构', '算法', '机制', '实现']},
+            {key: 'feature',  type: 'bullets', name: '核心功能', kicker: '03 / 核心功能',
+             kw: ['功能', '产品', '模块', '特性', '亮点', '优势', '服务', '场景', '形态'],
+             strong: ['功能', '模块', '支持', '提供', '一键', '自动', '可查', '可追溯']},
+            {key: 'data',     type: 'metrics', name: '落地数据', kicker: '04 / 落地数据',
+             kw: ['数据', '成果', '验证', '落地', '试点', '效果', '指标', '市场', '规模', '财务', '营收', '用户', '测试', '进展'],
+             strong: ['试点', '测试', '验证', '覆盖', '累计', '准确率', '提升', '降低', '增长']},
+            {key: 'compete',  type: 'table',   name: '竞品对比', kicker: '05 / 竞品对比',
+             kw: ['竞品', '对比', '竞争', '差异化', '对手', '同类', '友商'],
+             strong: ['竞品', '对比', '相比', '同类', '友商', '优于', '差异', '领先']},
+            {key: 'team',     type: 'bullets', name: '团队介绍', kicker: '06 / 团队介绍',
+             kw: ['团队', '成员', '分工', '指导', '师资', '负责人', '年级', '专业'],
+             strong: ['团队成员', '成员', '分工', '指导教师', '团队由', '专业年级']},
+            {key: 'thanks',   type: 'closing', name: '致谢',     kicker: '',                 kw: [], strong: []}
+        ];
+        // 后端 metrics 卡片的数字单位只认这些（见 pptx_builder._metrics_body 的正则），
+        // 其余单位（人/家/台/次…）塞进标签里，不然整串会被当成"大号数字"排版
+        var WB_METRIC_UNITS = ['%', '％', '万', '亿', '倍', '年', '个', '天', '元', '周',
+                               '人', '家', '台', '套', '项', '次', '所', '校'];
+        function wbRoadshowOn() {
+            var el = document.getElementById('chkRoadshow');
+            return !el || el.checked;                        // 元素还没渲染时默认开
+        }
+        function _wbT(v) { return String(v == null ? '' : v); }
+        function _wbOne(s) { return _wbT(s).replace(/\s+/g, ' ').trim(); }
+        function _wbTrim(s, n) { s = _wbOne(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+        function _wbClean(s) {
+            return _wbT(s).replace(/^#{1,6}\s*/gm, '').replace(/\*\*/g, '')
+                          .replace(/^\s*[-*•·]\s*/gm, '').replace(/^\s*\d+[.、)]\s*/gm, '')
+                          .replace(/`/g, '').replace(/\s+/g, ' ').trim();
+        }
+        function _wbSentences(t) {
+            return _wbOne(t).split(/[。；;！!？?\n]/).map(function (x) { return x.trim(); })
+                            .filter(function (x) { return x.length >= 8; });
+        }
+        // 申报书按标题切段：## xxx / **xxx** / 1. xxx / 一、xxx
+        function _wbSections(text) {
+            var out = [], cur = {h: '', body: []};
+            _wbT(text).split(/\r?\n/).forEach(function (raw) {
+                var l = _wbOne(raw);
+                if (!l) return;
+                var m = l.match(/^#{1,6}\s*(.+)$/) || l.match(/^\*\*(.+?)\*\*\s*$/) ||
+                        l.match(/^[（(]?([一二三四五六七八九十]+|\d+)[）).、]\s*(.+)$/);
+                if (m && l.length <= 40) {
+                    if (cur.h || cur.body.length) out.push(cur);
+                    cur = {h: _wbClean(m[2] ? m[2] : m[1]), body: []};
+                    return;
+                }
+                cur.body.push(_wbClean(l));
+            });
+            if (cur.h || cur.body.length) out.push(cur);
+            return out;
+        }
+        function _wbPush(arr, seen, s, limit) {
+            if (arr.length >= (limit || 99)) return;
+            var k = s.slice(0, 16);
+            if (seen[k]) return;
+            seen[k] = 1; arr.push(s);
+        }
+        // 这段标题归哪一页（用于回填时不抢别人的章节）
+        function _wbOwner(h) {
+            for (var i = 1; i < WB_ROAD_PAGES.length - 1; i++) {
+                var p = WB_ROAD_PAGES[i];
+                for (var j = 0; j < p.kw.length; j++) { if (h.indexOf(p.kw[j]) >= 0) return p.key; }
+            }
+            return '';
+        }
+        // 先按"标题命中"取整段；不够再用强关键词全文扫。两条约束都是踩坑换来的：
+        // ① 强关键词必须窄——用宽词（服务/同类）扫时，痛点句被塞进"核心功能"页、竞品页；
+        // ② 别人的章节不能抢——"竞品对比"段的句子再像也不许进"核心功能"页。
+        // 串页比缺内容更糟，宁可留空让用户自己补。
+        function _wbFill(sections, key, limit) {
+            var p = null;
+            WB_ROAD_PAGES.forEach(function (x) { if (x.key === key) p = x; });
+            if (!p) return [];
+            var out = [], seen = {};
+            sections.forEach(function (sec) {
+                var hit = false;
+                for (var i = 0; i < p.kw.length; i++) { if (sec.h.indexOf(p.kw[i]) >= 0) { hit = true; break; } }
+                if (!hit) return;
+                sec.body.forEach(function (b) {
+                    _wbSentences(b).forEach(function (s) { _wbPush(out, seen, s, limit); });
+                });
+            });
+            if (out.length < 2) {
+                sections.forEach(function (sec) {
+                    var own = _wbOwner(sec.h);
+                    if (own && own !== key) return;
+                    sec.body.forEach(function (b) {
+                        _wbSentences(b).forEach(function (s) {
+                            for (var i = 0; i < p.strong.length; i++) {
+                                if (s.indexOf(p.strong[i]) >= 0) { _wbPush(out, seen, s, limit); return; }
+                            }
+                        });
+                    });
+                });
+            }
+            return out;
+        }
+        // 关键数字：抽成 "数字：说明" 的数据卡。
+        // 必须走清洗后的段落：直接扫原文的话，"## 四、落地数据" 会和正文粘成一句，
+        // 标签就变成"落地数据 已在三甲医院试点"这种读不通的东西。
+        function _wbMetrics(sections, limit) {
+            var res = [], seen = {};
+            var re = /(\d+(?:\.\d+)?)\s*(%|％|个百分点|亿元|万元|万|亿|倍|年|个月|天|周|小时|分钟|秒|元|人|家|台|套|项|个|次|篇|所|校|米|kg)/g;
+            sections.forEach(function (sec) {
+                // 数据/成果/市场类章节里的数字优先，别的章节靠后
+                var hw = /数据|成果|验证|落地|试点|效果|指标|市场|规模|财务|营收|进展|测试/.test(sec.h) ? 2 : 0;
+                sec.body.forEach(function (b) {
+                    _wbSentences(b).forEach(function (s) {
+                        var m, picked = 0;
+                        re.lastIndex = 0;
+                        while ((m = re.exec(s)) !== null && picked < 2) {   // 一句最多取 2 个，免得 4 张卡全是同一句
+                            picked++;
+                            var num = m[1], unit = m[2], key = num + unit;
+                            if (seen[key]) continue;
+                            if (unit === '年' && /^(19|20)\d{2}$/.test(num)) continue;   // 2026 年这种年份不算指标
+                            var sw = /提升|提高|降低|减少|增长|准确率|覆盖率|转化|节省|缩短|效率|成本|收入|用户|满意度|覆盖|试点|累计/.test(s) ? 1 : 0;
+                            if (!hw && !sw) continue;                       // 既不在数据章节、也没结果词的数字不上卡
+                            var own = _wbOwner(sec.h);
+                            if (!hw && own && own !== 'data') continue;     // 团队/痛点章节里的人数、比例不算"落地数据"
+                            seen[key] = 1;
+                            // 说明取数字所在的那个小分句（逗号/顿号切开），去掉数字本身；
+                            // "1200 人次" 这种双字单位会剩一个"次"挂在尾巴上，一并抹掉
+                            var clause = s;
+                            var parts = s.split(/[，,、；;：:（(]/);
+                            for (var pi = 0; pi < parts.length; pi++) {
+                                if (parts[pi].indexOf(m[0]) >= 0) { clause = parts[pi]; break; }
+                            }
+                            var at2 = clause.indexOf(m[0]);
+                            var tail = clause.slice(at2 + m[0].length).replace(/^[次秒米个项套台篇所校家天周]/, '');
+                            var label = (clause.slice(0, at2) + tail).replace(/\s+/g, '')
+                                            .replace(/^(19|20)\d{2}年/, '').trim();
+                            label = _wbTrim(label, 14) || '项目关键数据';
+                            var shown = num + (WB_METRIC_UNITS.indexOf(unit) >= 0 ? (unit === '％' ? '%' : unit) : '');
+                            res.push({raw: shown + '：' + label, w: hw + sw});
+                        }
+                    });
+                });
+            });
+            res.sort(function (a, b) { return b.w - a.w; });
+            return res.slice(0, limit || 4);
+        }
+        // 亮点句：带数字 + 有结果动词（提升/准确率/覆盖…），给"落地数据"页当要点
+        function _wbHighlights(sections, limit) {
+            var out = [], seen = {};
+            sections.forEach(function (sec) {
+                sec.body.forEach(function (b) {
+                    _wbSentences(b).forEach(function (s) {
+                        if (!/\d/.test(s)) return;
+                        if (!/提升|提高|降低|减少|增长|准确率|覆盖率|转化|节省|缩短|效率|成本|收入|用户|满意度|完成|覆盖|验证|落地|合作/.test(s)) return;
+                        _wbPush(out, seen, _wbTrim(s, 58), limit);
+                    });
+                });
+            });
+            return out;
+        }
+        // AI 给的页归到 8 页里的哪一页：标题命中权重高于正文命中
+        function _wbBucket(s) {
+            var head = (String(s.title || '') + ' ' + String(s.kicker || '')).toLowerCase();
+            var body = ((s.bullets || []).concat(s.metrics || []).join(' ')).toLowerCase();
+            var best = 'feature', bs = 0;
+            for (var i = 1; i < WB_ROAD_PAGES.length - 1; i++) {
+                var p = WB_ROAD_PAGES[i], sc = 0;
+                for (var j = 0; j < p.kw.length; j++) {
+                    if (head.indexOf(p.kw[j]) >= 0) sc += 3;
+                    if (body.indexOf(p.kw[j]) >= 0) sc += 1;
+                }
+                if (sc > bs) { bs = sc; best = p.key; }
+            }
+            if (bs > 0) return best;
+            if (s.table) return 'compete';
+            if (s.metrics && s.metrics.length) return 'data';
+            return 'feature';
+        }
+        // 把 AI 生成的 deck 重排成 8 页路演结构，并用申报书补空页
+        function wbRoadshowDeck(rd) {
+            rd = rd || {};
+            var src = rd.rich_deck || {};
+            var slides = src.slides || [];
+            var acc = {}, cover = null, closing = null;
+            WB_ROAD_PAGES.forEach(function (p) { acc[p.key] = {bullets: [], metrics: [], table: null, chart: null, note: ''}; });
+            slides.forEach(function (s) {
+                if (!s || typeof s !== 'object') return;
+                var ty = String(s.type || 'bullets').toLowerCase();
+                if (ty === 'cover' || ty === 'title') { if (!cover) cover = s; return; }
+                if (ty === 'closing' || ty === 'thanks' || ty === 'end') { if (!closing) closing = s; return; }
+                var a = acc[_wbBucket(s)];
+                (s.bullets || []).forEach(function (b) {
+                    b = _wbTrim(b, 58);
+                    if (b && a.bullets.indexOf(b) < 0 && a.bullets.length < 8) a.bullets.push(b);
+                });
+                (s.metrics || []).forEach(function (m) {
+                    m = _wbOne(m);
+                    if (m && a.metrics.indexOf(m) < 0 && a.metrics.length < 6) a.metrics.push(m);
+                });
+                if (!a.table && s.table) a.table = s.table;
+                if (!a.chart && s.chart) a.chart = s.chart;
+                if (!a.note && s.note) a.note = _wbOne(s.note);
+            });
+            // 回填素材：申报书全文 + 各分析模块（方案/竞品/商业/落地计划）
+            var docs = _wbT(rd.proposal) || _wbT(rd.proposalText);
+            var extra = [_wbT(rd.tech_solution), _wbT(rd.competitor_analysis), _wbT(rd.project_summary),
+                         _wbT(rd.social_value), _wbT(rd.business_model), _wbT(rd.implementation_plan)].join('\n');
+            var secs = _wbSections(docs).concat(_wbSections(extra));
+            var fill = {};
+            WB_ROAD_PAGES.forEach(function (p) {
+                if (!p.kw.length) return;
+                fill[p.key] = _wbFill(secs, p.key, 6);
+            });
+            var nums = _wbMetrics(secs, 4);
+            var hl = _wbHighlights(secs, 4);
+
+            function merge(key, cap) {
+                var a = acc[key] || {bullets: []};
+                var arr = a.bullets.slice(0, cap);
+                (fill[key] || []).forEach(function (s) {
+                    if (arr.length >= cap) return;
+                    var dup = false;
+                    for (var i = 0; i < arr.length; i++) { if (arr[i].slice(0, 10) === s.slice(0, 10)) { dup = true; break; } }
+                    if (!dup) arr.push(_wbTrim(s, 58));
+                });
+                return arr;
+            }
+            var proj = _wbOne(src.project || _wbTrim(rd.idea, 24) || '科创项目');
+            var one = _wbOne(src.one_liner || rd.one_liner || '');
+            var out = [];
+            out.push({type: 'cover', title: (cover && cover.title) || proj,
+                      bullets: (cover && cover.bullets && cover.bullets.length) ? cover.bullets.slice(0, 2) : (one ? [one] : []),
+                      note: (cover && cover.note) || ''});
+            // 带指标卡时正文容量是 4 条（后端 MAX_BLOCKS_WITH_METRICS），超了会多出一张"（续）"页，
+            // 那就不是固定 8 页了
+            var painM = (acc.pain.metrics || []).slice(0, 2);
+            out.push({type: 'bullets', kicker: '01 / 项目痛点', title: '项目痛点',
+                      bullets: merge('pain', painM.length ? 4 : 5), metrics: painM});
+            out.push({type: 'bullets', kicker: '02 / 解决方案', title: '解决方案', bullets: merge('solution', 5)});
+            out.push({type: 'bullets', kicker: '03 / 核心功能', title: '核心功能', bullets: merge('feature', 5)});
+
+            // 落地数据：先 AI 给的指标卡，不够再用申报书里挖出来的数字补到 4 张
+            var dm = (acc.data.metrics || []).slice(0, 4);
+            nums.forEach(function (m) { if (dm.length < 4) dm.push(m.raw); });
+            var dbullets = merge('data', 4);
+            hl.forEach(function (s) { if (dbullets.length < 4) dbullets.push(s); });
+            var chartId = acc.data.chart || '';
+            if (!chartId) {
+                var ids = (rd.rich_charts || []).map(function (c) { return _wbT(c.id); });
+                if (ids.indexOf('market') >= 0) chartId = 'market';
+                else if (ids.indexOf('timeline') >= 0) chartId = 'timeline';
+            }
+            out.push({type: 'metrics', kicker: '04 / 落地数据', title: '落地数据',
+                      metrics: dm, bullets: dbullets, chart: chartId || ''});
+
+            // 竞品对比：有表用表，没表退回文字要点，绝不留一张空表格页
+            // AI 的 slide.table 可能只是个 id 字符串（"t1"），也可能已经是实体对象，两种都要还原
+            var ts = rd.rich_tables || [];
+            var tb = null, rid = acc.compete.table;
+            if (typeof rid === 'string') {
+                for (var ti = 0; ti < ts.length; ti++) {
+                    if (ts[ti].id === rid || ts[ti].title === rid) { tb = ts[ti]; break; }
+                }
+            } else if (rid && rid.header && rid.rows) {
+                tb = rid;
+            }
+            if (!tb) {
+                for (var tj = 0; tj < ts.length; tj++) {
+                    if (/竞品|对比|竞争|差异化|同类|友商/.test(_wbT(ts[tj].title))) { tb = ts[tj]; break; }
+                }
+                if (!tb && ts.length) tb = ts[0];
+            }
+            if (tb && tb.header && tb.rows) {
+                out.push({type: 'table', kicker: '05 / 竞品对比', title: '竞品对比',
+                          table: {header: tb.header, rows: tb.rows}, note: acc.compete.note || ''});
+            } else {
+                var cb = merge('compete', 5);
+                if (!cb.length) cb = ['**待补充**：本次没识别到竞品对比素材，建议在申报书里补一段与同类方案的维度对比'];
+                out.push({type: 'bullets', kicker: '05 / 竞品对比', title: '竞品对比', bullets: cb,
+                          note: acc.compete.note || ''});
+            }
+
+            // 团队：申报书 + 页面上填的学校/团队/指导教师
+            var tbs = merge('team', 5);
+            var meta = (typeof wbMeta === 'function') ? wbMeta() : {};
+            if (meta.team) tbs.unshift('**团队成员**：' + _wbTrim(meta.team, 40));
+            if (meta.advisor) tbs.unshift('**指导教师**：' + _wbTrim(meta.advisor, 30));
+            if (meta.school) tbs.unshift('**所属院校**：' + _wbTrim(meta.school, 30));
+            if (!tbs.length) tbs = ['**待补充**：团队成员、专业分工与指导教师'];
+            out.push({type: 'bullets', kicker: '06 / 团队介绍', title: '团队介绍', bullets: tbs.slice(0, 5)});
+            out.push({type: 'closing', title: (closing && closing.title) || '谢谢聆听',
+                      bullets: (closing && closing.bullets && closing.bullets.length)
+                               ? closing.bullets.slice(0, 2)
+                               : [one || '欢迎各位评委老师批评指正']});
+            return {
+                project: proj, one_liner: one,
+                competition: _wbOne(src.competition || rd.competition || ''),
+                theme: src.theme || 'tech', variant: src.variant || 'v1',
+                slides: out
+            };
+        }
+        // 8 页状态条：每页几条内容，空的标出来，导出前就知道哪页要补
+        function wbRenderRoadPlan(deck) {
+            var el = document.getElementById('deckRoadPlan');
+            if (!el) return;
+            if (!wbRoadshowOn()) {
+                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按 AI 原始结构导出（页数与顺序不固定）。</div>';
+                return;
+            }
+            if (!deck || !deck.slides) { el.innerHTML = ''; return; }
+            el.innerHTML = deck.slides.map(function (s, i) {
+                var n = (s.bullets || []).length + (s.metrics || []).length +
+                        (s.table ? (s.table.rows || []).length : 0) + (s.chart ? 1 : 0);
+                var dark = (s.type === 'cover' || s.type === 'closing');
+                var empty = !dark && n === 0;
+                var nm = (WB_ROAD_PAGES[i] && WB_ROAD_PAGES[i].name) || ('P' + (i + 1));
+                return '<span style="display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:12px; font-size:11.5px;' +
+                       ' background:' + (empty ? 'var(--c-b-soft, #FDECEC)' : 'var(--surface-solid, #fff)') + ';' +
+                       ' border:1px solid ' + (empty ? 'var(--c-b, #D9534F)' : 'var(--line)') + ';' +
+                       ' color:' + (empty ? 'var(--c-b, #D9534F)' : 'var(--text-dim)') + ';">' +
+                       '<b style="font-weight:600;">' + (i + 1) + '. ' + _esc(nm) + '</b>' +
+                       (dark ? '' : '<span style="opacity:.75;">' + (empty ? '待补' : n + ' 条') + '</span>') +
+                       (s.chart ? '<span style="opacity:.75;">·图</span>' : '') +
+                       '</span>';
+            }).join('');
+        }
+        function wbRoadToggle() {
+            var rd = window._lastData;
+            if (!rd || !rd.rich_deck) return;
+            try { renderRich(rd, true); } catch (e) {}   // 预览区同步换成新结构，所见即所下载
+        }
+
         // ---- PPT 主题 / 模板选择 ----
-        // 缩略图配色表：与后端 pptx_builder.THEMES 逐项对齐，只用于画预览小图，
-        // 不参与导出（导出用的是后端自己的 THEMES）。后端若新增主题，这里没配的走 tech 兜底。
+        // 缩略图配色表：只作兜底，正常走后端 list_themes 回传的 colors（新增主题自动生效）
         var WB_THEME_COLORS = {
             tech:     { deep: '#0F1535', deep2: '#3B2170', primary: '#4A55B8', accent: '#22B8CF', deco: ['#22B8CF', '#F59E0B', '#DB3F72'] },
             ink:      { deep: '#1B1B1B', deep2: '#4A4A4A', primary: '#8B2E2E', accent: '#B98A3C', deco: ['#8B2E2E', '#B98A3C', '#4A5D4E'] },
@@ -3632,8 +3991,18 @@ mark.wb-ph {
             craft:    { deep: '#1F2A30', deep2: '#3D4C55', primary: '#5C6B73', accent: '#E08A38', deco: ['#E08A38', '#A63A2F', '#7A8B5A'] },
             social:   { deep: '#4A2320', deep2: '#8A3F33', primary: '#D46A5C', accent: '#E4A03C', deco: ['#E4A03C', '#D46A5C', '#5E8C7E'] },
             academic: { deep: '#00254D', deep2: '#003F88', primary: '#002FA7', accent: '#2E75B6', deco: ['#2E75B6', '#5B8C5A', '#8B6914'] },
-            cyber:    { deep: '#160826', deep2: '#3B2170', primary: '#7C3AED', accent: '#22D3EE', deco: ['#22D3EE', '#A855F7', '#F472B6'] }
+            cyber:    { deep: '#160826', deep2: '#3B2170', primary: '#7C3AED', accent: '#22D3EE', deco: ['#22D3EE', '#A855F7', '#F472B6'] },
+            ican:     { deep: '#072C55', deep2: '#0F5C9E', primary: '#0E5EA8', accent: '#2AA9E0', deco: ['#2AA9E0', '#7FC4EE', '#0E5EA8'] }
         };
+        function wbHex(c) { c = String(c || ''); return c && c.charAt(0) !== '#' ? '#' + c : c; }
+        function wbThemeColors(t) {
+            var c = t && t.colors;
+            if (c && c.deep) {
+                return {deep: wbHex(c.deep), deep2: wbHex(c.deep2), primary: wbHex(c.primary),
+                        accent: wbHex(c.accent), deco: (c.deco || []).map(wbHex)};
+            }
+            return WB_THEME_COLORS[t && t.key] || WB_THEME_COLORS.tech;
+        }
         // 画一张迷你封面：底色是主题封面渐变，顶条用强调色，中间是标题条 + 两行正文条，
         // 右下角三个点是该主题的装饰色 —— 选之前就知道大概长什么样
         function wbThemeThumb(c) {
@@ -3657,7 +4026,7 @@ mark.wb-ph {
                 var name = lb, sub = '';
                 var p = lb.indexOf('（');
                 if (p > 0) { name = lb.slice(0, p); sub = lb.slice(p).replace(/[（）]/g, ''); }
-                var c = WB_THEME_COLORS[t.key] || WB_THEME_COLORS.tech;
+                var c = wbThemeColors(t);
                 return '<div class="wb-theme-card' + (t.key === cur ? ' on' : '') + '" data-key="' + _esc(t.key) + '"' +
                        ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb) + '">' +
                        wbThemeThumb(c) +
@@ -3666,7 +4035,16 @@ mark.wb-ph {
                        '</div></div>';
             }).join('');
         }
+        var _themeManual = false;            // 用户手动点过主题后，不再自动改
+        // 赛事名里带 iCAN 就默认用 iCAN 蓝白主题（用户手动选过则以手动为准）
+        function wbIsICAN() {
+            var el = document.getElementById('competition');
+            var txt = _wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
+                      ' ' + _wbT((window._lastData || {}).competition_name);
+            return /i\s*-?\s*can/i.test(txt);
+        }
         function wbPickTheme(k) {
+            _themeManual = true;
             var sel = document.getElementById('deckTheme');
             if (sel) sel.value = k;
             var cards = document.querySelectorAll('#deckThemeGrid .wb-theme-card');
@@ -3703,8 +4081,10 @@ mark.wb-ph {
             }
             const rd = window._lastData || {};
             // 主题/模板：优先顶层 theme/variant（后端若提供），回退 rich_deck.theme（当前实际版本）
-            const cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
+            var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
             const curVariant = rd.variant || (rd.rich_deck && rd.rich_deck.variant) || 'v1';
+            // 参加 iCAN 就默认切到 iCAN 蓝白主题，用户手动点过就不再动
+            if (!_themeManual && wbIsICAN()) cur = 'ican';
             _fillSelect(document.getElementById('deckTheme'),
                         themes.map(function (t) { return {key: t.key, name: t.label}; }), cur);
             renderThemeGrid(themes, cur);
@@ -3741,14 +4121,17 @@ mark.wb-ph {
             var rd = window._lastData || {};
             if (!rd.rich_deck) { wbToast('请先用深度版生成一次，才有自动排版的 PPT', { type: 'warn' }); return; }
             previewDeckStyle();
+            // 固定路演结构 + 申报书回填：开关开着时导出重排后的 8 页 deck
+            var deck = rd.rich_deck;
+            if (wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
             try {
                 var res = await fetch('/api/export_pptx', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({deck: rd.rich_deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
-                                          theme: rd.rich_deck.theme, variant: rd.rich_deck.variant})
+                    body: JSON.stringify({deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
+                                          theme: deck.theme, variant: deck.variant})
                 });
                 if (!res.ok) {
                     var msg = 'PPT 导出失败';
