@@ -298,3 +298,47 @@ POST 给 `/api/export_pptx` 和 `/api/export_zip` 的，下载前重排一次两
 
 如果你要接手页面结构（`build_deck()` 里加 `structure=="roadshow"` 分支），
 现在前端这套关键词/回填逻辑可以直接搬过去；不急，现在这样能跑。
+
+## 2026-09-26 追加（WorkBuddy，第三次动了 pptx_builder.py —— 报备）
+
+用户要求「15 套精品模板，每套做精，不要换个颜色就算一套」。主题在后端渲染，绕不过去。
+改动比前两次大，逐条说清楚：
+
+### 1. 版式从 4 维扩到 6 维，主题自带 layout
+原来主题只有"配色"，版式是一份全局 VARIANTS（v1-v4）。现在每套主题通过 `layout`
+字段挑组合：`cover`(gradient/split/band/center/**paper** 新) · `body`(cards/minimal/numbered)
+· `header`(topbar/**rule**/**sidebar** 新) · `card`(solid/**outline**/**plain** 新)
+· `section`(dark/light) · `deco`。
+新增的三个维度对应代码里的 `_cover_paper()`、`_page_header()` 的三个分支、
+`_bullets_body()` 的卡片填充分支。**15 套的 (cover,body,header,card) 四项组合互不相同**，
+用 `resolve_layout()` 可以查。
+
+### 2. 新增 9 套（circuit / svc / capital / math / paper / redgold / blackgold / poster / sec）
+`PREMIUM_ORDER` 是主推的 15 套；旧 7 套（ink/medical/edu/agri/finance/craft/social）
+没删（历史记录可能引用），但 tier 标为 `extra`，前端折叠进"更多备选风格"。
+`THEME_ORDER = PREMIUM_ORDER + EXTRA_ORDER`。
+
+### 3. 接口变更（⚠️ 前端已同步，别的地方若还在用要看一眼）
+`list_themes()` 的每一项：
+- **不再返回 `variants`**（改成返回 `layout` 六维 + `tier`）
+- 顶层新增 `premium` / `extra` 两个 key 数组
+前端主题卡据此渲染缩略图（封面构图/正文样式），不再维护 `WB_THEME_COLORS` 影子表以外的东西。
+
+### 4. build_deck 不再接受外部 variant 覆盖
+`deck.variant` 只对**没有 layout 的旧主题**生效；15 套精品的版式由主题自己定。
+原因：用户明确要"选比赛就出风格，不要让用户自己瞎选"，前端已把版式下拉隐藏。
+如果你希望后端 API 保留手动版式能力，可以加 `deck.force_variant` 之类的开关，别直接改回
+`_apply_variant(deck.get("variant"))`，那样 15 套的设计会被冲掉。
+
+### 5. 字体统一微软雅黑（含两个坑）
+- `_set_run_font(run, size, color, bold=False, name=FONT)` 的默认参数在函数定义时就绑定了，
+  切主题永远不生效（ink 主题的"楷体"其实一直是摆设）。改成 `name=None` 内部取当前 FONT，
+  并同时写 `a:ea` 和 `a:cs`（只写 latin 的话中文在 PowerPoint 里会回退宋体）。
+- ink 主题的楷体改成微软雅黑：服务器上没有楷体，且拿去学校打印容易缺字。
+
+### 6. 清掉了一批硬编码深色/浅色
+结尾页原来写死 `141C4A→4A2170` 渐变 + `A9B6E8`/`7C88C0` 文字，白底主题（math/paper/academic）
+一用就是"整份白页 + 最后一页深蓝 + 浅色字看不见"。现在按 `_luma(DEEP)` 判断深浅：
+白底主题走 `light_closing`（白底收尾 + 墨色标题），深底主题沿用主题色。
+另外白底主题配 band/split 封面时，渐变从白色起会把标题压成**白底白字**，
+已改成浅底时色带走纯色。
