@@ -217,8 +217,13 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
     show_school_advisor = True
-    if competition_name and 'iCAN' in str(competition_name):
-        show_school_advisor = False
+    if competition_name:
+        try:
+            from competition_agents import get_competition_profile
+            if get_competition_profile(competition_name).get("double_blind"):
+                show_school_advisor = False
+        except Exception:
+            pass
     return build_docx(
         title, text,
         subtitle=subtitle,
@@ -229,12 +234,12 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
 
 
 def _official_chapter_titles(competition_name):
-    """读取知识库里的官方申报书章节标题列表（导出时用于自动排序）。"""
+    """读取结构化配置里的官方申报书章节标题列表（导出时用于自动排序）。"""
     if not competition_name:
         return []
     try:
-        from competition_agents import _official_chapters
-        return _official_chapters({"competition_name": competition_name})
+        from competition_agents import get_competition_profile
+        return get_competition_profile(competition_name).get("chapters") or []
     except Exception:
         return []
 
@@ -1226,6 +1231,16 @@ def knowledge_status():
         return jsonify({"success": True, **get_knowledge_status()})
     except Exception as e:
         print(f"[knowledge] 状态读取失败：{e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/competition_profiles')
+def competition_profiles():
+    """返回结构化比赛配置：章节顺序/评分重点/类型/提示词侧重/字数要求。"""
+    try:
+        from competition_agents import get_competition_profiles
+        return jsonify({"success": True, "competitions": get_competition_profiles()})
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 

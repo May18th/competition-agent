@@ -48,3 +48,23 @@ body: JSON.stringify({title: name, text: text,
 ## 顺带发现（可做可不做，做了更稳）
 
 `EVENT_REQ` 里 iCAN 的 `scoring` 目前是 `[创新性30, 实用性25, 技术难度20, 团队展示15, 社会价值10]`，和知识库里 iCAN AI 应用挑战赛官方口径 `创新性30/技术实现30/实用价值20/用户体验10/展示效果10` 不一致。若评委看到权重串了会扣印象分，建议同步成官方口径。
+
+## 更新：后端已提供统一结构化配置（建议前端改成读接口，避免两处硬编码）
+
+后端新增 `data/competition_profiles.json`，15 个比赛的章节顺序 / 评分重点 / 比赛类型 / 提示词侧重 / 字数要求都在这一份里，并暴露接口：
+
+```
+GET /api/competition_profiles
+```
+
+返回 `{ success: true, competitions: [...] }`，每个比赛包含：
+
+- `name` / `aliases`：赛事名与别名，用于匹配
+- `chapters`：官方章节顺序（导出 Word/PDF 时后端会按这个自动排序）
+- `scoring`：重点评分项
+- `focus`：生成 Prompt 的赛事侧重（iCAN 重创新、互联网+ 重落地、大挑 重社会价值等）
+- `defense_focus`：答辩问题类型（engineering / business / modeling / academic）
+- `word_requirement`：`official` 只写官方明确给过的字数上限，`suggested` 是系统内写作档位，不是官方口径
+- `double_blind`：true 表示封面隐藏学校/导师（如 iCAN）
+
+建议前端在赛事卡片、章节编辑器里优先读这个接口，失败再回退到现有 `EVENT_REQ`，这样以后改配置只改 JSON 一处，不用前端后端各改一遍。

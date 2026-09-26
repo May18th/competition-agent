@@ -137,6 +137,40 @@ def load_competition_knowledge():
 competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
 
+_PROFILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "data", "competition_profiles.json")
+_PROFILES_CACHE = None
+
+
+def get_competition_profiles() -> list:
+    """加载结构化比赛配置（章节顺序/评分重点/类型/提示词侧重/字数要求）。"""
+    global _PROFILES_CACHE
+    if _PROFILES_CACHE is not None:
+        return _PROFILES_CACHE
+    try:
+        with open(_PROFILE_PATH, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+        _PROFILES_CACHE = data.get("competitions", []) or []
+    except Exception as e:
+        print(f"[profiles] 读取比赛配置失败（使用空配置）：{e}")
+        _PROFILES_CACHE = []
+    return _PROFILES_CACHE
+
+
+def get_competition_profile(competition_name: str) -> dict:
+    """按赛事名/别名匹配结构化配置，返回 {} 表示未命中。"""
+    if not competition_name:
+        return {}
+    q = str(competition_name).strip()
+    for p in get_competition_profiles():
+        names = [p.get("name", "")] + (p.get("aliases") or [])
+        for n in names:
+            if not n:
+                continue
+            if q == n or q in n or n in q:
+                return p
+    return {}
+
 
 _ALIAS_GROUPS = [
     ["国创", "国创项目", "国创计划", "大创", "国家级大学生创新创业训练计划"],
@@ -1003,28 +1037,80 @@ _DEFAULT_CHAPTERS = """## 一、项目概述
 
 
 def _official_chapters(state: dict) -> list:
-    """从知识库「申报书章节」里解析官方章节标题，作为深度版缺省章节结构。
+    """从结构化配置里取官方章节标题，作为深度版缺省章节结构。
 
     返回 ["一、项目概述", ...] 形式的干净标题列表；解析不到就返回空列表。
     """
-    try:
-        kb = get_competition_knowledge_structured(state.get("competition_name", ""))
-    except Exception:
-        kb = {}
-    raw = (kb or {}).get("sections") or ""
-    if not raw:
-        return []
-    out = []
-    for line in raw.split("\n"):
-        s = line.strip()
-        if not s:
-            continue
-        # 支持：(1)项目概述 / 1.项目概述 / 一、项目概述 等写法
-        m = re.match(r"^(?:\(?\d+\)?[.、\s]*)?(.+)$", s)
-        title = (m.group(1) if m else s).strip()
-        if title:
-            out.append(title)
-    return out
+    profile = get_competition_profile(state.get("competition_name", ""))
+    chapters = profile.get("chapters") or []
+    return [str(c).strip() for c in chapters if str(c).strip()]
+
+
+def _competition_focus(state: dict) -> str:
+    """按比赛类型给生成 Prompt 注入侧重说明。"""
+    profile = get_competition_profile(state.get("competition_name", ""))
+    focus = (profile.get("focus") or "").strip()
+    if not focus:
+        return ""
+    return "\n【本赛事写作侧重 —— 必须优先体现】\n" + focus + "\n"
+
+
+def _defense_focus(state: dict) -> str:
+    """按比赛类型生成答辩必问方向（工科问技术、经管问商业、建模问假设等）。"""
+    profile = get_competition_profile(state.get("competition_name", ""))
+    kind = profile.get("defense_focus") or "engineering"
+    sets = {
+        "engineering": [
+            ("技术路线与关键参数", "核心技术路线是什么？关键器件/模型/算法怎么选型？把具体参数、版本、指标讲清楚，并说清为什么这样选。"),
+            ("系统架构与模块边界", "系统由哪些模块组成？模块之间怎么通信/调用？边界条件、异常处理和降级方案是什么？"),
+            ("实现细节与代码/硬件", "哪个模块是你自己实现的？哪些用了开源/现成方案？能现场说明关键代码或电路吗？"),
+            ("测试与性能数据", "测了多少次？测试条件和样本是什么？关键性能指标（延迟/精度/功耗/可靠性）的实测数据是多少？"),
+            ("稳定性与极限场景", "系统在极端输入、断网、并发、长时间运行下会怎样？最不稳定的一环是什么？"),
+            ("与同类技术对比", "比现有方案好在哪？把技术指标差异量化，说明你做的不是简单集成。"),
+            ("可复制性与技术门槛", "别人复现你的核心技术要多久？真正的技术壁垒在哪，还是主要靠工程集成？"),
+            ("安全与合规", "涉及数据、隐私、电气安全时，你是怎么规避风险的？是否符合相关规范？"),
+            ("现场演示准备", "演示时最容易出问题的环节是哪个？你准备了什么兜底方案？"),
+            ("工程落地与迭代", "从原型到可用产品还差什么？下一阶段的工程里程碑和最大技术卡点是什么？"),
+        ],
+        "business": [
+            ("商业模式与盈利逻辑", "谁付费、为什么愿意付费、怎么持续付费？客单价、毛利、复购/续费分别是多少？"),
+            ("市场空间与目标客户", "目标市场多大？可服务市场（SOM）怎么测算？前100个客户是谁、怎么触达？"),
+            ("单位经济模型", "获客成本、交付成本、单客户价值是多少？多久能覆盖成本？"),
+            ("竞品与差异化", "主要竞品是谁？你比他们便宜/好用/快在哪里？差异能不能量化？"),
+            ("增长与渠道", "靠什么渠道获客？冷启动怎么破冰？增长是否可持续？"),
+            ("收入来源与定价", "有几种收入来源？定价依据是什么？用户对价格的接受度验证过吗？"),
+            ("财务预测依据", "收入、成本、盈亏平衡的测算依据是什么？假设是否过于乐观？"),
+            ("团队与运营能力", "团队凭什么能把这个商业模式跑通？缺的关键岗位/资源是什么？"),
+            ("失败风险与止损", "这个商业模式最大的失败风险是什么？什么信号出现就该调整方向？"),
+            ("规模与复制路径", "从试点到规模复制的关键卡点是什么？不同城市/客群的复制成本一样吗？"),
+        ],
+        "modeling": [
+            ("模型假设合理性", "每条假设的依据是什么？哪个假设最可能不成立，为什么仍采用？"),
+            ("符号与变量定义", "关键符号和变量怎么定义？量纲和单位是否自洽？"),
+            ("模型建立思路", "为什么选这个模型而不是别的？模型与题意的对应关系是什么？"),
+            ("求解方法与算法", "用了什么求解方法？复杂度是多少？有没有更优替代？"),
+            ("数据来源与预处理", "数据从哪来？缺失、异常、量纲不一致怎么处理？"),
+            ("结果正确性", "结果怎么验证是合理的？有没有量级/边界检查？"),
+            ("灵敏度分析", "哪个参数对结果影响最大？参数变化后结论会不会反转？"),
+            ("模型检验与误差", "怎么检验模型？误差来源是什么？误差是否在可接受范围？"),
+            ("模型评价与局限", "模型的适用条件和局限性是什么？什么情况下会失效？"),
+            ("可改进方向", "如果时间充足，你会优先改进模型的哪个部分？为什么？"),
+        ],
+        "academic": [
+            ("研究问题与价值", "你的研究问题是什么？它解决的是哪个真问题，学术/社会价值在哪？"),
+            ("文献与创新点", "国内外做到什么程度了？你的创新点是增量还是实质突破？"),
+            ("研究设计与方法", "为什么用这个方法？样本、对照、变量怎么设计的？"),
+            ("数据与证据链", "关键结论靠哪些数据支撑？数据怎么采集、怎么保证可信？"),
+            ("实验与对比", "有没有对照组/基线？结果差异是否显著、可复现？"),
+            ("局限性与诚实性", "研究的最大局限是什么？哪些结论不能外推？"),
+            ("成果与知识产权", "成果形式是什么？学生第一完成人、产权归属是否清晰？"),
+            ("结论的边界", "结论在什么条件下成立？换场景/人群还成立吗？"),
+            ("下一步研究", "后续要补什么实验或数据才能让结论更硬？"),
+            ("评委挑刺", "如果评委质疑你的方法和数据，你最怕被问哪一点？怎么回答？"),
+        ],
+    }
+    items = sets.get(kind, sets["engineering"])
+    return "\n".join(f"{i}. {title}：{detail}" for i, (title, detail) in enumerate(items, 1))
 
 
 def _chapter_block(state: dict) -> str:
@@ -1247,6 +1333,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 请写一份完整详实的申报书，全文 4500～6000 字，低于 3200 字判不合格，每个章节都要展开成完整段落，不要简略。
 {_chapter_block(state)}
+{_competition_focus(state)}
 
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}
@@ -1323,6 +1410,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 5. 中文标点用全角。
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}
+{_competition_focus(state)}
 """
     proposal, n = _expand_to_length(
         _stream_llm(prompt, "proposal"), 1100,
@@ -1549,17 +1637,8 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
 评委意见：{state['judge_feedback']}
 {proposal_line}
 
-【10 个问题必须覆盖以下方向，每题都要点到具体质疑点；禁止「请介绍你的项目」「你的创新点是什么」这类泛泛而问】
-1. 护城河 / 巨头竞争：如果腾讯、华为这类大厂也做同类产品，你的护城河是什么？
-2. 成本结构与盈利：成本结构是什么？多久能盈利？盈亏平衡点在哪？
-3. 数据可信度：关键数字（用户数 / 测试量 / 留存率 / 准确率）怎么测的？样本量、误差、来源？
-4. 用户反馈与验证：测了多少用户？反馈数据怎么来的？有没有第三方验证？
-5. 技术门槛与可复制性：核心技术门槛有多高？别人多久能复制？
-6. 与现有方案对比：比现有方案好在哪？好多少？把差异量化？
-7. 商业模式可持续：谁付费、为什么愿意付费、怎么持续？
-8. 团队能力与分工：团队凭什么做得出来？分工和执行路径？
-9. 失败风险与诚实性：最大的失败风险是什么？哪些环节你不擅长？
-10. 规模化与落地：怎么从试点走到规模？关键里程碑和卡点？
+【10 个问题必须按本比赛类型覆盖以下方向，每题都要点到具体质疑点；禁止「请介绍你的项目」「你的创新点是什么」这类泛泛而问】
+{_defense_focus(state)}
 
 【输出格式】每个问题单独一段，用「问题 N：……」开头，紧接着另起一行写「回答框架：」，再用约 200 字写出「从哪几个方向答、要摆哪些数据、要提前堵住哪个质疑」。不要写成标准答案，不要写成演讲稿，不要照抄申报书原文。
 
