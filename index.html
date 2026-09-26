@@ -1093,6 +1093,14 @@ mark.wb-ph {
                         </div>
                         <!-- 匹配状态：这份要求是官方知识库来的，还是通用兜底 -->
                         <div id="evMatchBar" style="margin-bottom: 10px; font-size: 12.5px;"></div>
+                        <!-- 赛道选择：只有知识库真写了赛道差异的赛事才出现（目前 iCAN 三赛道） -->
+                        <div id="evTrackBox" style="display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2);">
+                            <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 7px;">
+                                选赛道<span style="font-weight:400; color: var(--text-mute);">（不同赛道打分侧重和禁忌不一样）</span>
+                            </div>
+                            <div id="evTrackChips" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+                            <div id="evTrackInfo" style="display: none; margin-top: 9px; font-size: 12.5px; line-height: 1.75;"></div>
+                        </div>
                         <div id="evSections" style="font-size: 13px;"></div>
                         <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
                         <div id="evDeduct" style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
@@ -1332,6 +1340,17 @@ mark.wb-ph {
                 <b>【待你填写：xxx】</b>／<b>【示例值，需核实】</b>
                 —— 这些是 AI 编不出来的真实数据，<b>必须换成你自己跑出来的</b>再交。
                 带着占位符交上去，评委一问就穿帮。
+            </div>
+
+            <!-- 赛道禁忌扫描：iCAN 创新赛道是双盲评审，正文里出现学校/导师信息直接扣分。
+                 这条规则写进 prompt 也可能漏，所以再在成品上扫一遍兜底——漏了就是真扣分 -->
+            <div id="wbBanBar" style="display: none; background: #FDECEA; border-left: 4px solid #C0392B; padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.8; color: #7B241C;">
+                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
+                <b>正文里疑似出现了 <span id="wbBanCount">0</span> 处学校／导师信息</b>
+                <div id="wbBanList" style="margin-top: 4px; font-size: 12.5px; color: #922B21;"></div>
+                <div style="margin-top: 4px;">
+                    你选的赛道是<b>双盲评审</b>，材料里出现学校、导师信息<b>直接扣分</b>。请删掉后再导出。
+                </div>
             </div>
 
             <!-- 一句话定位 -->
@@ -2510,11 +2529,61 @@ mark.wb-ph {
             var key = 'wbEventReq_' + (req ? (req.label + name) : name);
             var custom = null;
             try { custom = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
-            var sections = (custom && custom.sections && custom.sections.length)
-                ? custom.sections : base.sections.slice();
+
+            // 赛道：只有知识库真写了「## 赛道设置」的赛事才有。
+            // 默认选中第一个（iCAN 是创新赛道——它的禁忌是「别写学校/导师」，
+            // 这条对任何赛道都无害，反而是不选才容易漏掉商业模式这类硬要求）
+            var tracks = (base._idx && base._idx.tracks) || [];
+            var tk = null;
+            if (tracks.length) {
+                var tkey = (custom && custom.track) || '';
+                tk = tracks.filter(function (t) { return t.key === tkey; })[0] || tracks[0];
+            }
+
+            var sections;
+            if (custom && custom.sections && custom.sections.length) sections = custom.sections;
+            else if (tk && tk.sections && tk.sections.length) sections = tk.sections.slice();
+            else sections = base.sections.slice();
+
             return { label: base.label, doc_type: base.doc_type, sections: sections,
                      scoring: base.scoring, deduct: base.deduct, key: key,
-                     _idx: base._idx || null, _src: base._src || 'default' };
+                     _idx: base._idx || null, _src: base._src || 'default',
+                     _track: tk, _tracks: tracks };
+        }
+
+        // 选赛道：切换后章节跟着换成该赛道的结构（用户手动改过的章节优先保留）
+        function evSetTrack(tkey) {
+            var c = evCurrent();
+            if (!c._tracks || !c._tracks.length) return;
+            var tk = c._tracks.filter(function (t) { return t.key === tkey; })[0];
+            if (!tk) return;
+            var saved = null;
+            try { saved = JSON.parse(localStorage.getItem(c.key) || 'null'); } catch (e) {}
+            // 已有自定义章节 → 只换赛道标记，不动用户改过的结构
+            var keep = (saved && saved.sections && saved.sections.length) ? saved.sections : null;
+            try {
+                localStorage.setItem(c.key, JSON.stringify({
+                    sections: keep || [], track: tkey
+                }));
+            } catch (e) {}
+            renderEventCard();
+            wbSaveForm();
+        }
+
+        // 赛道规则拼成给 AI 看的约束文本（走 rule_content 链路，后端不用改）
+        function evTrackRule() {
+            var c = evCurrent();
+            var tk = c._track;
+            if (!tk) return '';
+            var L = [];
+            L.push('【赛道】' + tk.name + '：' + tk.desc);
+            if (tk.ban && tk.ban.length) {
+                L.push('【硬性禁忌】以下内容严禁出现：' + tk.ban.join('、') +
+                       (tk.ban_note ? '。' + tk.ban_note : ''));
+            }
+            if (tk.focus && tk.focus.length) L.push('【必须写到】' + tk.focus.join('；'));
+            if (tk.avoid && tk.avoid.length) L.push('【不要写】' + tk.avoid.join('；'));
+            return L.join('\n');
         }
 
         function evSave() {
@@ -2580,6 +2649,57 @@ mark.wb-ph {
                         return x[0] + ' ' + x[1] + '%';
                     }).join(' · ');
             }
+            // 赛道选择：无赛道数据的赛事整块隐藏，不留空壳
+            var tb = document.getElementById('evTrackBox');
+            if (tb) {
+                var tks = c._tracks || [];
+                if (tks.length) {
+                    tb.style.display = 'block';
+                    var chips = document.getElementById('evTrackChips');
+                    if (chips) {
+                        chips.innerHTML = tks.map(function (t) {
+                            var on = c._track && t.key === c._track.key;
+                            return '<button onclick="evSetTrack(\'' + t.key + '\')" ' +
+                                'title="' + _esc(t.desc) + '" ' +
+                                'style="padding: 6px 12px; font-size: 12.5px; border-radius: 999px; cursor: pointer; ' +
+                                'border: 1px solid ' + (on ? 'var(--c-a)' : 'var(--line)') + '; ' +
+                                'background: ' + (on ? 'var(--c-a)' : 'var(--surface-solid)') + '; ' +
+                                'color: ' + (on ? '#fff' : 'var(--text-dim)') + '; ' +
+                                'font-weight: ' + (on ? '600' : '400') + ';">' + _esc(t.name) + '</button>';
+                        }).join('');
+                    }
+                    // 赛道细则：禁忌用红色，必须写/不要写用普通色；
+                    // focus/avoid/sections 是我们按赛道定位推导的，不是官方原文，必须标注清楚
+                    var ti = document.getElementById('evTrackInfo');
+                    if (ti && c._track) {
+                        var t = c._track, h = '';
+                        h += '<div style="color: var(--text-dim);">' + _esc(t.desc) + '</div>';
+                        if (t.ban && t.ban.length) {
+                            h += '<div style="margin-top: 5px; color: var(--danger, #C0392B); font-weight: 600;">' +
+                                 '⚠ 不能出现：' + _esc(t.ban.join('、')) +
+                                 (t.ban_note ? '<span style="font-weight:400;">（' + _esc(t.ban_note) + '）</span>' : '') +
+                                 '</div>';
+                        }
+                        if (t.focus && t.focus.length) {
+                            h += '<div style="margin-top: 4px; color: var(--text-dim);">要写到：' +
+                                 _esc(t.focus.join('；')) + '</div>';
+                        }
+                        if (t.avoid && t.avoid.length) {
+                            h += '<div style="margin-top: 4px; color: var(--text-mute);">别写：' +
+                                 _esc(t.avoid.join('；')) + '</div>';
+                        }
+                        if (t.sections && t.sections.length) {
+                            h += '<div style="margin-top: 4px; color: var(--text-mute); font-size: 12px;">' +
+                                 '（下面章节已按该赛道排列，可直接改）</div>';
+                        }
+                        ti.innerHTML = h;
+                        ti.style.display = 'block';
+                    }
+                } else {
+                    tb.style.display = 'none';
+                }
+            }
+
             var dd = document.getElementById('evDeduct');
             if (dd) dd.textContent = c.deduct || '';
 
@@ -3336,6 +3456,38 @@ mark.wb-ph {
             var n = (window.wbCountPlaceholders ? window.wbCountPlaceholders() : 0);
             cnt.textContent = n;
             bar.style.display = n > 0 ? 'block' : 'none';
+            wbRefreshBanBar();
+        }
+
+        // 赛道禁忌扫描：只对「有明文禁令」的赛道生效（目前只有 iCAN 创新赛道）。
+        // 规则写进 prompt 模型也可能漏，所以成品再扫一遍兜底——这类漏写是真扣分，不是体验问题。
+        var WB_BAN_WORDS = ['大学', '学院', '学校', '指导教师', '指导老师', '导师', '教授', '副教授', '讲师'];
+        function wbRefreshBanBar() {
+            var bar = document.getElementById('wbBanBar');
+            var cntEl = document.getElementById('wbBanCount');
+            var listEl = document.getElementById('wbBanList');
+            if (!bar) return;
+            var tk = null;
+            try { tk = (evCurrent() || {})._track; } catch (e) {}
+            // 没选赛道、或该赛道没有明文禁令 → 不扫描（避免对创业/挑战赛道误报）
+            if (!tk || !tk.ban || !tk.ban.length) { bar.style.display = 'none'; return; }
+
+            var root = document.getElementById('results') || document.getElementById('resultArea') || document.body;
+            var txt = (root.innerText || root.textContent || '');
+            // 「大学」会命中「大学生」——这是大学生赛事，正文必然出现，属于误报，先剥掉再扫
+            txt = txt.replace(/大学生/g, '');
+            var hits = [];
+            for (var i = 0; i < WB_BAN_WORDS.length; i++) {
+                var w = WB_BAN_WORDS[i];
+                var p = 0, n = 0;
+                while ((p = txt.indexOf(w, p)) >= 0) { n++; p += w.length; }
+                if (n > 0) hits.push(w + '×' + n);
+            }
+            if (!hits.length) { bar.style.display = 'none'; return; }
+            if (cntEl) cntEl.textContent = hits.length;
+            if (listEl) listEl.textContent = '命中：' + hits.join('、') +
+                '（也可能命中「大学生」等正常用词，自己核一眼）';
+            bar.style.display = 'block';
         }
 
         // 把后端返回的 partial 渲染进页面；返回本次是否产出了新内容
@@ -3451,7 +3603,13 @@ mark.wb-ph {
                         : 'standard'),
                     keywords: (document.getElementById('keywords') || {}).value || '',
                     // 赛事官方文件：后端已有 rule_content 链路，这里把前端口子接上
-                    rule_content: (document.getElementById('rules') || {}).value || '',
+                    // 官方文件文本 + 赛道规则：后端 rule_content 直接进 prompt，不用改后端
+                    rule_content: (function () {
+                        var up = (document.getElementById('rules') || {}).value || '';
+                        var tr = '';
+                        try { tr = evTrackRule(); } catch (e) {}
+                        return [up, tr].filter(function (x) { return x; }).join('\n\n');
+                    })(),
                     theme: (document.getElementById('deckTheme') || {}).value || null,
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
