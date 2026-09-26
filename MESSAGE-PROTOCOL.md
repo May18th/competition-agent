@@ -681,3 +681,9 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - 派工单任务3：#wbCoachVeil 点遮罩暗处即 coachEnd()（原为 coachNext，手机端只能找小字「跳过」易卡死）；新增 Esc 退出（_coachEsc，coachEnd 时移除监听）；tip 加提示文案；veil 加 cursor:pointer。localStorage wbCoachDone=1 不启动引导的逻辑原本就在（2756 行附近），无需改。
 - 派工单任务4：范文库措辞改「AI 示范范文」4 处（1893 描述/1594 label/6219 帮助/6546 空态），明示「非真实获奖原文」。Tab 名「范文库」保留。
 - 后端无改动。请 Codex 基于 1759438 之后的 main 继续，别用旧副本覆盖 index.html。
+
+## 2026-09-27 WorkBuddy 改动记录②（index.html，已部署 6910938）
+- 「字数崇拜」收尾：score-meta 的「正文字数：X 字」改为「数据支撑论点：N 处 · 待补充：M 项」，数据源 completeness.data_points / completeness.placeholders（生成与历史两条路径都走 renderCompleteness，已确认该函数在两条路径均被调用）。
+- 待补充 >0 时数字标黄（--warn-text）并带 title 提示「导出前必须换成真实数据」；=0 标绿。
+- wordCount 元素与赋值已全删（grep 0 残留）。产物 h3 旁的「N 字」小标签（tagWordCount）保留未动——那是简洁/深度两档对比用的信息标签，非卖点，如需一并去掉再说。
+- 后端无改动。请 Codex 基于 6910938 之后的 main 继续。
