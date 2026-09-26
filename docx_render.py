@@ -624,23 +624,120 @@ def _render_caption(doc, text):
     _font(p.add_run(_fullwidth(text)), SZ_WU, CN_SONG, bold=True)
 
 
+def _tbl_borders(tblPr, spec):
+    """给表格（或单元格）写边框。spec: {边: (val, sz, color)}，sz 单位是 1/8 pt。"""
+    borders = OxmlElement('w:tblBorders')
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        el = OxmlElement('w:' + edge)
+        v = spec.get(edge)
+        if v:
+            el.set(qn('w:val'), v[0])
+            el.set(qn('w:sz'), str(v[1]))
+            el.set(qn('w:color'), v[2])
+        else:
+            el.set(qn('w:val'), 'nil')
+        borders.append(el)
+    tblPr.append(borders)
+
+
+def _cell_borders(cell, bottom_sz=6):
+    """单元格下边框（三线表的表头分隔线）。"""
+    tcPr = cell._tc.get_or_add_tcPr()
+    borders = OxmlElement('w:tcBorders')
+    for edge in ('top', 'left', 'right'):
+        el = OxmlElement('w:' + edge)
+        el.set(qn('w:val'), 'nil')
+        borders.append(el)
+    b = OxmlElement('w:bottom')
+    b.set(qn('w:val'), 'single')
+    b.set(qn('w:sz'), str(bottom_sz))
+    b.set(qn('w:color'), '000000')
+    borders.append(b)
+    tcPr.append(borders)
+
+
+def _row_cant_split(row):
+    """一行不跨页断开：表格被打断在两页是最难看的一种。"""
+    trPr = row._tr.get_or_add_trPr()
+    trPr.append(OxmlElement('w:cantSplit'))
+
+
+def _text_w(s):
+    """估算列宽权重：中日韩字符算 2，其余算 1。"""
+    s = _plain(s or '')
+    w = 0
+    for ch in s:
+        w += 2 if _is_cn(ch) else 1
+    return w
+
+
+def _col_widths(header, rows, total_cm=14.66):
+    """按各列最长内容分配版心宽度（A4 左右 3.17cm 后剩 14.66cm）。
+    首列一般是「维度 / 指标」这类短标签，给点加成，别被长正文挤成窄条。"""
+    cols = len(header)
+    w = []
+    for j in range(cols):
+        m = _text_w(header[j])
+        for r in rows:
+            m = max(m, _text_w(r[j]))
+        w.append(min(m, 30))
+    if w:
+        w[0] = w[0] * 1.2 + 2
+    tot = sum(w) or 1
+    # 单列最窄 1.6cm（放得下 4 个汉字），最宽不超过版心一半
+    return [max(1.6, min(total_cm * 0.5, total_cm * x / tot)) for x in w]
+
+
+def _set_tbl_layout(table, widths_cm):
+    """钉死列宽：只设 cell.width 不够，Word 主要看 tblGrid 和 tblW，
+    不写死的话打开文档又会弹回自动布局（列宽忽宽忽窄）。"""
+    total = int(sum(widths_cm) * 567)          # 1cm = 567 twips
+    tblPr = table._tbl.tblPr
+    for el in tblPr.findall(qn('w:tblW')):
+        tblPr.remove(el)
+    tblW = OxmlElement('w:tblW')
+    tblW.set(qn('w:w'), str(total))
+    tblW.set(qn('w:type'), 'dxa')
+    tblPr.append(tblW)
+    grid = table._tbl.tblGrid
+    for j, col in enumerate(grid.gridCol_lst):
+        col.set(qn('w:w'), str(int(widths_cm[j] * 567)))
+
+
 def _render_table(doc, header, rows):
-    """表格：单细线框，无底纹无特效；表头加粗居中，表内宋体小四。"""
+    """表格：三线表（顶线 / 表头线 / 底线，无竖线无底色，符合格式红线），
+    表头黑体小四加粗居中，表内宋体小四；列宽按内容自适应；行不跨页断开。"""
     cols = len(header)
     if cols == 0:
         return
     norm = [(r + [''] * cols)[:cols] for r in rows]
 
     table = doc.add_table(rows=1, cols=cols)
-    table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = True
-    _set_cell_margins(table)
+    table.autofit = False
+    _set_cell_margins(table, top=60, bottom=60, left=100, right=100)
+    # 三线表：只留顶线（1.5pt）和底线（1.5pt），中间靠表头下细线分隔
+    _tbl_borders(table._tbl.tblPr, {
+        'top': ('single', 12, '000000'),
+        'bottom': ('single', 12, '000000'),
+    })
+
+    widths = _col_widths(header, norm)
+    _set_tbl_layout(table, widths)
+
+    def _align_for(j, txt):
+        # 首列左对齐；其余列短内容居中、长内容左对齐（长句居中会读得很累）
+        if j == 0:
+            return WD_ALIGN_PARAGRAPH.LEFT
+        return WD_ALIGN_PARAGRAPH.CENTER if _text_w(txt) <= 16 else WD_ALIGN_PARAGRAPH.LEFT
 
     hdr = table.rows[0]
     _repeat_header(hdr)
+    _row_cant_split(hdr)
     for j, txt in enumerate(header):
         cell = hdr.cells[j]
+        cell.width = Cm(widths[j])
+        _cell_borders(cell, bottom_sz=6)
         cell.text = ''
         p = cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -650,11 +747,13 @@ def _render_table(doc, header, rows):
 
     for r in norm:
         row = table.add_row()
+        _row_cant_split(row)
         for j, txt in enumerate(r):
             cell = row.cells[j]
+            cell.width = Cm(widths[j])
             cell.text = ''
             p = cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.alignment = _align_for(j, txt)
             p.paragraph_format.line_spacing = 1.15
             p.paragraph_format.space_after = Pt(0)
             _font(p.add_run(_fullwidth(_plain(txt))), SZ_XIAOSI, CN_SONG)
