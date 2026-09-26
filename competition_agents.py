@@ -679,6 +679,7 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
 5. 段落不低于 80 字，且每段必须含一个具体数字 + 一个具体技术名词；纯形容词、纯口号、放哪个项目都能成立的段落直接判不合格。
 6. 严禁编造假数据：所有数字、文献、检测报告、合作方、试点成果、**具体硬件型号/器件型号/框架版本号**，只能来自 ① 知识库/官方资料里的真实数据 ② 用户创意里已给出的数据 ③ 占位符【待你填写：xxx】或【示例值，需核实】。凡是拿不准的，一律写占位符，绝不编一个看起来真实但实际是假的数字或型号。技术名词只写「主控芯片」「制冷片」「称重传感器」这类**通用类型名**，**不要编造 ESP32-S3、TEC1-12706 这种具体型号**；没实测过的数值严禁写「实测」二字，只能写「测算值」或「示例值，需核实」。
 7. 严禁编造「据《XX 报告 2026》显示」「教育部 2025 年数据显示」「艾瑞咨询 2026 年报告」这类具体机构+年份的引用。需要行业数据时，只能用知识库/官方资料里的真实数据（并保留其真实出处）、或用户已给的数据；拿不到出处就写「行业普遍认为 / 公开数据显示」这类不含具体出处的表述，或留【需补充数据来源】标记。
+8. 重点标注：每个章节里，把**核心数字、关键技术名词、核心结论**用 Markdown 加粗（**xxx**）标出来，每章 2～4 处即可；不要整段整句加粗，只标真正的关键词，帮助评委/用户快速抓重点、省阅读时间。
 """
 
 
@@ -796,6 +797,17 @@ def _is_repetitive(text, threshold=4):
         return top[1] >= threshold
     except Exception:
         return False
+
+
+def _dedupe_consecutive(text):
+    """确定性折叠连续重复的句子（模型复读时的终极兜底，不依赖模型配合）。"""
+    parts = re.split(r'(?<=[。！？!?])\s*', text or '')
+    out = []
+    for p in parts:
+        if out and p.strip() and p.strip() == out[-1].strip():
+            continue
+        out.append(p)
+    return ''.join(out).strip()
 
 
 def _expand_to_length(text, min_chars, topic, rounds=2):
@@ -1404,6 +1416,10 @@ def _stream_llm_guarded(prompt, field, max_retry=1):
                    "\n\n【重要警告：你上一版输出出现了「同一句话反复循环重复」的严重问题，"
                    "本次必须每一段写不同内容、每一句都不重复，否则判不合格。】")
         text = _stream_llm(guarded, field)
+    # 终极兜底：重跑后仍复读，就确定性把连续重复句折叠掉，绝不让复读内容交付
+    if _is_repetitive(text):
+        print(f"[antiloop] {field} 重跑后仍复读，执行确定性折叠")
+        text = _dedupe_consecutive(text)
     return text
 
 
