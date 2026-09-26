@@ -1383,7 +1383,7 @@ mark.wb-ph {
         <div class="card">
             <div class="card-title">
                 <span class="step-badge">1</span>
-                填写赛事信息
+                赛事信息
             </div>
             <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; font-size: 11.5px; color: var(--text-mute); align-items: center; gap: 8px;">
                 <span id="wbRestoreText"></span>
@@ -1517,7 +1517,7 @@ mark.wb-ph {
                         </div>
                         <input type="file" id="ruleFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                         <div id="ruleDocInfo" style="margin-top: 8px; font-size: 12.5px; color: var(--text-mute); line-height: 1.7;">
-                            还没上传。上传后 AI 会按官方的评分维度与章节要求生成，内容会明显不一样。
+                            未上传。上传官方文件后，将按其评分维度与章节要求生成。
                         </div>
                         <div id="ruleDocPreview" style="display: none; margin-top: 8px; max-height: 140px; overflow: auto; padding: 10px; background: var(--surface-2); border-radius: 6px; font-size: 12px; color: var(--text-dim); white-space: pre-wrap;"></div>
                     </div>
@@ -1525,9 +1525,9 @@ mark.wb-ph {
                     </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
-                    <textarea id="idea" placeholder="一句话说清：谁，在什么场景，解决什么问题" rows="3" style="min-height: 80px;"></textarea>
+                    <textarea id="idea" placeholder="目标用户 · 应用场景 · 核心问题" rows="3" style="min-height: 80px;"></textarea>
                     <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
-                        写得越具体，生成内容越贴题
+                        信息越具体，生成内容越精准
                     </div>
                 </div>
 
@@ -1563,13 +1563,13 @@ mark.wb-ph {
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
                     <div id="uploadRow" style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
                         <button id="btnUploadDraft" onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
-                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书草稿
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书
                         </button>
                         <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
                             <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 粘贴文本
                         </button>
                         <button onclick="document.getElementById('tplFile').click()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
-                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 导入模板（按它的章节写）
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 导入模板
                         </button>
                         <input type="file" id="tplFile" accept=".docx,.doc,.pdf,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                         <!-- accept 同时给扩展名和 MIME：只写扩展名时，部分手机（尤其 iOS/微信）
@@ -2384,7 +2384,7 @@ mark.wb-ph {
             var pv = document.getElementById('ruleDocPreview');
             if (pv) { pv.textContent = ''; pv.style.display = 'none'; }
             var info = document.getElementById('ruleDocInfo');
-            if (info) info.textContent = '还没上传。上传后 AI 会按官方的评分维度与章节要求生成，内容会明显不一样。';
+            if (info) info.textContent = '未上传。上传官方文件后，将按其评分维度与章节要求生成。';
             wbToast('已清除赛事规则', { type: 'ok' });
         }
 
