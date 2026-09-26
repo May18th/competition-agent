@@ -1736,6 +1736,19 @@ mark.wb-ph {
                 <button onclick="wbTypoFix()" style="margin-left: 10px; padding: 6px 14px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; font-weight: 600;">一键修正</button>
                 <button onclick="wbTypoDismiss()" style="margin-left: 6px; padding: 6px 12px; background: transparent; color: var(--text-mute); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12.5px;">忽略</button>
             </div>
+
+            <!-- 图表数据真实性提醒：正文里列了「待替换数据清单」才出现 -->
+            <div id="dataTodoBar" style="display: none; margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(245,166,35,.12); border: 1px solid rgba(245,166,35,.4); font-size: 13px; color: var(--text); line-height: 1.75;">
+                <div style="font-weight: 600;">📊 有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
+                <div style="color: var(--text-dim); font-size: 12.5px; margin-top: 2px;">
+                    图表里的预算、市场规模等目前是<b>测算值</b>，图上已标橙色「需替换为实测」。
+                    提交前按清单换成你们自己测出来的数或公开数据（写明机构与年份）。
+                </div>
+                <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button onclick="wbDataTodoJump()" style="padding: 6px 14px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; font-weight: 600;">定位到清单</button>
+                    <span style="align-self: center; font-size: 12px; color: var(--text-mute);">导出时这一节会自动剔除，不会出现在交给评委的文档里</span>
+                </div>
+            </div>
             <!-- 档位标识：由 JS 按 mode 填充（简洁快速版 / 深度完整版 · 已生成 N 个模块） -->
             <!-- 自评/评分维度/提交检查：默认收起，不糊用户脸上 -->
             <details id="scorePanel" style="margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
@@ -2766,9 +2779,22 @@ mark.wb-ph {
         // 「本次没识别到竞品对比素材」基本直接判死。导出前一律剔除。
         function wbStripTodo(t) {
             if (!t) return t;
-            return String(t).split('\n').filter(function (ln) {
-                return String(ln).indexOf('待补充') < 0;
-            }).join('\n');
+            var lines = String(t).split('\n');
+            var out = [], skipping = false;
+            for (var i = 0; i < lines.length; i++) {
+                var ln = lines[i];
+                /* 「待替换数据清单」是给作者看的提醒，列出哪些数字还得换实测值。
+                   它一旦导出进 Word/PDF，等于主动告诉评委「我的数据是编的」，直接判死。
+                   所以整节剔除（从它自己的标题一直到下一个同级标题为止）。 */
+                if (/^#{1,6}\s*.*待替换数据清单/.test(ln)) { skipping = true; continue; }
+                if (skipping) {
+                    if (/^#{1,6}\s/.test(ln)) { skipping = false; }   // 遇到下一个标题 = 这一节结束
+                    else { continue; }                                  // 节内正文整段丢掉
+                }
+                if (String(ln).indexOf('待补充') >= 0) continue;
+                out.push(ln);
+            }
+            return out.join('\n');
         }
         function wbStripDeckTodo(deck) {
             if (!deck || !deck.slides) return deck;
@@ -2868,7 +2894,9 @@ mark.wb-ph {
               });
         }
         async function exportOnePDF(id, name) {
-            const text = _txt(_DOM_TO_KEY[id] || '', id);
+            /* iCAN 官方交的就是 PDF（≤20页），这里必须和 Word 一样先清洗，
+               否则「待补充」「待替换数据清单」会原样进 PDF */
+            const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
@@ -5856,7 +5884,10 @@ mark.wb-ph {
                         // 锚点条要等板块都画完（才知道哪些有内容）再生成
                         _P(21, function () { wbRenderAnchorBar(); });
                         // 错别字扫描必须排在正文画完之后（扫的是渲染好的 DOM）
-                        _P(22, function () { try { wbTypoScan(); } catch (e) {} });
+                        _P(22, function () {
+                            try { wbTypoScan(); } catch (e) {}
+                            try { wbDataTodoScan(); } catch (e) {}
+                        });
 
                         // 不依赖渲染结果的：同步执行
                         // 分享需要知道这条结果对应哪条历史记录
@@ -6712,6 +6743,46 @@ mark.wb-ph {
             });
         }
         document.getElementById('typoBar').style.display = 'none';
+    };
+
+    /* ===================== 图表数据真实性提醒 ===================== */
+    /* 后端会在文末生成「待替换数据清单」章节，网页上要提醒作者去补真实数据；
+       但它绝不能出现在导出件里（见 wbStripTodo）。 */
+    window.wbDataTodoScan = function () {
+        var bar = document.getElementById('dataTodoBar');
+        var cnt = document.getElementById('dataTodoCount');
+        var el = document.getElementById('proposalText');
+        if (!bar || !el) return 0;
+        var txt = el.innerText || el.textContent || '';
+        var at = txt.indexOf('待替换数据清单');
+        if (at < 0) {
+            /* 兜底：后端字段名可能变化，改用更宽松的判据 */
+            if (txt.indexOf('需替换为实测') < 0 && txt.indexOf('待替换') < 0) {
+                bar.style.display = 'none';
+                return 0;
+            }
+        }
+        /* 数一下清单里列了几条（行首 - 或 数字. 的行） */
+        var seg = at >= 0 ? txt.slice(at, at + 2000) : txt;
+        var n = (seg.match(/(^|\n)\s*[-*·]\s*\S/g) || []).length;
+        if (!n) { n = (seg.match(/(^|\n)\s*\d+[.、)]\s*\S/g) || []).length; }
+        if (n > 40) n = 0;   // 明显是误判就干脆不显示数字
+        if (cnt) cnt.textContent = n || '若干';
+        bar.style.display = 'block';
+        return n;
+    };
+    window.wbDataTodoJump = function () {
+        var el = document.getElementById('proposalText');
+        if (!el) return;
+        var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6,strong,p');
+        for (var i = 0; i < heads.length; i++) {
+            var t = (heads[i].innerText || heads[i].textContent || '');
+            if (t.indexOf('待替换数据清单') >= 0) {
+                heads[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+        }
+        wbToast('没定位到清单，请手动往下翻', { type: 'warn' });
     };
 
     /* ===================== 分享：生成 7 天有效的只读链接 ===================== */
