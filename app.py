@@ -811,6 +811,92 @@ def export_feedback():
 
 
 @app.route('/admin')
+def admin_home():
+    """管理后台 · 总览首页：关键数字一屏看完，再点进详细面板 / 监视。"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_gen = c.execute(
+        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
+    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
+    rated_count = avg_row[1] if avg_row else 0
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    success_rate = round(total_gen * 100.0 / (total_gen + fail_total), 1) if (total_gen + fail_total) else 100.0
+    feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
+    recent_fb = c.execute(
+        "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
+    recent_fail = c.execute(
+        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
+    conn.close()
+
+    fb_rows = "".join(
+        '<li><span class="t">%s</span>%s</li>'
+        % (r["created_time"] or "", _html_escape(r["content"] or ""))
+        for r in recent_fb) or '<li class="e">暂无反馈</li>'
+    fail_rows = "".join(
+        '<li><span class="t">%s</span>%s</li>'
+        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        for r in recent_fail) or '<li class="e">暂无失败</li>'
+
+    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>赛创助手 · 管理后台</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#eef2ff,#f8fafc);color:#111827;margin:0;padding:32px 18px;line-height:1.6}
+.wrap{max-width:880px;margin:0 auto}
+.nav{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+.nav a{background:#fff;color:#475569;text-decoration:none;padding:9px 16px;border-radius:10px;font-size:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.nav a.active{background:#4f46e5;color:#fff}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:#64748b;font-size:14px;margin-bottom:20px}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.h{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.h .n{font-size:32px;font-weight:800;color:#4f46e5}
+.h .n.good{color:#059669}.h .n.bad{color:#e11d48}
+.h .l{font-size:13px;color:#64748b;margin-top:5px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.cols{grid-template-columns:1fr}}
+.box{background:#fff;border-radius:14px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.box h2{font-size:15px;margin:0 0 10px;color:#111827}
+.box ul{list-style:none;padding:0;margin:0}
+.box li{font-size:14px;padding:8px 0;border-bottom:1px solid #f1f5f9}
+.box li:last-child{border-bottom:none}
+.box li .t{display:block;font-size:12px;color:#94a3b8;margin-bottom:2px}
+.box li.e{color:#94a3b8;text-align:center;padding:16px}
+.more{margin-top:18px;font-size:14px}
+.more a{color:#4f46e5;text-decoration:none;font-weight:600}
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<h1>赛创助手 · 管理后台</h1>
+<div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
+<div class="hero">
+<div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
+<div class="h"><div class="n">%d</div><div class="l">今日生成</div></div>
+<div class="h"><div class="n %s">%s</div><div class="l">满意度平均分（%d 人打分）</div></div>
+<div class="h"><div class="n %s">%s%%</div><div class="l">生成成功率</div></div>
+<div class="h"><div class="n %s">%d</div><div class="l">待处理工单</div></div>
+<div class="h"><div class="n">%d</div><div class="l">反馈总数</div></div>
+</div>
+<div class="cols">
+<div class="box"><h2>最近反馈</h2><ul>%s</ul></div>
+<div class="box"><h2>最近失败</h2><ul>%s</ul></div>
+</div>
+<div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
+</div></body></html>""" % (
+        total_gen, today_gen,
+        "good" if avg_rating >= 4 else ("bad" if avg_rating and avg_rating < 3 else ""),
+        avg_rating, rated_count,
+        "good" if success_rate >= 95 else ("bad" if success_rate < 80 else ""),
+        success_rate,
+        "bad" if open_issue else "good", open_issue,
+        feedback_total, fb_rows, fail_rows)
+
+
+@app.route('/admin/panel')
 def admin_dashboard():
     """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
     conn = sqlite3.connect(DB_PATH)
@@ -967,7 +1053,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 返回主站</a></nav>
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>赛创助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 <div class="cards">
@@ -1071,7 +1157,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
 .nav a.active{background:#22d3ee;color:#0b1026}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 返回主站</a></nav>
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 赛创助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
 <div>
