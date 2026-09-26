@@ -555,19 +555,7 @@ def export_pdf():
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
-    resp = send_file(filepath, as_attachment=True, download_name=title + '.pdf')
-    # iCAN 应用方案硬性上限 20 页 / 50MB：导出后回传实测值，前端据此提示
-    try:
-        pages = len(PdfReader(filepath).pages)
-        mb = round(os.path.getsize(filepath) / 1024.0 / 1024.0, 2)
-        resp.headers['X-PDF-Pages'] = str(pages)
-        resp.headers['X-PDF-MB'] = str(mb)
-        comp = (data.get('competition_name') or '')
-        if 'iCAN' in comp or 'ican' in comp.lower() or 'AI应用创新' in comp:
-            resp.headers['X-PDF-Limit'] = '20'
-    except Exception:
-        pass
-    return resp
+    return send_file(filepath, as_attachment=True, download_name=title + '.pdf')
 
 
 @app.route('/api/export_defense')
@@ -708,6 +696,66 @@ def list_feedback():
     conn.close()
     items = [dict(r) for r in rows]
     return jsonify({"success": True, "feedback": items, "total": len(items)})
+
+
+@app.route('/admin')
+def admin_dashboard():
+    """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_gen = c.execute(
+        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
+    avg_row = c.execute(
+        "SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
+    rated_count = avg_row[1] if avg_row else 0
+    feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    feedbacks = c.execute(
+        "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 10").fetchall()
+    conn.close()
+
+    fb_items = []
+    for r in feedbacks:
+        fb_items.append('<li><div class="t">%s</div><div>%s</div></li>'
+                        % (r["created_time"] or "", _html_escape(r["content"] or "")))
+    fb_html = "".join(fb_items) or '<li class="empty">暂无反馈</li>'
+
+    html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>赛创助手 · 后台数据</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f8;color:#1a1a2e;margin:0;padding:30px 18px;line-height:1.6}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:22px;margin:0 0 18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:22px}
+.card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.num{font-size:26px;font-weight:700;color:#2563eb}
+.label{font-size:12px;color:#6b7280;margin-top:4px}
+h2{font-size:16px;margin:18px 0 10px}
+ul{list-style:none;padding:0;margin:0}
+li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
+li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
+li.empty{color:#9ca3af;text-align:center;padding:22px}
+</style></head><body><div class="wrap">
+<h1>赛创助手 · 后台数据</h1>
+<div class="cards">
+<div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
+<div class="card"><div class="num">%d</div><div class="label">今日生成</div></div>
+<div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
+<div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
+</div>
+<h2>最近 10 条反馈</h2>
+<ul>%s</ul>
+</div></body></html>""" % (total_gen, today_gen, avg_rating, rated_count, feedback_total, fb_html)
+    return html
+
+
+def _html_escape(s):
+    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
