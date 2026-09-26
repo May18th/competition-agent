@@ -876,6 +876,7 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 
 赛事：{state['competition_name']}
 项目创意：{state['idea']}
+{_similarity_paradigm_ref()}
 
 请分析：
 1. 这个创意和往届常见获奖项目有没有高度重合？
@@ -952,6 +953,7 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深市场分析专家。请只负责分析竞品情况，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_analysis_paradigm_ref('competitor')}
 
 请只写以下内容：
 1. 市场上至少 5 个同类产品/解决方案，每个的优缺点
@@ -975,6 +977,7 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
 
 项目创意：{state['idea']}
 {_ref_block(state, '商业模式')}
+{_analysis_paradigm_ref('business')}
 
 请只写以下内容：
 1. 目标客户细分（至少3类，每类的痛点和付费意愿）
@@ -999,6 +1002,7 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
 
 项目创意：{state['idea']}
 {_ref_block(state, '风险分析')}
+{_analysis_paradigm_ref('risk')}
 
 请只写以下内容：
 1. 技术风险（具体有哪些技术难题，怎么应对）
@@ -1022,6 +1026,7 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深技术架构师。请只负责写技术方案，不要写竞品、商业模式、风险等其他内容。
 
 项目创意：{state['idea']}
+{_analysis_paradigm_ref('tech')}
 
 请只写以下内容：
 1. 整体技术架构（分几层，每层用什么技术）
@@ -1177,6 +1182,43 @@ def _judge_paradigm_ref() -> str:
     try:
         from kb_distill import judge_paradigm_ref
         return judge_paradigm_ref()
+    except Exception:
+        return ""
+
+
+def _analysis_paradigm_ref(module_tag: str = None) -> str:
+    """注入竞品/商业/风险/技术分析范式；读不到则空串。"""
+    try:
+        from kb_distill import analysis_paradigm_ref
+        return analysis_paradigm_ref(module_tag)
+    except Exception:
+        return ""
+
+
+def _deck_speech_paradigm_ref() -> str:
+    """注入 PPT·演讲稿范式；读不到则空串。"""
+    try:
+        from kb_distill import deck_speech_paradigm_ref
+        return deck_speech_paradigm_ref()
+    except Exception:
+        return ""
+
+
+def _similarity_paradigm_ref() -> str:
+    """注入同质化检测范式；读不到则空串。"""
+    try:
+        from kb_distill import similarity_paradigm_ref
+        return similarity_paradigm_ref()
+    except Exception:
+        return ""
+
+
+def _score_diagnosis_ref() -> str:
+    """注入历史评委评分诊断（重点补强弱维度）；无数据则空串。"""
+    try:
+        from insights import score_diagnosis
+        txt = score_diagnosis().get("diagnosis_text", "")
+        return ("【历史评委评分诊断（据此重点补强）】\n" + txt + "\n") if txt else ""
     except Exception:
         return ""
 
@@ -1505,6 +1547,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_official_ref(state)}
 {_industry_ref()}
 {_paradigm_ref()}
+{_score_diagnosis_ref()}
 
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
@@ -1569,6 +1612,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_official_ref(state)}
 {_industry_ref()}
 {_paradigm_ref()}
+{_score_diagnosis_ref()}
 
 【篇幅硬性要求】
 1. 全文 1300 字左右，允许区间 1100～1600 字。不足 1100 字或超出 1600 字都不合格。
@@ -1874,6 +1918,7 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
+{_deck_speech_paradigm_ref()}
 评委意见（PPT 要回应或补齐的短板）：{state.get('judge_feedback') or '（无）'}
 
 【已产出的内容 —— 每页要点必须从中提炼具体数据/场景/结论，不要脱离这些空编】
@@ -1898,6 +1943,7 @@ def speech_agent(state: CompetitionState) -> CompetitionState:
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
+{_deck_speech_paradigm_ref()}
 PPT大纲：{state['ppt_outline']}
 
 【已产出的内容 —— 讲稿里的数据、场景、竞品对比必须来自下面这些，不要脱离空编】

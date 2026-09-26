@@ -342,10 +342,11 @@ def save_history_item(item):
     conn.commit()
     new_id = c.lastrowid
     conn.close()
-    # 新增历史记录后触发「评委评分范式」自动蒸馏检查（阈值 + 冷却，后台线程，失败静默）
+    # 新增历史记录后触发各类「历史数据范式」自动蒸馏检查（各有阈值 + 冷却，不够就休眠）
     try:
         from distill_scheduler import maybe_auto_distill
-        maybe_auto_distill("judge")
+        for _kind in ("judge", "analysis", "deck_speech", "similarity"):
+            maybe_auto_distill(_kind)
     except Exception:
         pass
     return new_id
@@ -1181,11 +1182,30 @@ h1{font-size:24px;margin:0 0 4px}
 <button id="distillJudgeBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏评委范式</button>
 <span id="distillJudgeMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
 </div>
+<div class="box" style="margin-top:14px"><h2>📐 分析/PPT·演讲稿/同质化范式</h2>
+<button id="distillAnalysisBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">分析范式</button>
+<span id="distillAnalysisMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+<button id="distillDeckBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">PPT/演讲稿</button>
+<span id="distillDeckMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+<button id="distillSimBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">同质化</button>
+<span id="distillSimMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+</div>
+<div class="box" style="margin-top:14px"><h2>📊 数据洞察（自动扫描）</h2>
+<div id="insightGaps" style="font-size:13px;color:#64748b">赛事资料缺口：加载中…</div>
+<div id="insightFeedback" style="font-size:13px;color:#64748b;margin-top:6px">反馈优先级：—</div>
+<div id="insightScore" style="font-size:13px;color:#64748b;margin-top:6px">评分弱项：—</div>
+<div id="insightFail" style="font-size:13px;color:#64748b;margin-top:6px">失败模式：—</div>
+</div>
 <script>
 function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';fetch(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
 bindDistill('distillBtn','distillMsg','/api/distill',function(j){return '完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';});
 bindDistill('distillDefenseBtn','distillDefenseMsg','/api/distill/defense',function(j){return '完成：用了 '+j.questions_used+' 道题、'+j.pattern_count+' 条必问套路';});
 bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j){return '完成：提炼 '+j.criticism_count+' 条高频扣分点';});
+bindDistill('distillAnalysisBtn','distillAnalysisMsg','/api/distill/analysis',function(j){return '完成：竞品/商业/风险/技术要点已更新';});
+bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',function(j){return '完成：PPT结构+演讲稿套路已更新';});
+bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
+function loadInsights(){fetch('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});fetch('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});fetch('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});fetch('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
+loadInsights();
 </script>
 </div></body></html>""" % (
         total_gen, today_gen,
@@ -2837,6 +2857,72 @@ def distill_judge_paradigm():
         return jsonify({"success": True, **result})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/distill/analysis', methods=['POST'])
+def distill_analysis_paradigm():
+    try:
+        from kb_distill import distill_analysis
+        result = distill_analysis()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/distill/deck_speech', methods=['POST'])
+def distill_deck_speech_paradigm():
+    try:
+        from kb_distill import distill_deck_speech
+        result = distill_deck_speech()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/distill/similarity', methods=['POST'])
+def distill_similarity_paradigm():
+    try:
+        from kb_distill import distill_similarity
+        result = distill_similarity()
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e)}), 500
+
+
+@app.route('/api/failure/patterns')
+def failure_patterns():
+    try:
+        from failure_patterns import get_failure_patterns
+        return jsonify({"success": True, "patterns": get_failure_patterns()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/feedback/priority')
+def feedback_priority_api():
+    try:
+        from insights import feedback_priority
+        return jsonify({"success": True, "items": feedback_priority()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/score/diagnosis')
+def score_diagnosis_api():
+    try:
+        from insights import score_diagnosis
+        return jsonify({"success": True, **score_diagnosis()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/competition/gaps')
+def competition_gaps_api():
+    try:
+        from competition_rules import competition_gap_report
+        return jsonify({"success": True, **competition_gap_report()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/kb/tags')

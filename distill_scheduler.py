@@ -18,9 +18,13 @@ import time
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(BASE, "competition.db")
 
+# 5 类范式：数据源 → 阈值（新增 N 条才蒸馏）。有数据才跑，没数据休眠，不空转不烧配额。
 THRESHOLDS = {
-    "writing": 10,   # 范文库新增 10 条范文
-    "judge": 15,     # 历史新增 15 条带多专家评审的记录
+    "writing": 10,      # kb_samples 里 type='范文' 的数量
+    "judge": 15,        # history 里带 expert_review 的记录
+    "analysis": 15,     # history 里带竞品/商业/风险/技术分析的记录
+    "deck_speech": 20,  # history 里带 ppt_outline 或 speech_script 的记录
+    "similarity": 20,   # history 里带 similarity_report 的记录
 }
 COOLDOWN_SEC = 3600  # 同一种范式 1 小时内最多自动蒸馏一次
 
@@ -74,6 +78,22 @@ def _count(kind):
             n = c.execute(
                 "SELECT COUNT(*) FROM history WHERE COALESCE(json_extract(result_data,'$.expert_review'),'') != ''"
             ).fetchone()[0]
+        elif kind == "analysis":
+            n = c.execute(
+                "SELECT COUNT(*) FROM history WHERE COALESCE(json_extract(result_data,'$.competitor_analysis'),'') != '' "
+                "OR COALESCE(json_extract(result_data,'$.business_model'),'') != '' "
+                "OR COALESCE(json_extract(result_data,'$.risk_analysis'),'') != '' "
+                "OR COALESCE(json_extract(result_data,'$.tech_solution'),'') != ''"
+            ).fetchone()[0]
+        elif kind == "deck_speech":
+            n = c.execute(
+                "SELECT COUNT(*) FROM history WHERE COALESCE(json_extract(result_data,'$.ppt_outline'),'') != '' "
+                "OR COALESCE(json_extract(result_data,'$.speech_script'),'') != ''"
+            ).fetchone()[0]
+        elif kind == "similarity":
+            n = c.execute(
+                "SELECT COUNT(*) FROM history WHERE COALESCE(json_extract(result_data,'$.similarity_report'),'') != ''"
+            ).fetchone()[0]
         else:
             n = 0
     finally:
@@ -84,11 +104,20 @@ def _count(kind):
 def _run(kind):
     """后台实际执行蒸馏（在子线程里跑，失败只记录不抛出）。"""
     try:
-        from kb_distill import distill_from_samples, distill_judge
+        from kb_distill import (
+            distill_from_samples, distill_judge, distill_analysis,
+            distill_deck_speech, distill_similarity,
+        )
         if kind == "writing":
             distill_from_samples()
         elif kind == "judge":
             distill_judge()
+        elif kind == "analysis":
+            distill_analysis()
+        elif kind == "deck_speech":
+            distill_deck_speech()
+        elif kind == "similarity":
+            distill_similarity()
     except Exception as e:
         try:
             import app_log

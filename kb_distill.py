@@ -323,3 +323,130 @@ def distill_judge(limit=60):
     }
     _save_json(JUDGE_PARADIGM_PATH, out)
     return {"ok": True, "criticism_count": len(out["common_criticisms"]), "paradigm": out}
+
+
+# ============ 分析模块 / PPT·演讲稿 / 同质化 范式 ============
+ANALYSIS_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "analysis_paradigm.json")
+DECK_SPEECH_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "deck_speech_paradigm.json")
+SIMILARITY_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "similarity_paradigm.json")
+
+
+def _history_corpus(fields, limit=60, max_chars=16000):
+    """从历史 result_data 抽取若干字段拼成蒸馏素材；无数据返回空串。"""
+    import sqlite3
+    conn = sqlite3.connect(os.path.join(BASE, "competition.db"))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT result_data FROM history ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    parts = []
+    for r in rows:
+        try:
+            d = json.loads(r["result_data"])
+        except Exception:
+            continue
+        for f in fields:
+            v = d.get(f)
+            if isinstance(v, str) and v.strip():
+                parts.append(v.strip()[:800])
+    return "\n\n---\n\n".join(parts)[:max_chars]
+
+
+def analysis_paradigm_ref(module_tag=None):
+    """注入竞品/商业/风险/技术分析 prompt 的「分析范式」；无则空串。"""
+    p = _load_json(ANALYSIS_PARADIGM_PATH)
+    if not p:
+        return ""
+    if module_tag and p.get(module_tag):
+        return "【分析模块写法要点】" + str(p[module_tag]) + "\n"
+    parts = ["【分析模块写法范式（从历史分析蒸馏）】"]
+    for k in ("competitor", "business", "risk", "tech"):
+        if p.get(k):
+            parts.append("- %s" % str(p[k]))
+    return "\n".join(parts) + "\n" if len(parts) > 1 else ""
+
+
+def deck_speech_paradigm_ref():
+    """注入 PPT 大纲/演讲稿 prompt 的范式；无则空串。"""
+    p = _load_json(DECK_SPEECH_PARADIGM_PATH)
+    if not p:
+        return ""
+    parts = ["【PPT·演讲稿范式（从历史产出蒸馏）】"]
+    for k in ("ppt_structure", "speech_opening", "speech_closing"):
+        if p.get(k):
+            parts.append("- %s" % str(p[k]))
+    return "\n".join(parts) + "\n" if len(parts) > 1 else ""
+
+
+def similarity_paradigm_ref():
+    """注入同质化检测 prompt 的范式；无则空串。"""
+    p = _load_json(SIMILARITY_PARADIGM_PATH)
+    if not p:
+        return ""
+    parts = ["【同质化检测范式（从历史检索蒸馏）】"]
+    angles = p.get("common_angles") or []
+    if angles:
+        parts.append("常见撞车角度：" + "、".join(str(a) for a in angles[:10]))
+    if p.get("differentiation_check"):
+        parts.append("差异化检查：" + str(p["differentiation_check"]))
+    return "\n".join(parts) + "\n" if len(parts) > 1 else ""
+
+
+def distill_analysis(limit=60):
+    corpus = _history_corpus(["competitor_analysis", "business_model", "risk_analysis", "tech_solution"], limit)
+    if not corpus:
+        raise ValueError("历史里没有分析类内容，请先生成几轮再蒸馏")
+    prompt = f"""你是科创赛事申报书的分析模块教练。下面是历史生成中的竞品分析/商业模式/风险分析/技术方案（已脱敏）。请提炼这四个模块各自的写法要点，输出 JSON。
+硬性要求：competitor/business/risk/tech 各给一句话具体要点；不出现院校/指导老师/作者；只输出 JSON。
+输出格式：{{"competitor":"...","business":"...","risk":"...","tech":"..."}}
+历史分析样本：
+{corpus}
+"""
+    data = _llm_json(prompt)
+    out = {k: str(data.get(k, "")).strip() for k in ("competitor", "business", "risk", "tech")}
+    if not any(out.values()):
+        raise ValueError("蒸馏结果为空")
+    _save_json(ANALYSIS_PARADIGM_PATH, out)
+    return {"ok": True, "paradigm": out}
+
+
+def distill_deck_speech(limit=60):
+    corpus = _history_corpus(["ppt_outline", "speech_script"], limit)
+    if not corpus:
+        raise ValueError("历史里没有 PPT 大纲/演讲稿，请先生成几轮再蒸馏")
+    prompt = f"""你是科创赛事路演教练。下面是历史生成中的 PPT 大纲和路演演讲稿（已脱敏）。请提炼 PPT 结构与演讲稿的开场/收尾套路，输出 JSON。
+硬性要求：ppt_structure 给 PPT 章节顺序；speech_opening 给开场套路；speech_closing 给收尾套路；不出现院校/指导老师/作者；只输出 JSON。
+输出格式：{{"ppt_structure":"...","speech_opening":"...","speech_closing":"..."}}
+历史样本：
+{corpus}
+"""
+    data = _llm_json(prompt)
+    out = {k: str(data.get(k, "")).strip() for k in ("ppt_structure", "speech_opening", "speech_closing")}
+    if not any(out.values()):
+        raise ValueError("蒸馏结果为空")
+    _save_json(DECK_SPEECH_PARADIGM_PATH, out)
+    return {"ok": True, "paradigm": out}
+
+
+def distill_similarity(limit=60):
+    corpus = _history_corpus(["similarity_report"], limit)
+    if not corpus:
+        raise ValueError("历史里没有同质化检测报告，请先生成几轮再蒸馏")
+    prompt = f"""你是科创赛事同质化检测教练。下面是历史生成中的同质化检测报告（已脱敏）。请提炼「项目之间最容易撞车的角度」和「差异化检查要点」，输出 JSON。
+硬性要求：common_angles 给 6~10 个常见撞车角度；differentiation_check 给一句检查要点；不出现院校/指导老师/作者；只输出 JSON。
+输出格式：{{"common_angles":["角度1","角度2","角度3","角度4","角度5","角度6"],"differentiation_check":"..."}}
+历史报告样本：
+{corpus}
+"""
+    data = _llm_json(prompt)
+    angles = data.get("common_angles")
+    if not isinstance(angles, list) or not angles:
+        raise ValueError("common_angles 缺失")
+    out = {
+        "common_angles": [str(a).strip() for a in angles if str(a).strip()][:10],
+        "differentiation_check": str(data.get("differentiation_check") or "").strip(),
+    }
+    _save_json(SIMILARITY_PARADIGM_PATH, out)
+    return {"ok": True, "angle_count": len(out["common_angles"]), "paradigm": out}
