@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>科创赛事多智能体创作助手</title>
+    <title>赛创助手</title>
     <style>
 /* ===== WB-TECH-THEME v2 ===== */
 :root{
@@ -1206,7 +1206,7 @@ mark.wb-ph {
 
         <!-- Hero -->
         <div class="hero">
-            <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>科创赛事多智能体创作助手</h1>
+            <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
             <p>多智能体（Agent）协同工作，从规则解析到模拟答辩，一站式搞定科创竞赛申报</p>
 
         </div>
@@ -1311,6 +1311,7 @@ mark.wb-ph {
                         <span onclick="wbPickComp('中国大学生服务外包创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">服务外包</span>
                         <span onclick="wbPickComp('蓝桥杯全国软件和信息技术专业人才大赛')" style="flex: 0 0 auto; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">蓝桥杯</span>
                     </div>
+                    <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                         这个赛事名不在内置清单里也没关系，会按通用科创赛事标准生成。
                     </div>
@@ -1653,32 +1654,32 @@ mark.wb-ph {
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg> 竞品分析</h3>
                     <div class="content-block" id="competitorAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-coin"/></svg> 商业模式</h3>
                     <div class="content-block" id="businessModel"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 风险分析</h3>
                     <div class="content-block" id="riskAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-wrench"/></svg> 技术方案</h3>
                     <div class="content-block" id="techSolution"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 实施计划</h3>
                     <div class="content-block" id="implementationPlan"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
             </div>
 
@@ -1810,7 +1811,7 @@ mark.wb-ph {
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
                     <div class="content-block" id="projectSummary"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上内容为AI生成，仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
@@ -1820,18 +1821,18 @@ mark.wb-ph {
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="proposalText"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上内容为AI生成，仅供参考，请根据实际情况修改</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                     <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
                     <div class="content-block" id="proposalAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上分析为AI生成，内容仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
                     <div class="content-block" id="judgeFeedback"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 以上意见为AI模拟评委生成，仅供参考</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
                 </div>
                 <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
                     <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多专家模拟评审</h3>
@@ -2522,6 +2523,28 @@ mark.wb-ph {
             if (v && String(v).trim()) return String(v).trim();
             return (window._lastData || {}).competition || '';
         }
+        // 「待补充」在网页上是提醒，导出件里就是破绽 —— 评委翻到一页写着
+        // 「本次没识别到竞品对比素材」基本直接判死。导出前一律剔除。
+        function wbStripTodo(t) {
+            if (!t) return t;
+            return String(t).split('\n').filter(function (ln) {
+                return String(ln).indexOf('待补充') < 0;
+            }).join('\n');
+        }
+        function wbStripDeckTodo(deck) {
+            if (!deck || !deck.slides) return deck;
+            deck.slides.forEach(function (s) {
+                if (!s || typeof s !== 'object') return;
+                if (s.bullets) {
+                    s.bullets = s.bullets.filter(function (b) { return String(b).indexOf('待补充') < 0; });
+                }
+                if (s.metrics) {
+                    s.metrics = s.metrics.filter(function (m) { return String(m).indexOf('待补充') < 0; });
+                }
+            });
+            return deck;
+        }
+
         // 本轮生成出来的图表（预算饼图 / 市场柱图 / 进度甘特）。
         // 后端 /api/export_word 早就收这个字段并按章节插图，前端以前一直没传，
         // 所以导出的申报书里一张图都没有。
@@ -2530,7 +2553,7 @@ mark.wb-ph {
         }
 
         async function exportOne(id, name) {
-            const text = _txt(_DOM_TO_KEY[id] || '', id);
+            const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
@@ -2603,6 +2626,7 @@ mark.wb-ph {
             var deck = rd.rich_deck || null;
             // 与「下载 PPT」同一套结构：打包里的 PPT 也走固定 8 页 + 申报书回填
             if (deck && wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
+            deck = wbStripDeckTodo(deck);
             var tk = (document.getElementById('deckTheme') || {}).value;
             var vk = (document.getElementById('deckVariant') || {}).value;
             const data = {
@@ -3521,6 +3545,55 @@ mark.wb-ph {
             if (ra) { try { ra.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }
         }
 
+        /* ---------- 智能识别：从项目创意反推该报哪个赛事 ---------- */
+        // 用户抱怨「要拉列表找半天」，最省事的做法是他写完创意我们就猜一个。
+        // 关键词取长不取短：命中「数学建模」就不该被「建模」盖过去。
+        var WB_IDEA_COMP = [
+            {name: 'iCAN大学生创新创业大赛', kw: ['ican', '物联网', '智能硬件', '传感器', '可穿戴']},
+            {name: '中国国际互联网+大学生创新创业大赛', kw: ['互联网+', '互联网＋', '商业计划', '融资', '路演', '商业模式']},
+            {name: '全国大学生数学建模竞赛', kw: ['数学建模', '数模', '数学模', '优化模型', '预测模型', '评价体系']},
+            {name: '全国大学生电子设计竞赛', kw: ['电子设计', '电赛', '单片机', '电路设计', '嵌入式', '硬件设计']},
+            {name: '挑战杯全国大学生课外学术科技作品竞赛', kw: ['大挑', '课外学术科技', '学术作品', '调研报告', '社会调查']},
+            {name: '挑战杯中国大学生创业计划竞赛（小挑）', kw: ['小挑', '创业计划竞赛']},
+            {name: '国家级大学生创新创业训练计划', kw: ['国创', '大创', '创新创业训练']},
+            {name: '全国大学生广告艺术大赛', kw: ['大广赛', '广告艺术', '品牌策划', '视觉传达', '海报设计']},
+            {name: '中国大学生服务外包创新创业大赛', kw: ['服务外包']},
+            {name: '蓝桥杯全国软件和信息技术专业人才大赛', kw: ['蓝桥杯', '算法竞赛', '程序设计竞赛']},
+            {name: '全国大学生信息安全竞赛', kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞']},
+            {name: '中国大学生计算机设计大赛', kw: ['计算机设计', '软件作品', '应用系统']},
+            {name: 'RoboMaster全国大学生机器人大赛', kw: ['robomaster', '机器人', '机甲', '机械臂']},
+            {name: '西门子杯中国智能制造挑战赛', kw: ['西门子', '智能制造', '工业自动化', '产线']}
+        ];
+        // 只在赛事框空着时自动填：用户已经选过就别自作主张改掉
+        function wbAutoComp() {
+            var el = document.getElementById('competition');
+            var idea = document.getElementById('idea');
+            if (!el || !idea) return;
+            if (String(el.value || '').trim()) return;
+            var t = String(idea.value || '').toLowerCase();
+            if (t.replace(/\s/g, '').length < 10) return;      // 太短猜不准，别乱填
+            var best = '', bestLen = 0;
+            WB_IDEA_COMP.forEach(function (m) {
+                (m.kw || []).forEach(function (k) {
+                    var kk = String(k).toLowerCase();
+                    if (kk.length >= 2 && t.indexOf(kk) >= 0 && kk.length > bestLen) {
+                        bestLen = kk.length; best = m.name;
+                    }
+                });
+            });
+            if (!best) return;
+            el.value = best;
+            wbCompInput();
+            onCompetitionChange();
+            wbSaveForm();
+            var tip = document.getElementById('compAutoTip');
+            if (tip) {
+                tip.style.display = 'block';
+                tip.innerHTML = '按你的创意自动选为 <b style="color: var(--text);">' + _esc(best) +
+                    '</b>，不对就点右边 × 改。';
+            }
+        }
+
         /* ---------- 赛事选择：输入即过滤 + 一键清空 ---------- */
         var _compOpts = null;
         function wbCompOptions() {
@@ -3595,6 +3668,8 @@ mark.wb-ph {
             wbCompClose();
             var clr = document.getElementById('compClear');
             if (clr) clr.style.display = 'none';
+            var tip = document.getElementById('compAutoTip');
+            if (tip) { tip.style.display = 'none'; tip.innerHTML = ''; }
             onCompetitionChange();
             wbSaveForm();
             try { el.focus(); } catch (e) {}
@@ -4915,6 +4990,7 @@ mark.wb-ph {
             // 固定路演结构 + 申报书回填：开关开着时导出重排后的 8 页 deck
             var deck = rd.rich_deck;
             if (wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
+            deck = wbStripDeckTodo(deck);
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
             try {
@@ -6307,6 +6383,14 @@ mark.wb-ph {
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
         ['ruleFile', 'tplFile', 'ideaFile'].forEach(wbUploadGuard);
+        // 创意写完自动猜赛事：用户不用再从十几项里挑
+        (function () {
+            var ie = document.getElementById('idea');
+            if (!ie) return;
+            ie.addEventListener('blur', function () {
+                try { wbAutoComp(); } catch (e) {}
+            });
+        })();
         checkHealth();
         setInterval(checkHealth, 30000);
 

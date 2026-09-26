@@ -1217,7 +1217,7 @@ def export_zip():
 
     tmpdir = 'tmp_export'
     os.makedirs(tmpdir, exist_ok=True)
-    zippath = os.path.join(tmpdir, '科创赛事项目材料包.zip')
+    zippath = os.path.join(tmpdir, '项目材料包.zip')
 
     # 素材打包里的申报书也要按官方章节排序 / 走 iCAN 双盲，
     # 否则单独下载是官方顺序、打包里又是另一套顺序，用户会以为系统不稳定。
@@ -1311,7 +1311,7 @@ def export_zip():
                 zf.write(os.path.join(tmpdir, '12_路演PPT.pptx'), '12_路演PPT.pptx')
         except Exception as e:
             print(f"[export_zip] PPT失败: {e}")
-    return send_file(zippath, as_attachment=True, download_name='科创赛事项目材料包.zip', mimetype='application/zip')
+    return send_file(zippath, as_attachment=True, download_name='项目材料包.zip', mimetype='application/zip')
 
 
 # ============ 富媒体：图表图片 & PPT 导出 ============
