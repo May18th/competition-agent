@@ -45,8 +45,7 @@ ALIAS = {
 
 # 文档类型：按文件名直接指定，比从介绍里猜可靠
 DOC_TYPE_MAP = {
-    # iCAN 按 AI 应用创新挑战赛口径：提交物是「应用方案 PDF（≤20页/≤50MB）」，不是作品说明书
-    "iCAN": "应用方案",
+    "iCAN": "作品说明书",
     "互联网+": "商业计划书",
     "小挑": "商业计划书",
     "服务外包": "商业计划书",
@@ -217,7 +216,11 @@ def parse_scoring(lines):
             items.append([m.group(1).strip(), int(float(m.group(2)))])
         else:
             t = RE_ITEM.match(s) or RE_DASH.match(s)
-            orphans.append(t.group(1).strip() if t else s)
+            if t:
+                # 无百分比的评分维度（官方未公开统一权重）→ 权重记 None
+                items.append([t.group(1).strip(), None])
+            else:
+                orphans.append(s)
     return items, orphans
 
 
@@ -247,6 +250,9 @@ TRACK_SRC = {
     "服务外包": "official",   # 第17届服创大赛：企业命题/创业实践/OPC创客/人工智能专项
     "互联网+": "official",    # 中国国际大学生创新大赛官方四赛道
     "计算机设计": "official", # 第19届中国大学生计算机设计大赛官方十一大类
+    "蓝桥杯": "official",     # 第十七届（2026）官方报名通知：软件赛/电子赛/人工智能赛/视觉艺术设计赛/数字科技创新赛/专项赛
+    "西门子杯": "official",   # 第二十届（2026）官方竞赛通知：流程行业/离散行业/运动控制/信息化网络化/数字孪生等赛项
+    "RoboMaster": "official", # 官方参赛手册：步兵/英雄/工程/哨兵/空中机器人
 }
 TRACK_SRC_NOTE = {
     "official": "官方原文",
@@ -344,7 +350,8 @@ def build_index():
 
         # 用 sec_get 而非 sec.get：标题可能带括号后缀（如「评分标准（AI 应用挑战赛）」），
         # 精确匹配会整块失配，解析成 0 项
-        scoring, orphan = parse_scoring(sec_get(sec, "评分标准"))
+        scoring_lines = sec_get(sec, "评分标准")
+        scoring, orphan = parse_scoring(scoring_lines)
         sections = clean_items(sec_get(sec, "申报书章节"))
         # 认不出来的行多半是写错标题的章节（RoboMaster），放到章节前面
         if orphan:
@@ -373,7 +380,7 @@ def build_index():
             "chars": len(raw),
             # 资料缺口：知识库里确实缺的项（iCAN/国创 的章节块内容是错的，已过滤成空）
             # 前端据此提示「该赛事官方资料待补充」，而不是把错的内容当权威显示
-            "gaps": ([] if scoring else ["评分标准"]) +
+            "gaps": ([] if scoring_lines else ["评分标准"]) +
                     ([] if sections else ["章节要求"]) +
                     ([] if deduct else ["常见扣分点"]),
             # 赛道：只有知识库真写了 `## 赛道设置` 的才有（目前仅 iCAN），其余为空数组
