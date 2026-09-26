@@ -161,18 +161,29 @@ def get_competition_profiles() -> list:
 
 
 def get_competition_profile(competition_name: str) -> dict:
-    """按赛事名/别名匹配结构化配置，返回 {} 表示未命中。"""
+    """按赛事名/别名打分匹配结构化配置，返回 {} 表示未命中。
+
+    用打分制而不是朴素子串，避免「挑战杯」这类共享品牌名让大挑/小挑串台。
+    """
     if not competition_name:
         return {}
     q = str(competition_name).strip()
+    scored = []
     for p in get_competition_profiles():
-        names = [p.get("name", "")] + (p.get("aliases") or [])
-        for n in names:
+        best = 0
+        for n in ([p.get("name", "")] + (p.get("aliases") or [])):
             if not n:
                 continue
-            if q == n or q in n or n in q:
-                return p
-    return {}
+            s = _match_score(n, q)
+            if s > best:
+                best = s
+        if best > 0:
+            scored.append((best, len(p.get("name", "")), p))
+    if not scored:
+        return {}
+    # 分数优先，同分取更长的赛事全名（更具体），避免品牌名互含时串台
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    return scored[0][2]
 
 
 _ALIAS_GROUPS = [
