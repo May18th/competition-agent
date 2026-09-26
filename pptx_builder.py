@@ -134,6 +134,33 @@ THEMES = {
         "section_rule": "C4DEF5", "font": "微软雅黑",
         "chart": ["#0E5EA8", "#2AA9E0", "#124C86", "#4E93CE", "#6FB3E0", "#1E7FB8", "#9CCBEF"],
     },
+    "biz": {
+        # 经管/商务类专用：中性灰。深炭灰封面 + 蓝灰强调，整组色只走灰阶，
+        # 商业计划书、财务测算、市场分析这类内容要"稳"，高饱和配色反而显得不专业。
+        "label": "商务灰（经管/商业/创业/财务类）",
+        "chapter": ["374151", "4A5568", "5C6B7A", "2F3A47", "6B7280", "7D8B9C", "455A64"],
+        "deep": "1E242C", "deep2": "3A4654",
+        "ink": "1F2933", "body": "4A5568", "muted": "8A97A6",
+        "primary": "374151", "accent": "6B7280",
+        "card": "F5F6F8", "soft": "EAECEF",
+        "cover_deco": ["9AA5B1", "6B7280", "C0C8D2"],
+        "section_rule": "D3D8DE", "font": "微软雅黑",
+        "chart": ["#374151", "#5C6B7A", "#7D8B9C", "#9AA5B1", "#4A5568", "#6B7280", "#B4BCC6"],
+    },
+    "studio": {
+        # 艺术/设计类专用：近黑底压住，只在强调处放撞色（品红/青/琥珀）。
+        # 设计类路演要的就是"敢用色"，但底色必须收住，不然满屏花哨反而不高级。
+        # chapter 是正文标题色，走可辨识的中深色调，不用荧光色（浅底上看不清）。
+        "label": "设计风（广告艺术/视觉传达/文创类）",
+        "chapter": ["C2185B", "00838F", "EF6C00", "4527A0", "00897B", "5D4037", "283593"],
+        "deep": "111318", "deep2": "2C303C",
+        "ink": "16181F", "body": "4C525E", "muted": "8A909C",
+        "primary": "C2185B", "accent": "00ACC1",
+        "card": "FAFAFB", "soft": "F1F2F5",
+        "cover_deco": ["FF4D6D", "00E5C0", "FFC94D"],
+        "section_rule": "E3E5EA", "font": "微软雅黑",
+        "chart": ["#C2185B", "#00838F", "#EF6C00", "#4527A0", "#00897B", "#FFC94D", "#5D4037"],
+    },
     "cyber": {
         "label": "科技紫·AI（人工智能/大数据/赛博未来类）",
         "chapter": ["6D28D9", "7C3AED", "A855F7", "4B0082", "22D3EE", "F472B6", "8B5CF6"],
@@ -146,7 +173,8 @@ THEMES = {
         "chart": ["#7C3AED", "#22D3EE", "#A855F7", "#F472B6", "#8B5CF6", "#4B0082", "#F59E0B"],
     },
 }
-THEME_ORDER = ["tech", "ink", "medical", "edu", "agri", "finance", "craft", "social", "academic", "cyber", "ican"]
+THEME_ORDER = ["tech", "ink", "medical", "edu", "agri", "finance", "craft", "social", "academic",
+               "cyber", "ican", "biz", "studio"]
 
 # ============ 版式模板库：每个主题都可套 4 套模板 ============
 # cover  封面样式：gradient 流光大块 / split 左色块 / band 顶部色带 / center 居中留白

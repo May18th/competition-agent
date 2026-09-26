@@ -1776,7 +1776,8 @@ mark.wb-ph {
                     </div>
                     <!-- 10 套主题带缩略图：下拉里只有名字，选的时候根本不知道长什么样 -->
                     <div id="deckThemeWrap" style="margin-bottom: 14px;">
-                        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px;">PPT 主题（<span id="deckThemeCount">0</span> 套，点一下就换，下载前随时可改）</div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">PPT 主题（<span id="deckThemeCount">0</span> 套，点一下就换，下载前随时可改）</div>
+                        <div id="deckThemeReco" style="font-size: 12px; color: var(--text-mute); margin-bottom: 8px;"></div>
                         <div id="deckThemeGrid" class="wb-theme-grid"></div>
                     </div>
                     <div id="deckThemeHint" style="display:none; font-size:12px; color:var(--text-mute); margin-bottom:10px;"></div>
@@ -1787,9 +1788,9 @@ mark.wb-ph {
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
                             <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
                                 <input type="checkbox" id="chkRoadshow" checked onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
-                                按标准路演结构导出（固定 8 页）
+                                <span id="roadTitle">按标准路演结构导出（固定 8 页）</span>
                             </label>
-                            <span style="font-size:12px; color:var(--text-mute);">封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢，缺内容的页自动从申报书补</span>
+                            <span id="roadFlow" style="font-size:12px; color:var(--text-mute);">封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢，缺内容的页自动从申报书补</span>
                         </div>
                         <div id="deckRoadPlan" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
                     </div>
@@ -2385,7 +2386,10 @@ mark.wb-ph {
         // 三步引导卡片的打勾状态与折叠（做过的步骤自动打勾，全做完收成一行）
         (function () { try { wbGuideInit(); } catch (e) {} })();
         // 顶部固定导出条（滚动时才出现）
-        (function () { try { wbDockInit(); } catch (e) {} })();
+        (function () {
+            try { wbDockInit(); } catch (e) {}
+            try { wbRoadLabel(); } catch (e) {}
+        })();
 
         async function exportOne(id, name) {
             const text = _txt(_DOM_TO_KEY[id] || '', id);
@@ -3163,9 +3167,16 @@ mark.wb-ph {
             var sync = function () {
                 var ra = document.getElementById('resultArea');
                 var hasResult = !!ra && ra.style.display !== 'none';
-                var r = bar.getBoundingClientRect();
-                var out = r.bottom < 8;    // 顶部那条已经滚出视口上方
-                dock.style.display = (hasResult && out) ? 'flex' : 'none';
+                if (!hasResult) { dock.style.display = 'none'; return; }
+                var out;
+                if (bar.offsetParent !== null) {          // 顶部那条正常显示时，看它有没有滚出去
+                    out = bar.getBoundingClientRect().bottom < 8;
+                } else {
+                    // 顶部那条没显示（隐藏 / 换皮肤）时按结果区顶部算，
+                    // 保证任何赛事、任何档位都有顶部导出，不会某个比赛下就消失
+                    out = ra.getBoundingClientRect().top < 8;
+                }
+                dock.style.display = out ? 'flex' : 'none';
             };
             window.addEventListener('scroll', sync, { passive: true });
             window.addEventListener('resize', sync);
@@ -3287,6 +3298,12 @@ mark.wb-ph {
         function onCompetitionChange() {
             renderKbStatus();
             try { renderEventCard(); } catch (e) {}   // 换赛事 → 要求卡自动换成该赛事的文档类型与章节
+            // 换赛事 → 主题重新推荐 + 页序说明/状态条跟着变（数学建模会多两页）
+            try { wbRoadLabel(); } catch (e) {}
+            try { wbApplyCompTheme(); } catch (e) {}
+            if (window._lastData && window._lastData.rich_deck) {
+                try { renderRich(window._lastData, true); } catch (e) {}
+            }
         }
 
         // ---- 申报书章节完整性提示（数据来源 generate 返回的 completeness）----
@@ -3635,36 +3652,131 @@ mark.wb-ph {
                         '<div class="dc-foot" style="color:' + muteColor + ';">' + _esc(showDeck.project || '') + '</div>' +
                         '</div>';
                 }).join('');
+                try { wbRoadLabel(); } catch (e) {}
                 wbRenderRoadPlan(showDeck);
             } else {
                 dw.style.display = 'none';
             }
         }
-        // ============ 标准路演结构：8 页固定 + 申报书回填 ============
+        // ============ 标准路演结构：基础 8 页 + 赛事专项页 + 申报书回填 ============
         // 为什么在前端做：deck 本来就是前端拿去 POST 给 /api/export_pptx 的，
         // 在下载前重排一次，"下载 PPT" 和"一键打包"两条路同时生效，后端不用改。
+        // 基础 8 页。kicker 不写死，按最终页序动态编号 —— 赛事专项页插进来后序号要跟着变
         var WB_ROAD_PAGES = [
-            {key: 'cover',    type: 'cover',   name: '封面',     kicker: '',                 kw: [], strong: []},
-            {key: 'pain',     type: 'bullets', name: '项目痛点', kicker: '01 / 项目痛点',
+            {key: 'cover',    type: 'cover',   name: '封面',     kw: [], strong: []},
+            {key: 'pain',     type: 'bullets', name: '项目痛点',
              kw: ['痛点', '问题', '现状', '背景', '需求', '挑战', '难点', '困难', '刚需', '为什么'],
              strong: ['痛点', '难点', '难以', '无法', '不足', '缺失', '缺少', '成本高', '效率低', '信息不对称']},
-            {key: 'solution', type: 'bullets', name: '解决方案', kicker: '02 / 解决方案',
+            {key: 'solution', type: 'bullets', name: '解决方案',
              kw: ['解决方案', '方案', '技术', '原理', '思路', '路径', '方法', '路线', '架构', '创新点', '实现'],
              strong: ['采用', '通过', '本方案', '本平台', '架构', '算法', '机制', '实现']},
-            {key: 'feature',  type: 'bullets', name: '核心功能', kicker: '03 / 核心功能',
+            {key: 'feature',  type: 'bullets', name: '核心功能',
              kw: ['功能', '产品', '模块', '特性', '亮点', '优势', '服务', '场景', '形态'],
              strong: ['功能', '模块', '支持', '提供', '一键', '自动', '可查', '可追溯']},
-            {key: 'data',     type: 'metrics', name: '落地数据', kicker: '04 / 落地数据',
+            {key: 'data',     type: 'metrics', name: '落地数据',
              kw: ['数据', '成果', '验证', '落地', '试点', '效果', '指标', '市场', '规模', '财务', '营收', '用户', '测试', '进展'],
              strong: ['试点', '测试', '验证', '覆盖', '累计', '准确率', '提升', '降低', '增长']},
-            {key: 'compete',  type: 'table',   name: '竞品对比', kicker: '05 / 竞品对比',
+            {key: 'compete',  type: 'table',   name: '竞品对比',
              kw: ['竞品', '对比', '竞争', '差异化', '对手', '同类', '友商'],
              strong: ['竞品', '对比', '相比', '同类', '友商', '优于', '差异', '领先']},
-            {key: 'team',     type: 'bullets', name: '团队介绍', kicker: '06 / 团队介绍',
+            {key: 'team',     type: 'bullets', name: '团队介绍',
              kw: ['团队', '成员', '分工', '指导', '师资', '负责人', '年级', '专业'],
              strong: ['团队成员', '成员', '分工', '指导教师', '团队由', '专业年级']},
-            {key: 'thanks',   type: 'closing', name: '致谢',     kicker: '',                 kw: [], strong: []}
+            {key: 'thanks',   type: 'closing', name: '致谢',     kw: [], strong: []}
         ];
+        // 赛事专项页：插在 after 那一页之后。数学建模讲模型、广告艺术讲视觉，
+        // 通用 8 页里没有这两块，硬塞进"解决方案"会又长又乱，所以单独成页。
+        var WB_EXTRA_PAGES = {
+            math: [
+                {key: 'assume',  type: 'bullets', name: '模型假设', after: 'solution',
+                 kw: ['假设', '前提', '符号', '变量', '约定', '符号说明', '假定'],
+                 strong: ['假设', '假定', '不妨设', '符号说明', '记为', '忽略', '不考虑']},
+                {key: 'formula', type: 'bullets', name: '公式推导', after: 'assume',
+                 kw: ['公式', '推导', '求解', '目标函数', '约束', '模型建立', '算法', '求解过程', '灵敏度', '检验'],
+                 strong: ['公式', '推导', '由', '可得', '代入', '目标函数', '约束条件', '求解', '迭代']}
+            ],
+            art: [
+                {key: 'sketch', type: 'bullets', name: '创意草图', after: 'feature',
+                 kw: ['创意', '草图', '构思', '概念', '灵感', '脚本', '分镜', '文案', '主题'],
+                 strong: ['创意', '构思', '草图', '脚本', '分镜', '创意点', '概念来源', '灵感']},
+                // 不放泛化的"效果"：落地数据页的关键词里也有它，两边都认就会串页
+                {key: 'visual', type: 'bullets', name: '视觉效果', after: 'sketch',
+                 kw: ['视觉', '画面', '呈现', '配色', '版式', '海报', '物料', 'KV'],
+                 strong: ['视觉', '配色', '版式', '画面', '海报', '呈现', '物料', '字体', '构图']}
+            ]
+        };
+        // 赛事类型 → 推荐主题。顺序即优先级：iCAN 有官方指定的蓝白主题，必须最先命中，
+        // 数学建模 / 广告艺术 也比泛化的"科技"更具体，排在通用类前面。
+        var WB_COMP_TYPES = [
+            {type: 'ican',  name: 'iCAN 大赛', theme: 'ican',
+             kw: ['iCAN', 'ican', 'Ican']},
+            {type: 'math',  name: '数学建模类', theme: 'academic',
+             rename: {feature: '模型应用', compete: '方法对比'},
+             kw: ['数学建模', '数模', '建模', '运筹', '统计建模']},
+            {type: 'art',   name: '艺术设计类', theme: 'studio',
+             // 不放泛化的"设计大赛"：中国大学生计算机设计大赛是软件类赛事，
+             // 被它命中就会推成设计风，反而错
+             kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视', '文创']},
+            {type: 'eng',   name: '工程硬件类', theme: 'tech',
+             kw: ['电子设计', '电赛', '蓝桥杯', '机器人', '智能制造', '西门子', '机械', '嵌入式',
+                  '单片机', '硬件', '电路', '自动化', 'RoboMaster', '工程训练', '智能车']},
+            // 国创/大创计划名称里带"创业"两字（创新创业训练计划），但它是科研训练类，
+            // 排在经管类前面先命中，不然会被推成商务灰
+            {type: 'acad',  name: '学术科研类', theme: 'academic',
+             kw: ['创新创业训练', '国创计划', '大创']},
+            {type: 'biz',   name: '经管商业类', theme: 'biz',
+             kw: ['互联网+', '互联网＋', '创业', '小挑', '服务外包', '商业', '经管', '金融',
+                  '供应链', '市场', '营销', '电商', '财务']},
+            {type: 'it',    name: '软件信息类', theme: 'tech',
+             kw: ['信息安全', '计算机设计', '软件', '程序', '算法', '网络', '大数据', '人工智能',
+                  '信息技术', '金砖', '技能']},
+            {type: 'acad',  name: '学术科研类', theme: 'academic',
+             kw: ['挑战杯', '课外学术', '国创', '创新创业训练', '科研', '论文', '学术']}
+        ];
+        // 赛事名 → 类型（找不到就 general）。同时看输入框和已生成结果里的赛事名，
+        // 因为历史回看时输入框可能已经被清空
+        function wbCompType() {
+            var el = document.getElementById('competition');
+            var txt = _wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
+                      ' ' + _wbT((window._lastData || {}).competition_name);
+            var low = txt.toLowerCase();
+            for (var i = 0; i < WB_COMP_TYPES.length; i++) {
+                var t = WB_COMP_TYPES[i];
+                for (var j = 0; j < t.kw.length; j++) {
+                    if (low.indexOf(String(t.kw[j]).toLowerCase()) >= 0) return t;
+                }
+            }
+            return {type: 'general', name: '通用', theme: 'tech', kw: []};
+        }
+        // 最终页序：基础 8 页 + 该赛事类型的专项页（插在指定页之后）
+        function wbRoadPages() {
+            var ct = wbCompType();
+            var rn = ct.rename || {};
+            var out = WB_ROAD_PAGES.map(function (p) {
+                if (!rn[p.key]) return p;
+                // 数学建模谈"核心功能"很怪，按赛事换一个说法（kw 不变，回填逻辑照旧）
+                return {key: p.key, type: p.type, name: rn[p.key], kw: p.kw, strong: p.strong};
+            });
+            var ex = WB_EXTRA_PAGES[ct.type] || [];
+            if (!ex.length) return out;
+            ex.forEach(function (p) {
+                var at = -1;
+                for (var i = 0; i < out.length; i++) { if (out[i].key === p.after) { at = i; break; } }
+                if (at < 0) at = out.length - 2;               // 兜底：插在致谢前
+                out.splice(at + 1, 0, p);
+            });
+            return out;
+        }
+        // 内容页编号：封面/致谢不编号，其余按 01 02 03… 走
+        function wbRoadKicker(pages, i) {
+            var p = pages[i];
+            if (p.type === 'cover' || p.type === 'closing') return '';
+            var n = 0;
+            for (var j = 0; j <= i; j++) {
+                if (pages[j].type !== 'cover' && pages[j].type !== 'closing') n++;
+            }
+            return (n < 10 ? '0' : '') + n + ' / ' + p.name;
+        }
         // 后端 metrics 卡片的数字单位只认这些（见 pptx_builder._metrics_body 的正则），
         // 其余单位（人/家/台/次…）塞进标签里，不然整串会被当成"大号数字"排版
         var WB_METRIC_UNITS = ['%', '％', '万', '亿', '倍', '年', '个', '天', '元', '周',
@@ -3709,13 +3821,21 @@ mark.wb-ph {
             if (seen[k]) return;
             seen[k] = 1; arr.push(s);
         }
-        // 这段标题归哪一页（用于回填时不抢别人的章节）
+        // 这段标题归哪一页（用于回填时不抢别人的章节）。
+        // 走动态页序：数学建模的"模型假设"段不能被"解决方案"页抢走
+        // 取"命中最长的那个关键词"所属页，而不是先遍历到的页：
+        // "落地效果" 同时含数据页的"落地"和视觉页的"效果"，按页序会判给先出现的那页，
+        // 按长度能在两页各有更专的词时判得更准（"视觉效果"→视觉，"落地效果"→数据）
         function _wbOwner(h) {
-            for (var i = 1; i < WB_ROAD_PAGES.length - 1; i++) {
-                var p = WB_ROAD_PAGES[i];
-                for (var j = 0; j < p.kw.length; j++) { if (h.indexOf(p.kw[j]) >= 0) return p.key; }
+            var pages = wbRoadPages();
+            var best = '', bl = 0;
+            for (var i = 1; i < pages.length - 1; i++) {
+                var p = pages[i];
+                for (var j = 0; j < p.kw.length; j++) {
+                    if (h.indexOf(p.kw[j]) >= 0 && p.kw[j].length > bl) { bl = p.kw[j].length; best = p.key; }
+                }
             }
-            return '';
+            return best;
         }
         // 先按"标题命中"取整段；不够再用强关键词全文扫。两条约束都是踩坑换来的：
         // ① 强关键词必须窄——用宽词（服务/同类）扫时，痛点句被塞进"核心功能"页、竞品页；
@@ -3723,10 +3843,16 @@ mark.wb-ph {
         // 串页比缺内容更糟，宁可留空让用户自己补。
         function _wbFill(sections, key, limit) {
             var p = null;
-            WB_ROAD_PAGES.forEach(function (x) { if (x.key === key) p = x; });
+            // 走动态页序：赛事专项页（模型假设 / 创意草图…）不在基础 8 页里，
+            // 查静态表会返回空，专项页就永远只剩"待补充"
+            wbRoadPages().forEach(function (x) { if (x.key === key) p = x; });
             if (!p) return [];
             var out = [], seen = {};
             sections.forEach(function (sec) {
+                // 标题命中也不许抢别人的章节：数据页的关键词里有"效果"，
+                // 会把广告艺术的"视觉效果"整段搬进落地数据页
+                var own0 = _wbOwner(sec.h);
+                if (own0 && own0 !== key) return;
                 var hit = false;
                 for (var i = 0; i < p.kw.length; i++) { if (sec.h.indexOf(p.kw[i]) >= 0) { hit = true; break; } }
                 if (!hit) return;
@@ -3797,6 +3923,10 @@ mark.wb-ph {
         function _wbHighlights(sections, limit) {
             var out = [], seen = {};
             sections.forEach(function (sec) {
+                // 属于专项页的章节（模型假设 / 创意草图 / 视觉效果）不算"落地数据"，
+                // 不然广告艺术的数据页会冒出"分镜脚本共 6 幕"这种不是数据的句子
+                var own = _wbOwner(sec.h);
+                if (own && own !== 'data') return;
                 sec.body.forEach(function (b) {
                     _wbSentences(b).forEach(function (s) {
                         if (!/\d/.test(s)) return;
@@ -3807,13 +3937,14 @@ mark.wb-ph {
             });
             return out;
         }
-        // AI 给的页归到 8 页里的哪一页：标题命中权重高于正文命中
+        // AI 给的页归到哪一页：标题命中权重高于正文命中（走动态页序，含赛事专项页）
         function _wbBucket(s) {
+            var pages = wbRoadPages();
             var head = (String(s.title || '') + ' ' + String(s.kicker || '')).toLowerCase();
             var body = ((s.bullets || []).concat(s.metrics || []).join(' ')).toLowerCase();
             var best = 'feature', bs = 0;
-            for (var i = 1; i < WB_ROAD_PAGES.length - 1; i++) {
-                var p = WB_ROAD_PAGES[i], sc = 0;
+            for (var i = 1; i < pages.length - 1; i++) {
+                var p = pages[i], sc = 0;
                 for (var j = 0; j < p.kw.length; j++) {
                     if (head.indexOf(p.kw[j]) >= 0) sc += 3;
                     if (body.indexOf(p.kw[j]) >= 0) sc += 1;
@@ -3825,13 +3956,16 @@ mark.wb-ph {
             if (s.metrics && s.metrics.length) return 'data';
             return 'feature';
         }
-        // 把 AI 生成的 deck 重排成 8 页路演结构，并用申报书补空页
+        // 把 AI 生成的 deck 重排成标准路演结构：基础 8 页 + 该赛事类型的专项页，
+        // 并用申报书回填空页。页数不再写死 8 页 —— 数学建模会多出「模型假设 / 公式推导」，
+        // 广告艺术会多出「创意草图 / 视觉效果」。
         function wbRoadshowDeck(rd) {
             rd = rd || {};
             var src = rd.rich_deck || {};
             var slides = src.slides || [];
+            var pages = wbRoadPages();
             var acc = {}, cover = null, closing = null;
-            WB_ROAD_PAGES.forEach(function (p) { acc[p.key] = {bullets: [], metrics: [], table: null, chart: null, note: ''}; });
+            pages.forEach(function (p) { acc[p.key] = {bullets: [], metrics: [], table: null, chart: null, note: ''}; });
             slides.forEach(function (s) {
                 if (!s || typeof s !== 'object') return;
                 var ty = String(s.type || 'bullets').toLowerCase();
@@ -3856,7 +3990,7 @@ mark.wb-ph {
                          _wbT(rd.social_value), _wbT(rd.business_model), _wbT(rd.implementation_plan)].join('\n');
             var secs = _wbSections(docs).concat(_wbSections(extra));
             var fill = {};
-            WB_ROAD_PAGES.forEach(function (p) {
+            pages.forEach(function (p) {
                 if (!p.kw.length) return;
                 fill[p.key] = _wbFill(secs, p.key, 6);
             });
@@ -3877,70 +4011,95 @@ mark.wb-ph {
             var proj = _wbOne(src.project || _wbTrim(rd.idea, 24) || '科创项目');
             var one = _wbOne(src.one_liner || rd.one_liner || '');
             var out = [];
-            out.push({type: 'cover', title: (cover && cover.title) || proj,
-                      bullets: (cover && cover.bullets && cover.bullets.length) ? cover.bullets.slice(0, 2) : (one ? [one] : []),
-                      note: (cover && cover.note) || ''});
-            // 带指标卡时正文容量是 4 条（后端 MAX_BLOCKS_WITH_METRICS），超了会多出一张"（续）"页，
-            // 那就不是固定 8 页了
-            var painM = (acc.pain.metrics || []).slice(0, 2);
-            out.push({type: 'bullets', kicker: '01 / 项目痛点', title: '项目痛点',
-                      bullets: merge('pain', painM.length ? 4 : 5), metrics: painM});
-            out.push({type: 'bullets', kicker: '02 / 解决方案', title: '解决方案', bullets: merge('solution', 5)});
-            out.push({type: 'bullets', kicker: '03 / 核心功能', title: '核心功能', bullets: merge('feature', 5)});
+            pages.forEach(function (p, idx) {
+                var kicker = wbRoadKicker(pages, idx);
+                var a = acc[p.key] || {bullets: []};
 
-            // 落地数据：先 AI 给的指标卡，不够再用申报书里挖出来的数字补到 4 张
-            var dm = (acc.data.metrics || []).slice(0, 4);
-            nums.forEach(function (m) { if (dm.length < 4) dm.push(m.raw); });
-            var dbullets = merge('data', 4);
-            hl.forEach(function (s) { if (dbullets.length < 4) dbullets.push(s); });
-            var chartId = acc.data.chart || '';
-            if (!chartId) {
-                var ids = (rd.rich_charts || []).map(function (c) { return _wbT(c.id); });
-                if (ids.indexOf('market') >= 0) chartId = 'market';
-                else if (ids.indexOf('timeline') >= 0) chartId = 'timeline';
-            }
-            out.push({type: 'metrics', kicker: '04 / 落地数据', title: '落地数据',
-                      metrics: dm, bullets: dbullets, chart: chartId || ''});
-
-            // 竞品对比：有表用表，没表退回文字要点，绝不留一张空表格页
-            // AI 的 slide.table 可能只是个 id 字符串（"t1"），也可能已经是实体对象，两种都要还原
-            var ts = rd.rich_tables || [];
-            var tb = null, rid = acc.compete.table;
-            if (typeof rid === 'string') {
-                for (var ti = 0; ti < ts.length; ti++) {
-                    if (ts[ti].id === rid || ts[ti].title === rid) { tb = ts[ti]; break; }
+                if (p.type === 'cover') {
+                    out.push({type: 'cover', title: (cover && cover.title) || proj,
+                              bullets: (cover && cover.bullets && cover.bullets.length) ? cover.bullets.slice(0, 2) : (one ? [one] : []),
+                              note: (cover && cover.note) || ''});
+                    return;
                 }
-            } else if (rid && rid.header && rid.rows) {
-                tb = rid;
-            }
-            if (!tb) {
-                for (var tj = 0; tj < ts.length; tj++) {
-                    if (/竞品|对比|竞争|差异化|同类|友商/.test(_wbT(ts[tj].title))) { tb = ts[tj]; break; }
+                if (p.type === 'closing') {
+                    out.push({type: 'closing', title: (closing && closing.title) || '谢谢聆听',
+                              bullets: (closing && closing.bullets && closing.bullets.length)
+                                       ? closing.bullets.slice(0, 2)
+                                       : [one || '欢迎各位评委老师批评指正']});
+                    return;
                 }
-                if (!tb && ts.length) tb = ts[0];
-            }
-            if (tb && tb.header && tb.rows) {
-                out.push({type: 'table', kicker: '05 / 竞品对比', title: '竞品对比',
-                          table: {header: tb.header, rows: tb.rows}, note: acc.compete.note || ''});
-            } else {
-                var cb = merge('compete', 5);
-                if (!cb.length) cb = ['**待补充**：本次没识别到竞品对比素材，建议在申报书里补一段与同类方案的维度对比'];
-                out.push({type: 'bullets', kicker: '05 / 竞品对比', title: '竞品对比', bullets: cb,
-                          note: acc.compete.note || ''});
-            }
-
-            // 团队：申报书 + 页面上填的学校/团队/指导教师
-            var tbs = merge('team', 5);
-            var meta = (typeof wbMeta === 'function') ? wbMeta() : {};
-            if (meta.team) tbs.unshift('**团队成员**：' + _wbTrim(meta.team, 40));
-            if (meta.advisor) tbs.unshift('**指导教师**：' + _wbTrim(meta.advisor, 30));
-            if (meta.school) tbs.unshift('**所属院校**：' + _wbTrim(meta.school, 30));
-            if (!tbs.length) tbs = ['**待补充**：团队成员、专业分工与指导教师'];
-            out.push({type: 'bullets', kicker: '06 / 团队介绍', title: '团队介绍', bullets: tbs.slice(0, 5)});
-            out.push({type: 'closing', title: (closing && closing.title) || '谢谢聆听',
-                      bullets: (closing && closing.bullets && closing.bullets.length)
-                               ? closing.bullets.slice(0, 2)
-                               : [one || '欢迎各位评委老师批评指正']});
+                // 落地数据：先 AI 给的指标卡，不够再用申报书里挖出来的数字补到 4 张
+                if (p.key === 'data') {
+                    var dm = (a.metrics || []).slice(0, 4);
+                    nums.forEach(function (m) { if (dm.length < 4) dm.push(m.raw); });
+                    var dbullets = merge('data', 4);
+                    hl.forEach(function (s) {
+                        if (dbullets.length >= 4) return;
+                        // merge 里已经可能从同一章节取过同一句，追加前查重，别让数据页出现两行一模一样的话
+                        for (var hi = 0; hi < dbullets.length; hi++) {
+                            if (dbullets[hi].slice(0, 10) === s.slice(0, 10)) return;
+                        }
+                        dbullets.push(s);
+                    });
+                    var chartId = a.chart || '';
+                    if (!chartId) {
+                        var ids = (rd.rich_charts || []).map(function (c) { return _wbT(c.id); });
+                        if (ids.indexOf('market') >= 0) chartId = 'market';
+                        else if (ids.indexOf('timeline') >= 0) chartId = 'timeline';
+                    }
+                    out.push({type: 'metrics', kicker: kicker, title: p.name,
+                              metrics: dm, bullets: dbullets, chart: chartId || ''});
+                    return;
+                }
+                // 竞品对比：有表用表，没表退回文字要点，绝不留一张空表格页
+                // AI 的 slide.table 可能只是个 id 字符串（"t1"），也可能已经是实体对象，两种都要还原
+                if (p.key === 'compete') {
+                    var ts = rd.rich_tables || [];
+                    var tb = null, rid = a.table;
+                    if (typeof rid === 'string') {
+                        for (var ti = 0; ti < ts.length; ti++) {
+                            if (ts[ti].id === rid || ts[ti].title === rid) { tb = ts[ti]; break; }
+                        }
+                    } else if (rid && rid.header && rid.rows) {
+                        tb = rid;
+                    }
+                    if (!tb) {
+                        for (var tj = 0; tj < ts.length; tj++) {
+                            if (/竞品|对比|竞争|差异化|同类|友商/.test(_wbT(ts[tj].title))) { tb = ts[tj]; break; }
+                        }
+                        if (!tb && ts.length) tb = ts[0];
+                    }
+                    if (tb && tb.header && tb.rows) {
+                        out.push({type: 'table', kicker: kicker, title: p.name,
+                                  table: {header: tb.header, rows: tb.rows}, note: a.note || ''});
+                    } else {
+                        var cb = merge('compete', 5);
+                        if (!cb.length) cb = ['**待补充**：本次没识别到竞品对比素材，建议在申报书里补一段与同类方案的维度对比'];
+                        out.push({type: 'bullets', kicker: kicker, title: p.name, bullets: cb, note: a.note || ''});
+                    }
+                    return;
+                }
+                // 团队：申报书 + 页面上填的学校/团队/指导教师
+                if (p.key === 'team') {
+                    var tbs = merge('team', 5);
+                    var meta = (typeof wbMeta === 'function') ? wbMeta() : {};
+                    if (meta.team) tbs.unshift('**团队成员**：' + _wbTrim(meta.team, 40));
+                    if (meta.advisor) tbs.unshift('**指导教师**：' + _wbTrim(meta.advisor, 30));
+                    if (meta.school) tbs.unshift('**所属院校**：' + _wbTrim(meta.school, 30));
+                    if (!tbs.length) tbs = ['**待补充**：团队成员、专业分工与指导教师'];
+                    out.push({type: 'bullets', kicker: kicker, title: p.name, bullets: tbs.slice(0, 5)});
+                    return;
+                }
+                // 通用要点页（含数学建模 / 广告艺术插进来的专项页）。
+                // 带指标卡时正文容量是 4 条（后端 MAX_BLOCKS_WITH_METRICS），给 5 条会多出一张"（续）"页
+                var ms = (a.metrics || []).slice(0, 2);
+                var bs = merge(p.key, ms.length ? 4 : 5);
+                if (!bs.length) bs = ['**待补充**：申报书里没识别到「' + p.name + '」相关内容，建议在对应章节补一段'];
+                var sl = {type: 'bullets', kicker: kicker, title: p.name, bullets: bs};
+                if (ms.length) sl.metrics = ms;
+                if (a.note) sl.note = a.note;
+                out.push(sl);
+            });
             return {
                 project: proj, one_liner: one,
                 competition: _wbOne(src.competition || rd.competition || ''),
@@ -3948,7 +4107,20 @@ mark.wb-ph {
                 slides: out
             };
         }
-        // 8 页状态条：每页几条内容，空的标出来，导出前就知道哪页要补
+        // 页序说明 + 状态条：每页几条内容，空的标出来，导出前就知道哪页要补。
+        // 页数随赛事类型变（数学建模 10 页、广告艺术 10 页），所以标题和流程说明都由 JS 填
+        function wbRoadLabel() {
+            var pages = wbRoadPages();
+            var t = document.getElementById('roadTitle');
+            if (t) t.textContent = '按标准路演结构导出（固定 ' + pages.length + ' 页）';
+            var f = document.getElementById('roadFlow');
+            if (f) {
+                var ct = wbCompType();
+                f.textContent = pages.map(function (p) { return p.name; }).join(' → ') +
+                                '，缺内容的页自动从申报书补' +
+                                (WB_EXTRA_PAGES[ct.type] ? '（' + ct.name + '额外加了专项页）' : '');
+            }
+        }
         function wbRenderRoadPlan(deck) {
             var el = document.getElementById('deckRoadPlan');
             if (!el) return;
@@ -3957,12 +4129,15 @@ mark.wb-ph {
                 return;
             }
             if (!deck || !deck.slides) { el.innerHTML = ''; return; }
+            var pages = wbRoadPages();
             el.innerHTML = deck.slides.map(function (s, i) {
                 var n = (s.bullets || []).length + (s.metrics || []).length +
                         (s.table ? (s.table.rows || []).length : 0) + (s.chart ? 1 : 0);
                 var dark = (s.type === 'cover' || s.type === 'closing');
-                var empty = !dark && n === 0;
-                var nm = (WB_ROAD_PAGES[i] && WB_ROAD_PAGES[i].name) || ('P' + (i + 1));
+                // 占位提示不算"有内容"，否则每页都不会显示待补
+                var real = (s.bullets || []).filter(function (b) { return String(b).indexOf('**待补充**') < 0; }).length;
+                var empty = !dark && (n === 0 || (real === 0 && !(s.metrics || []).length && !s.table && !s.chart));
+                var nm = (pages[i] && pages[i].name) || ('P' + (i + 1));
                 return '<span style="display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:12px; font-size:11.5px;' +
                        ' background:' + (empty ? 'var(--c-b-soft, #FDECEC)' : 'var(--surface-solid, #fff)') + ';' +
                        ' border:1px solid ' + (empty ? 'var(--c-b, #D9534F)' : 'var(--line)') + ';' +
@@ -3992,7 +4167,9 @@ mark.wb-ph {
             social:   { deep: '#4A2320', deep2: '#8A3F33', primary: '#D46A5C', accent: '#E4A03C', deco: ['#E4A03C', '#D46A5C', '#5E8C7E'] },
             academic: { deep: '#00254D', deep2: '#003F88', primary: '#002FA7', accent: '#2E75B6', deco: ['#2E75B6', '#5B8C5A', '#8B6914'] },
             cyber:    { deep: '#160826', deep2: '#3B2170', primary: '#7C3AED', accent: '#22D3EE', deco: ['#22D3EE', '#A855F7', '#F472B6'] },
-            ican:     { deep: '#072C55', deep2: '#0F5C9E', primary: '#0E5EA8', accent: '#2AA9E0', deco: ['#2AA9E0', '#7FC4EE', '#0E5EA8'] }
+            ican:     { deep: '#072C55', deep2: '#0F5C9E', primary: '#0E5EA8', accent: '#2AA9E0', deco: ['#2AA9E0', '#7FC4EE', '#0E5EA8'] },
+            biz:      { deep: '#1E242C', deep2: '#3A4654', primary: '#374151', accent: '#6B7280', deco: ['#9AA5B1', '#6B7280', '#C0C8D2'] },
+            studio:   { deep: '#111318', deep2: '#2C303C', primary: '#C2185B', accent: '#00ACC1', deco: ['#FF4D6D', '#00E5C0', '#FFC94D'] }
         };
         function wbHex(c) { c = String(c || ''); return c && c.charAt(0) !== '#' ? '#' + c : c; }
         function wbThemeColors(t) {
@@ -4021,27 +4198,60 @@ mark.wb-ph {
             if (!g) return;
             var cnt = document.getElementById('deckThemeCount');
             if (cnt) cnt.textContent = (themes || []).length;
+            var reco = wbCompType().theme;
             g.innerHTML = (themes || []).map(function (t) {
                 var lb = String(t.label || t.key);
                 var name = lb, sub = '';
                 var p = lb.indexOf('（');
                 if (p > 0) { name = lb.slice(0, p); sub = lb.slice(p).replace(/[（）]/g, ''); }
                 var c = wbThemeColors(t);
+                var isReco = (t.key === reco);
                 return '<div class="wb-theme-card' + (t.key === cur ? ' on' : '') + '" data-key="' + _esc(t.key) + '"' +
                        ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb) + '">' +
+                       (isReco ? '<span style="position:absolute; top:6px; left:6px; z-index:2; padding:1px 6px; border-radius:8px;' +
+                                 ' font-size:10.5px; background:var(--c-a); color:#fff;">推荐</span>' : '') +
                        wbThemeThumb(c) +
                        '<div class="wb-theme-name">' + _esc(name) +
                        (sub ? '<div style="font-weight: 400; color: var(--text-mute); font-size: 11px; margin-top: 2px;">' + _esc(sub) + '</div>' : '') +
                        '</div></div>';
             }).join('');
+            wbRenderReco(reco, cur);
+        }
+        // 推荐语：说清楚"按什么推荐、现在用的哪套、能改"，别让用户以为是锁死的
+        function wbRenderReco(reco, cur) {
+            var el = document.getElementById('deckThemeReco');
+            if (!el) return;
+            var ct = wbCompType();
+            var t = (_themeLib || []).filter(function (x) { return x.key === reco; })[0];
+            var curT = (_themeLib || []).filter(function (x) { return x.key === cur; })[0];
+            var nm = function (x) {
+                var s = String((x && x.label) || '');
+                var p = s.indexOf('（');
+                return p > 0 ? s.slice(0, p) : (s || '');
+            };
+            if (ct.type === 'general') {
+                el.innerHTML = '按赛事类型自动推荐风格（当前赛事未匹配到专项类型，用通用科技蓝）；点任意主题即可覆盖。';
+                return;
+            }
+            el.innerHTML = '识别为<b>' + _esc(ct.name) + '</b>，推荐 <b>' + _esc(nm(t) || reco) + '</b>' +
+                           (curT && cur !== reco ? '（当前用的是 ' + _esc(nm(curT)) + '）' : '') +
+                           '；点任意主题即可覆盖，换赛事会重新推荐。';
         }
         var _themeManual = false;            // 用户手动点过主题后，不再自动改
-        // 赛事名里带 iCAN 就默认用 iCAN 蓝白主题（用户手动选过则以手动为准）
-        function wbIsICAN() {
-            var el = document.getElementById('competition');
-            var txt = _wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
-                      ' ' + _wbT((window._lastData || {}).competition_name);
-            return /i\s*-?\s*can/i.test(txt);
+        // 换赛事时重新按类型推荐主题（用户手动点过就以手动为准）
+        function wbApplyCompTheme() {
+            if (_themeManual) return;
+            var sel = document.getElementById('deckTheme');
+            if (!sel || !(_themeLib || []).length) return;
+            var reco = wbCompType().theme;
+            var has = (_themeLib || []).filter(function (x) { return x.key === reco; })[0];
+            if (!has) return;
+            sel.value = reco;
+            var cards = document.querySelectorAll('#deckThemeGrid .wb-theme-card');
+            for (var i = 0; i < cards.length; i++) {
+                cards[i].classList.toggle('on', cards[i].getAttribute('data-key') === reco);
+            }
+            onThemeChange();
         }
         function wbPickTheme(k) {
             _themeManual = true;
@@ -4083,8 +4293,12 @@ mark.wb-ph {
             // 主题/模板：优先顶层 theme/variant（后端若提供），回退 rich_deck.theme（当前实际版本）
             var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'tech';
             const curVariant = rd.variant || (rd.rich_deck && rd.rich_deck.variant) || 'v1';
-            // 参加 iCAN 就默认切到 iCAN 蓝白主题，用户手动点过就不再动
-            if (!_themeManual && wbIsICAN()) cur = 'ican';
+            // 按赛事类型推荐主题：工程类→科技蓝、经管类→商务灰、艺术类→设计风、
+            // 数学建模→学术答辩、iCAN→蓝白科技。用户手动点过就不再动
+            if (!_themeManual) {
+                var reco = wbCompType().theme;
+                if (themes.filter(function (x) { return x.key === reco; }).length) cur = reco;
+            }
             _fillSelect(document.getElementById('deckTheme'),
                         themes.map(function (t) { return {key: t.key, name: t.label}; }), cur);
             renderThemeGrid(themes, cur);
