@@ -1037,6 +1037,24 @@ button:hover { transform: translateY(-1px); }
                     </div>
                     <div id="kbDetail" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); font-size: 12.5px; max-height: 320px; overflow: auto;"></div>
                     <textarea id="rules" style="display: none;"></textarea>
+
+                    <!-- 赛事官方文件：上传后作为撰写依据（后端 rule_content → 规则解析 → 写作，链路已通） -->
+                    <div style="margin-top: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text);">
+                                上传赛事官方文件<span style="font-weight: 400; color: var(--text-mute);">（评分标准 / 章节要求，AI 会照着写）</span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button onclick="document.getElementById('ruleFile').click()" style="padding: 6px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">选择文件</button>
+                                <button onclick="clearRuleDoc()" style="padding: 6px 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清除</button>
+                            </div>
+                        </div>
+                        <input type="file" id="ruleFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
+                        <div id="ruleDocInfo" style="margin-top: 8px; font-size: 12.5px; color: var(--text-mute); line-height: 1.7;">
+                            还没上传。上传后 AI 会按官方的评分维度与章节要求生成，内容会明显不一样。
+                        </div>
+                        <div id="ruleDocPreview" style="display: none; margin-top: 8px; max-height: 140px; overflow: auto; padding: 10px; background: var(--surface-2); border-radius: 6px; font-size: 12px; color: var(--text-dim); white-space: pre-wrap;"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
@@ -1666,6 +1684,58 @@ button:hover { transform: translateY(-1px); }
             }
         }
 
+        // 上传赛事官方文件：抽出的文本直接进 rule_content
+        // 后端链路本来就通（app.py 收 rule_content → competition_agents 规则解析 → 写作），
+        // 只是前端以前从不传，所以上传了也白传。这里把口子接上。
+        document.getElementById('ruleFile').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            var info = document.getElementById('ruleDocInfo');
+            if (info) info.textContent = '正在读取：' + file.name;
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const d = await res.json();
+                if (!d || !d.success) {
+                    if (info) info.textContent = '读取失败：' + ((d && d.error) || '未知错误');
+                    wbToast('读取失败：' + ((d && d.error) || '未知错误'), { type: 'error' });
+                    return;
+                }
+                var txt = String(d.text || '').trim();
+                if (!txt) {
+                    if (info) info.textContent = '文件里没读到文字（扫描版 PDF 读不出），请换文字版或把要点粘到创意框';
+                    wbToast('没读到文字：扫描版 PDF 需要 OCR，请换文字版', { type: 'warn' });
+                    return;
+                }
+                var box = document.getElementById('rules');
+                if (box) box.value = txt;
+                if (info) {
+                    info.innerHTML = '已载入《' + _esc(file.name) + '》· <b style="color: var(--c-a);">' +
+                        txt.length + ' 字</b>，生成时会按它的评分标准与章节要求来写';
+                }
+                var pv = document.getElementById('ruleDocPreview');
+                if (pv) {
+                    pv.textContent = txt.slice(0, 500) + (txt.length > 500 ? '\n…（预览只显示前 500 字）' : '');
+                    pv.style.display = 'block';
+                }
+                wbToast('已载入赛事规则 ' + txt.length + ' 字，生成会按它来', { type: 'ok', ms: 3000 });
+            } catch (err) {
+                if (info) info.textContent = '读取失败：连不上服务';
+                wbToast('读取失败：连不上服务', { type: 'error' });
+            }
+        });
+
+        function clearRuleDoc() {
+            var box = document.getElementById('rules');
+            if (box) box.value = '';
+            var pv = document.getElementById('ruleDocPreview');
+            if (pv) { pv.textContent = ''; pv.style.display = 'none'; }
+            var info = document.getElementById('ruleDocInfo');
+            if (info) info.textContent = '还没上传。上传后 AI 会按官方的评分维度与章节要求生成，内容会明显不一样。';
+            wbToast('已清除赛事规则', { type: 'ok' });
+        }
+
         // 导入模板：上传官方/学校的模板文件 → 自动识别章节 → 填进赛事要求卡
         // 复用 /api/upload_pdf 抽文本，前端用正则抽标题，不用新增后端接口
         document.getElementById('tplFile').addEventListener('change', async function(e) {
@@ -1816,7 +1886,7 @@ button:hover { transform: translateY(-1px); }
             fd.append('original_file', f);
             fd.append('optimized_text', text);
             fd.append('mode', mode);
-            fd.append('title', '项目申报书');
+            fd.append('title', '项目' + WB_DOC_LABEL);
             fd.append('school', m.school);
             fd.append('team', m.team);
             fd.append('advisor', m.advisor);
@@ -2255,22 +2325,33 @@ button:hover { transform: translateY(-1px); }
             card.style.display = 'block';
         }
 
-        // 全站把「申报书」替换成当前文档名（文本节点 + placeholder，可来回切换）
+        // 全站把「申报书」替换成当前文档名：文本节点 + 内联属性（onclick 里的导出名等）
+        // 只换文本节点够不到 onclick="exportOne(...,'项目申报书全文')" 这类属性里的字符串，
+        // 所以属性也要扫一遍。原文都备份过，切回「申报书」时回得来。
+        var _WB_SWAP_ATTRS = ['onclick', 'title', 'placeholder', 'aria-label', 'alt'];
         function wbApplyDocName() {
             var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
             var nodes = [];
             while (walker.nextNode()) nodes.push(walker.currentNode);
             nodes.forEach(function (n) {
-                if (n._wbOrig === undefined) n._wbOrig = n.nodeValue;   // 备份原文，切回去才回得来
+                if (n._wbOrig === undefined) n._wbOrig = n.nodeValue;
                 if (n._wbOrig.indexOf('申报书') >= 0) {
                     n.nodeValue = n._wbOrig.replace(/申报书/g, WB_DOC_LABEL);
                 }
             });
-            var ph = document.querySelectorAll('[placeholder*="申报书"]');
-            for (var i = 0; i < ph.length; i++) {
-                var el = ph[i];
-                if (el._wbPhOrig === undefined) el._wbPhOrig = el.getAttribute('placeholder');
-                el.setAttribute('placeholder', el._wbPhOrig.replace(/申报书/g, WB_DOC_LABEL));
+            var all = document.querySelectorAll('*');
+            for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                for (var j = 0; j < _WB_SWAP_ATTRS.length; j++) {
+                    var a = _WB_SWAP_ATTRS[j];
+                    if (!el.hasAttribute || !el.hasAttribute(a)) continue;
+                    var key = '_wbAttrOrig_' + a;
+                    if (el[key] === undefined) el[key] = el.getAttribute(a);
+                    var o = el[key] || '';
+                    if (o.indexOf('申报书') >= 0) {
+                        el.setAttribute(a, o.replace(/申报书/g, WB_DOC_LABEL));
+                    }
+                }
             }
         }
 
@@ -2926,6 +3007,8 @@ button:hover { transform: translateY(-1px); }
                     proposal_draft: proposal_draft,
                     mode: mode,
                     keywords: (document.getElementById('keywords') || {}).value || '',
+                    // 赛事官方文件：后端已有 rule_content 链路，这里把前端口子接上
+                    rule_content: (document.getElementById('rules') || {}).value || '',
                     theme: (document.getElementById('deckTheme') || {}).value || null,
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
