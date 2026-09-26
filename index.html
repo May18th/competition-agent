@@ -43,6 +43,36 @@
     --radius:18px;
 }
 
+/* 夜间/日间切换：默认深色（夜间），body.light 覆盖成浅色（日间） */
+body.light {
+    --bg-0:#eef2fb;
+    --bg-1:#e4e9f7;
+    --c-a:#4f46e5;
+    --c-b:#7c3aed;
+    --c-a-soft:rgba(79,70,229,.12);
+    --text:#1a2340;
+    --text-soft:#2a3558;
+    --text-dim:#55618a;
+    --text-mute:#8490b0;
+    --surface:rgba(20,30,70,.035);
+    --surface-2:rgba(20,30,70,.06);
+    --surface-3:rgba(20,30,70,.10);
+    --surface-solid:#ffffff;
+    --btn-ghost:rgba(20,30,70,.07);
+    --line:rgba(40,60,120,.16);
+    --line-strong:rgba(40,60,120,.32);
+    --info-text:#0e7490;
+    --info-bg-1:rgba(8,145,178,.10);
+    --info-bg-2:rgba(8,145,178,.05);
+    --warn-bg:rgba(217,119,6,.10);
+    --warn-line:rgba(217,119,6,.35);
+    --warn-text:#b45309;
+    --err-bg:rgba(220,38,38,.08);
+    --err-line:rgba(220,38,38,.35);
+    --err-text:#b91c1c;
+    --track:rgba(79,70,229,.12);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { scroll-behavior: smooth; }
@@ -94,6 +124,16 @@ body {
 }
 .health-dot.ok .hd-inner { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
 .health-dot.err .hd-inner { background: #f87171; box-shadow: 0 0 8px #f87171; }
+
+/* 日间/夜间切换按钮 */
+#themeToggle {
+    position: fixed; top: 16px; left: 16px; z-index: 260;
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--surface-solid); color: var(--text);
+    cursor: pointer; font-size: 19px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,.28);
+}
 
 /* ---------- 骨架屏 ---------- */
 .skeleton {
@@ -1309,6 +1349,7 @@ mark.wb-ph {
         <span class="hd-inner"></span>
         <span id="healthText">服务检测中…</span>
     </div>
+    <button id="themeToggle" onclick="wbToggleTheme()" aria-label="切换日间/夜间模式" title="切换日间/夜间">🌙</button>
 
     <div class="container">
         <!-- 微信 / QQ 内置浏览器提示：微信的 file 选择器只给「图片 / 视频」，选不到 PDF/Word -->
@@ -7123,6 +7164,25 @@ window.addEventListener('resize', function () {
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) { try { toggleTop(); } catch (e) {} }
     });
+
+    // 5) 日间/夜间切换：localStorage 记忆，按钮图标随主题换
+    function applyTheme(light) {
+        document.body.classList.toggle('light', !!light);
+        var b = document.getElementById('themeToggle');
+        if (b) b.textContent = light ? '☀️' : '🌙';
+        try { localStorage.setItem('wbLight', light ? '1' : '0'); } catch (e) {}
+    }
+    window.wbToggleTheme = function () {
+        applyTheme(!document.body.classList.contains('light'));
+    };
+    (function initTheme() {
+        var saved = '0';
+        try { saved = localStorage.getItem('wbLight') || '0'; } catch (e) {}
+        // 跟随系统：没手动选过时，看系统是否偏好浅色
+        var sys = false;
+        try { sys = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches; } catch (e) {}
+        applyTheme(saved === '1' || (!localStorage.getItem('wbLight') && sys));
+    })();
 })();
 </script>
 </body>

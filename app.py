@@ -321,7 +321,7 @@ lock = threading.Semaphore(3)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 上传文件上限 20MB，防超大文件把服务压垮
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 上传文件上限 50MB，防超大文件把服务压垮
 
 # 存储最新结果
 latest_result = None
