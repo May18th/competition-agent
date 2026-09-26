@@ -1548,7 +1548,7 @@ mark.wb-ph {
                     </div>
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
-                    <textarea id="idea" placeholder="目标用户 · 应用场景 · 核心问题" rows="3" style="min-height: 80px;"></textarea>
+                    <textarea id="idea" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
                     <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
                         信息越具体，生成内容越精准
                         <span style="color: var(--text-mute); opacity: .75;"> · 输入内容已自动保存，刷新不丢失</span>
@@ -1621,27 +1621,16 @@ mark.wb-ph {
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 赛事规则解析<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 创意同质化检测<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书：约1300字完整成稿（有草稿→优化精简）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> AI 模拟评分与点评 + 短板诊断<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 竞品 / 商业模式 / 风险 / 技术方案（各约1000字）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 答辩问题预测 + PPT大纲 + 演讲稿<br>
-                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 优化内容，实测约40秒<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 从0生成，实测约50秒</div>
-                            <b style="color: var(--c-a);">实测 40-50 秒出结果</b>
+                            <b style="color: var(--c-a);">50 秒出 1000 字可改骨架</b><br>
+                            规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
                     <label class="version-card" style="display: block; padding: 16px; background: var(--surface-solid); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 以上全部功能，且每个模块深度扩写（约2-3倍篇幅）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 申报书升级：1300字精简版→5000字完整版 / 12章<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：多专家模拟评审（逐条批注 + 优先改进清单）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：8张 AI 数据图表 + AI 路演 PPT（可下载 .pptx）<br>
-                            <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 新增：实施计划 + 社会价值 + 项目简介<br>
-                            <div style="font-size:12px; color:var(--text-dim); margin-top:8px; padding:6px; background:var(--surface-2); border-radius:6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 上传草稿 → 深度优化，实测约2分钟<br><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 仅输入创意 → 完整生成，实测约2分半</div>
-                            <b style="color: var(--c-b);">实测 2-2.5 分钟出结果</b>
+                            <b style="color: var(--c-b);">2 分钟出 5000 字接近成稿</b><br>
+                            简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
                 </div>
@@ -7097,20 +7086,12 @@ window.addEventListener('resize', function () {
     }
 
     /* ---------- 5. 结果页顶部风格切换 ---------- */
-    var _sfTried = false;
     function styleFill() {
         var bar = document.getElementById('wbStyleBar');
         var sel = document.getElementById('styleQuickSel');
         if (!bar || !sel) return;
         var lib = window._themeLib || [];
-        // 主题库是 /api/ppt_themes 异步拉的，result 先渲染完的情况下拉不到 → 主动拉一次再填
-        if (!lib.length && !_sfTried && typeof loadThemeLib === 'function') {
-            _sfTried = true;
-            try { Promise.resolve(loadThemeLib()).then(function () { styleFill(); }); } catch (e) {}
-            return;
-        }
         if (!lib.length) { bar.style.display = 'none'; return; }
-        _sfTried = false;
         var cur = (document.getElementById('deckTheme') || {}).value || '';
         sel.innerHTML = lib.map(function (t) {
             var nm = t.name || t.label || t.key;
@@ -7216,6 +7197,10 @@ window.addEventListener('resize', function () {
     })();
 })();
 </script>
+<footer style="text-align: center; padding: 16px 10px; margin-top: 20px; font-size: 11px; color: var(--text-mute); opacity: .7; line-height: 1.8;">
+    <div>© 2026 可创无限团队 · iCAN 大学生创新创业大赛参赛作品</div>
+    <div>AI 生成内容仅供参考，提交前请核对关键数据与署名</div>
+</footer>
 </body>
 </html>
 
