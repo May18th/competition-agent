@@ -2052,9 +2052,12 @@ def _run_generation(data):
                         datetime.now().strftime("%H:%M:%S"), _gate_before))
                 except Exception:
                     _gate_log = None
+                # rounds=2：实测单轮压缩常停在 1850 左右压不到 1800 以内
+                # （模型把「1200~1800」当区间上限附近理解），第二轮兜底才稳。
                 _fixed, _n = _gate_comp(
                     result.get("proposal", ""), 1800,
-                    result.get("one_liner") or (data.get("idea") or "")[:40])
+                    result.get("one_liner") or (data.get("idea") or "")[:40],
+                    rounds=2)
                 if _fixed:
                     result["proposal"] = _fixed
                     print(f"📏 最终篇幅闸门：{_gate_before} -> {_n} 字")
