@@ -2038,9 +2038,19 @@ def _run_generation(data):
     # targeted_revise_agent 会用 LLM 输出整篇替换 proposal，字数会回弹。
     # 装在这里才能真正覆盖所有出口（writer / revise / 以后新增的任何节点）。
     try:
-        if (data.get("mode") or "fast") == "fast":
+        _gate_mode = data.get("mode") or "fast"
+        _gate_log = None
+        try:
+            _gate_log = open('/tmp/wb_len_gate.log', 'a', encoding='utf-8')
+            _gate_log.write("[%s] 闸门进入 mode=%s\n" % (
+                datetime.now().strftime("%H:%M:%S"), _gate_mode))
+        except Exception:
+            _gate_log = None
+        if _gate_mode == "fast":
             from competition_agents import _cjk_len as _gate_len, _compress_to_length as _gate_comp
             _gate_before = _gate_len(result.get("proposal", ""))
+            if _gate_log:
+                _gate_log.write("   压缩前 %d 字（上限 1800）\n" % _gate_before)
             if _gate_before > 1800:
                 _fixed, _n = _gate_comp(
                     result.get("proposal", ""), 1800,
@@ -2048,6 +2058,10 @@ def _run_generation(data):
                 if _fixed:
                     result["proposal"] = _fixed
                     print(f"📏 最终篇幅闸门：{_gate_before} -> {_n} 字")
+                if _gate_log:
+                    _gate_log.write("   压缩后 %s 字\n" % _n)
+        if _gate_log:
+            _gate_log.close()
     except Exception as _e:
         print(f"[final-length-gate] 跳过，保留原文：{_e}")
 
