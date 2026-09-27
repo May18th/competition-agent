@@ -636,7 +636,10 @@ def load_history(limit=200, offset=0, q=None, uid=None):
         conds.append("(competition_name LIKE ? OR idea LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
     if uid:
-        conds.append("user_id = ?")
+        # 无名记录（user_id='' / NULL，多为 user_id 列后补之前写入的存量数据）视为公共记录，
+        # 对所有请求可见——否则这部分历史对任何人永远查不到（历史面板空白）。
+        # 有归属的记录仍只对本人可见，隔离语义不变。
+        conds.append("(user_id = ? OR IFNULL(user_id, '') = '')")
         params.append(uid)
     if conds:
         sql += " WHERE " + " AND ".join(conds)
@@ -656,7 +659,7 @@ def count_history(q=None, uid=None):
         conds.append("(competition_name LIKE ? OR idea LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
     if uid:
-        conds.append("user_id = ?")
+        conds.append("(user_id = ? OR IFNULL(user_id, '') = '')")
         params.append(uid)
     sql = "SELECT COUNT(*) FROM history"
     if conds:
