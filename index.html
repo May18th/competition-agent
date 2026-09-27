@@ -8038,9 +8038,24 @@ window.addEventListener('resize', function () {
     })();
 })();
 </script>
-<footer style="text-align: center; padding: 16px 10px; margin-top: 20px; font-size: 11px; color: var(--text-mute); opacity: .7; line-height: 1.8;">
-    <div>© 2026 可创无限团队 · iCAN 大学生创新创业大赛参赛作品</div>
-    <div>AI 生成内容仅供参考，提交前请核对关键数据与署名</div>
+<footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
+    <div style="opacity: .75;">© 2026 可创无限团队 · iCAN 大学生创新创业大赛参赛作品</div>
+    <div style="opacity: .75;">AI 辅助生成 · 提交前请核对关键数据与署名</div>
+    <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
+         避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
+    <details style="max-width: 660px; margin: 6px auto 0;">
+        <summary style="cursor: pointer; text-align: center; color: var(--text-mute); opacity: .85;
+                        text-decoration: underline; user-select: none; padding: 2px 0;">使用说明与免责声明</summary>
+        <div style="margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px;
+                    background: var(--surface-2); text-align: left; font-size: 12px; line-height: 1.95;
+                    color: var(--text-dim);">
+            <div style="margin-bottom: 7px;"><b>1. 工具定位</b>：本工具用于辅助撰写赛事材料——提供结构框架、表述优化与内容补全建议，最终内容由你确认后定稿。</div>
+            <div style="margin-bottom: 7px;"><b>2. 学术诚信</b>：请遵守所在赛事与学校关于 AI 使用的相关规定；作品的署名、原创性与提交行为由你本人负责。</div>
+            <div style="margin-bottom: 7px;"><b>3. 数据核实</b>：提交前请用权威来源核实文中引用的市场数据、测算值与文献；涉及实验、实测的部分，请以你自己的真实数据为准。</div>
+            <div style="margin-bottom: 7px;"><b>4. 结果说明</b>：评审结果取决于作品本身质量与赛事评审标准，本工具不对获奖、入围或评审结论作出承诺。</div>
+            <div><b>5. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
+        </div>
+    </details>
 </footer>
 </body>
 </html>

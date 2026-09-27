@@ -537,6 +537,22 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
     )
 
 
+# 导出件合规标注：赛事（如 iCAN）要求申报材料注明 AI 参与情况，漏标可能被认定违规。
+# 措辞必须中性——「AI 生成仅供参考」这类自降身价的说法会让评委直接给作品打折扣，
+# 所以这里只陈述事实（AI 辅助制作）与责任边界（数据自核、署名自负）。
+AI_NOTICE_LINE = "AI 辅助制作 · 文中数据、测算值与结论请在提交前自行核实，署名与提交责任由作者本人承担。"
+
+
+def _append_ai_notice(text):
+    """在导出正文末尾追加一行 AI 合规标注。重复导出不会叠加。"""
+    text = (text or "").rstrip()
+    if not text:
+        return ""
+    if AI_NOTICE_LINE[:12] in text:
+        return text + "\n"
+    return text + "\n\n" + AI_NOTICE_LINE + "\n"
+
+
 def _official_chapter_titles(competition_name):
     """读取结构化配置里的官方申报书章节标题列表（带「一、二、」序号，导出时用于自动排序）。"""
     if not competition_name:
@@ -818,6 +834,7 @@ def export_word():
         chapter_order = _official_chapter_titles(data.get('competition_name'))
     if chapter_order:
         text = _reorder_markdown_by_chapters(text, chapter_order)
+    text = _append_ai_notice(text)      # 合规标注：申报书是提交给评委的正式件，必须注明 AI 参与
     doc = _build_docx(
         project, text,
         doc_type=data.get('doc_type', 'report'),
@@ -860,6 +877,7 @@ def export_pdf():
         text = _mask_double_blind(text,
                                   school=data.get('school'),
                                   advisor=data.get('advisor'))
+    text = _append_ai_notice(text)      # PDF 不走 _build_docx，标注要在这里单独加一遍
     try:
         from pdf_render import render_markdown_to_pdf
         filepath = 'tmp_export.pdf'
