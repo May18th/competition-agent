@@ -744,3 +744,19 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
   其余（实测数据/参考文献/其他）→ 默认合并进「其它佐证」。均不自动写入，要用户点按钮确认。
 - 请 Codex 基于 9e5224a 之后的 main 继续。**提交完记得确认自己的改动进 git 了**，
   这次如果没人发现，这段 UI 就一直躺在未提交区。
+
+## 2026-09-27 WorkBuddy：P0-2 首页精简 + P1-3 标签栏收尾（main=6fe2cf6）
+
+- **P0-2 规则上传降级**：首屏「赛事规则」大 label 删除，整区降级为全端默认折叠的小字链接
+  「补充规则 / 官方文件（可选，评分标准已内置，一般不用传）」。`wbAdvInit` 列表里**移除了 kbAdvBody**
+  ——不移的话桌面端 resize 会把它重新展开，首屏又冒出规则入口。使用说明「三个上传入口」改为四处并注明规则区一般不用。
+- **P1-3 赛事选择**：先走了一段弯路——把 15 个赛事全塞进 compQuickRow，结果 grid 子项 `min-width:auto`
+  把 375px 视口撑到 989px 整页横滚（已加 `.wb-formgrid>*{min-width:0}` 根治，保留）。用户纠偏后**回退为 5 个热门 chip**。
+  真根因是 `wbCompHits` 的 `slice(0,8)`：空查询下拉只列前 8 个，后 7 个永远看不到。已去截断，
+  聚焦即全量列出 15 个（框高 264px 内部滚动），实测点末项可填入、重开选中项高亮、页面无横滚。
+- **教训 1**：长内容放进 grid 子项前，先给子项 `min-width:0`，否则 `overflow-x:auto` 根本不生效（容器自己被撑大）。
+- **教训 2**：headless 探针会被 localStorage 草稿恢复污染（下拉按旧值过滤只剩 1 项），测下拉前先清空输入框。
+- **教训 3**：git push 走代理时 schannel 偶发握手失败（SSL/TLS connection failed），
+  加 `-c http.sslBackend=openssl` 一次就过；代理挂的表现是 push 卡死无输出超 10 分钟，先 `curl -x 127.0.0.1:7877 https://github.com` 探活。
+- 部署完成，线上 grep 验证：折叠链接=1、kbAdvBody display:none=1、slice(0,8)残留=0、chip=5、大label=0。
+  Codex 后续以 **6fe2cf6** 为基准，别拿旧副本覆盖。
