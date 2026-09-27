@@ -3976,6 +3976,28 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             return bs >= 80 ? best : null;
         }
 
+        // 评分项里有没有真实的百分比数字（null / undefined / 空串都不算）
+        function _wbPctOf(x) {
+            if (!x || x.length < 2) return null;
+            var w = x[1];
+            return (typeof w === 'number' && isFinite(w)) ? w : null;
+        }
+        function _wbScoringHasPct(arr) {
+            if (!arr || !arr.length) return false;
+            for (var i = 0; i < arr.length; i++) if (_wbPctOf(arr[i]) !== null) return true;
+            return false;
+        }
+        // 一份 scoring 里最长的条目名有多长——用来判断它是不是"整段规则原文"
+        function _wbScoringMaxLen(arr) {
+            var m = 0;
+            if (!arr || !arr.length) return 0;
+            for (var i = 0; i < arr.length; i++) {
+                var n = String((arr[i] && arr[i][0]) || '');
+                if (n.length > m) m = n.length;
+            }
+            return m;
+        }
+
         // 官方资料 + 内置规则合并：官方优先，官方缺哪块就用内置的补哪块
         function wbMergeEvent(idx, req, prof) {
             var base = req || EV_DEFAULT;
@@ -3984,11 +4006,27 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             if (idx && idx.sections && idx.sections.length) sec = idx.sections;
             else if (prof && prof.chapters && prof.chapters.length) sec = prof.chapters;
             else sec = base.sections;
-            // 评分：同理，profiles 里是官方口径（如 iCAN 创新性30/技术实现30…）
+            // 评分：先看哪份里真有百分比。
+            // 2026-09-28 实测：官方资料索引里国创/蓝桥杯的 scoring 是「规则原文 + null」
+            // （11 条长文本，weight 全 null），按老逻辑 idx 优先 → 页面直接渲染出 null%
+            // 和一大段规则原文。所以：① 有真实百分比的优先；② 都没有就选条目最短的那份
+            // （profiles 的「立项评审 / 结题验收」比索引的整段原文干净得多）。
             var sco = null;
-            if (idx && idx.scoring && idx.scoring.length) sco = idx.scoring;
-            else if (prof && prof.scoring && prof.scoring.length) sco = prof.scoring;
-            else sco = base.scoring;
+            // 只在「官方两份」里挑：内置 EVENT_REQ 的别名匹配很宽（"创新创业"会命中 iCAN），
+            // 让它参与"有百分比就优先"的竞争，会把国创的权重显示成 iCAN 的（2026-09-28 实测踩到）。
+            // 内置那份只在官方两份都没有时才兜底。
+            var _cands = [];
+            if (idx && idx.scoring && idx.scoring.length) _cands.push(idx.scoring);
+            if (prof && prof.scoring && prof.scoring.length) _cands.push(prof.scoring);
+            for (var _ci = 0; _ci < _cands.length; _ci++) {
+                if (_wbScoringHasPct(_cands[_ci])) { sco = _cands[_ci]; break; }
+            }
+            if (!sco && _cands.length) {
+                sco = _cands.slice().sort(function (p1, p2) {
+                    return _wbScoringMaxLen(p1) - _wbScoringMaxLen(p2);
+                })[0];
+            }
+            if (!sco) sco = base.scoring;
             return {
                 label: (idx && idx.doc_type) || base.label,
                 doc_type: (idx && idx.doc_type) || base.doc_type,
@@ -4172,10 +4210,23 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
             var sc = document.getElementById('evScoring');
             if (sc) {
-                sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
-                    (c.scoring || []).map(function (x) {
-                        return x[0] + ' ' + x[1] + '%';
-                    }).join(' · ');
+                var _arr = c.scoring || [];
+                if (!_arr.length) {
+                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>按官方规则评定';
+                } else if (!_wbScoringHasPct(_arr)) {
+                    // 国创 / 蓝桥杯这类：官方是定性评审或机器评分，本来就没有固定百分比，
+                    // 别把规则原文逐条列出来吓人，也绝不能显示 null%
+                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
+                        '按官方规则评定（该赛事为定性评审 / 机器评分，官方无固定百分比）';
+                } else {
+                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
+                        _arr.map(function (x) {
+                            var _w = _wbPctOf(x);
+                            var _nm = String((x && x[0]) || '');
+                            if (_nm.length > 24) _nm = _nm.slice(0, 24) + '…';
+                            return _esc(_nm) + ' ' + (_w === null ? '按官方规则评定' : _w + '%');
+                        }).join(' · ');
+                }
             }
             // 赛事结构化配置带来的两条硬信息：双盲（iCAN 封面不能出现学校/导师）与官方侧重
             var pf = document.getElementById('evProfileTip');
@@ -6761,7 +6812,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     doc_type: (evCurrent() || {}).doc_type || null,
                     // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
                     outline_requirement: (mode === 'deep' ? ((evCurrent() || {}).sections || []) : []),
-                    scoring_weights: (evCurrent() || {}).scoring || []
+                    scoring_weights: ((evCurrent() || {}).scoring || []).filter(function (x) { return _wbPctOf(x) !== null; })
                 })
             })
             .then(res => res.json())
