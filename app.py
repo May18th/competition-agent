@@ -228,6 +228,11 @@ def init_db():
         c.execute("PRAGMA journal_mode=WAL")
     except Exception:
         pass
+    # 写锁冲突时等待 5 秒再报错，而不是立刻抛 database is locked
+    try:
+        c.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass
     # 历史记录表
     c.execute('''CREATE TABLE IF NOT EXISTS history
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
