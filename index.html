@@ -8105,15 +8105,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
            合规边界：图片只存本机 IndexedDB，绝不上传服务器、不做公共素材库
            （公共库等于平台再分发他人作品，著作权/肖像权风险由平台承担）。
            预设全部为程序化生成的渐变/几何纹理，无 IP、无真人、无 Logo。 */
+        /* img 只放 gradient（background-image）、color 单独放（background-color）。
+           别再把两者拼成一条塞进 background-image：末尾那个纯色会让整条声明非法，
+           浏览器直接丢弃 → 背景层 backgroundImage 变 none，点了跟没点一样。 */
         var WB_BG_PRESETS = [
-            { id: 'aurora', name: '极光', css: 'radial-gradient(1200px 700px at 12% 18%, rgba(56,189,248,.42), transparent 60%), radial-gradient(900px 620px at 82% 12%, rgba(168,85,247,.36), transparent 62%), radial-gradient(1000px 800px at 60% 92%, rgba(34,197,94,.22), transparent 65%), #070b18' },
-            { id: 'nebula', name: '星云', css: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.34), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.34), transparent 64%), linear-gradient(160deg, #0a0f22, #120b24)' },
-            { id: 'ocean', name: '深海', css: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.34), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.30), transparent 66%), linear-gradient(180deg, #04121f, #061a2c)' },
-            { id: 'ember', name: '熔岩', css: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.32), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.30), transparent 64%), linear-gradient(160deg, #150a10, #1c0f0a)' },
-            { id: 'ink', name: '水墨', css: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.26), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.30), transparent 64%), linear-gradient(180deg, #0b0e14, #10141c)' },
-            { id: 'cyber', name: '赛博', css: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.34), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.30), transparent 62%), linear-gradient(150deg, #0a0716, #131024)' },
-            { id: 'forest', name: '林雾', css: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.26), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.30), transparent 66%), linear-gradient(180deg, #07130f, #0a1712)' },
-            { id: 'plain', name: '纯净', css: 'linear-gradient(180deg, #080b14, #0d1220)' }
+            /* 极光的青+紫和默认底色的光晕撞色，所以绿色那团加重并上移到首屏可见处，
+               否则切了看不出区别（实测顶部带色差只有 3.5，跟噪声基线差不多） */
+            { id: 'aurora', name: '极光', color: '#070b18', img: 'radial-gradient(1200px 700px at 12% 26%, rgba(56,189,248,.46), transparent 60%), radial-gradient(900px 620px at 82% 16%, rgba(168,85,247,.38), transparent 62%), radial-gradient(1000px 760px at 58% 72%, rgba(52,211,153,.36), transparent 66%)' },
+            { id: 'nebula', name: '星云', color: '', img: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.34), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.34), transparent 64%), linear-gradient(160deg, #0a0f22, #120b24)' },
+            { id: 'ocean', name: '深海', color: '', img: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.34), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.30), transparent 66%), linear-gradient(180deg, #04121f, #061a2c)' },
+            { id: 'ember', name: '熔岩', color: '', img: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.32), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.30), transparent 64%), linear-gradient(160deg, #150a10, #1c0f0a)' },
+            { id: 'ink', name: '水墨', color: '', img: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.26), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.30), transparent 64%), linear-gradient(180deg, #0b0e14, #10141c)' },
+            { id: 'cyber', name: '赛博', color: '', img: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.34), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.30), transparent 62%), linear-gradient(150deg, #0a0716, #131024)' },
+            { id: 'forest', name: '林雾', color: '', img: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.26), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.30), transparent 66%), linear-gradient(180deg, #07130f, #0a1712)' },
+            { id: 'plain', name: '纯净', color: '', img: 'linear-gradient(180deg, #080b14, #0d1220)' }
         ];
         var WB_BG_KEY = 'wb_bg_cfg_v1';
         var wbBgLayer = null, wbBgUserUrl = null;
@@ -8121,10 +8126,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             if (!wbBgLayer) {
                 wbBgLayer = document.createElement('div');
                 wbBgLayer.id = 'wbUserBg';
-                // z-index:-1 → 画在 body 背景之上、内容之下；卡片毛玻璃仍会把它当背景虚化
-                wbBgLayer.style.cssText = 'position:fixed; inset:0; z-index:-1; pointer-events:none;'
+                // 必须挂进 .wb-bg 内部：.wb-bg 是 position:fixed + z-index:0 且底色不透明
+                // （linear-gradient(180deg,#050816…)）。之前它是 body 下 z-index:-1 的独立层，
+                // 按 CSS 绘制顺序 z-index:0 的定位元素盖在 -1 之上，等于永远看不见。
+                // 放进 .wb-bg 并插在最前面 → 位于底色之上、网格/光球之下，压暗层 ::after 照常生效。
+                wbBgLayer.style.cssText = 'position:absolute; inset:-40px; pointer-events:none;'
                     + ' background-size:cover; background-position:center; transition:opacity .45s ease;';
-                document.body.insertBefore(wbBgLayer, document.body.firstChild);
+                var host = document.querySelector('.wb-bg');
+                if (host) host.insertBefore(wbBgLayer, host.firstChild);
+                else {
+                    // .wb-bg 不存在时退回独立层（此时没有不透明层遮挡，-1 也看得见）
+                    wbBgLayer.style.position = 'fixed';
+                    wbBgLayer.style.zIndex = '-1';
+                    document.body.insertBefore(wbBgLayer, document.body.firstChild);
+                }
             }
             return wbBgLayer;
         }
@@ -8179,8 +8194,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.75).toFixed(2) + ')';
                 L.style.opacity = '1';
             } else if (preset) {
-                L.style.backgroundImage = preset.css;
-                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.55).toFixed(2) + ')';
+                // 分两条设置：image 只能是 gradient，color 单独走 background-color
+                L.style.backgroundImage = preset.img || 'none';
+                L.style.backgroundColor = preset.color || 'transparent';
+                // 预设本身是低饱和深色，压暗系数比用户图片轻一档（0.45 vs 0.75），
+                // 否则切了跟没切一样；嫌亮可以拖面板里的压暗滑块
+                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.45).toFixed(2) + ')';
                 L.style.opacity = '1';
             } else {
                 L.style.opacity = '0';   // 默认：交回原生背景
@@ -8247,6 +8266,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         window.wbBgReset = wbBgReset;
         window.wbBgSetDim = wbBgSetDim;
         window.wbBgPanelToggle = wbBgPanelToggle;
+        // 色卡预览用 background 简写（最后一层可以带 color），但应用时拆成两条
+        function wbBgCss(p) {
+            return (p.img || '') + (p.color ? ((p.img ? ', ' : '') + p.color) : '');
+        }
         function wbBgRenderSwatches() {
             var box = document.getElementById('wbBgSwatches');
             if (!box) return;
@@ -8257,7 +8280,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 html += '<div onclick="wbBgPick(\'' + p.id + '\')" title="' + p.name + '"'
                     + ' style="cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid '
                     + (on ? 'var(--c-a)' : 'var(--line)') + ';">'
-                    + '<div style="height: 38px; background: ' + p.css + ';"></div>'
+                    + '<div style="height: 38px; background: ' + wbBgCss(p) + ';"></div>'
                     + '<div style="padding: 3px 0; text-align: center; font-size: 11.5px; background: var(--surface-solid); color: '
                     + (on ? 'var(--c-a)' : 'var(--text-dim)') + ';">' + p.name + '</div></div>';
             });
