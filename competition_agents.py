@@ -633,6 +633,7 @@ class CompetitionState(TypedDict):
     judge_feedback: str
     judge_scores: list
     scores: dict
+    dims: list
     expert_review: str
     proposal_analysis: str
     defense_questions: str
@@ -745,6 +746,8 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
 11. 禁止编造已发生的事实（硬性）：严禁出现「已合作/已沟通/已签约/已落地/已完成试点/已达成/已上线/已获得」这类断言「已经发生」的表述，除非用户创意/草稿里明确写了；用户没给的一律写「计划/拟/预计/拟于」这类未来时表述。例：「合作社区已经初步沟通」应写「计划与 2 个社区初步沟通」；「试点已排到第 6 个月」应写「试点拟安排在第 6 个月」。
 12. 市场测算口径（硬性）：做市场/用户规模测算时，严禁把「独居」「空巢」「独立居住」三个概念混用——「独立居住」含与配偶同住，远大于「一人独居」；每个测算数字必须写明统计口径、数据来源、年份（如「60 岁以上人口 2.97 亿，国家统计局 2024」），拿不准口径就写「（口径需核实）」，不得直接拿「空巢/独立居住占比」去套「独居老人规模」。
 13. 团队章节（硬性）：如果用户提供的真实数据/草稿里明确给出了团队成员姓名、角色、分工，必须原样写进团队章节，不得删改或编造；用户没给的，只写「角色 + 职责」（如「项目负责人：负责整体统筹与技术路线」），严禁编造具体姓名、也不要把「五个角色」这类笼统说法当真人介绍；需要填真人的位置写「姓名：（由团队补充）」或直接留空，不要出现「待填写」字样。
+14. 禁编造人物案例（硬性）：正文严禁出现具体人名和虚构经历（如「李然」「王雨桐」这类）；用户没提供真实案例时，改用泛化表述（如「参赛团队普遍反馈」「某高校学生」「一位大二学生」）。真实人物案例只能来自用户创意/草稿/实测数据里明确给出的内容。
+15. 数据口径标注（硬性）：正文涉及统计数据必须标注口径来源（如「公开报道」「官网数据」）；拿不准来源的数字标「待核实」，并把「待核实」项并入文末「## 待替换数据清单」，提示用户提交前逐项核对。
 """
 
 
@@ -2139,22 +2142,45 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
     return {"idea_score": idea_score, "idea_feedback": response.content, "scores": scores}
 
 
+def _official_scoring_dims(competition_name):
+    """从赛事知识库取官方评分维度/权重（结构化 scoring 字段）；无则返回空列表。"""
+    try:
+        kb = get_competition_knowledge_structured(competition_name)
+        dims = []
+        for item in (kb.get("scoring") or []):
+            if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
+                try:
+                    weight = float(item[1])
+                except Exception:
+                    weight = None
+                if weight is not None:
+                    dims.append({"name": str(item[0]).strip(), "weight": weight})
+        return dims
+    except Exception:
+        return []
+
+
 def judge_agent(state: CompetitionState) -> CompetitionState:
     """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
     _report_stage("judging")
-    # 评分维度：优先用 scoring_weights（前端传），缺省用默认 5 维
-    sw = state.get("scoring_weights") or []
+    # 评分维度/权重：以规则解析出的赛事官方规则为准；无官方规则才回退前端 scoring_weights，再无回退默认五维。
+    official = _official_scoring_dims(state.get("competition_name", ""))
     dims = []
-    for item in sw:
-        if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
-            try:
-                w = float(item[1])
-            except Exception:
-                w = 0
-            if w > 0:
-                dims.append((str(item[0]).strip(), w))
+    if official:
+        dims = [(d["name"], d["weight"]) for d in official]
+    else:
+        sw = state.get("scoring_weights") or []
+        for item in sw:
+            if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
+                try:
+                    w = float(item[1])
+                except Exception:
+                    w = 0
+                if w > 0:
+                    dims.append((str(item[0]).strip(), w))
     if not dims:
         dims = [("结构完整性", 30), ("逻辑清晰度", 25), ("数据支撑", 20), ("格式规范", 15), ("说服力", 10)]
+    state["dims"] = [{"name": name, "weight": w} for name, w in dims]
     score_lines = "\n".join("%s：__分" % name for name, _ in dims)
     weight_desc = "、".join("%s %d%%" % (name, int(w)) for name, w in dims)
 

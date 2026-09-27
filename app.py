@@ -2344,6 +2344,7 @@ def _run_generation(data):
                 "proposal_selfcheck": result.get("proposal_selfcheck", ""),
                 "judge_feedback": result.get("judge_feedback", ""),
                 "judge_scores": result.get("judge_scores", []),
+                "dims": result.get("dims", []),
                 "expert_review": result.get("expert_review", ""),
                 "defense_questions": result.get("defense_questions", ""),
                 "ppt_outline": result.get("ppt_outline", ""),
@@ -2431,6 +2432,7 @@ def _run_generation(data):
         "proposal_selfcheck": result.get("proposal_selfcheck", ""),
         "judge_feedback": result.get("judge_feedback", ""),
         "judge_scores": result.get("judge_scores", []),
+        "dims": result.get("dims", []),
         "theme": (rich_deck or {}).get("theme", data.get("theme") or "tech") if isinstance(rich_deck, dict) else (data.get("theme") or "tech"),
         "expert_review": _parse_expert_review(result.get("expert_review", "")) or result.get("expert_review", ""),
         "proposal_analysis": result.get("proposal_analysis", ""),
@@ -3683,6 +3685,37 @@ def _probe_deepseek():
     _upstream_cache["deepseek"] = result
     _upstream_cache["checked_at"] = now
     return result
+
+
+@app.route('/api/docs')
+def list_docs():
+    """列出共享目录 docs/ 下的文件（供多 agent 自动查看指令，只读）。"""
+    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    try:
+        files = []
+        for f in sorted(os.listdir(docs_dir)):
+            p = os.path.join(docs_dir, f)
+            if os.path.isfile(p):
+                files.append({"name": f, "size": os.path.getsize(p)})
+        return jsonify({"success": True, "files": files})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/docs/<path:filename>')
+def read_doc(filename):
+    """读取共享目录里某个文件内容（只读，仅限 .md/.txt/.json，防路径穿越）。"""
+    if '..' in filename or filename.startswith('/'):
+        return jsonify({"success": False, "error": "非法路径"}), 400
+    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    p = os.path.join(docs_dir, filename)
+    if not os.path.isfile(p) or not filename.lower().endswith(('.md', '.txt', '.json')):
+        return jsonify({"success": False, "error": "文件不存在或类型不支持"}), 404
+    try:
+        with open(p, encoding='utf-8') as f:
+            return jsonify({"success": True, "name": filename, "content": f.read()[:20000]})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 @app.route('/api/demo')
