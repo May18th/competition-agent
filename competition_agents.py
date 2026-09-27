@@ -403,13 +403,27 @@ PROPOSAL_REQUIRED_SECTIONS_FAST = [
 ]
 
 
-def check_proposal_completeness(proposal: str, mode: str = "deep") -> dict:
+def check_proposal_completeness(proposal: str, mode: str = "deep", competition_name: str = "") -> dict:
     """检查申报书是否覆盖核心章节，返回缺失项（提示性质，不阻断）。
 
-    mode='fast' 时按简洁版 5 节校验，否则按深度版 7 节校验。
+    官方章节优先：传了 competition_name 且能解析到官方章节时，按官方章节名校验，
+    避免通用 5/7 节与官方章节打架（如挑战杯官方没有「项目简介/社会价值」却报警缺失）。
     """
     text = proposal or ""
-    sections = PROPOSAL_REQUIRED_SECTIONS_FAST if mode == "fast" else PROPOSAL_REQUIRED_SECTIONS
+    sections = None
+    if competition_name:
+        try:
+            official = _official_chapters({"competition_name": competition_name})
+            if official:
+                sections = []
+                for c in official:
+                    core = re.sub(r'^[一二三四五六七八九十]+、', '', c).strip()
+                    if core:
+                        sections.append((core, [core]))
+        except Exception:
+            pass
+    if not sections:
+        sections = PROPOSAL_REQUIRED_SECTIONS_FAST if mode == "fast" else PROPOSAL_REQUIRED_SECTIONS
     missing = []
     detail = {}
     for name, keywords in sections:
@@ -888,6 +902,36 @@ def _strip_placeholders(text):
     # ④ 其余裸【xxx】方括号提示 → 去方括号保留文字，避免残留「【示例值，需核实】」
     t = re.sub(r'【([^】]*)】', r'（\1）', t)
     return t
+
+
+def _compress_to_length(text, max_chars, topic, rounds=1):
+    """简洁版篇幅兜底：正文超过 max_chars 时让模型就地压缩，最多 rounds 轮。
+
+    只在超长时才发起 LLM 调用；已达标则原样返回，不额外花钱。
+    返回 (最终文本, 最终字数)。
+    """
+    cur = text or ''
+    n = _cjk_len(cur)
+    for i in range(rounds):
+        if n <= max_chars:
+            break
+        try:
+            prompt = (
+                "下面是一份科创赛事申报书，当前约 %d 字，而简洁版要求不超过 %d 字，严重超标。\n\n"
+                "请在不改变章节结构、不删章节、不丢核心数字/场景的前提下压缩：\n"
+                "1. 每章压缩到 2～3 句（约 100～150 字），只保留最关键的论点、数字、技术名词；\n"
+                "2. 删掉重复的解释、冗余的铺垫、空泛的修饰；\n"
+                "3. 保持 Markdown 标题（## 一、xxx）与序号不变，中文标点用全角。\n\n"
+                "直接输出压缩后的完整申报书全文，不要任何说明。\n\n"
+                "当前申报书：\n%s" % (n, max_chars, cur)
+            )
+            cur = llm.invoke([HumanMessage(content=prompt)]).content
+            n = _cjk_len(cur)
+            print(f"📏 篇幅压缩第 {i + 1} 轮：{n} 字（上限 {max_chars}）")
+        except Exception as e:
+            print(f"[compress] 篇幅压缩失败，保留原文：{e}")
+            break
+    return cur, n
 
 
 def _expand_to_length(text, min_chars, topic, rounds=2):
@@ -1835,7 +1879,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_score_diagnosis_ref()}
 
 【篇幅硬性要求】
-1. 全文总字数按下方官方章节数浮动：每章 120～180 字；章节少约 900 字、章节多约 1800 字，每章不足 100 字视为不合格。
+1. 全文必须短小精悍：每章最多 3～4 句（约 100～150 字），全文**严格不超过 1800 字**；超过 1800 字直接判不合格，宁可短也不要注水凑字。
 2. 章节严格按下方官方模板组织，每个标题**必须用「## 」开头**（Markdown 二级标题）并保留「一、二、三、」序号，不要增删章节、不要中途省略、不要自造或合并章节；**输出后按官方顺序自检一遍，确保不乱序、不缺章**：
 
 {_fast_chapter_block(state)}
@@ -1854,6 +1898,10 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 """
     proposal, n = _expand_to_length(
         _stream_llm_guarded(prompt, "proposal"), 1100,
+        state.get('one_liner') or state['idea'][:40])
+    # 简洁版硬上限：超过 1800 字时压缩，保持「短而准」的定位
+    proposal, n = _compress_to_length(
+        proposal, 1800,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1

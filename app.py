@@ -2036,7 +2036,9 @@ def _run_generation(data):
 
     try:
         from competition_agents import check_proposal_completeness
-        completeness = check_proposal_completeness(result.get("proposal", ""), data.get("mode", "fast"))
+        completeness = check_proposal_completeness(
+            result.get("proposal", ""), data.get("mode", "fast"),
+            data.get("competition_name", ""))
     except Exception:
         completeness = {"ok": True, "missing": [], "detail": {}, "chars": 0}
     # 正文字数（去掉 Markdown 标记的有效字数，用户一眼看到写了多少字）
