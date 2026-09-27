@@ -193,10 +193,9 @@ def _admin_guard():
             resp.status_code = 429
             return resp
         return _require_admin()
-    if (p.startswith("/admin") or p.startswith("/monitor")
-            or p in ("/api/kb/add", "/api/kb/delete", "/api/failure/patterns",
-                     "/api/feedback/priority", "/api/score/diagnosis",
-                     "/api/competition/gaps", "/api/feedback/export")):
+    # 只保护「写操作 / 烧钱操作」；后台只读页面（/admin /monitor /admin/panel）
+    # 和只读分析接口直接打开，学生项目降低使用门槛，避免总被「无权限」卡住。
+    if p in ("/api/kb/add", "/api/kb/delete"):
         return _require_admin()
     return None
 
