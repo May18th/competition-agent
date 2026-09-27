@@ -990,6 +990,73 @@ mark.wb-ph {
     #startBtn { display: block; width: fit-content; margin: 14px auto 0; }
 }
 
+/* ===== 视觉增强（WorkBuddy）：把「已有但过弱」的效果调强 ===== */
+/* 说明：标题渐变 / 光球 / 网格 / 卡片毛玻璃 / 按钮渐变 / 呼吸灯这些其实都已经存在，
+   问题出在参数太保守（网格线 4.5% 不透明、光球 .42、四周压暗 .55 把背景压没了），
+   所以这里是调参而不是重写。凡涉及深底专属的颜色，都用 body.light 回落到原变量。 */
+
+/* 1) 背景：光球加大提亮、网格线提亮、四周压暗减轻 */
+.wb-orb { opacity: .58; }
+.wb-orb-1 { width: 700px; height: 700px; left: -180px; top: -170px; }
+.wb-orb-2 { width: 780px; height: 780px; right: -220px; top: 4%; }
+.wb-orb-3 { width: 640px; height: 640px; left: 32%; bottom: -280px; }
+.wb-grid {
+    background-image:
+        linear-gradient(rgba(148,163,255,.10) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148,163,255,.10) 1px, transparent 1px);
+}
+.wb-bg::after { background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 42%, rgba(3,5,14,.40) 100%); }
+
+/* 2) 标题：更亮的青→紫渐变 + 光晕。
+      background-clip:text 下文字填充是透明的，text-shadow 会按字形画出光晕（比 filter 兼容性好） */
+.hero h1 {
+    background: linear-gradient(96deg, #7dd3fc 0%, #a5b4fc 45%, #f0abfc 100%);
+    text-shadow: 0 0 26px rgba(125,211,252,.32), 0 0 54px rgba(165,180,252,.16);
+}
+body.light .hero h1 { text-shadow: none; }
+
+/* 3) 卡片：描边提亮 + 顶部高光加强 */
+.card {
+    border-color: rgba(255,255,255,.11);
+    box-shadow: 0 16px 48px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.09);
+}
+body.light .card { border-color: var(--line); }
+
+/* 4) 主按钮：悬停微放大（原来只有上浮）+ 按压下沉（原来缺 :active） */
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px) scale(1.012);
+    box-shadow: 0 18px 46px rgba(99,102,241,.6), 0 0 0 1px rgba(255,255,255,.14);
+}
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0) scale(.985);
+    box-shadow: 0 6px 18px rgba(99,102,241,.45);
+}
+
+/* 5) 输入框聚焦：青色描边 + 青色外发光（原来光晕 .14 几乎看不出来） */
+input:focus, textarea:focus, select:focus {
+    border-color: #22d3ee;
+    background: rgba(34,211,238,.07);
+    box-shadow: 0 0 0 4px rgba(34,211,238,.22), 0 0 22px rgba(34,211,238,.15);
+}
+
+/* 6) 状态点呼吸灯：亮度和半径都提一档 */
+.wb-dot { box-shadow: 0 0 10px var(--info), 0 0 22px rgba(34,211,238,.40); }
+
+/* 9) 正文排版：正文色提亮到 #D0D7E5、段距、首行缩进 2 字符 */
+.content-block { color: #D0D7E5; }
+.content-block p { margin: 0 0 12px; text-indent: 2em; }
+.content-block h1, .content-block h2, .content-block h3, .content-block h4 { margin: 20px 0 10px; text-indent: 0; }
+.content-block li, .content-block td, .content-block th { text-indent: 0; }
+body.light .content-block { color: var(--text-soft); }
+
+/* 8) 图表容器：玻璃描边 + 圆角，和卡片同一套质感（图表底色在 JS 里改成半透明渐变） */
+#budgetChart, #marketChart, #timelineChart {
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.10);
+    overflow: hidden;
+}
+body.light #budgetChart, body.light #marketChart, body.light #timelineChart { border-color: var(--line); }
+
 /* ---------- 响应式（统一放最后） ---------- */
 @media (max-width: 768px) {
     /* 手机上把留白压掉：原来一屏只能看到标题 + 半张卡，要滑很久才摸到输入框 */
@@ -6307,8 +6374,16 @@ mark.wb-ph {
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
                         if (isDeep && !(data.data.rich_charts || []).length) {
                             setTimeout(() => {
-                                // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致
-                                const CA_BG = '#0F1535';
+                                // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致。
+                                // 网页侧把底改成半透明玻璃渐变（更贴页面主视觉）；系列色 CA 不动，
+                                // 否则会和后端导出的 PNG 配色对不上（导出件走 chart_renderer_pro）。
+                                const CA_BG = {
+                                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                                    colorStops: [
+                                        { offset: 0, color: 'rgba(22,28,62,.62)' },
+                                        { offset: 1, color: 'rgba(8,12,32,.78)' }
+                                    ]
+                                };
                                 const CA = ['#818CF8', '#22B8CF', '#C084FC', '#F59E0B', '#34D399', '#FB7185', '#A3E635'];
                                 // 预算构成饼图（重复生成时先销毁旧实例，避免叠加）
                                 const budgetEl = document.getElementById('budgetChart');
@@ -6344,7 +6419,14 @@ mark.wb-ph {
                                     tooltip: { backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
                                     xAxis: { data: ['2024', '2025', '2026', '2027', '2028'], axisLine: { lineStyle: { color: 'rgba(148,163,255,.35)' } }, axisLabel: { color: '#93a0c4' } },
                                     yAxis: { splitLine: { lineStyle: { color: 'rgba(148,163,255,.12)' } }, axisLabel: { color: '#93a0c4' } },
-                                    series: [{ type: 'bar', data: [120, 280, 560, 980, 1500], itemStyle: {color: '#22d3ee', borderRadius: [6, 6, 0, 0]} }]
+                                    series: [{
+                                        type: 'bar', data: [120, 280, 560, 980, 1500],
+                                        itemStyle: {
+                                            borderRadius: [6, 6, 0, 0],
+                                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                                                colorStops: [{ offset: 0, color: '#67e8f9' }, { offset: 1, color: '#4f46e5' }] }
+                                        }
+                                    }]
                                 });
                                 // 时间线
                                 const timelineEl = document.getElementById('timelineChart');
