@@ -2345,8 +2345,8 @@ def _run_generation(data):
                 "score": result.get("score", ""),
                 "revision_count": result.get("revision_count", ""),
                 "rich_charts": rich_charts,
-                "rich_tables": result.get("rich_tables", []),
-                "rich_deck": result.get("rich_deck")
+                "rich_tables": rich_tables,
+                "rich_deck": rich_deck
             }
         }
         history_item["data"] = _strip_identifying_info(history_item["data"])
@@ -3468,6 +3468,8 @@ def admin_stats():
             "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
         failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
+        avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
         fb = c.execute(
             "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
         rating = c.execute(
@@ -3500,8 +3502,17 @@ def admin_stats():
             buckets["90-100"] += 1
 
     denom = total + failed
+    mode_breakdown = {r["mode"] or "unknown": r["n"] for r in mode_rows}
+    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    avg_duration = round(avg_dur, 1) if avg_dur else 0
     return jsonify({
         "success": True,
+        "total": total,
+        "mode_breakdown": mode_breakdown,
+        "fast_count": mode_breakdown.get("fast", 0),
+        "deep_count": mode_breakdown.get("deep", 0),
+        "avg_duration": avg_duration,
+        "success_rate": success_rate,
         "trend": [{"date": r["d"], "count": r["n"]} for r in trend],
         "failure": {"total": denom, "failed": failed,
                     "rate": round(failed * 100.0 / denom, 1) if denom else 0},
@@ -3509,6 +3520,90 @@ def admin_stats():
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
     })
+
+
+@app.route('/admin/report')
+def admin_report():
+    """测试数据报告：一键出统计表 + 图，答辩直接打印 / 截图贴 PPT。"""
+    try:
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
+        avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
+        fb = c.execute("SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
+        scores = c.execute("SELECT result_data FROM history").fetchall()
+        conn.close()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    buckets = {"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0}
+    for r in scores:
+        try:
+            s = float(json.loads(r["result_data"]).get("score"))
+        except Exception:
+            continue
+        if s < 60:
+            buckets["0-59"] += 1
+        elif s < 70:
+            buckets["60-69"] += 1
+        elif s < 80:
+            buckets["70-79"] += 1
+        elif s < 90:
+            buckets["80-89"] += 1
+        else:
+            buckets["90-100"] += 1
+
+    mode_bd = {r["mode"] or "unknown": r["n"] for r in mode_rows}
+    denom = total + failed
+    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    avg_duration = round(avg_dur, 1) if avg_dur else 0
+
+    score_json = json.dumps([{"range": k, "count": v} for k, v in buckets.items()], ensure_ascii=False)
+    feedback_json = json.dumps([{"name": r["category"], "value": r["n"]} for r in fb], ensure_ascii=False)
+    mode_json = json.dumps([{"name": k, "value": v} for k, v in mode_bd.items()], ensure_ascii=False)
+
+    html = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>测试数据报告</title>
+<script src="/static/echarts.min.js"></script>
+<style>
+body{font-family:"Microsoft YaHei",sans-serif;background:#0b1020;color:#e5e7eb;margin:0;padding:24px}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:22px;margin:0 0 18px;color:#fff}
+.cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+.card{flex:1 1 150px;background:#151b2e;border:1px solid #26304a;border-radius:10px;padding:14px;text-align:center}
+.card .num{font-size:26px;font-weight:700;color:#22d3ee}
+.card .label{font-size:12px;color:#94a3b8;margin-top:4px}
+.chart{height:300px;background:#151b2e;border:1px solid #26304a;border-radius:10px;margin-bottom:14px;padding:8px}
+.bar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px}
+button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+</style></head><body>
+<div class="wrap">
+<h1>科创赛事助手 · 测试数据报告</h1>
+<div class="cards">
+<div class="card"><div class="num">""" + str(total) + """</div><div class="label">总生成次数</div></div>
+<div class="card"><div class="num">""" + str(mode_bd.get("fast", 0)) + """</div><div class="label">简洁版</div></div>
+<div class="card"><div class="num">""" + str(mode_bd.get("deep", 0)) + """</div><div class="label">深度版</div></div>
+<div class="card"><div class="num">""" + str(avg_duration) + """s</div><div class="label">平均耗时</div></div>
+<div class="card"><div class="num">""" + str(success_rate) + """%</div><div class="label">成功率</div></div>
+</div>
+<div class="bar"><button onclick="window.print()">打印 / 存 PDF</button></div>
+<div id="scoreChart" class="chart"></div>
+<div id="feedbackChart" class="chart"></div>
+</div>
+<script>
+var SCORE = """ + score_json + """;
+var FEEDBACK = """ + feedback_json + """;
+var MODE = """ + mode_json + """;
+function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#94a3b8'}},yAxis:{type:'value',axisLabel:{color:'#94a3b8'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
+bar('scoreChart','AI 模拟评分分布',SCORE,'#22d3ee');
+bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
+</script>
+</body></html>"""
+    return html
 
 
 @app.route('/api/health')
