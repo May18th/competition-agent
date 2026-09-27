@@ -36,12 +36,15 @@ def stage_meta(stage):
 
 
 import time
+import threading
 
 # 所有异步任务的状态字典（key=task_id，value 结构见 app.py 的 generate_async）
 tasks = {}
 
-# 当前正在执行的任务 id（app.py 的 worker 线程内设置）
-_current_task_id = None
+# 当前正在执行的任务 id（app.py 的 worker 线程内设置）。
+# 用线程本地存储：并发生成时（MAX_CONCURRENT_GEN 16）多个 worker 线程同时跑，
+# 之前用全局变量会把 A 任务的上报串到 B 任务上，导致阶段显示错乱。
+_tls = threading.local()
 
 # 已取消的任务 id 集合（单一真相源，progress.py 转发到这里）
 _cancelled = set()
@@ -53,24 +56,22 @@ class TaskCancelled(Exception):
 
 def set_current_task(task_id):
     """标记当前正在执行的任务（app.py 的 worker 线程调用）。"""
-    global _current_task_id
-    _current_task_id = task_id
+    _tls.task_id = task_id
 
 
 def clear_current_task():
     """清除当前任务标记（worker 线程结束时调用）。"""
-    global _current_task_id
-    _current_task_id = None
+    _tls.task_id = None
 
 
 def current_task_id():
     """返回当前正在执行的任务 id（供 Agent 内部读取，用于流式缓冲区）。"""
-    return _current_task_id
+    return getattr(_tls, "task_id", None)
 
 
 def set_partial(partial):
     """把当前任务的已产出字段写进 tasks['partial']，供 /api/status 流式下发。"""
-    tid = _current_task_id
+    tid = current_task_id()
     if tid and tid in tasks:
         tasks[tid]["partial"] = partial
         tasks[tid]["updated_at"] = time.time()
@@ -82,7 +83,7 @@ def set_partial_field(field, text):
     供 Agent 内部边生成边推送用：LLM 每吐出一批 token 就调一次，
     前端轮询即可看到正文逐字增长，而不是等整个节点跑完才一次性出现。
     """
-    tid = _current_task_id
+    tid = current_task_id()
     if not tid or tid not in tasks or not text:
         return
     p = tasks[tid].get("partial")
@@ -120,7 +121,7 @@ def cancel_task(task_id):
 
 def is_cancelled(task_id=None):
     """检查任务是否已取消（不传则查当前任务）。"""
-    tid = task_id or _current_task_id
+    tid = task_id or current_task_id()
     return bool(tid) and tid in _cancelled
 
 
@@ -131,7 +132,7 @@ def clear_cancel(task_id):
 
 def report_stage(stage):
     """上报当前阶段（competition_agents.py 的 Agent 节点调用）。"""
-    tid = _current_task_id
+    tid = current_task_id()
     if tid and tid in _cancelled:
         raise TaskCancelled()
     t = tasks.get(tid) if tid else None

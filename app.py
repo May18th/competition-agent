@@ -2361,6 +2361,11 @@ def _sweep_tasks():
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
     data = request.json or {}
+    # 基础校验：创意和赛事都不能为空，否则模型会凭空编内容、章节顺序乱
+    if not (data.get("idea") or "").strip():
+        return jsonify({"success": False, "error": "请先填写项目创意（一句话说清做什么、解决什么问题）"}), 400
+    if not (data.get("competition_name") or "").strip():
+        return jsonify({"success": False, "error": "请先选择赛事"}), 400
     task_id, err = _start_generation(data)
     if err is not None:
         return err, 429
