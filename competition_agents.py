@@ -632,6 +632,7 @@ class CompetitionState(TypedDict):
     proposal_selfcheck: str
     judge_feedback: str
     judge_scores: list
+    scores: dict
     expert_review: str
     proposal_analysis: str
     defense_questions: str
@@ -1076,6 +1077,8 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     print(f"📋 规则解析 Agent：已提取评分标准")
+    set_stage_meta("kb_count", len(competition_knowledge))
+    set_stage_meta("rule_hits", len(re.findall(r'\d+\s*%', response.content or '')))
     return {"parsed_rules": response.content}
 
 
@@ -2120,13 +2123,20 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
         "社会价值": _pick("社会价值"),
     }
     weights = {"创新性": 0.30, "可行性": 0.25, "市场价值": 0.20, "技术壁垒": 0.15, "社会价值": 0.10}
+    scores = {
+        "innovation": {"name": "创新性", "score": sub["创新性"], "weight": 30},
+        "feasibility": {"name": "可行性", "score": sub["可行性"], "weight": 25},
+        "market": {"name": "市场价值", "score": sub["市场价值"], "weight": 20},
+        "barrier": {"name": "技术壁垒", "score": sub["技术壁垒"], "weight": 15},
+        "social": {"name": "社会价值", "score": sub["社会价值"], "weight": 10},
+    }
     if all(v is not None for v in sub.values()):
         idea_score = int(round(sum(sub[k] * weights[k] for k in sub)))
     else:
         idea_score = 60
     idea_score = max(0, min(100, idea_score))
     print(f"💡 创意评分：{idea_score} 分")
-    return {"idea_score": idea_score, "idea_feedback": response.content}
+    return {"idea_score": idea_score, "idea_feedback": response.content, "scores": scores}
 
 
 def judge_agent(state: CompetitionState) -> CompetitionState:

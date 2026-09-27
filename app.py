@@ -2898,6 +2898,21 @@ def cancel_generation(task_id):
     return jsonify({"success": True, "cancelled": True, "eta_note": "最迟约 1 分钟内停止"})
 
 
+_SPLASH_FACTS = [
+    "iCAN 总决赛 = 巡展 20% + 答辩 80%",
+    "创新赛道双盲评审，泄露院校/导师一处扣 5 分",
+    "大挑论文 8000 字 / 调查报告 15000 字以内",
+    "互联网+ 评分：创新 30 / 教育 25 / 商业与社会价值 25 / 团队 20",
+    "评委最看重：数据是否真实、项目是否真做过",
+]
+_EDIT_HINTS = {
+    "writing": "正文生成中，可以先去准备实测数据",
+    "judging": "AI 评委正在打分，稍等",
+    "revision": "正在按评委意见定向改写",
+    "analysis": "正在并行分析竞品、商业模式、风险、技术方案",
+}
+
+
 @app.route('/api/status/<task_id>')
 def get_task_status(task_id):
     t = tasks.get(task_id)
@@ -2966,6 +2981,18 @@ def get_task_status(task_id):
         _min_eta = {"speech": 30, "writing": 30, "revision": 20, "defense": 20,
                     "ppt": 15, "expert_review": 20, "judging": 15, "diagnosis": 12}
         _eta = max(_linear, _min_eta.get(_stage, 8))
+    # 增值字段：完整累积正文 / 历史模式计数 / 等待期冷知识 / 引导文案 / 诊断报告
+    _partial_content = _partial.get("proposal", "") if isinstance(_partial, dict) else ""
+    _mode_counts = {}
+    try:
+        _mc = get_db()
+        for _r in _mc.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall():
+            _mode_counts[_r[0] or "unknown"] = _r[1]
+        _mc.close()
+    except Exception:
+        pass
+    _splash = _SPLASH_FACTS[int(time.time() // 6) % len(_SPLASH_FACTS)]
+    _diag = _partial.get("proposal_analysis", "") if isinstance(_partial, dict) else ""
     resp = {
         "success": True,
         "status": t["status"],
@@ -2974,6 +3001,11 @@ def get_task_status(task_id):
         "pct": _pct,
         "eta_seconds": _eta,
         "partial": _partial,
+        "partial_content": _partial_content,
+        "mode_counts": _mode_counts,
+        "splash_fact": _splash,
+        "edit_hint": _EDIT_HINTS.get(_stage, ""),
+        "diagnosis_report": _diag,
         "meta": t.get("meta") or {},
         "updated_at": t["updated_at"]
     }
@@ -2983,6 +3015,8 @@ def get_task_status(task_id):
         resp["error"] = t["error"]
         resp["detail"] = t.get("detail")
         resp["error_code"] = t.get("error_code", "internal_error")
+        # 任务级错误多为瞬时（LLM 超时/网络），可重试；校验类错误在任务创建前已挡，到不了这里
+        resp["retryable"] = True
     return jsonify(resp)
 
 
