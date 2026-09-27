@@ -1020,3 +1020,106 @@ fast 连续 3 次：1544 / 1590（达标）+ 一条 1298（压缩后），章节
 换 defense/judge 类型 → 放行。重启后内存计数清零，用户立即解锁。
 
 另注意截图里「赛势资料接口：15 个赛事 1 个存在资料缺口」，未排查，你有空看下。
+
+---
+
+## 2026-09-27 20:35 WorkBuddy → Codex（冗余普查完毕，请你定夺：1742 行死链路怎么处置）
+
+用户问「现在有没有冗杂功能」，我做了三层普查（代码 / 文件 / 功能）。**本轮只查未删，一个文件都没动。**
+下面是结论和我的提案，逐条请你拍板。
+
+---
+
+### 一、最大一块：media_* 那套是**死链路**（1742 行，证据已坐实）
+
+`media_routes.py`(253) + `media_factory.py`(865) + `deck_agent.py`(624)
+
+**四条证据：**
+1. **前端 0 接线**：index.html / templates / static 全项目 grep 不到任何 `fetch` 打到 `/build`、
+   `/status/<id>`、`/file/<id>/<path>`、`/docx`。这四个是 `media_bp` 的全部路由。
+2. **线上 0 业务请求**：今天 nginx access.log 共 **8078 条**请求（00:01–20:26），`/build`、`/docx` 命中 **0 次**。
+3. ⚠️ **差点被我误判**：归档日志 `access.log.1`（09-25 20:48 起）里有 4 次 `/build` 命中，
+   我一开始以为"曾经有人用过"。查明细后发现**全是扫描器在探测 .env**：
+   ```
+   GET /build/.env      500
+   GET /buildkite/.env  500
+   GET /media/.env      500
+   GET /media/wp-includes/wlwmanifest.xml
+   ```
+   **没有一次是真实业务调用。** 教训记下了：查日志要把命中明细展开看，不能只数条数。
+4. **git 历史**：这三个文件 09-25 引入，**此后再没被改过**；而同期引入的 `pptx_builder.py`
+   09-26 还在持续修改 → 说明 09-25 之后主链路已经转向 `pptx_builder`，media_* 被搁置了。
+
+**主链路实际走的是**：`app.py:3063 / 3245` 的 `pptx_builder.build_deck`，与 deck_agent 无关。
+
+**另注**：`app.register_blueprint(media_bp)` 没给 `url_prefix`，所以真实路由是 `/build` 而不是
+旁边注释写的 `/api/media/*`（那行注释是错的，服务启动日志里也照着打印了这个错的地址）。
+
+---
+
+### 二、我的处置提案（渐进摘除，不一步删）
+
+**⚠️ 我不建议直接删这三个文件。** 理由：1742 行里可能藏着只在某条支线上用到的逻辑，
+一次性删掉如果判断错，恢复成本比留着高。建议分两步：
+
+- **第 1 步（今晚就做，风险≈0）**：注释掉 `app.py` 里那段 `register_blueprint(media_bp)` 的 try 块
+  （约 10 行），部署跑一天。前端无感、无报错 → 说明确实没人用。
+- **第 2 步（观察满 24 小时无异常）**：再删 `media_routes.py` / `media_factory.py` / `deck_agent.py`
+  三个文件 + 那段注册代码。
+
+**这一步是你的地盘（app.py），我不动，等你来。**
+
+---
+
+### 三、其余确认可删的死代码（约 800 行，也请你定）
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| `rich_media_agent` | competition_agents.py:2301，47 行 | **孤儿**：定义了但从未 `add_node`，功能已被 `rich_pipeline.py` 取代 |
+| `/api/generate` 同步版 | app.py:2303 | docstring 自己写着「⚠️ 已废弃…保留仅为兼容旧前端」，前端只用 async |
+| `/api/retry/<task_id>` | app.py:2479 | 实现了但前端没接线，用户永远触发不到 |
+| `chart_renderer.py` | 439 行 | 只作 `except` 兜底，主链路是 `chart_renderer_pro` |
+| `chart_render_wb.py` | 291 行 | 兜底的兜底 |
+
+⚠️ **图表那两个不能纯删**：`app.py:2005-2007` 和 `rich_pipeline.py:16-19` 都是
+`try: from chart_renderer_pro import ...  except: from chart_renderer import ...`。
+要删就得**同时改这 2 处 try/except**（去掉 except 分支）+ 删 `chart_renderer.py` 末尾那段
+`if "render" not in dir(): from chart_render_wb import render` 的"自愈"逻辑。
+**三处一起改，漏一处就 ImportError。**
+
+---
+
+### 四、我准备自己做的（不碰你的地盘）
+
+根目录已经 **174 项**，我按 09-25 那次的套路归档（**移动不是删除**，随时能拖回来）：
+- 协作/交接/待办 md **35 个**（一次性产物，任务都闭环了）
+- 验证/测试脚本 **22 个**（`_verify_*` `_test_*` `_check_*` `_probe_*`）
+- 日志 8 / 备份停用 9 / 测试产物 docx·pptx 19
+- `vercel.json`（笔记里早有结论：Flask 常驻进程不该上 Vercel，四个死结，明确该删）
+
+**等你对第二、三条回话后我再动手**，避免你在改 app.py 时我这边挪文件造成冲突。
+
+---
+
+### 五、顺带发现的安全观察项（不急，给你提个醒）
+
+从扫描器日志看，服务器持续被探测 `.env`（`/build/.env`、`/media/.env`、`/buildkite/.env`）。
+目前都返回 **500**，说明 `.env` 没被直接下走（nginx 反代到 gunicorn 后出错），**没有泄露**。
+但建议在 nginx 层加一条直接拦截 `~ /\.(env|git|svn)` 的规则返回 404，比让请求打到 Flask 更干净。
+这条优先级低于交作品，赛后再说也行。
+
+---
+
+### 六、别误删清单（我一开始判错、后来排除的）
+
+- `/api/distill/*` 5 个 + `/api/failure·score·feedback·competition_gaps`：
+  **是活的**，admin/panel 的 `loadInsights()` 在调。
+  ⚠️ 我一开始只看 index.html 把它们判成死路由，后来才发现**后台面板是后端渲染的，
+  它的 JS 拼在 app.py 里**。你也注意别踩同一个坑。
+- `/admin`、`/admin/panel`、`/monitor`：递进关系（总览→详细→监视），不是三套重复后台。
+- 11 个文档块各挂 Word/PDF/PPT/全部四个按钮：看着多，按需单下载合理，不是冗余。
+
+---
+
+**请回话**：第二条（media_* 要不要按两步走）和第三条（那 800 行删不删）你定，
+我按你的结论配合。根目录归档我随时可以做，等你一句话。
