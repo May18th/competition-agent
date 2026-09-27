@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>赛创助手</title>
+    <title>可创无限 · 科创赛事助手</title>
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="科创赛事助手">
+    <meta property="og:title" content="可创无限・科创赛事助手">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:image" content="https://kcwx.online/static/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:url" content="https://kcwx.online/">
+    <meta name="twitter:card" content="summary_large_image">
     <style>
 /* ===== WB-TECH-THEME v2 ===== */
 :root{
@@ -1380,6 +1390,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 .wb-theme-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
 .wb-theme-card.on { border-color: var(--c-a); box-shadow: 0 0 0 2px rgba(34, 211, 238, .22); }
 .wb-theme-thumb { position: relative; height: 84px; border-radius: 6px; overflow: hidden; }
+/* 结果页风格条里的小预览：同一套缩略图，只是按比例压扁 */
+#styleQuickPrev .wb-theme-thumb { height: 42px; }
+#styleQuickPrev .wb-theme-thumb::after { height: 4px; }
 /* 顶部 5px 强调条 = 该主题的页眉样式（topbar）；sidebar 换成左侧竖条，rule 则两者都不画，
    缩略图因此能看出"这一套的页眉长什么样"，不只是颜色不同 */
 .wb-theme-thumb::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--t-accent); }
@@ -1688,7 +1701,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>输入创意，生成符合赛事评审规则的申报书：简洁版约 40 秒，深度版约 4~5 分钟</p>
+            <p>输入创意，生成符合赛事评审规则的申报书：简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书</p>
             <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模）。
                  单独做成一条，不与副标题连成一段灰色文字 -->
             <p class="wb-hero-tech">
@@ -1753,7 +1766,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             </div>
             <!-- 全站唯一常驻提示：其余长说明都收进字段旁的「?」图标（评委反馈文案过载） -->
             <div style="margin-bottom: 10px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
-                信息越具体，生成内容越精准 · 输入内容已自动保存，刷新不丢失
+                信息越具体，生成内容越精准 · 赛事与档位会记住；创意和草稿只保留在当前标签页，关闭即清除
             </div>
             <div class="wb-formgrid" style="display: grid; gap: 20px;">
                 <div class="form-group">
@@ -1851,7 +1864,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                             <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                                 章节可直接改（改动只存在你这台设备）。<br>
-                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 1300 字），不套用这里的多章结构。
+                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 1000 字），不套用这里的多章结构。
                             </div>
                         </div>
                         <div onclick="evToggleMore()" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
@@ -2053,7 +2066,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-a);">50 秒出 1000 字可改骨架</b><br>
+                            <b style="color: var(--c-a);">约 40 秒出 1000 字</b><span style="color: var(--text-mute); font-size: 11.5px;">（比你泡碗面还快 🍜）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -2061,7 +2074,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 4~5 分钟出万字级完整方案书</b><br>
+                            <b style="color: var(--c-b);">约 4~5 分钟出 8000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（刚好够你续杯咖啡 ☕）</span><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -2102,12 +2115,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">⏱ 预计 --</span>
                     </div>
                 </div>
+                <!-- 等待期阶段副标题：人话版。中文阶段名仍以后端 stage_label 为准，这里只补一句有温度的话，不覆盖、不替换 -->
+                <div id="wbStageWord" style="display: none; margin-top: 7px; text-align: center; font-size: 12.5px; color: var(--text-dim); line-height: 1.55;"></div>
                 <!-- 等待期冷知识轮播：生成要等 47 秒~2 分钟，进度条下面放点有趣的，打发时间用 -->
                 <div id="wbTipCard" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
                     <div style="display: flex; align-items: flex-start;">
                         <span style="flex-shrink: 0; margin-right: 8px; font-size: 15px; line-height: 1.5;">💡</span>
                         <div style="flex: 1; min-width: 0;">
-                            <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时看个冷知识<span id="wbTipNext" style="cursor: pointer; color: var(--c-a); margin-left: 8px; user-select: none;" title="换下一条">↻ 换一条</span></div>
+                            <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时看一条备赛提示<span id="wbTipNext" style="cursor: pointer; color: var(--c-a); margin-left: 8px; user-select: none;" title="换下一条">↻ 换一条</span></div>
                             <div id="wbTipText" style="font-size: 13px; color: var(--text); line-height: 1.55;"></div>
                         </div>
                         <span id="wbSparkCount" style="display: none; flex-shrink: 0; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">💡 0</span>
@@ -2164,6 +2179,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 <div id="wbStyleBar">
                 <span class="sb-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 风格</span>
                 <select id="styleQuickSel" onchange="wbStyleQuick()" aria-label="PPT 风格"></select>
+                <!-- 光有名字挑不出差别：这里直接画一张该风格的版式缩略图（页眉/色块/正文布局） -->
+                <span id="styleQuickPrev" style="display: none; align-items: center;"></span>
                 <button onclick="wbGoExport()">更多风格 →</button>
                 <span class="sb-note">切换后下方 PPT 预览实时刷新，下载前随时可改</span>
             </div>
@@ -2931,6 +2948,24 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             try { sessionStorage.removeItem(k); } catch (e) {}
             try { delete _wbMemStore[k]; } catch (e) {}
         }
+        // 敏感内容专用：只写 sessionStorage（关掉标签页即清除），绝不落 localStorage。
+        // 共用电脑 / 换浏览器打开时，不会把上一个人的创意、学校、导师自动铺到表单里。
+        var _wbSessMem = {};
+        function _wbSessGet(k) {
+            try { var v = sessionStorage.getItem(k); if (v !== null && v !== undefined) return v; } catch (e) {}
+            return Object.prototype.hasOwnProperty.call(_wbSessMem, k) ? _wbSessMem[k] : null;
+        }
+        function _wbSessSet(k, v) {
+            var ok = false;
+            try { sessionStorage.setItem(k, v); ok = true; } catch (e) {}
+            try { _wbSessMem[k] = v; } catch (e) {}
+            return ok;
+        }
+        function _wbSessDel(k) {
+            try { sessionStorage.removeItem(k); } catch (e) {}
+            try { delete _wbSessMem[k]; } catch (e) {}
+        }
+
         function wbStoreProbe() {
             try {
                 localStorage.setItem('__wb_probe__', '1');
@@ -3316,16 +3351,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 advisor: (document.getElementById('wbAdvisor') || {}).value || ''
             };
         }
+        // 学校 / 团队 / 指导老师同样属于敏感信息（双盲赛事尤其），只存 sessionStorage
         function wbSaveMeta() {
-            try { _wbStoreSet('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
+            try { _wbSessSet('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
+            // 旧版本存在 localStorage 里的那份就地清掉
+            try { localStorage.removeItem('wbDocMeta'); } catch (e) {}
         }
         function wbLoadMeta() {
             try {
-                var m = JSON.parse(_wbStoreGet('wbDocMeta') || '{}');
+                var m = JSON.parse(_wbSessGet('wbDocMeta') || '{}');
                 if (m.school) document.getElementById('wbSchool').value = m.school;
                 if (m.team) document.getElementById('wbTeam').value = m.team;
                 if (m.advisor) document.getElementById('wbAdvisor').value = m.advisor;
             } catch (e) {}
+            try { localStorage.removeItem('wbDocMeta'); } catch (e) {}
         }
         // 只有上传过 .docx 原文件时才显示「原格式导出」卡片（PDF/图片/文本没有版式可保留）
         function wbRefreshKeepCard() {
@@ -3378,9 +3417,15 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         wbRefreshKeepCard();
 
         /* ---------- 表单自动保存：刷新 / 关掉再打开不丢 ---------- */
-        var WB_FORM_KEY = 'wbFormDraft';
-        var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft',
+        var WB_FORM_KEY = 'wbFormDraft';        // 中性：赛事 / 档位 / 勾选项，可跨会话记住
+        var WB_FORM_S_KEY = 'wbFormDraftSens';  // 敏感：只活在当前标签页
+        // 中性字段：换设备、换浏览器、别人打开同一台电脑都不会造成信息外泄
+        var WB_FORM_SAFE = ['competition'];
+        // 敏感字段：项目创意、申报书草稿、自填实测数据——一律不落盘到本地长期存储
+        var WB_FORM_SENSITIVE = ['idea', 'proposal_draft', 'keywords',
             'udTeam', 'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
+        // 兼容旧引用（清空表单、字数统计等地方都用 WB_FORM_IDS 遍历）
+        var WB_FORM_IDS = WB_FORM_SAFE.concat(WB_FORM_SENSITIVE);
         // 勾选项要单独走 checked：混进 WB_FORM_IDS 的话 el.value 恒为 "on"，恢复时会被当成永远勾上
         var WB_CHECK_IDS = ['iterateOpt'];
 
@@ -3388,18 +3433,27 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         function wbSaveForm() {
             if (WB_SAVE_OFF) return;
             try {
-                var d = { _t: Date.now() };
-                WB_FORM_IDS.forEach(function (id) {
+                var safe = { _t: Date.now() }, sens = { _t: Date.now() }, sensHit = 0;
+                WB_FORM_SAFE.forEach(function (id) {
                     var el = document.getElementById(id);
-                    if (el) d[id] = el.value;
+                    if (el) safe[id] = el.value;
+                });
+                WB_FORM_SENSITIVE.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (!el) return;
+                    sens[id] = el.value;
+                    if (String(el.value || '').trim()) sensHit++;
                 });
                 WB_CHECK_IDS.forEach(function (id) {
                     var el = document.getElementById(id);
-                    if (el) d[id] = !!el.checked;
+                    if (el) safe[id] = !!el.checked;
                 });
                 var r = document.querySelector('input[name=mode]:checked');
-                if (r) d.mode = r.value;
-                _wbStoreSet(WB_FORM_KEY, JSON.stringify(d));
+                if (r) safe.mode = r.value;
+                // 中性字段照旧长期保存；敏感字段只写 sessionStorage，没有内容时连键一起删掉
+                _wbStoreSet(WB_FORM_KEY, JSON.stringify(safe));
+                if (sensHit) _wbSessSet(WB_FORM_S_KEY, JSON.stringify(sens));
+                else _wbSessDel(WB_FORM_S_KEY);
             } catch (e) {}
         }
 
@@ -3422,6 +3476,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         function wbClearForm() {
             WB_SAVE_OFF = true;   // 清空过程中触发的 change 不要再存一次
             try { _wbStoreDel(WB_FORM_KEY); } catch (e) {}
+            try { _wbSessDel(WB_FORM_S_KEY); } catch (e) {}
             WB_FORM_IDS.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el) { el.value = ''; el.dispatchEvent(new Event('change')); }
@@ -3469,31 +3524,51 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         // 后端 /api/quota 接口保留不动，后台运维仍可查。
 
         function wbLoadForm() {
-            var d = null;
+            var d = null, ds = null;
             try { d = JSON.parse(_wbStoreGet(WB_FORM_KEY) || 'null'); } catch (e) {}
-            if (!d) return;
-            var hit = 0;
-            WB_FORM_IDS.forEach(function (id) {
+            try { ds = JSON.parse(_wbSessGet(WB_FORM_S_KEY) || 'null'); } catch (e) {}
+            if (!d && !ds) return;
+            d = d || {};
+            ds = ds || {};
+            var safeHit = 0, sensHit = 0;
+            // 中性字段：跨会话保留
+            WB_FORM_SAFE.forEach(function (id) {
                 var el = document.getElementById(id);
-                if (el && d[id]) { el.value = d[id]; hit++; }
+                if (el && d[id]) { el.value = d[id]; safeHit++; }
+            });
+            // 敏感字段：只在同一标签页内恢复（刷新不丢，关掉标签页即清除）
+            WB_FORM_SENSITIVE.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && ds[id]) { el.value = ds[id]; sensHit++; }
             });
             WB_CHECK_IDS.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el && typeof d[id] === 'boolean') { el.checked = d[id]; }
             });
+            // 旧版本把敏感字段也写进了 localStorage：这里就地清掉历史遗留，别留着
+            try {
+                var dirty = false;
+                WB_FORM_SENSITIVE.forEach(function (id) {
+                    if (Object.prototype.hasOwnProperty.call(d, id)) { delete d[id]; dirty = true; }
+                });
+                if (dirty) _wbStoreSet(WB_FORM_KEY, JSON.stringify(d));
+            } catch (e) {}
             if (d.mode) {
                 var r = document.querySelector('input[name=mode][value="' + d.mode + '"]');
                 // 用 click 而不是只改 checked：内联 onclick 还要同步卡片高亮样式
                 if (r && !r.checked) r.click();
             }
-            if (!hit) return;
+            if (!safeHit && !sensHit) return;
             try { onCompetitionChange(); } catch (e) {}
             var box = document.getElementById('wbRestoreTip');
             if (box) {
-                var mins = d._t ? Math.max(1, Math.round((Date.now() - d._t) / 60000)) : 0;
-                var ago = mins >= 60 ? (Math.round(mins / 60) + ' 小时前') : (mins + ' 分钟前');
                 var tx = document.getElementById('wbRestoreText');
-                if (tx) tx.textContent = '已恢复上次填写内容（' + ago + '）';
+                // 提示里不再出现具体时间：那等于把「你什么时候在这台电脑上写过东西」也告诉了下一个人
+                var msg = safeHit && sensHit
+                    ? '已恢复上次选择的赛事与档位，本页草稿也还在（关闭标签页后自动清除）'
+                    : (safeHit ? '已恢复上次选择的赛事与档位'
+                               : '已恢复本页上次填写的草稿（关闭标签页后自动清除）');
+                if (tx) tx.textContent = msg;
                 box.style.display = 'flex';
             }
         }
@@ -3643,7 +3718,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 }
                 const blob = await res.blob();
                 wbSaveBlob(blob, name + ".docx");
-                wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
+                wbToast('\uD83D\uDCC4 「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
@@ -3786,7 +3861,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 });
                 const blob = await res.blob();
                 wbSaveBlob(blob, "科创赛事项目材料包.zip");
-                wbToast('材料包已开始下载', { type: 'ok', ms: 3000 });
+                wbToast('\uD83D\uDCE6 已打包，去下载吧', { type: 'ok', ms: 3000 });
             } catch (e) {
                 wbToast('打包失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
@@ -3813,7 +3888,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             // 优先复制渲染后的干净文本；隐藏的 tab innerText 为空时回退原始数据
             var text = (el.innerText || '').trim() || _txt(_DOM_TO_KEY[id] || '', id);
             if (!String(text).trim()) { wbToast('没有可复制的内容', { type: 'warn' }); return; }
-            var okFn = function () { wbToast('已复制到剪贴板', { type: 'ok', ms: 2000 }); };
+            var okFn = function () {
+                wbToast('已复制 ' + String(text).trim().length + ' 字到剪贴板', { type: 'ok', ms: 2200 });
+            };
             var badFn = function (e) {
                 wbToast('复制失败，请手动选中文本按 Ctrl+C', {
                     type: 'error', sub: String((e && e.message) || e || '')
@@ -4231,15 +4308,18 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var sc = document.getElementById('evScoring');
             if (sc) {
                 var _arr = c.scoring || [];
+                // 上方赛道细则里已经有「官方原文」的评分侧重，这里再列一套百分比，
+                // 两条挨着容易被当成「官方给了两套互相矛盾的权重」——必须标出来源
+                var _srcNote = c._idx ? '（来源：官方原文）' : '（来源：通用模板，本赛事未收录官方权重）';
                 if (!_arr.length) {
                     sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>按官方规则评定';
                 } else if (!_wbScoringHasPct(_arr)) {
                     // 国创 / 蓝桥杯这类：官方是定性评审或机器评分，本来就没有固定百分比，
                     // 别把规则原文逐条列出来吓人，也绝不能显示 null%
-                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
+                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重' + _srcNote + '：</b>' +
                         '按官方规则评定（该赛事为定性评审 / 机器评分，官方无固定百分比）';
                 } else {
-                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重：</b>' +
+                    sc.innerHTML = '<b style="color: var(--text-dim);">评分权重' + _srcNote + '：</b>' +
                         _arr.map(function (x) {
                             var _w = _wbPctOf(x);
                             var _nm = String((x && x[0]) || '');
@@ -4429,7 +4509,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         var COACH_STEPS = [
             { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
             { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 40 秒出核心内容，深度版约 4~5 分钟产出万字级完整申报材料。' }
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 40 秒出 1000 字，深度版约 4~5 分钟产出 8000 字级完整申报材料。' }
         ];
         var _coachIdx = 0;
 
@@ -4905,12 +4985,45 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             });
             return seen.map(function (t) { return { type: t, items: buckets[t] }; });
         }
+        // 赛事固定 emoji：15 个赛事各一个，做视觉锚点帮快速识别。
+        // 键故意取「有区分度的片段」而不是泛称——「挑战杯」三个字大挑小挑都含，
+        // 用它当键会把「小挑（创业计划）」错配成大挑的图标。
+        var WB_COMP_EMOJI = [
+            ['ican', '\uD83D\uDE80'],
+            ['互联网', '\uD83C\uDF10'],
+            ['课外学术科技作品', '\uD83C\uDFC6'],   // 大挑
+            ['创业计划', '\uD83D\uDCBC'],           // 小挑
+            ['创新创业训练计划', '\uD83C\uDF93'],   // 国创
+            ['数学建模', '\uD83D\uDCCA'],
+            ['电子设计', '\u26A1'],
+            ['西门子', '\uD83C\uDFED'],
+            ['计算机设计', '\uD83D\uDCBB'],
+            ['蓝桥杯', '\u2328\uFE0F'],
+            ['robomaster', '\uD83E\uDD16'],
+            ['信息安全', '\uD83D\uDD10'],
+            ['服务外包', '\uD83E\uDDE9'],
+            ['广告艺术', '\uD83C\uDFA8'],
+            ['金砖', '\uD83D\uDD17']
+        ];
+        function wbCompEmoji(name) {
+            var n = String(name || '').toLowerCase().replace(/[\s""'']/g, '');
+            if (!n) return '';
+            if (n.indexOf('国创') >= 0) return '\uD83C\uDF93';
+            var best = '', bl = 0;
+            WB_COMP_EMOJI.forEach(function (p) {
+                if (n.indexOf(p[0]) >= 0 && p[0].length > bl) { bl = p[0].length; best = p[1]; }
+            });
+            return best;
+        }
+
         function wbCompItemHtml(n, cur) {
             var on = (String(n).trim() === String(cur || '').trim());
             return '<div data-wbcomp="' + _esc(n) + '" ontouchstart="" onclick="wbCompFill(this.getAttribute(\'data-wbcomp\'))" ' +
                 'style="padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); ' +
                 'color: ' + (on ? 'var(--c-a)' : 'var(--text)') + '; ' +
-                'background: ' + (on ? 'var(--surface-2)' : 'transparent') + ';">' + _esc(n) + '</div>';
+                'background: ' + (on ? 'var(--surface-2)' : 'transparent') + ';">'
+                + '<span style="margin-right: 6px;">' + (wbCompEmoji(n) || '\uD83C\uDFC5') + '</span>'
+                + _esc(n) + '</div>';
         }
         function wbCompOpen() {
             var el = document.getElementById('competition');
@@ -5185,7 +5298,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             if (!h3 || h3.tagName !== 'H3') return;
             var old = h3.querySelector('.wb-count');
             if (old) old.remove();
-            var n = plainLen(text);
+            // 口径必须和「复制」「导出 Word」取的是同一份文本，否则标题旁写 1583、
+            // 导出出来 7774，用户会以为内容被截断了。渲染后的 innerText 是导出真正用的文本，
+            // 优先用它；隐藏 tab 拿不到 innerText 时才回退到原始 Markdown。
+            var live = String((box.innerText || '')).trim();
+            var n = live ? live.length : plainLen(text);
             if (!n) return;
             var sp = document.createElement('span');
             sp.className = 'wb-count';
@@ -6724,6 +6841,51 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             wbToast(msg, { type: 'ok', ms: 4200 });
         }
 
+        /* ===== 等待期趣味增强（Codex P3）=====
+           只动「生成等待期」的文案，正文 / 表单 / 导出 / 评分权重一律不碰。
+           阶段中文名的单一真相源是后端 stage_reporter.STAGE_META（/api/status 的 stage_label），
+           这里只额外补一句有温度的话，不覆盖、不替换，避免两边中文打架。 */
+        var WB_STAGE_WORD = {
+            start:          '\uD83D\uDCCB 开工，先把手头的材料理一理…',
+            parsing_rules:  '\uD83D\uDCD6 正在读你们赛事的评分标准…',
+            similarity:     '\uD83D\uDD0D 看看有没有人写过一模一样的…',
+            idea_scoring:   '\uD83D\uDCA1 给你的创意找一句能记住的定位…',
+            analysis:       '\uD83E\uDDED 把赛题和你的方案对上对…',
+            rich_assets:    '\uD83D\uDCCA 先把图表和 PPT 的素材备好…',
+            writing:        '\u270D\uFE0F 正在把创意变成能交的稿子…',
+            judging:        '\u2696\uFE0F 先让 AI 自己当一次评委…',
+            expert_review:  '\uD83D\uDC68\u200D\u2696\uFE0F 换几位专家轮流挑毛病…',
+            diagnosis:      '\uD83E\uDE7A 找出最容易扣分的地方…',
+            revision:       '\uD83D\uDD27 按挑出来的毛病改一遍…',
+            defense:        '\uD83C\uDFA4 猜评委待会儿会问你什么…',
+            ppt:            '\uD83D\uDDBC\uFE0F 正在排路演 PPT 的骨架…',
+            speech:         '\uD83D\uDDE3\uFE0F 写一份能照着念的路演稿…',
+            queued:         '\u23F3 正在给你安排生成引擎…',
+            done:           '\uD83C\uDF81 收个尾，马上就好…',
+            error:          '\u26A0\uFE0F 这一步卡住了，正在收尾…'
+        };
+        // 等待文案轮换：原来是一句永远不变的「正在生成内容…」，等 4 分钟看久了像卡死。
+        // 按已耗时轮换（跟着轮询走，不额外起定时器），4 句循环，不刷屏。
+        var WB_WAIT_LINE = [
+            '正在生成，可以先去做别的事',
+            '评委正在挑刺，AI 替你先挨一轮批',
+            '图表和 PPT 在排队，快了',
+            '快了，再等半分钟就好'
+        ];
+        function wbStageWord(code) {
+            return (code && WB_STAGE_WORD[code]) || '';
+        }
+        // 里程碑彩蛋：整个生成过程只弹 2 次（正文完成 / 全部完成），多了就是骚扰
+        var _wbMile = {};
+        function wbMileOnce(key, msg, type) {
+            if (_wbMile[key]) return;
+            _wbMile[key] = 1;
+            try { wbToast(msg, { type: type || 'ok', ms: 3000 }); } catch (e) {}
+        }
+        function wbMileReset() {
+            for (var k in _wbMile) { if (Object.prototype.hasOwnProperty.call(_wbMile, k)) delete _wbMile[k]; }
+        }
+
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
@@ -6756,6 +6918,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
             let _maxPct = 0;
             var _curStageLabel = '';
+            var _curStageCode = '';
+            wbMileReset();   // 每次生成重置，里程碑彩蛋一轮只弹 2 次
             // 进度条在页面 y≈1500px 处（移动端实测），光更新它用户根本看不到——
             // 视口里只有顶上那条 sticky 的开始按钮。所以同一个百分比/阶段也写进按钮文案，
             // 用户不滚动也能看到「正在推进」（深度版要等 3 分半，看不到反馈会以为卡死）。
@@ -6768,6 +6932,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     _b.innerHTML = '<span class="spinner"></span> ' +
                         (isOptimize ? '正在优化 ' : '正在生成 ') + Math.max(_maxPct, 0) + '%' +
                         ((stageText || _curStageLabel) ? ' · ' + (stageText || _curStageLabel) : '');
+                }
+                // 等待期人话副标题：只补在进度条下面，不动上面那行准确文案。
+                // 用 textContent 而不是 innerHTML：文案是写死的常量，没必要开 HTML 口子
+                var _sw = document.getElementById('wbStageWord');
+                if (_sw) {
+                    var _w = wbStageWord(_curStageCode);
+                    _sw.textContent = _w;
+                    _sw.style.display = _w ? 'block' : 'none';
                 }
             };
             _setBar(2, '正在提交任务…');
@@ -6881,6 +7053,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                            (_qw >= 60 ? Math.ceil(_qw / 60) + ' 分钟' : _qw + ' 秒') + '内开始，无需操作')
                                         : '生成需求较多，正在为你安排引擎，马上开始，无需操作';
                                     _curStageLabel = '等待中';
+                                    _curStageCode = 'queued';
                                     _setBar(2, _qmsg, '等待中');
                                     try { wbAgentStage('queued', '等待中'); } catch (e) {}
                                     return;
@@ -6896,6 +7069,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                     paintPartial(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
                                     if (res2.stage_label) _curStageLabel = String(res2.stage_label);
+                                    if (res2.stage) _curStageCode = String(res2.stage);
+                                    // 里程碑 1/2：正文写完、评委接手。其余阶段不弹，避免刷屏
+                                    if (res2.stage === 'judging' || res2.stage === 'expert_review' ||
+                                        res2.stage === 'diagnosis' || res2.stage === 'revision') {
+                                        wbMileOnce('body', '\u2705 正文完成，AI 评委开始挑刺…');
+                                    }
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
                                     var _etaTxt = _eta > 0
                                         ? '预计还需 ' + (_eta >= 60 ? ('约 ' + Math.round(_eta / 60) + ' 分钟') : ('约 ' + _eta + ' 秒'))
@@ -6910,8 +7089,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                             _eb.style.display = 'none';
                                         }
                                     }
+                                    // 档位名原来写死「深度版」，选简洁版非优化时会把用户说成在跑深度版
+                                    var _tierName = isOptimize ? '优化' : (mode === 'deep' ? '深度版' : '简洁版');
+                                    var _etaFallback = isOptimize ? '预计 2-3 分钟'
+                                        : (mode === 'deep' ? '预计 4~5 分钟' : '预计 40 秒');
+                                    // 等待文案轮换：每 12 秒换一句，等几分钟不至于一直盯着同一句话
+                                    var _waitLine = WB_WAIT_LINE[Math.floor(sec / 12) % WB_WAIT_LINE.length];
                                     _setBar(res2.pct || 0,
-                                        (isOptimize ? '优化' : '深度版') + (_etaTxt || (isOptimize ? '预计 2-3 分钟' : '预计 4~5 分钟')) + '，正在生成内容，无需等待，可以先去做别的事'
+                                        _tierName + (_etaTxt || _etaFallback) + '，' + _waitLine
                                         + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
                                         + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
                                         + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
@@ -6950,6 +7135,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
+                window._lastMode = mode;   // 档位单一真相源：结果页徽章、历史打开都读它
+                // 里程碑 2/2：整轮只弹这一次收尾彩蛋
+                wbMileOnce('all', mode === 'deep' ? '\uD83C\uDF89 搞定，三件套已生成'
+                                                  : '\uD83C\uDF89 搞定，申报书已生成');
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
@@ -7038,7 +7227,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书扩写至 <b>万字级 / 12章</b>，自动配数据图表'],
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>8000 字级 / 12章</b>，自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
@@ -7058,9 +7247,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             // T1 结果区顶部档位标识
                             const badge = document.getElementById('tierBadge');
                             if (badge) {
-                                badge.innerHTML = isDeep
-                                    ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>深度完整版 · 已生成 ' + deepN + ' 个模块</span>'
-                                    : '<span class="tier-tag">简洁快速版</span>';
+                                badge.innerHTML = wbTierBadgeHtml(mode, competition,
+                                    '深度完整版 · 已生成 ' + deepN + ' 个模块', '简洁快速版');
                             }
                             // T3 共享产物标题旁标字数（去 Markdown 标记后统计，两档长短一眼可比）
                             [['parsedRules', data.data.parsed_rules],
@@ -7226,7 +7414,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         // 后端返回的友好错误（余额不足 / 超时 / 鉴权失败等），detail 是原始报错
                         wbToast(data.error || '生成失败，请稍后重试', {
                             type: 'error',
-                            sub: data.detail ? ('原始报错：' + data.detail) : '',
+                            sub: (data.detail ? ('原始报错：' + data.detail + '　') : '') +
+                                 '已填的内容都还在，点「重新生成」再来一次',
                             ms: 10000
                         });
                     }
@@ -7258,14 +7447,30 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     wbToast('已终止生成', { type: 'warn' });
                 } else {
                     var _net = String((err && err.message) || err || '');
-                    wbToast(_net.indexOf('Failed to fetch') >= 0
-                        ? '网络连接异常，请稍后刷新重试'
-                        : '请求出错：' + _net, {
+                    var _isNet = _net.indexOf('Failed to fetch') >= 0 || _net.indexOf('NetworkError') >= 0;
+                    // 同理心放在标题上，原始报错降级到副标题：用户先看到「人话」，
+                    // 排查时仍能拿到真实原因（不能为了好听把报错吞掉）
+                    wbToast(_isNet
+                        ? '\uD83D\uDE05 这次没生成成功，可能是网络抖了一下'
+                        : '\uD83D\uDE05 这次没生成成功，换个创意或稍后再试', {
                         type: 'error',
-                        sub: '当前访问人数较多，建议1分钟后重试'
+                        sub: _isNet ? '网络似乎断了一下，恢复后点「重新生成」即可，已填的内容都还在'
+                                    : ('原始信息：' + _net).slice(0, 120)
                     });
                 }
             });
+        }
+
+        // 档位徽章（结果区头部）：赛事固定 emoji 做视觉锚点，一眼认出是哪场比赛
+        function wbTierBadgeHtml(mode, compName, deepTxt, fastTxt) {
+            var isDeep = (mode === 'deep');
+            var em = wbCompEmoji(compName) || '';
+            var tag = isDeep
+                ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>' + deepTxt + '</span>'
+                : '<span class="tier-tag">' + fastTxt + '</span>';
+            if (!em) return tag;
+            return '<span class="tier-tag" style="background: var(--surface-solid); border: 1px solid var(--line);">'
+                + em + ' ' + _esc(String(compName || '').slice(0, 22)) + '</span>' + tag;
         }
 
         // 卡片选择
@@ -7440,8 +7645,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版约 40 秒出初稿；深度版约 4~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版约 40 秒（约 1300 字）；深度版约 4~5 分钟（万字级 / 12 章 + 图表 + PPT + 多专家评审）'],
+                    ? '简洁版约 40 秒出 1000 字；深度版约 4~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版约 40 秒出 1000 字；深度版约 4~5 分钟（8000 字级 / 12 章 + 图表 + PPT + 多专家评审）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -8159,7 +8364,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         var list = document.getElementById('historyList');
         var pager = document.getElementById('historyPager');
         if (!g || !(g.items || []).length) {
-            list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">该比赛下暂无记录</p>';
+            list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">'
+                + '\u270D\uFE0F 该比赛下还没有记录，去生成第一篇吧</p>';
             if (pager) pager.innerHTML = '';
             return;
         }
@@ -8373,7 +8579,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             '</div>';
                         }).join('');
                 } else {
-                    list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">暂无历史记录</p>';
+                    list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">'
+                        + '\u270D\uFE0F 还没有生成记录，去试试第一篇吧</p>';
                 }
             } else {
                 list.innerHTML = items.map(function (h) {
@@ -8429,6 +8636,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 window._lastData = data;
                 wbFabShow(!!data.rich_deck);
                 var isDeep = !!(data.competitor_analysis || data.business_model || data.tech_solution);
+                window._lastMode = data.mode || (isDeep ? 'deep' : 'fast');
                 var md = function (s) {
                     try { return marked.parse(s || ''); } catch (e) { return String(s || '').replace(/\n/g, '<br>'); }
                 };
@@ -8470,9 +8678,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 if (chartsTab) chartsTab.style.display = isDeep ? 'block' : 'none';
                 var badge = document.getElementById('tierBadge');
                 if (badge) {
-                    badge.innerHTML = isDeep
-                        ? '<span class="tier-tag tier-tag-deep"><span class="wb-dot"></span>历史记录 · 深度版</span>'
-                        : '<span class="tier-tag">历史记录 · 简洁版</span>';
+                    // 档位以记录自带的 mode 为准；后端还没落库 mode 时才回退到内容嗅探
+                    var _hm = data.mode || (_loc && _loc.mode) || (isDeep ? 'deep' : 'fast');
+                    badge.innerHTML = wbTierBadgeHtml(_hm, data.competition_name || '',
+                        '历史记录 · 深度版', '历史记录 · 简洁版');
                 }
                 // 关键：结果区默认是隐藏的，不打开就什么都看不到
                 var area = document.getElementById('resultArea');
@@ -9312,12 +9521,46 @@ window.addEventListener('resize', function () {
         var cur = (document.getElementById('deckTheme') || {}).value || '';
         sel.innerHTML = lib.map(function (t) {
             var nm = t.name || t.label || t.key;
-            return '<option value="' + ESC(t.key) + '"' + (t.key === cur ? ' selected' : '') + '>' +
-                   ESC(nm) + '</option>';
+            // 窄屏上「星海蓝（科技星空・iCAN / 电子设计 / 工程类）」会被截成半句，
+            // 下拉里只放主名，完整说明挂到 title 上，鼠标悬停 / 长按仍看得到
+            var p = String(nm).indexOf('（');
+            var short = p > 0 ? String(nm).slice(0, p) : String(nm);
+            return '<option value="' + ESC(t.key) + '"' + (t.key === cur ? ' selected' : '') +
+                   ' title="' + ESC(nm) + '">' + ESC(short) + '</option>';
         }).join('');
         // 样式表里 #wbStyleBar 初始 display:none，必须显式写 flex ——
         // 写 '' 会回落到样式表的 none，整条永远不显示（这个坑踩过两次）
         bar.style.display = 'flex';
+        stylePrevFill();
+    }
+    // 结果页风格条的小预览：复用导出中心那套缩略图（wbThemeThumb 在主 IIFE 里是全局函数）。
+    // 拿不到主题库 / 函数不存在时整块隐藏，最坏结果是少一张小图，不影响切换。
+    function stylePrevFill() {
+        var box = document.getElementById('styleQuickPrev');
+        if (!box) return;
+        var lib = window._themeLib || [];
+        var cur = (document.getElementById('deckTheme') || {}).value || '';
+        var t = null;
+        lib.forEach(function (x) { if (x.key === cur) t = x; });
+        var html = '';
+        if (t) {
+            try {
+                if (typeof wbThemeThumb === 'function' && typeof wbThemeColors === 'function') {
+                    html = wbThemeThumb(wbThemeColors(t), t.layout);
+                }
+            } catch (e) { html = ''; }
+        }
+        if (!html) { box.innerHTML = ''; box.style.display = 'none'; return; }
+        var lb = String(t.name || t.label || t.key);
+        var p = lb.indexOf('（');
+        var short = p > 0 ? lb.slice(0, p) : lb;
+        box.style.display = 'inline-flex';
+        box.innerHTML =
+            '<span style="width:76px; height:42px; display:inline-block; border-radius:5px; overflow:hidden; flex:none;">'
+            + html + '</span>' +
+            '<span style="margin-left:6px; font-size:11.5px; color:var(--text-mute); white-space:nowrap;">'
+            + ESC(short) + '</span>';
+        box.title = lb;   // 完整名（含适用场景）仍挂在这里，悬停/长按可见
     }
     window.wbStyleQuick = function () {
         var sel = document.getElementById('styleQuickSel');
@@ -9326,7 +9569,11 @@ window.addEventListener('resize', function () {
         d.value = sel.value;
         try { _themeManual = true; } catch (e) {}
         if (typeof onThemeChange === 'function') onThemeChange();
-        if (typeof wbToast === 'function') wbToast('已切到「' + sel.options[sel.selectedIndex].text + '」，下方预览已刷新', { type: 'ok', ms: 2000 });
+        try { stylePrevFill(); } catch (e) {}
+        if (typeof wbToast === 'function') {
+            var _lb = sel.options[sel.selectedIndex].getAttribute('title') || sel.options[sel.selectedIndex].text;
+            wbToast('已切到「' + _lb + '」，下方预览已刷新', { type: 'ok', ms: 2000 });
+        }
     };
     // 主题库是异步拉的，renderRich 之后再补一次，避免下拉框是空的
     function styleFillSoon() {
@@ -9435,29 +9682,22 @@ window.addEventListener('resize', function () {
     // 冷知识：以科技史趣闻为主 + 少量「真的吗」调剂。全部是有据可查的真事，不编数字。
     // 写法刻意走「钩子 + 反转」：用户在等生成，要的是有意思，不是比赛条文。
     var TIPS = [
-        '微波炉的发明，来自一块在雷达工程师口袋里融化的巧克力——1945 年他没心疼巧克力，反而琢磨：这玩意儿能加热食物。',
-        '便利贴用的胶水，本是个失败项目：实验室想造强力胶，结果做出一贴就掉的「次品」，几年后成了办公室销量冠军。',
-        '蓝牙的名字来自 10 世纪一位丹麦国王，传说他统一了丹麦和挪威——就像蓝牙统一各种设备。logo 就是他的名字缩写。',
-        '二维码的发明人是个围棋迷，黑白格子的灵感直接来自围棋棋盘。',
-        '1973 年世界第一通手机电话，是摩托罗拉工程师打给老对手贝尔实验室的——内容大概是：猜猜我在哪儿，用手机跟你说话。',
-        '任天堂 1889 年开业时是做花札纸牌的，卖了七十多年纸牌才转型电子游戏。',
-        '诺基亚 1865 年起家时是造纸厂，后来卖过胶鞋和电缆，手机只是中途的转型。',
-        '世界上第一条手机短信 1992 年才发出，内容只有一句：Merry Christmas。',
-        '青霉素的发现始于一次度假：弗莱明回来发现培养皿发霉了——别人可能直接扔了，他凑近看了看。',
-        '第一只电脑鼠标是木头做的，外壳就是个小木盒。',
-        '不粘锅涂层特氟龙，是化学家研究制冷剂时发现的：气瓶明明有气却倒不出来，他干脆把瓶子剖开看了看。',
-        '雨刷是一位女士 1903 年发明的：她坐电车时看见司机一边开车、一边伸手擦挡风玻璃。',
-        '洗碗机发明人说过一句硬气的话：「要是没人发明洗碟机，我就自己造一个。」后来她真的造出来了。',
-        'Wi-Fi 的核心算法来自一群研究黑洞的射电天文学家——他们本来是在捕捉来自宇宙深处的微弱信号。',
-        '「bug」的著名由来：1947 年哈佛一台电脑频繁死机，工程师拆开发现一只飞蛾卡在继电器里，顺手把它贴进了工作日志。',
-        '第一代 iPhone 发布时没有复制粘贴、没有 App Store，发布会现场演示的机器还是工程师提前调好「最佳路线」的。',
-        'YouTube 最早是个视频相亲网站，一直没人来相亲，创始人索性开放所有人上传视频。',
-        'Slack 原本是家游戏公司做游戏时留下的内部聊天工具——游戏凉了，聊天工具却市值几百亿。',
-        '谷歌最早叫 BackRub（揉背），因为它靠统计网页的「反向链接」来排名。',
-        'USB 的发明者亲口承认：接口分正反面是个设计失误——所以你总感觉要插三次才成功。',
-        '蜂蜜基本不会变质——考古学家挖出过几千年前的蜂蜜，据说还能吃。',
-        '香蕉在植物学上属于浆果，草莓反而不是。'
+        '评委最先看的是「问题是否真实存在」：开头写清目标用户在什么场景下遇到什么麻烦，比先讲技术架构更容易拿分。',
+        '能量化的地方一定量化：「识别准确率 92%」「单次成本 0.4 元」比「效果良好」有说服力得多；没有实测就写明测算口径和依据。',
+        '技术章节别堆名词：写清「为什么选它、放弃了什么」，评委更在意取舍逻辑而不是技术清单。',
+        '创新性要落在对比上：和现有方案比，你在哪一处做得更轻、更快、更便宜——最好是一句话能说清的那一处。',
+        '可行性靠证据支撑：Demo 截图、测试记录、试用人数的原始记录，都比形容词管用。',
+        '团队分工写「谁负责什么、做过什么同类事」，不要只列姓名和专业。',
+        '风险章节别写一句「风险可控」就结束：写出你识别到的具体风险和对应的应对动作。',
+        '商业 / 落地部分忌空话：给出定价依据、获客渠道和成本结构，哪怕是测算也要写明假设。',
+        '篇幅不是越长越好：评委是快速翻阅，章节标题要能自解释，关键句放段首。',
+        '答辩最常被追问的三件事：数据哪来的、和现有方案差在哪、你能不能真的做出来——提前各准备一句。',
+        '同一份材料投不同赛道要改侧重：工程类看实现与测试，创业类看市场与商业模式，别一份稿子通投。',
+        '提交前务必查一遍学校 / 导师信息：双盲赛事出现这些信息会直接扣分。',
+        '图表要能自解释：标题写清「什么指标、什么口径、什么时间」，别让评委猜。',
+        '占位符和示例数据一定要替换掉：评委一问「这个数怎么来的」，答不上来就很被动。'
     ];
+;
 
     var tipCard = null, tipText = null, lenBadge = null, sparkCount = null, tipNext = null;
     var tipTimer = null, lenTimer = null, sparkTimer = null, layer = null;

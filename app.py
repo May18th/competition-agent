@@ -4023,6 +4023,51 @@ def api_lessons():
     return jsonify({"success": True, "lessons": lessons, "total": len(lessons)})
 
 
+# 未知路径不再甩裸 JSON（{"error":"Not Found"}）：用户看不懂，还以为站点挂了。
+# 非 /api/ 路径返回一张能看的页面（回首页 + 常见原因）；接口调用方仍然拿 JSON，行为不变。
+_NOT_FOUND_HTML = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页面不存在 · 科创赛事助手</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:radial-gradient(1200px 600px at 20% -10%,#101a44 0%,#050816 60%);
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#c9d2ea}
+.box{max-width:520px;padding:34px 28px;text-align:center}
+.code{font-size:64px;font-weight:800;letter-spacing:2px;
+background:linear-gradient(120deg,#22d3ee,#6366f1 48%,#c084fc);
+-webkit-background-clip:text;background-clip:text;color:transparent;margin:0}
+h1{font-size:19px;margin:10px 0 8px;color:#e6ebf7}
+p{font-size:13.5px;line-height:1.9;color:#8491b8;margin:0 0 6px}
+ul{text-align:left;display:inline-block;margin:12px 0 20px;padding-left:20px;
+font-size:12.5px;line-height:1.9;color:#5d6a8c}
+a{display:inline-block;margin-top:6px;padding:11px 26px;border-radius:9px;text-decoration:none;
+font-size:14px;font-weight:600;color:#fff;
+background:linear-gradient(135deg,#6672d8 0%,#a878d8 100%)}
+.alt{margin-top:14px;font-size:12px;color:#5d6a8c}
+.alt a{display:inline;background:none;color:#67e8f9;font-weight:400;padding:0;font-size:12px}
+</style></head><body><div class="box">
+<p class="code">404</p>
+<h1>这个页面不存在</h1>
+<p>链接可能已经失效，或者地址里多了 / 少了字符。</p>
+<ul>
+<li>从旧分享链接进来的：链接可能已过期，让对方重新生成一条</li>
+<li>手动输网址：检查大小写和末尾多余的斜杠</li>
+<li>要找生成记录：回首页点右上角「历史」</li>
+</ul>
+<div><a href="/">回到首页重新生成</a></div>
+<div class="alt">一直打不开？<a href="/">刷新试试</a>，仍不行就是服务在重启，稍等两分钟。</div>
+</div></body></html>"""
+
+
+@app.errorhandler(404)
+def _page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"success": False, "error": "接口不存在：" + request.path}), 404
+    return _NOT_FOUND_HTML, 404
+
+
 @app.errorhandler(HTTPException)
 def handle_http_exception(e):
     """让 404/405/400 等 HTTP 错误按正常状态码返回，别被下面的 Exception 兜底成 500。"""

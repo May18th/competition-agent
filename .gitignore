@@ -1,5 +1,6 @@
 .env
 .uid_secret
+cert_kechuang/
 __pycache__/
 *.pyc
 uploads/
