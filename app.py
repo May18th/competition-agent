@@ -1805,13 +1805,21 @@ def _run_generation(data):
         idea = data.get("idea", "")
         proposal_draft = data.get("proposal_draft", "")
         mode = data.get("mode", "fast")
+        # 实测数据：若来自上传文件（较长文本），先做一次 LLM 智能提炼成结构化事实，
+        # 让后面各 Agent 拿到的是「测试数据/成本/用户」分类清单，而不是一整段文件原文。
+        _raw_user_data = data.get("user_data", "") or data.get("real_data", "")
+        try:
+            from competition_agents import _smart_extract_user_data
+            _user_data = _smart_extract_user_data(_raw_user_data)
+        except Exception:
+            _user_data = _raw_user_data
 
         state: CompetitionState = {
             "competition_name": data.get("competition_name", ""),
             "rule_content": data.get("rule_content", ""),
             "idea": idea,
             "proposal_draft": proposal_draft,
-            "user_data": data.get("user_data", "") or data.get("real_data", ""),
+            "user_data": _user_data,
             "user_keywords": data.get("keywords", ""),
             "outline_requirement": data.get("outline_requirement") or [],
             "scoring_weights": data.get("scoring_weights") or [],
@@ -2628,8 +2636,18 @@ def upload_file():
         elif ext in ['jpg', 'jpeg', 'png']:
             # 多模态识别暂未接入（claude_llm 已注释），先明确提示而不是 ImportError
             return jsonify({"success": False, "error": "暂不支持图片识别，请导出为 PDF 或文字后重试"})
-        elif ext == 'txt':
-            text = file.read().decode('utf-8')
+        elif ext in ['txt', 'md', 'csv']:
+            text = file.read().decode('utf-8', errors='ignore')
+        elif ext in ['xlsx', 'xlsm']:
+            import openpyxl
+            import io
+            wb = openpyxl.load_workbook(io.BytesIO(file.read()), data_only=True)
+            for ws in wb.worksheets:
+                text += f"\n[工作表：{ws.title}]\n"
+                for row in ws.iter_rows(values_only=True):
+                    vals = [str(c) if c is not None else "" for c in row]
+                    if any(v.strip() for v in vals):
+                        text += " | ".join(vals) + "\n"
         elif ext == 'docx':
             from docx import Document
             import io
@@ -2661,8 +2679,30 @@ def upload_file():
         import re
         text = re.sub(r'\n{3,}', '\n\n', text)
         text = text.strip()
+        # 智能识别：用 LLM 判断文件类型 + 一句话摘要 + 关键点，前端可据此提示并自动路由
+        file_type, summary, key_points = "其他", "", []
+        try:
+            from competition_agents import llm
+            from langchain_core.messages import HumanMessage
+            iprompt = f"""你是文件内容识别专家。下面是一个上传文件「{filename}」解析出的文本。
+请判断它的类型，并输出一个 JSON（不要任何解释）：
+{{"file_type":"赛事规则|申报书草稿|实测数据|参考文献|其他","summary":"一句话概括(30字内)","key_points":["关键点1","关键点2","关键点3"]}}
+文件文本（前 4000 字）：
+{text[:4000]}
+"""
+            resp = llm.invoke([HumanMessage(content=iprompt)])
+            m = re.search(r'\{.*\}', resp.content or "", re.DOTALL)
+            if m:
+                import json as _json
+                d = _json.loads(m.group(0))
+                file_type = str(d.get("file_type") or "其他").strip()
+                summary = str(d.get("summary") or "").strip()[:80]
+                key_points = [str(x).strip() for x in (d.get("key_points") or []) if str(x).strip()][:6]
+        except Exception as e:
+            print(f"[upload] 智能识别失败（不影响上传）：{e}")
         # 草稿上传：只返回解析文本，不存入共享知识库（保护隐私；官方资料请走 /api/upload_pdf purpose=reference）
-        return jsonify({"success": True, "text": text})
+        return jsonify({"success": True, "text": text,
+                        "file_type": file_type, "summary": summary, "key_points": key_points})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
 

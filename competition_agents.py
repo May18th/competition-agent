@@ -1259,6 +1259,38 @@ def _user_data_ref(state: dict) -> str:
     )
 
 
+def _smart_extract_user_data(user_data: str) -> str:
+    """把用户上传的实测数据/文件内容用 LLM 提炼成「结构化事实清单」，按章节归类。
+
+    只对较长内容（如文件解析出的整段文本）做提炼，短文本（表单手填）原样返回，避免浪费一次调用。
+    提炼失败静默退回原文，绝不因这一层影响主流程。
+    """
+    ud = (user_data or "").strip()
+    if len(ud) < 300:
+        return ud
+    try:
+        prompt = f"""你是科创赛事数据整理专家。下面是一段用户上传的实测数据（可能来自 Excel/报告/文字）。
+请把它提炼成「结构化事实清单」，每项一行，格式：类型：指标=数值（实测值）。
+类型只用这几种：测试数据 / 成本 / 用户与试点 / 竞品 / 其他。
+
+硬性要求：
+1. 只保留有数值或可核验的事实，删掉描述性废话、重复项；
+2. 严禁编造原文里没有的数字；拿不准的数值保留原样并标「需核实」；
+3. 直接输出清单，不要解释、不要 markdown 标题。
+
+原始内容：
+{ud[:4000]}
+"""
+        from langchain_core.messages import HumanMessage
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        out = (resp.content or "").strip()
+        if out and len(out) >= 10:
+            return out
+    except Exception as e:
+        print(f"[user_data] 智能提炼失败，退回原文：{e}")
+    return ud
+
+
 def _official_ref(state: dict) -> str:
     """取用户上传的赛事官方资料块（撰写依据，封顶 3000 字）；无则空串。"""
     try:
