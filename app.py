@@ -38,7 +38,10 @@ START_TIME = time.time()
 
 @app.route('/favicon.ico')
 def favicon():
-    """站点图标：内联 SVG（深色底 + 青色上升趋势），避免浏览器刷 404/500。"""
+    """站点图标：优先用真实 .ico，缺失时回退内联 SVG（避免浏览器刷 404/500）。"""
+    ico_path = os.path.join(os.path.dirname(__file__), '科创赛事助手.ico')
+    if os.path.exists(ico_path):
+        return send_file(ico_path, mimetype='image/x-icon')
     _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
             '<rect width="32" height="32" rx="7" fill="#22d3ee"/>'
             '<path d="M8 22 L14 11 L18 16 L21 12 L25 21" fill="none" stroke="#050816" '
