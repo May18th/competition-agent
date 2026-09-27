@@ -151,6 +151,61 @@ def _account_uid(user_id):
     return 'acc' + str(user_id)
 
 
+_SYNC_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+
+def _new_sync_code():
+    """8 位短码，去掉易混字符 0/O/1/I。"""
+    return ''.join(_secrets.choice(_SYNC_ALPHABET) for _ in range(8))
+
+
+def _sync_code_for_uid(uid):
+    """取/生成某个匿名 uid 的历史同步码（短码 ↔ uid 映射存 SQLite）。"""
+    conn = get_db()
+    row = conn.execute("SELECT code FROM uid_sync WHERE uid=?", (uid,)).fetchone()
+    if row:
+        code = row[0]
+        conn.close()
+        return code
+    for _ in range(20):
+        code = _new_sync_code()
+        try:
+            conn.execute("INSERT INTO uid_sync (code, uid) VALUES (?,?)", (code, uid))
+            conn.commit()
+            conn.close()
+            return code
+        except sqlite3.IntegrityError:
+            conn.rollback()
+    conn.close()
+    return None
+
+
+@app.route('/api/sync_code')
+def get_sync_code():
+    """返回当前设备的历史同步码，供别的设备一键绑定到同一个匿名 uid。"""
+    code = _sync_code_for_uid(_current_uid())
+    if not code:
+        return jsonify({"success": False, "error": "同步码生成失败，请重试"})
+    return jsonify({"success": True, "sync_code": code})
+
+
+@app.route('/api/bind_uid', methods=['POST'])
+def bind_uid():
+    """用同步码把当前设备绑定到目标 uid（重签 cookie），不登录也能跨设备看同一份历史。"""
+    data = request.get_json(silent=True) or request.form or {}
+    code = str(data.get('code') or '').strip().upper()
+    if not code:
+        return jsonify({"success": False, "error": "请输入同步码"})
+    conn = get_db()
+    row = conn.execute("SELECT uid FROM uid_sync WHERE code=?", (code,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "同步码无效，请检查后重试"})
+    g.uid = row[0]
+    g.uid_should_sign = True
+    return jsonify({"success": True, "bound": True})
+
+
 _LOGIN_FAILS = {}   # username -> [时间戳]，15 分钟窗口
 _LOGIN_LOCK = {}    # username -> 锁定到期时间戳
 
@@ -462,6 +517,9 @@ def init_db():
                   username TEXT UNIQUE NOT NULL,
                   password_hash TEXT NOT NULL,
                   created_time TEXT)''')
+    # 历史同步码表：短码 ↔ 匿名 uid（一键同步，不登录也能跨设备）
+    c.execute('''CREATE TABLE IF NOT EXISTS uid_sync
+                 (code TEXT PRIMARY KEY, uid TEXT NOT NULL)''')
     # 问题工单表：自动路由（前端/后端），可标记解决并留解决说明
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,

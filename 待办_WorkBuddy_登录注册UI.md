@@ -4,6 +4,8 @@
 > 对象：WorkBuddy（index.html 归你）
 > 优先级：P1（跨设备看同一份历史）
 
+> ⚠️ **2026-09-28 更新：赛前先不启用**。前端走「一键同步码」（见 `待办_WorkBuddy_一键同步码.md`），用户名密码登录后端保留、前端不露入口。本文件暂作后端接口参考，不用做 UI。
+
 ## 后端接口（已实现，待部署）
 
 - `POST /api/register` body `{username, password}` → `{success, username}` / `{success:false, error}`
