@@ -812,7 +812,7 @@ _BRIEF_SPEC = """【精简档输出规格 —— 简洁快速版专用】
 """ + _DE_AI_SPEC
 
 _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
-1. 每个二级小节 800～1500 字，拆成 3～5 个自然段
+1. 每个二级小节 400～800 字，拆成 2～4 个自然段
 2. 按「现状 → 原因 → 影响 → 应对」展开，要有推算过程和可验证依据
 3. 需要对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），表格前后各写一段说明
 4. 严禁一句话一段、严禁空小节
@@ -1646,6 +1646,18 @@ def _fast_chapter_block(state: dict) -> str:
     )
 
 
+def _chapter_list(state: dict) -> list:
+    """返回当前赛事的章节标题列表（用于深度版拆两段写时对半切分）。"""
+    req = [str(c).strip() for c in (state.get("outline_requirement") or []) if str(c).strip()]
+    if req:
+        return req[:20]
+    official = _official_chapters(state)
+    if official:
+        return official[:20]
+    return [re.sub(r'^#+\s*', '', ln.strip()) for ln in _DEFAULT_CHAPTERS.split('\n')
+            if ln.strip().startswith('## ')]
+
+
 def _stream_llm(prompt, field, every=8):
     """流式调用 LLM：边生成边把累积文本写进 partial，前端即可逐字看到内容。
 
@@ -1793,6 +1805,30 @@ def _selfcheck_proposal(state: CompetitionState, proposal: str):
     return proposal, n
 
 
+def _write_proposal_half(common, chapter_titles, continue_mode):
+    """按给定章节写申报书的「前半」或「后半」，返回该段正文。"""
+    chap_block = "\n".join("## " + c for c in chapter_titles)
+    if continue_mode:
+        tail = (
+            "请**续写**这份申报书的后半部分（前半部分章节已经写完，直接接续，"
+            "不要重复前面内容、不要写「接上文」之类的说明）。\n\n"
+            "本次只写以下章节，标题原样输出，每个章节都要有实质内容"
+            "（数据 + 场景 + 技术名词 + 验证证据），不允许一句话带过：\n\n"
+            + chap_block +
+            "\n\n直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白或结尾说明。"
+        )
+    else:
+        tail = (
+            "请写这份申报书的前半部分。\n\n"
+            "本次只写以下章节，标题原样输出，每个章节都要有实质内容"
+            "（数据 + 场景 + 技术名词 + 验证证据），不允许一句话带过：\n\n"
+            + chap_block +
+            "\n\n直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白。"
+        )
+    field = "proposal" if not continue_mode else "_proposal_p2"
+    return _stream_llm_guarded(common + "\n\n" + tail, field)
+
+
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 深度版申报书 Agent：三段链式——构思纲要 → 正文写作 → 自检修补"""
     _report_stage("writing")
@@ -1848,7 +1884,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     outline = _build_outline(state)
     state["proposal_outline"] = outline
 
-    prompt = f"""你是资深科创赛事申报书写作专家。
+    common = f"""你是资深科创赛事申报书写作专家。
 {task_line}
 
 【写作纲要 —— 各章必须按此纲要的核心论点与素材展开，不得与之冲突】
@@ -1870,11 +1906,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 3. 把逻辑不通的地方理顺
 4. 加上比赛需要的评分点
 5. 前面分析的竞品、商业模式、风险、技术方案内容，必须全部融入到申报书对应章节里，补充用户草稿里不足的地方
-6. 每个二级小节至少 800 字，拆成 3～5 个自然段；任何标题下面都必须有正文，不允许空小节
+6. 每一章都要有实质内容（数据 + 场景 + 技术名词 + 验证证据），不允许任何一章被跳过或一句话带过；任何标题下面都必须有正文，不允许空小节
 7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
 
-请写一份完整详实的申报书，全文 15000～20000 字，低于 12000 字判不合格，每个章节都要充分展开成完整段落并给出推算与依据，不要简略。
-{_chapter_block(state)}
 {_competition_focus(state)}
 {_SELF_TECH_HIGHLIGHTS}
 
@@ -1882,15 +1916,25 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_humanize_spec(state)}
 {_PROPOSAL_SPEC}
 """
-    proposal = _stream_llm_guarded(prompt, "proposal")
+
+    # 按当前赛事章节拆成两段写，避免单次输出撑爆 max_tokens 导致后半截被截断
+    chapters = _chapter_list(state)
+    if len(chapters) >= 4:
+        mid = (len(chapters) + 1) // 2
+        part1 = _write_proposal_half(common, chapters[:mid], continue_mode=False)
+        part2 = _write_proposal_half(common, chapters[mid:], continue_mode=True)
+        proposal = (part1 + "\n\n" + part2).strip()
+        set_partial_field("proposal", proposal)
+    else:
+        proposal = _write_proposal_half(common, chapters, continue_mode=False)
 
     # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
     proposal, patch_count = _selfcheck_proposal(state, proposal)
     state["proposal_selfcheck"] = f"已完成自检，定点修补 {patch_count} 处。"
 
     proposal, n = _expand_to_length(
-        proposal, 12000,
-        state.get('one_liner') or state['idea'][:40], rounds=3)
+        proposal, 5000,
+        state.get('one_liner') or state['idea'][:40], rounds=2)
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
     print(f"✍️ 深度版申报书：第 {state['revision_count']} 版，{n} 字")
@@ -1901,7 +1945,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 简洁版申报书 Agent：写约 1300 字的精简申报书（对应前端「简洁快速版」卡片）
 
     与深度版刻意拉开差距：这里只求「短而准」，五章、约 1300 字，
-    供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（约 2 万字）。
+    供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（按赛事章节逐章展开）。
     """
     _report_stage("writing")
     draft = state.get('proposal_draft', '')
@@ -1914,7 +1958,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
 
 这一档的定位是「短而实」：篇幅比深度版短，但内容不能薄——每章都要写满具体数字、
-具体场景名、具体技术名词，禁止用套话凑字数。完整详实的提交版由深度版输出（约 2 万字、十二章）。
+具体场景名、具体技术名词，禁止用套话凑字数。完整详实的提交版由深度版输出（按赛事章节逐章展开）。
 
 赛事：{state['competition_name']}
 {source}
