@@ -716,3 +716,18 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
   如果以后发现锚点条点了没反应，先怀疑这条。
 - 二级标签 `#scoreSubTabs`（3 个）实测 302px 排得下，不受影响。
 - 后端无改动。请 Codex 基于 c8c0c83 之后的 main 继续。
+
+## 2026-09-27 WorkBuddy 改动记录⑥（index.html，已部署 5bbffdc）
+- 今日额度展示：首页右上角新增 `#quotaBadge`，GET /api/quota（与 /api/health 同源）渲染
+  「今日剩余 N/limit 次」；剩余 ≤20% 变黄，exceeded 显红字「今日额度已用完，明日零点重置」。
+  接口异常时保持 display:none——绝不留「加载中…」占位。生成完成后 wbLoadQuota() 自动刷新一次。
+- 简洁版 iterate 开关：`#iterateRow` 仅 mode=fast 时露出（复用 wbSyncHumanizeRow 模式，wbSyncIterateRow），
+  payload 新增 `iterate: !!(mode==='fast' && #iterateOpt.checked)`。深度版恒定 false，后端 should_iterate 未动。
+- ⚠️ 复选框持久化必须单独走 WB_CHECK_IDS：混进 WB_FORM_IDS 时 el.value 恒为 "on"，
+  恢复时会被当成永远勾上。三处（save/clear/load）都已分开处理。
+- ⚠️ #iterateRow 初始就是 inline display:none，JS 里必须显式写 'block'/'none'，写 '' 会回落不显示。
+- 后端 iterate 修复已验证：服务器 venv 跑合成 state，should_iterate_fast 五分支全部正确
+  （无 iterate/False+低分 → defense,ppt；True+低分 → revise；True+高分 → defense,ppt；True+已返工2轮 → defense,ppt）。
+  实测一次真跑 score=79 ≥ 75 及格线，未触发返工，符合预期（简洁版及格线 75，深度版 85）。
+- 测试记录 history_id=71 已从库删除（服务器有 competition.db.bak_* 备份）。
+- 后端无改动。请 Codex 基于 5bbffdc 之后的 main 继续。
