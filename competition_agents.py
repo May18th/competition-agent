@@ -1911,10 +1911,6 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     proposal, n = _expand_to_length(
         _stream_llm_guarded(prompt, "proposal"), 1100,
         state.get('one_liner') or state['idea'][:40])
-    # 简洁版硬上限：超过 1800 字时压缩，保持「短而准」的定位
-    proposal, n = _compress_to_length(
-        proposal, 1650,
-        state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
     print(f"✍️ 简洁版申报书：第 {state['revision_count']} 版，{n} 字")
