@@ -538,7 +538,8 @@ def _mask_double_blind(text, school=None, advisor=None):
 
 
 def _build_docx(title, text, doc_type='report', subtitle=None,
-                school=None, team=None, advisor=None, competition_name=None):
+                school=None, team=None, advisor=None, competition_name=None,
+                header_title=None):
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
     text = _strip_identifying_text(text or "")
@@ -552,6 +553,7 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
         doc_type=doc_type,
         school=school, team=team, advisor=advisor,
         show_school_advisor=show_school_advisor,
+        header_title=header_title,
     )
 
 
@@ -906,6 +908,8 @@ def export_word():
     if chapter_order:
         text = _reorder_markdown_by_chapters(text, chapter_order)
     text = _append_ai_notice(text)      # 合规标注：申报书是提交给评委的正式件，必须注明 AI 参与
+    # 页眉固定显示文档类型名（如「项目申报书」），不显示创意/副标题文案
+    header_title = re.sub(r'(全文|完整)$', '', (title or '').strip()).strip() or '项目申报书'
     doc = _build_docx(
         project, text,
         doc_type=data.get('doc_type', 'report'),
@@ -914,6 +918,7 @@ def export_word():
         team=data.get('team'),
         advisor=data.get('advisor'),
         competition_name=data.get('competition_name'),
+        header_title=header_title,
     )
     if charts:
         try:
@@ -1890,6 +1895,11 @@ def _strip_identifying_text(t):
     t = re.sub(r'[\u4e00-\u9fa5]{2,4}(?:大学|学校)', '（隐去）', t)
     # 学院：只认较长校名（如「职业技术学院」「文理学院」），避开「商学院」等院系
     t = re.sub(r'[\u4e00-\u9fa5]{4,8}学院', '（隐去）', t)
+    # 「姓名：待填写」「电话：待补充」等无方括号占位 → （由团队补充），
+    # 避免「待填写」三个字原样出现在交给评委的文档里
+    t = re.sub(r'([：:])\s*(待填写|待你填写|待补充|待填)', r'\1（由团队补充）', t)
+    # 「（待填写）」「（待补充）」→ 直接删
+    t = re.sub(r'[（(]\s*(待填写|待你填写|待补充|待填)\s*[)）]', '', t)
     return t
 
 
@@ -2757,6 +2767,15 @@ def export_all():
     import zipfile
     import io
     from docx_render import build_docx
+
+    def _merge_two(t1, h1, t2, h2):
+        """把两段内容并成一个文档，中间加「一、/二、」章节大标题，避免两段内容焊在一起。"""
+        parts = []
+        if t1 and t1.strip():
+            parts.append("# 一、" + h1 + "\n\n" + t1.strip())
+        if t2 and t2.strip():
+            parts.append("# 二、" + h2 + "\n\n" + t2.strip())
+        return "\n\n".join(parts)
     
     # 拿最新的历史记录
     history = load_history(uid=_current_uid())
@@ -2769,8 +2788,12 @@ def export_all():
     # 要导出的文件列表（减少到 5 个核心文件，更快）；第三个元素为 doc_type
     files_to_export = [
         ("1_申报书全文.docx", data.get("proposal", ""), 'default'),
-        ("2_竞品与商业模式.docx", data.get("competitor_analysis", "") + "\n\n" + data.get("business_model", ""), 'analysis'),
-        ("3_风险分析与评委意见.docx", data.get("risk_analysis", "") + "\n\n" + data.get("judge_feedback", ""), 'analysis'),
+        ("2_竞品与商业模式.docx",
+         _merge_two(data.get("competitor_analysis", ""), "竞品分析",
+                    data.get("business_model", ""), "商业模式"), 'analysis'),
+        ("3_风险分析与评委意见.docx",
+         _merge_two(data.get("risk_analysis", ""), "风险分析",
+                    data.get("judge_feedback", ""), "评委意见"), 'analysis'),
         ("4_答辩问题预测.docx", data.get("defense_questions", ""), 'analysis'),
         ("5_PPT大纲.docx", data.get("ppt_outline", ""), 'outline'),
     ]

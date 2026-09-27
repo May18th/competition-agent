@@ -11,7 +11,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, HRFlowable)
+                                TableStyle, HRFlowable, KeepTogether)
 
 
 def _register_cjk():
@@ -96,7 +96,35 @@ def _clean(t):
     # 先把用户/模型文本里的 HTML 特殊字符转义，防止被 reportlab 当标签吞掉内容；
     # 再仅针对 Markdown **加粗** 还原成 <b> 标签。
     escaped = _escape_html(t)
-    return re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped).strip()
+    out = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
+    # 行内反引号 `xxx`：去掉反引号保留内容（不原样输出反引号）
+    out = re.sub(r"`([^`]+)`", r"\1", out)
+    return out.strip()
+
+
+def _is_body_line(s):
+    """判断一行是否是可当作「标题的下一段」的普通正文段落。"""
+    s = (s or '').strip()
+    if not s:
+        return False
+    if re.match(r'^#{1,6}\s', s):      # 标题
+        return False
+    if s.startswith('> ') or s == '---':  # 引用 / 分隔线
+        return False
+    if s.startswith('|'):               # 表格
+        return False
+    if re.match(r'^[-*]\s', s):         # 无序列表
+        return False
+    if re.match(r'^\d+\.\s', s):        # 有序列表
+        return False
+    return True
+
+
+def _next_nonempty(lines, start):
+    for j in range(start, len(lines)):
+        if lines[j].strip():
+            return j
+    return None
 
 
 def _flow(text):
@@ -107,9 +135,21 @@ def _flow(text):
             i += 1
             continue
         if line.startswith("### "):
-            flow.append(Paragraph(_clean(line[4:]), _H2))
+            h = Paragraph(_clean(line[4:]), _H2)
+            nxt = _next_nonempty(lines, i + 1)
+            if nxt is not None and _is_body_line(lines[nxt]):
+                flow.append(KeepTogether([h, Paragraph(_clean(lines[nxt].rstrip()), _BODY)]))
+                i = nxt
+            else:
+                flow.append(h)
         elif line.startswith("## "):
-            flow.append(Paragraph(_clean(line[3:]), _H1))
+            h = Paragraph(_clean(line[3:]), _H1)
+            nxt = _next_nonempty(lines, i + 1)
+            if nxt is not None and _is_body_line(lines[nxt]):
+                flow.append(KeepTogether([h, Paragraph(_clean(lines[nxt].rstrip()), _BODY)]))
+                i = nxt
+            else:
+                flow.append(h)
         elif line.startswith("# "):
             flow.append(Paragraph(_clean(line[2:]), _TITLE))
         elif line.startswith("> "):
@@ -127,7 +167,7 @@ def _flow(text):
                 i += 1
             i -= 1
             if rows:
-                t = Table(rows, hAlign="LEFT")
+                t = Table(rows, hAlign="LEFT", repeatRows=1)
                 t.setStyle(TableStyle([
                     ("FONTNAME", (0, 0), (-1, -1), _FONT),
                     ("FONTSIZE", (0, 0), (-1, -1), 8.5),

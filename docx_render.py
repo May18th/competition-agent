@@ -434,9 +434,9 @@ def _header(doc, title):
 def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None,
            show_school_advisor=True):
     """封面：主标题黑体小初 / 副标题黑体二号 / 学校·团队·指导老师·日期黑体小三，全部居中。"""
-    # 封面文字压到纵向约 1/5 处（之前 150pt 把标题推太低，顶部留一大块空白）
+    # 封面文字压到纵向约 1/6 处（之前 150pt 把标题推太低，顶部留一大块空白）
     sp = doc.add_paragraph()
-    sp.paragraph_format.space_before = Pt(60)
+    sp.paragraph_format.space_before = Pt(34)
     sp.paragraph_format.space_after = Pt(0)
     sp.paragraph_format.line_spacing = 1.0
     _font(sp.add_run(''), 1)
@@ -492,13 +492,81 @@ def _add_bookmark(p, name, bid):
     p._p.append(end)
 
 
-def _add_toc(doc, headings):
-    """目录页：逐条列出真实标题 + PAGEREF 页码域。
+def _paginate_headings(doc, headings):
+    """用 LibreOffice 渲染到 PDF，反查每个标题的真实页码（mark -> 页码）。
 
-    不用 TOC 域的原因：TOC 域必须用户手动「更新域」才出页码，
-    很多人打开看到的是一片空白。这里改成直接写条目文字（一定可见），
-    页码用 PAGEREF 域（dirty=true，Word 打开时自动填真实页码）。
+    失败（服务器没装 soffice / 解析异常）返回 None，由调用方退化为「目录不写页码」。
     """
+    try:
+        import os
+        import subprocess
+        import tempfile
+        try:
+            from pypdf import PdfReader
+        except Exception:
+            from PyPDF2 import PdfReader
+
+        fd, docx_path = tempfile.mkstemp(suffix='.docx')
+        os.close(fd)
+        doc.save(docx_path)
+        outdir = tempfile.mkdtemp()
+        try:
+            _soffice = None
+            for _cand in ('soffice', 'libreoffice'):
+                try:
+                    subprocess.run(
+                        [_cand, '--headless', '--convert-to', 'pdf',
+                         '--outdir', outdir, docx_path],
+                        check=True, timeout=180,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    _soffice = _cand
+                    break
+                except FileNotFoundError:
+                    continue
+            if _soffice is None:
+                return None
+            pdf_path = os.path.join(outdir, os.path.basename(docx_path).replace('.docx', '.pdf'))
+            if not os.path.exists(pdf_path):
+                return None
+            reader = PdfReader(pdf_path)
+            pages = [re.sub(r'\s+', '', (pg.extract_text() or '')) for pg in reader.pages]
+        finally:
+            try:
+                os.unlink(docx_path)
+            except Exception:
+                pass
+            try:
+                for f in os.listdir(outdir):
+                    os.unlink(os.path.join(outdir, f))
+                os.rmdir(outdir)
+            except Exception:
+                pass
+
+        result = {}
+        for _level, text, mark in headings:
+            key = re.sub(r'\s+', '', text or '')
+            if len(key) < 2:
+                continue
+            # PDF 抽取可能把标题断行/加空格，取前 10 字做前缀匹配；
+            # 从最后一页往前找，命中正文里的标题（避开目录页里同文字）。
+            probe = key[:10]
+            for idx in range(len(pages) - 1, -1, -1):
+                if probe and probe in pages[idx]:
+                    result[mark] = idx + 1
+                    break
+        return result if result else None
+    except Exception:
+        return None
+
+
+def _add_toc(doc, headings, toc_pages=None):
+    """目录页：逐条列出真实标题，页码写死真实数字（不再依赖 PAGEREF 域刷新）。
+
+    WPS / 手机预览不会像 Word 那样自动更新域，PAGEREF 会一直显示占位「1」，
+    所以这里由 build_docx 先渲染算出真实页码后，直接写静态数字。
+    toc_pages 拿不到某条页码时，该条只写标题、不写页码（绝不出现「1」）。
+    """
+    toc_pages = toc_pages or {}
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_after = Pt(16)
@@ -524,20 +592,12 @@ def _add_toc(doc, headings):
         _font(p.add_run(_fullwidth(text)), SZ_XIAOSI,
               CN_HEI if level == 1 else CN_SONG, bold=(level == 1))
 
-        # 制表符
-        tr = p.add_run()
-        tr._r.append(OxmlElement('w:tab'))
-
-        # PAGEREF 页码域
-        fld = OxmlElement('w:fldSimple')
-        fld.set(qn('w:instr'), 'PAGEREF %s \\h' % mark)
-        fld.set(qn('w:dirty'), 'true')
-        rr = OxmlElement('w:r')
-        tt = OxmlElement('w:t')
-        tt.text = '1'
-        rr.append(tt)
-        fld.append(rr)
-        p._p.append(fld)
+        page = toc_pages.get(mark)
+        if page:
+            # 制表符（右对齐 + 省略号前导符）+ 静态页码
+            tr = p.add_run()
+            tr._r.append(OxmlElement('w:tab'))
+            _font(p.add_run(str(page)), SZ_XIAOSI, CN_SONG)
 
 
 # ============ 各类块渲染 ============
@@ -809,7 +869,8 @@ def _render_hr(doc):
 
 def build_docx(title, text, subtitle=None, org=None, toc=None,
                cover=None, cover_image=False, topic=None, doc_type='report',
-               school=None, team=None, advisor=None, show_school_advisor=True):
+               school=None, team=None, advisor=None, show_school_advisor=True,
+               header_title=None, toc_pages=None):
     """生成符合格式标准的 Word 文档。
 
     :param title:       文档主标题（封面黑体小初）
@@ -824,6 +885,8 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
     :param doc_type:    'report' 报告（默认）/ 'analysis' 分析 / 'outline' 大纲
                         / 'default' 申报书 —— 决定标题字号、正文缩进、封面目录
     :param show_school_advisor: 封面是否显示学校/指导老师；iCAN 双盲评审时应为 False
+    :param header_title:        页眉文字；None 时用 title。申报书封面放项目名、页眉放「XX 申报书」
+    :param toc_pages:           目录真实页码 {mark: page}；None 时自动渲染计算，算不出则不写页码
     :return:            python-docx Document
     """
     prof = PROFILES.get(doc_type, PROFILES['default'])
@@ -835,23 +898,6 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
     if toc and len((text or '').replace('\n', '').replace(' ', '')) < 2500:
         toc = False
 
-    doc = Document()
-    _setup_page(doc, prof)
-    _page_number_footer(doc)     # 页脚：页码居中（封面因首页不同自动无页码）
-    _header(doc, title)          # 页眉：文档标题，宋体五号居中
-
-    if cover:
-        if cover_image:
-            try:
-                from cover_style import get_cover
-                path, _sk, _ink = get_cover(topic or subtitle or title or '')
-                _cover_background(doc, path)
-            except Exception as e:
-                print('[docx_render] 封面背景图失败，忽略：%r' % (e,))
-        _cover(doc, title, subtitle, org, school, team, advisor,
-               show_school_advisor=show_school_advisor)
-        doc.add_page_break()
-
     blocks = _blocks(text or '')
     # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
     headings, _bm_id = [], 0
@@ -860,47 +906,75 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
             _bm_id += 1
             headings.append((blk[1], blk[2], '_toc_%d' % _bm_id))
 
-    if toc:
-        if headings:
-            _add_toc(doc, headings)
-        doc.add_page_break()
+    def _assemble(toc_pages_arg):
+        doc = Document()
+        _setup_page(doc, prof)
+        _page_number_footer(doc)     # 页脚：页码居中（封面因首页不同自动无页码）
+        _header(doc, header_title or title)  # 页眉：文档标题，宋体五号居中
 
-    _bm_i = 0
-    for i, blk in enumerate(blocks):
-        kind = blk[0]
-        if kind == 'h':
-            _bm_i += 1
-            _render_heading(doc, blk[1], blk[2], prof,
-                            mark=('_toc_%d' % _bm_i if blk[1] <= 3 else None),
-                            bid=1000 + _bm_i)
-        elif kind == 'p':
-            # 形如「表 5-1 xxx」「图 3-2 xxx」且后面紧跟表格 → 按表题/图题渲染
-            nxt = blocks[i + 1] if i + 1 < len(blocks) else None
-            body = ' '.join(blk[1])
-            if nxt and nxt[0] == 'table' and _RE_CAPTION.match(body) and len(body) <= 40:
-                _render_caption(doc, body)
-            elif _RE_CAPTION.match(body) and len(body) <= 40:
-                _render_caption(doc, body)
-            else:
-                _render_para(doc, blk[1], prof)
-        elif kind == 'ul':
-            _render_list(doc, blk[1], ordered=False, prof=prof)
-        elif kind == 'ol':
-            _render_list(doc, blk[1], ordered=True, prof=prof)
-        elif kind == 'quote':
-            _render_quote(doc, blk[1])
-        elif kind == 'code':
-            _render_code(doc, blk[1])
-        elif kind == 'table':
-            _render_table(doc, blk[1], blk[2])
-        elif kind == 'hr':
-            _render_hr(doc)
+        if cover:
+            if cover_image:
+                try:
+                    from cover_style import get_cover
+                    path, _sk, _ink = get_cover(topic or subtitle or title or '')
+                    _cover_background(doc, path)
+                except Exception as e:
+                    print('[docx_render] 封面背景图失败，忽略：%r' % (e,))
+            _cover(doc, title, subtitle, org, school, team, advisor,
+                   show_school_advisor=show_school_advisor)
+            doc.add_page_break()
 
-    cp = doc.core_properties
-    cp.title = title
-    cp.author = '科创赛事多智能体协同创作助手'
-    cp.category = '赛事申报材料'
-    return doc
+        if toc:
+            if headings:
+                _add_toc(doc, headings, toc_pages_arg)
+            doc.add_page_break()
+
+        _bm_i = 0
+        for i, blk in enumerate(blocks):
+            kind = blk[0]
+            if kind == 'h':
+                _bm_i += 1
+                _render_heading(doc, blk[1], blk[2], prof,
+                                mark=('_toc_%d' % _bm_i if blk[1] <= 3 else None),
+                                bid=1000 + _bm_i)
+            elif kind == 'p':
+                # 形如「表 5-1 xxx」「图 3-2 xxx」且后面紧跟表格 → 按表题/图题渲染
+                nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+                body = ' '.join(blk[1])
+                if nxt and nxt[0] == 'table' and _RE_CAPTION.match(body) and len(body) <= 40:
+                    _render_caption(doc, body)
+                elif _RE_CAPTION.match(body) and len(body) <= 40:
+                    _render_caption(doc, body)
+                else:
+                    _render_para(doc, blk[1], prof)
+            elif kind == 'ul':
+                _render_list(doc, blk[1], ordered=False, prof=prof)
+            elif kind == 'ol':
+                _render_list(doc, blk[1], ordered=True, prof=prof)
+            elif kind == 'quote':
+                _render_quote(doc, blk[1])
+            elif kind == 'code':
+                _render_code(doc, blk[1])
+            elif kind == 'table':
+                _render_table(doc, blk[1], blk[2])
+            elif kind == 'hr':
+                _render_hr(doc)
+
+        cp = doc.core_properties
+        cp.title = title
+        cp.author = '科创赛事多智能体协同创作助手'
+        cp.category = '赛事申报材料'
+        return doc
+
+    # 需要目录但没给现成页码：先渲染一版算出真实页码，再重建一版写死页码。
+    # LibreOffice 不在 / 解析失败时退回无页码目录（标题仍完整，绝不出现占位「1」）。
+    if toc and headings and toc_pages is None:
+        probe = _assemble({})
+        pages = _paginate_headings(probe, headings)
+        if pages:
+            return _assemble(pages)
+        return probe
+    return _assemble(toc_pages or {})
 
 
 # ---- 封面背景图（默认不启用，保留给非申报场景）----

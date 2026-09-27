@@ -773,9 +773,9 @@ _REPORT_SPEC = """【输出规格 —— 必须遵守】
 """ + _DE_AI_SPEC
 
 _PROPOSAL_SPEC = """【申报书输出规格 —— 优先级最高，覆盖上面所有通用规格】
-1. 篇幅：正文 3500～4500 字，低于 3000 字视为不合格。这是一份要提交给评委的完整申报书，不是提纲也不是摘要。
+1. 篇幅：按前面「全文 X～Y 字」的档位要求写满，低于档位下限视为不合格。这是一份要提交给评委的完整申报书，不是提纲也不是摘要。
 2. 结构：使用 Markdown，最多三级标题（## / ###），一级用「一、二、三、」，二级用「（一）（二）」，三级用「1. 2. 3.」
-3. 密度：每个二级小节至少 300 字，拆成 2～3 个自然段，每段不少于 150 字；要有论点、有展开、有依据，严禁一句话一段
+3. 密度：每个二级小节按档位要求写满字数，拆成多个自然段，每段不少于 150 字；要有论点、有展开、有依据，严禁一句话一段
 4. 严禁空小节：任何标题下面都必须有正文段落，不允许只放一个表格、也不允许标题下面是空的
 5. 严禁通篇序号罗列；只有需要逐条对比时才用标准 Markdown 表格，且表格前后都必须有说明段落
 6. 每一节都要落到具体事实上：真实场景名称、具体数字（测算值要标明是测算）、具体技术名词与参数、具体执行步骤与时间点。禁止「大幅提高效率」「具有广阔前景」「赋能行业」这类没有信息量的表述
@@ -812,7 +812,7 @@ _BRIEF_SPEC = """【精简档输出规格 —— 简洁快速版专用】
 """ + _DE_AI_SPEC
 
 _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
-1. 每个二级小节 300～500 字，拆成 2～3 个自然段
+1. 每个二级小节 800～1500 字，拆成 3～5 个自然段
 2. 按「现状 → 原因 → 影响 → 应对」展开，要有推算过程和可验证依据
 3. 需要对比时用标准 Markdown 表格（| a | b | 换行 |---|---|），表格前后各写一段说明
 4. 严禁一句话一段、严禁空小节
@@ -906,6 +906,9 @@ def _strip_placeholders(text):
     t = re.sub(r'【[^】]*(?:待填写|待你填写|待补充)[^】]*】', '（待补充）', t)
     # ⑤ 其余裸【xxx】方括号提示 → 去方括号保留文字，避免残留「【示例值，需核实】」
     t = re.sub(r'【([^】]*)】', r'（\1）', t)
+    # ⑥ 无方括号的「姓名：待填写」「电话：待补充」→ （由团队补充）
+    t = re.sub(r'([：:])\s*(待填写|待你填写|待补充|待填)', r'\1（由团队补充）', t)
+    t = re.sub(r'[（(]\s*(待填写|待你填写|待补充|待填)\s*[)）]', '', t)
     return t
 
 
@@ -1867,10 +1870,10 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 3. 把逻辑不通的地方理顺
 4. 加上比赛需要的评分点
 5. 前面分析的竞品、商业模式、风险、技术方案内容，必须全部融入到申报书对应章节里，补充用户草稿里不足的地方
-6. 每个二级小节至少 300 字，拆成 2～3 个自然段；任何标题下面都必须有正文，不允许空小节
+6. 每个二级小节至少 800 字，拆成 3～5 个自然段；任何标题下面都必须有正文，不允许空小节
 7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
 
-请写一份完整详实的申报书，全文 4500～6000 字，低于 3200 字判不合格，每个章节都要展开成完整段落，不要简略。
+请写一份完整详实的申报书，全文 15000～20000 字，低于 12000 字判不合格，每个章节都要充分展开成完整段落并给出推算与依据，不要简略。
 {_chapter_block(state)}
 {_competition_focus(state)}
 {_SELF_TECH_HIGHLIGHTS}
@@ -1886,8 +1889,8 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     state["proposal_selfcheck"] = f"已完成自检，定点修补 {patch_count} 处。"
 
     proposal, n = _expand_to_length(
-        proposal, 3200,
-        state.get('one_liner') or state['idea'][:40])
+        proposal, 12000,
+        state.get('one_liner') or state['idea'][:40], rounds=3)
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
     print(f"✍️ 深度版申报书：第 {state['revision_count']} 版，{n} 字")
@@ -1898,7 +1901,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 简洁版申报书 Agent：写约 1300 字的精简申报书（对应前端「简洁快速版」卡片）
 
     与深度版刻意拉开差距：这里只求「短而准」，五章、约 1300 字，
-    供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（约 5000 字）。
+    供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（约 2 万字）。
     """
     _report_stage("writing")
     draft = state.get('proposal_draft', '')
@@ -1911,7 +1914,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
 
 这一档的定位是「短而实」：篇幅比深度版短，但内容不能薄——每章都要写满具体数字、
-具体场景名、具体技术名词，禁止用套话凑字数。完整详实的提交版由深度版输出（约 5000 字、十二章）。
+具体场景名、具体技术名词，禁止用套话凑字数。完整详实的提交版由深度版输出（约 2 万字、十二章）。
 
 赛事：{state['competition_name']}
 {source}
@@ -2362,16 +2365,18 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 
 
 def should_iterate(state: CompetitionState):
-    if state["approved"] or (state.get("revision_count") or 0) >= 2:
+    # 注意：writer 已经让 revision_count 从 0 变 1（初稿算第 1 版），
+    # 所以这里要 >= 3 才等于「最多修订 2 轮」，否则低分稿只改 1 轮就停了。
+    if state["approved"] or (state.get("revision_count") or 0) >= 3:
         return ["defense", "ppt"]
     return ["revise"]
 
 
 def should_iterate_fast(state: CompetitionState):
-    """简洁版：默认不迭代保持快速；仅当用户显式传 iterate=true 且低分时，才定向补写一轮（最多 1 轮）。"""
+    """简洁版：默认不迭代保持快速；仅当用户显式传 iterate=true 且低分时，才定向补写（最多 2 轮）。"""
     if not state.get("iterate"):
         return ["defense", "ppt"]
-    if state["approved"] or (state.get("revision_count") or 0) >= 2:
+    if state["approved"] or (state.get("revision_count") or 0) >= 3:
         return ["defense", "ppt"]
     return ["revise"]
 

@@ -1118,9 +1118,9 @@ def math_ceil(x):
 def _cover_gradient(slide, meta, s):
     """v1 流光：整页渐变 + 三色装饰圆 + 三段式彩色竖条"""
     _bg_grad(slide, DEEP, DEEP2, 3150000)
-    for (cx, cy, cw, ch, col, al) in ((10.2, -1.5, 5.0, 5.0, COVER_DECO[0], 0.42),
-                                      (11.8, 5.4, 3.4, 3.4, COVER_DECO[1], 0.38),
-                                      (-1.4, 5.6, 3.0, 3.0, COVER_DECO[2], 0.30)):
+    for (cx, cy, cw, ch, col, al) in ((10.1, 0.15, 3.2, 3.2, COVER_DECO[0], 0.42),
+                                      (10.1, 4.3, 3.2, 3.2, COVER_DECO[1], 0.38),
+                                      (0.15, 4.5, 2.9, 2.9, COVER_DECO[2], 0.30)):
         d = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx), Inches(cy), Inches(cw), Inches(ch))
         d.fill.solid(); d.fill.fore_color.rgb = _rgb(col)
         d.line.fill.background(); d.shadow.inherit = False
@@ -1254,8 +1254,8 @@ def _cover_star(slide, meta, s):
     星点只铺封面，内容页一律干净 —— 内容页再撒星星，投影出来就是一片噪点。
     """
     _bg_grad(slide, DEEP, DEEP2, 3150000)
-    for (cx, cy, cw, col, al) in ((9.9, -1.2, 5.2, COVER_DECO[0], 0.22),
-                                  (-1.6, 5.2, 4.6, COVER_DECO[1], 0.18)):
+    for (cx, cy, cw, col, al) in ((10.2, 0.15, 3.1, COVER_DECO[0], 0.22),
+                                  (0.15, 4.6, 2.9, COVER_DECO[1], 0.18)):
         d = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx), Inches(cy), Inches(cw), Inches(cw))
         d.fill.solid(); d.fill.fore_color.rgb = _rgb(col)
         d.line.fill.background(); d.shadow.inherit = False
@@ -1422,8 +1422,8 @@ def _slide_section(prs, s, meta, page_no, idx=0):
         _add_rect(slide, 3.56, 4.25, 1.3, 0.06, color)
     else:
         _bg_grad(slide, _darken(color, 0.45), _darken(color, 0.12), 3150000)
-        deco = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(9.6), Inches(1.2),
-                                      Inches(5.6), Inches(5.6))
+        deco = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.2), Inches(1.0),
+                                      Inches(5.1), Inches(5.1))
         deco.fill.solid(); deco.fill.fore_color.rgb = _rgb(WHITE)
         deco.line.fill.background(); deco.shadow.inherit = False
         _set_alpha(deco, 0.10)
@@ -1528,13 +1528,13 @@ def _slide_closing(prs, s, meta, page_no):
         return slide
     _bg_grad(slide, DEEP, DEEP2, 2700000)
     deco = (COVER_DECO + [PRIMARY, ACCENT])[:2]
-    d1 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(-1.6), Inches(-1.2),
-                                Inches(4.4), Inches(4.4))
+    d1 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.15), Inches(0.15),
+                                Inches(4.0), Inches(4.0))
     d1.fill.solid(); d1.fill.fore_color.rgb = _rgb(deco[0])
     d1.line.fill.background(); d1.shadow.inherit = False
     _set_alpha(d1, 0.25)
-    d2 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(10.6), Inches(4.9),
-                                Inches(4.6), Inches(4.6))
+    d2 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(9.3), Inches(3.3),
+                                Inches(4.0), Inches(4.0))
     d2.fill.solid(); d2.fill.fore_color.rgb = _rgb(deco[1])
     d2.line.fill.background(); d2.shadow.inherit = False
     _set_alpha(d2, 0.28)
