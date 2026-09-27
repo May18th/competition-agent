@@ -1757,7 +1757,9 @@ mark.wb-ph {
                  深度版本来就该迭代（后端 should_iterate 未动），所以选深度版时整行隐藏 -->
             <div id="iterateRow" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;">
                 <label style="display: flex; align-items: flex-start; gap: 9px; cursor: pointer; user-select: none;">
-                    <input type="checkbox" id="iterateOpt" style="cursor: pointer; margin: 2px 0 0; flex-shrink: 0;" onchange="wbSaveForm()">
+                    <!-- 全局 input{width:100%} 会把这个 checkbox 拉满整行（实测 922px），
+                         同一 flex 行的说明文字被挤成 26px 竖条 —— 必须显式定宽，与 2239 行 chkRoadshow 同法 -->
+                    <input type="checkbox" id="iterateOpt" style="cursor: pointer; margin: 2px 0 0; flex-shrink: 0; width: 15px; height: 15px; padding: 0; accent-color: var(--c-a);" onchange="wbSaveForm()">
                     <span style="font-size: 13px; color: var(--text-dim); line-height: 1.65;">
                         <b style="color: var(--text);">低分自动补写</b>
                         <span class="wb-opt">（选填，默认关）</span><br>
