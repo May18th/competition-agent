@@ -2052,10 +2052,11 @@ def _run_generation(data):
                         datetime.now().strftime("%H:%M:%S"), _gate_before))
                 except Exception:
                     _gate_log = None
-                # rounds=2：实测单轮压缩常停在 1850 左右压不到 1800 以内
-                # （模型把「1200~1800」当区间上限附近理解），第二轮兜底才稳。
+                # 上限取 1650 而不是 1800：压缩 prompt 里写着「保持在 1200~1800、
+                # 不低于 1200」，模型会往区间上限贴（实测 1836→1850→1818，两轮都压不进 1800）。
+                # 给它一个留 10% 余量的目标，实际落点才稳稳落在 1800 以内。
                 _fixed, _n = _gate_comp(
-                    result.get("proposal", ""), 1800,
+                    result.get("proposal", ""), 1650,
                     result.get("one_liner") or (data.get("idea") or "")[:40],
                     rounds=2)
                 if _fixed:
