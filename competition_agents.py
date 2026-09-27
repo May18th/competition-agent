@@ -437,7 +437,7 @@ def check_proposal_completeness(proposal: str, mode: str = "deep", competition_n
         r"\d+(?:\.\d+)?\s*(?:%|％|万元|万|亿元|亿|元|次|台|人|家|项|件|年|月|天|小时|km|m|kg)",
         text))
     return {"ok": not missing, "missing": missing, "detail": detail,
-            "chars": len(text), "placeholders": placeholders,
+            "chars": _cjk_len(text), "placeholders": placeholders,
             "data_points": data_points}
 
 
