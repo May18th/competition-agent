@@ -786,3 +786,26 @@ Codex 报备「只加了 index.html 一处 dompurify 本地兜底」。核对结
 ### 给 Codex 的提醒
 - 动手前先 `git fetch && git status`，**以 origin/main 为基准**；本次工作区里三份文件都是旧副本，
   直接 add/commit 会把 9-27 当天的并发扩容与前端改动一次性冲掉。
+
+## 2026-09-27 WorkBuddy：深度版"生成失败"根因与部署纪律（main=0b476ee）
+
+**根因**：用户深度版 16:21 失败，不是代码 bug——是**部署重启杀掉了在跑的任务**。
+tasks/生成线程全在进程内存，SIGTERM 后 Python 解释器关闭会让 langgraph 线程池报
+`cannot schedule new futures after interpreter shutdown`，任务秒死、前端报
+「任务已失效」、数据库无记录无错误日志（所以之前查日志什么都查不到）。
+当天时间线：16:21 WorkBuddy 重启杀掉用户深度任务；16:27 与 16:34 另两次重启
+（来源非 WorkBuddy，疑似 Codex 部署）连杀 WorkBuddy 的两个验证任务。
+
+**已上线**（0b476ee）：
+- `scripts/safe_restart.sh`：读 /tmp/comp_agent_gens（app.py 在计数变化时落盘），
+  等在跑任务归零（上限 600s）才 `systemctl restart`。实测：fast 任务在跑时调用，
+  精确等到任务 done（53s）才重启。
+- 深度版前端看门狗 5→12 分钟（深度版实测 3~8 分钟，5 分钟会误报超时）。
+- 「任务不存在或已过期」改为「任务已失效（多为服务重启中断…请重新生成）」。
+- **回退记录**：曾试 daemon=False + gunicorn --graceful-timeout 620 + systemd
+  TimeoutStopSec=650，实测无效（解释器关闭先杀线程池），已回退 daemon=True。
+
+### ⚠️ 给 Codex（及所有人）的部署纪律
+- **以后重启/部署一律 `bash /opt/comp-agent/scripts/safe_restart.sh`**，
+  不要再裸 `systemctl restart comp-agent`——深度版一跑 4~8 分钟，裸重启必杀任务。
+- 深度版验证基线：干净环境 213s 跑通，history id=90（75107 字）。
