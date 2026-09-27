@@ -1,4 +1,4 @@
-"""
+﻿"""
 科创赛事多智能体协同创作助手
 核心工作流：规则解析 → 同质化检测 → 文稿生成 → 模拟评委 → 迭代
 """
@@ -916,14 +916,20 @@ def _compress_to_length(text, max_chars, topic, rounds=1):
         if n <= max_chars:
             break
         try:
+            # 实测：只说「不超过 X 字」模型会贴着上限交卷（1997→1866 就不再降）。
+            # 必须把「要删掉多少字、多少百分比」算给它看，它才有明确的删减目标。
+            _cut = n - max_chars
+            _pct = (_cut / n * 100) if n else 0
             prompt = (
-                "下面是一份科创赛事申报书，当前约 %d 字，而简洁版要求不超过 %d 字，严重超标。\n\n"
-                "请在不改变章节结构、不删章节、不丢核心数字/场景的前提下压缩：\n"
-            "1. 每章压缩到 2～3 句（约 100～150 字），只保留最关键的论点、数字、技术名词；全文压缩后保持在 1200～1800 字之间，不低于 1200 字；\n"
-                "2. 删掉重复的解释、冗余的铺垫、空泛的修饰；\n"
-                "3. 保持 Markdown 标题（## 一、xxx）与序号不变，中文标点用全角。\n\n"
+                "下面是一份科创赛事申报书，当前 %d 字，要求压到 %d 字以内。\n"
+                "这意味着**你必须删掉至少 %d 字（约 %.0f%% 的内容）**，不是微调，是实打实地砍。\n\n"
+                "硬要求：\n"
+                "1. 每章只保留最核心的 2 句话（约 100～150 字），删掉所有展开说明、举例、铺垫；\n"
+                "2. 全文压到 1200～%d 字之间，不要低于 1200 字；\n"
+                "3. 章节结构、标题（## 一、xxx）与序号必须保持不变，核心数字和技术名词保留；\n"
+                "4. 中文标点用全角。\n\n"
                 "直接输出压缩后的完整申报书全文，不要任何说明。\n\n"
-                "当前申报书：\n%s" % (n, max_chars, cur)
+                "当前申报书：\n%s" % (n, max_chars, _cut, _pct, max_chars, cur)
             )
             new = (llm.invoke([HumanMessage(content=prompt)]).content or '').strip()
             # 护栏：模型回了空/极短内容时不会抛异常，直接采信会把申报书压成空文。
@@ -1907,7 +1913,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
         state.get('one_liner') or state['idea'][:40])
     # 简洁版硬上限：超过 1800 字时压缩，保持「短而准」的定位
     proposal, n = _compress_to_length(
-        proposal, 1800,
+        proposal, 1650,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
