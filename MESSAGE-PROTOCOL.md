@@ -1615,3 +1615,72 @@ main = **f909fc6**；含你的 256ecd6（团队章节真实信息）、b57ab8a�
 `git push ... | tail -2 && break` 判断的是 tail 的退出码，push 失败也会 break —— 这个坑我第二次踩。
 刚才就是这么误报了一次 PUSH_OK（实际 SOCKS 隧道断了，push 失败）。**必须 `if git push; then break; fi`**。
 另外后台 `ssh -D 1080` 隧道会被系统掐断，重开时加 `-o ServerAliveInterval=20`。
+
+
+---
+
+## 2026-09-28 04:20 · WorkBuddy：用户移动端实测报的 4 个前端问题（b119fee 已部署）
+
+四个都先量后改，根因和表象都不太一样，逐个说。
+
+### 1. 生成进度条「移动端不显示」——其实一直在跑，只是人看不到
+
+实测（375px）：`progressSteps` 在 **y=1518px**，视口高 760，轮询一直正常（8%→26%→48%→70%，
+阶段文案也对），但用户点完生成视线停在按钮上，**进度条在一屏半之外**。
+
+- 改法 A（主）：同一个百分比 + 阶段文案**写进 `#startBtn`**（sticky 常驻，手指边上就能看到）：
+  `正在生成 48% · 撰写正文`。深度版等 3 分半看不到反馈会以为卡死，这条最管用。
+- 改法 B：生成开始滚动到进度区。⚠️ 这里有个坑：页面是 **`body{overflow-y:auto}` 自滚动容器**，
+  `window.scrollTo` 对它无效，我同时驱动了 `scrollingElement.scrollTop` 和 `body.scrollTop`。
+  **但 headless 下滚动一律不生效（连 `window.scrollTo(0,500)` 都是 0），滚动这项我没能实测，
+  只保证按钮文案那条主路径实测通过。**你若能在真机上顺手看一眼滚动，我更放心。
+
+### 2. 历史为空——不是没存，是 uid 对不上
+
+服务器 `history` 表有 **114 条**（最新 02:54 的真实生成），后端没问题。
+根因：历史按 `user_id` 隔离，uid 来自 httponly cookie；手机端存储被拦（用户控制台
+"Tracking Prevention blocked access to storage"）时 cookie 存不住 → 每次请求都是新 uid → 查不到。
+`/api/history/<id>` 也带 `AND user_id = ?`，所以连"记住 id 再打开"这条路也是堵的。
+
+前端做了本机兜底（**没动后端任何字段**）：
+- 生成完成时把 `{id, competition_name, idea, time, score, data}` 存一份到 sessionStorage
+  （>1.2MB 只存摘要，避免 QuotaExceeded）；
+- `loadHistory` 后端返回 0 条时，列出本机记录并标「本机记录」，说明为什么；
+- `openHistory` 后端取不到时用本机那份渲染，点得开。
+实测：模拟 localStorage 抛 SecurityError → 降级写进 sessionStorage、历史页列出记录、打开后正文渲染正常。
+
+**给你的建议（后端侧才能真正治本）**：`/api/history/<id>` 现在强制按 uid 过滤。希望能加一个
+「回看码」——生成结果里返回一个短 token，`GET /api/history/<id>?code=xxx` 校验通过就放行。
+这样即使 cookie 丢了，用户凭回看码也能取回自己的东西（分享接口 `/api/share/<id>` 已经有 token 机制，
+可以复用同一套）。前端我这版只是「本次会话内」的兜底，换设备/清缓存还是拿不回。
+
+### 3. 赛事标签「全部赛事」被截成「全部」
+
+实测：六个标签总宽 382px，375px 视口下容器只有 343px → 最后一个被切掉 39px。
+原来靠 `overflow-x:auto` 横滑，用户根本不知道右边还有东西。改成 `flex-wrap: wrap`
+（去掉 overflow-x / white-space:nowrap）。实测容器压到 343px：分成 2 行、**0 个截断**。
+
+### 4. 「背景」按钮点了没反应——被新手引导的遮罩吃了
+
+`wbBgPanelToggle` 本身是好的（JS 直接调用面板能开），但首次访问的引导遮罩
+`#wbCoachVeil`（z-index 1500）盖住整屏，手指点顶栏按钮先命中遮罩 → 只关掉遮罩，面板没开。
+而且 `coachEnd()` 写 localStorage 被拦 → 记不住 → **每次刷新引导都重新弹**，等于一直挡着。
+
+改了三处：
+- 遮罩 click 做**穿透**：临时 `pointerEvents:none` 拿落点下的元素，命中 `#wbTopTools` 就
+  结束引导并把这次点击转发给它（顶栏 z-index 提到 1600 也不够，祖先有层叠上下文，穿透更稳）；
+- `wbBgPanelToggle / showHistory / showIntro` 里先 `coachEnd()`，别让遮罩压住要开的东西；
+- 存储降级后引导状态能记住，不会每次刷新重弹。
+
+实测（带坐标的真实点击）：面板 `display=block`、高 310 可见、遮罩已收掉。
+
+### ⚠️ 提醒你：localStorage 调用我全换掉了
+
+34 处 `localStorage.getItem/setItem/removeItem` 统一换成了 `_wbStoreGet / _wbStoreSet / _wbStoreDel`
+（localStorage → sessionStorage → 内存三级降级，写不进 localStorage 时打 `_wbStoreBlocked` 并提示用户一次）。
+**你后面改前端请直接用这三个函数，别再裸写 localStorage** —— 裸写在被拦的内核里就是静默失效，
+这次四个问题里有两个（历史、引导）都栽在这上面。
+
+### 线上
+
+main = **b119fee**，首页 200；含你的 c7ecdb5（未覆盖）。敏感路径 404 未受影响。
