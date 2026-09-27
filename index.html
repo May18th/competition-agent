@@ -3723,6 +3723,7 @@ body.light .btn-primary:hover:not(:disabled) {
         (function () {
             var done = false;
             try { done = _wbStoreGet('wbCoachDone') === '1'; } catch (e) {}
+            if (!done) { try { done = document.cookie.indexOf('wbCoachDone=1') >= 0; } catch (e) {} }
             if (done) return;
             setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
         })();
@@ -4720,6 +4721,9 @@ body.light .btn-primary:hover:not(:disabled) {
             _coachClear();
             try { document.removeEventListener('keydown', _coachEsc); } catch (e) {}
             try { _wbStoreSet('wbCoachDone', '1'); } catch (e) {}
+            // cookie 兜底：微信/QQ 内置浏览器、隐私模式下 localStorage 可能不持久，
+            // 导致引导每次都弹。cookie 多一层保障，任一命中就不再弹。
+            try { document.cookie = 'wbCoachDone=1; max-age=31536000; path=/'; } catch (e) {}
         }
 
         /* ---------- 首页三步引导（常驻卡片，不是弹窗） ---------- */
@@ -8876,6 +8880,9 @@ body.light .btn-primary:hover:not(:disabled) {
                 });
         }
 
+        // 健康轮询：单次失败不报警（网络抖动/瞬时 5xx 很常见），连续 3 次失败才判「服务异常」；
+        // 期间显示「检测中…」过渡态，恢复成功立刻切回「服务正常」（无需等任何定时器）。
+        var _healthFailStreak = 0;
         function checkHealth() {
             fetch('/api/health')
                 .then(function (r) { return r.json(); })
@@ -8883,21 +8890,29 @@ body.light .btn-primary:hover:not(:disabled) {
                     var dot = document.getElementById('healthDot');
                     var txt = document.getElementById('healthText');
                     if (d && d.success && d.status === 'ok') {
+                        _healthFailStreak = 0;
                         dot.className = 'health-dot ok';
                         txt.innerText = '服务正常';
                         dot.title = '系统服务正常';
                     } else {
-                        dot.className = 'health-dot err';
-                        txt.innerText = '服务异常';
-                        dot.title = '服务异常，请检查后端是否已启动';
+                        _healthFail();
                     }
                 })
-                .catch(function () {
-                    var dot = document.getElementById('healthDot');
-                    dot.className = 'health-dot err';
-                    document.getElementById('healthText').innerText = '服务异常';
-                    dot.title = '服务异常，请检查后端是否已启动';
-                });
+                .catch(function () { _healthFail(); });
+        }
+        function _healthFail() {
+            _healthFailStreak++;
+            var dot = document.getElementById('healthDot');
+            var txt = document.getElementById('healthText');
+            if (_healthFailStreak >= 3) {
+                dot.className = 'health-dot err';
+                txt.innerText = '服务异常';
+                dot.title = '服务异常：连续 ' + _healthFailStreak + ' 次健康检查失败';
+            } else {
+                dot.className = 'health-dot';
+                txt.innerText = '检测中…';
+                dot.title = '第 ' + _healthFailStreak + ' 次检查未通过，连续 3 次才判定异常';
+            }
         }
     
         
