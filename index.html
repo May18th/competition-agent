@@ -522,6 +522,9 @@ body {
 
 /* ---------- 表单 ---------- */
 .form-group { margin-bottom: 20px; }
+/* grid 子项默认 min-width:auto，长内容（如 15 个赛事 chip 的横滑行）会把轨道撑破、
+   整页出现横向滚动条（实测 375px 视口被撑到 989px）；归 0 后子项才能内部 overflow-x 横滑 */
+.wb-formgrid > * { min-width: 0; }
 label {
     display: block; margin-bottom: 8px;
     color: var(--text-dim);
@@ -1519,14 +1522,27 @@ mark.wb-ph {
                         <option value="RoboMaster全国大学生机器人大赛"></option>
                         <option value="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）"></option>
                     </datalist>
-                    <!-- 横滑一排：换行会占掉半屏，手机上还得滑很久才找得到 -->
+                    <!-- 横滑一排：换行会占掉半屏，手机上还得滑很久才找得到。
+                         15 个内置赛事全在这里（P1-3：原来只有 5 个，后面的比赛在手机上选不到）；
+                         每个 chip 短名显示 + 完整赛事名作 title，横向可滑、不换行、不截断。
+                         加新赛事时同步 datalist 和后端 data/ 文件名，onclick 值必须与 datalist 完全一致 -->
                     <div id="compQuickRow" style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
                                 -webkit-overflow-scrolling: touch; padding-bottom: 2px;">
-                        <span onclick="wbPickComp('iCAN大学生创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
-                        <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
-                        <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
-                        <span onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
-                        <span onclick="wbPickComp('全国大学生数学建模竞赛')" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
+                        <span onclick="wbPickComp('iCAN大学生创新创业大赛')" title="iCAN大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
+                        <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" title="中国国际互联网+大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
+                        <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" title="挑战杯全国大学生课外学术科技作品竞赛（大挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
+                        <span onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" title="挑战杯中国大学生创业计划竞赛（小挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
+                        <span onclick="wbPickComp('全国大学生数学建模竞赛')" title="全国大学生数学建模竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
+                        <span onclick="wbPickComp('国家级大学生创新创业训练计划')" title="国家级大学生创新创业训练计划（大创）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大创</span>
+                        <span onclick="wbPickComp('全国大学生电子设计竞赛')" title="全国大学生电子设计竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">电赛</span>
+                        <span onclick="wbPickComp('蓝桥杯全国软件和信息技术专业人才大赛')" title="蓝桥杯全国软件和信息技术专业人才大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">蓝桥杯</span>
+                        <span onclick="wbPickComp('中国大学生计算机设计大赛')" title="中国大学生计算机设计大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">计算机设计</span>
+                        <span onclick="wbPickComp('全国大学生广告艺术大赛')" title="全国大学生广告艺术大赛（大广赛）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大广赛</span>
+                        <span onclick="wbPickComp('中国大学生服务外包创新创业大赛')" title="中国大学生服务外包创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">服务外包</span>
+                        <span onclick="wbPickComp('全国大学生信息安全竞赛')" title="全国大学生信息安全竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">信安赛</span>
+                        <span onclick="wbPickComp('西门子杯中国智能制造挑战赛')" title="西门子杯中国智能制造挑战赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">西门子杯</span>
+                        <span onclick="wbPickComp('RoboMaster全国大学生机器人大赛')" title="RoboMaster全国大学生机器人大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">RoboMaster</span>
+                        <span onclick="wbPickComp('一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）')" title="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">金砖创客</span>
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -1574,12 +1590,14 @@ mark.wb-ph {
                         </div>
                     </div>
                 </div>
+                <!-- P0-2 首页精简：15 个赛事评分标准已内置、选比赛自动匹配，规则上传从首屏去掉。
+                     整个规则区降级为全端默认折叠的小字入口（wbAdvInit 不再主动展开它），
+                     首屏主打流程：选比赛 → 输创意 →（选填）实测数据 → 点生成 -->
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 赛事规则</label>
-                    <div onclick="wbAdvToggle('kbAdvBody')" style="display:flex; align-items:center; gap:6px; margin-top:2px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        赛事规则与官方文件（可选）<span id="kbAdvBodyArrow">▾</span>
+                    <div onclick="wbAdvToggle('kbAdvBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
+                        补充规则 / 官方文件（可选，评分标准已内置，一般不用传）<span id="kbAdvBodyArrow">▸</span>
                     </div>
-                    <div id="kbAdvBody">                    <div class="wb-note">
+                    <div id="kbAdvBody" style="display: none;">                    <div class="wb-note">
                         <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 已内置 15 个比赛评分标准
                     </div>
                     <!-- 知识库状态面板（数据来自 /api/knowledge_status） -->
@@ -6600,15 +6618,17 @@ mark.wb-ph {
                      '</div>';
             }
 
-            // 三个上传入口（最容易传错的地方，写清楚）
-            h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">三个上传入口，别传错</div>';
+            // 上传入口说明（最容易传错的地方，写清楚；规则上传已降级为折叠可选，不再单列）
+            h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">上传入口，别传错</div>';
             h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
+                 '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
+                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，AI 自动识别并填到对应位置</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
                  '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，AI 在原文上优化</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>选择文件</b>（赛事规则区）：比赛的官方文件，AI 按它的评分标准写</div>' +
-                 '<div style="padding: 6px 0;">' +
                  '· <b>导入模板</b>（草稿区）：学校/官方模板，自动识别章节按它写</div>' +
+                 '<div style="padding: 6px 0;">' +
+                 '· <b>补充规则</b>（折叠区，一般不用）：评分标准已内置 15 个赛事，只有官方最新文件有特殊要求才传</div>' +
                  '<div style="margin-top: 6px; color: var(--text-mute);">支持 PDF / Word / TXT / Markdown；' +
                  '图片和扫描版 PDF 读不出文字。</div>' +
                  '</div>';
@@ -7634,7 +7654,9 @@ function evToggleBody() {
 }
 function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-    ['kbAdvBody', 'draftAdvBody', 'evBody', 'userDataBody'].forEach(function (id) {
+    // kbAdvBody（规则区）已按 P0-2 首页精简降级为全端默认折叠，不在这个列表里——
+    // 放进来的话桌面端 resize 时会被重新展开，首屏又冒出规则上传入口
+    ['draftAdvBody', 'evBody', 'userDataBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;
