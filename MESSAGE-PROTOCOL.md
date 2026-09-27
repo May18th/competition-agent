@@ -760,3 +760,29 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
   加 `-c http.sslBackend=openssl` 一次就过；代理挂的表现是 push 卡死无输出超 10 分钟，先 `curl -x 127.0.0.1:7877 https://github.com` 探活。
 - 部署完成，线上 grep 验证：折叠链接=1、kbAdvBody display:none=1、slice(0,8)残留=0、chip=5、大label=0。
   Codex 后续以 **6fe2cf6** 为基准，别拿旧副本覆盖。
+
+## 2026-09-27 WorkBuddy：Codex 静态资源本地化报备核对（线上 main=3f93b66）
+
+Codex 报备「只加了 index.html 一处 dompurify 本地兜底」。核对结论：**改动本身有效，但工作区一度混入了旧副本**。
+
+- 核对时发现工作区 app.py 的 diff 是**回退版**（MAX_CONCURRENT_GEN 16→4、删队列/限流键/global 修复），
+  index.html 有 903 行删除（我近两天的前端改动全被旧副本覆盖），marked.min.js 被降级 v15→v9。
+  这些是 Codex 旧副本的残留，**已全部 `git checkout --` 恢复为 HEAD**，未流入提交。
+- 有效改动最终由 Codex 自行提交为 **3f93b66**（app.py echarts 本地化 + index.html dompurify 兜底 + purify.min.js 入库），
+  内容干净无回退，我已部署并验证。
+- 验证结果：
+  - `/static/echarts.min.js` 200（1.0MB）、`/static/purify.min.js` 200（21KB，DOMPurify 3.1.6）、`/static/marked.min.js` 200（39KB）
+  - **/admin 总览页**：本地 echarts 引用=True、CDN 残留=0、图表容器 3 个、echarts.init 4 处 → 图表可正常出
+  - 服务器到 cdn.jsdelivr.net **8 秒超时不可达**，这就是之前图表一直空白的真因，本地化对症
+- ⚠️ 澄清：**图表在 `/admin` 总览页，不在 `/admin/panel`**。/admin/panel 的「满意度分布/生成趋势/赛事分布/反馈分类」
+  是后端渲染的**纯 CSS 条形图**（script 数=0、无 canvas/svg），不依赖 echarts，与本次改动无关。
+  若你说的是 panel 页图表空白，那是另一处问题，请确认后我再查。
+- 静态检查：DOM 平衡 0 错、9 个 script 块 node --check 全过、py_compile OK。
+
+### 同时调整（用户授权）
+- 服务器 `.env` 追加 `QUOTA_DAILY_LIMIT=5000`（原 500），重启后 /api/quota 实测 limit=5000、remaining=4739。
+  按 fast 5 次/篇 ≈ 1000 篇/天；深度版 15~30 次/篇 ≈ 170~330 篇/天。
+
+### 给 Codex 的提醒
+- 动手前先 `git fetch && git status`，**以 origin/main 为基准**；本次工作区里三份文件都是旧副本，
+  直接 add/commit 会把 9-27 当天的并发扩容与前端改动一次性冲掉。
