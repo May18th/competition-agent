@@ -2040,18 +2040,18 @@ def _run_generation(data):
     try:
         _gate_mode = data.get("mode") or "fast"
         _gate_log = None
-        try:
-            _gate_log = open('/tmp/wb_len_gate.log', 'a', encoding='utf-8')
-            _gate_log.write("[%s] 闸门进入 mode=%s\n" % (
-                datetime.now().strftime("%H:%M:%S"), _gate_mode))
-        except Exception:
-            _gate_log = None
         if _gate_mode == "fast":
             from competition_agents import _cjk_len as _gate_len, _compress_to_length as _gate_comp
+            # 口径：_cjk_len 剥掉 Markdown 标记后的有效字（与前端展示的字数一致）。
+            # 别用 len()——它把 # * 空格也算字，会虚高 15%~20%，导致误判超标。
             _gate_before = _gate_len(result.get("proposal", ""))
-            if _gate_log:
-                _gate_log.write("   压缩前 %d 字（上限 1800）\n" % _gate_before)
             if _gate_before > 1800:
+                try:
+                    _gate_log = open('/tmp/wb_len_gate.log', 'a', encoding='utf-8')
+                    _gate_log.write("[%s] 压缩前 %d 字 " % (
+                        datetime.now().strftime("%H:%M:%S"), _gate_before))
+                except Exception:
+                    _gate_log = None
                 _fixed, _n = _gate_comp(
                     result.get("proposal", ""), 1800,
                     result.get("one_liner") or (data.get("idea") or "")[:40])
