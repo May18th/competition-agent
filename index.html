@@ -1882,7 +1882,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 </div>
                     </div>
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
+                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意
+                        <!-- 「从材料识别」：已有申报书/材料的用户不用手抄五遍。
+                             入口放在创意标题右侧（手就在这里），点开是弹层，不占首屏高度 -->
+                        <button type="button" class="wb-textbtn" style="margin-left: auto;"
+                                title="上传或粘贴已有材料，AI 识别后自动填充创意/团队/实测数据等"
+                                onclick="wbMatOpen()">从材料识别</button>
+                    </label>
                     <textarea id="idea" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
                 </div>
 
@@ -6431,6 +6437,90 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             return lines.join('\n');
         }
 
+        /* ---------- 从材料识别：POST /api/parse_material → 自动填充 ----------
+           后端返回 profile 五个字段（competition_name / idea / team / user_data / keywords），
+           字段名为后端定死，前端只做映射。识别是一次 LLM 调用（约 1-3 秒），必须给 loading 态。
+           填充原则是「建议不是覆盖」：目标框已有内容就先问一句，不偷偷改用户写过的东西。 */
+        var WB_MAT_MAP = [
+            ['competition_name', 'competition', '赛事'],
+            ['idea', 'idea', '创意'],
+            ['team', 'udTeam', '团队成员'],
+            ['user_data', 'udExtra', '实测数据/佐证'],
+            ['keywords', 'keywords', '关键词']
+        ];
+        function wbMatOpen() {
+            var m = document.getElementById('wbMatMask'), p = document.getElementById('wbMatPanel');
+            // CSS 里初始是 display:none，这里必须显式写具体值（写 '' 会回落到 none，永远不显示）
+            if (m) m.style.display = 'block';
+            if (p) p.style.display = 'block';
+        }
+        function wbMatClose() {
+            var m = document.getElementById('wbMatMask'), p = document.getElementById('wbMatPanel');
+            if (m) m.style.display = 'none';
+            if (p) p.style.display = 'none';
+        }
+        function wbMatGo() {
+            var txt = document.getElementById('wbMatText');
+            var fin = document.getElementById('wbMatFile');
+            var btn = document.getElementById('wbMatGo');
+            var text = txt ? String(txt.value || '').trim() : '';
+            var file = (fin && fin.files && fin.files[0]) ? fin.files[0] : null;
+            if (!text && !file) { wbToast('先粘贴材料文字，或选一个文件', { type: 'warn' }); return; }
+            var oldHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 识别中…';
+            var req;
+            if (file) {
+                var fd = new FormData();
+                fd.append('file', file);
+                req = fetch('/api/parse_material', { method: 'POST', body: fd });
+            } else {
+                req = fetch('/api/parse_material', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+            }
+            req.then(function (r) { return r.json(); })
+                .then(function (d) {
+                    btn.disabled = false; btn.innerHTML = oldHtml;
+                    if (!d || !d.success || !d.profile) {
+                        wbToast('没识别出内容：' + ((d && d.error) || '接口没返回画像'), { type: 'warn', ms: 3200 });
+                        return;
+                    }
+                    wbMatApply(d.profile);
+                })
+                .catch(function (e) {
+                    btn.disabled = false; btn.innerHTML = oldHtml;
+                    wbToast('识别失败：' + (e && e.message ? e.message : '网络异常'), { type: 'warn', ms: 3200 });
+                });
+        }
+        function wbMatApply(p) {
+            var empty = [], conflict = [], missed = [];
+            WB_MAT_MAP.forEach(function (m) {
+                var v = String((p && p[m[0]]) || '').trim();
+                if (!v) { missed.push(m[2]); return; }
+                var el = document.getElementById(m[1]);
+                if (!el) return;
+                if (String(el.value || '').trim()) conflict.push([m, v]); else empty.push([m, v]);
+            });
+            var hit = empty.length + conflict.length;
+            if (!hit) { wbToast('材料里没找到可填的字段，请手动填写', { type: 'warn', ms: 3000 }); return; }
+            var doConflict = true;
+            if (conflict.length) {
+                var names = conflict.map(function (c) { return c[0][2]; }).join('、');
+                doConflict = window.confirm('这些框已经有你写过的内容：' + names + '。\n\n点「确定」用识别结果覆盖它们，点「取消」只填还空着的框。');
+            }
+            empty.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
+            if (doConflict) conflict.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
+            try { onCompetitionChange(); } catch (e) {}
+            wbSaveForm();
+            wbMatClose();
+            var msg = '已填充 ' + (empty.length + (doConflict ? conflict.length : 0)) + ' 项：识别自材料，请核对';
+            if (missed.length) msg += '（未识别：' + missed.join('、') + '）';
+            wbToast(msg, { type: 'ok', ms: 4200 });
+        }
+
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
@@ -8036,6 +8126,22 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
         ['ruleFile', 'tplFile', 'ideaFile', 'udFile'].forEach(wbUploadGuard);
+        // wbMatFile 在「从材料识别」弹层里，那段 HTML 在主块之后，此刻还没进 DOM，
+        // 直接 forEach 会取到 null（守卫静默不生效）。等 DOM 就绪再挂，顺便接文件名回显。
+        (function () {
+            function bind() {
+                try { wbUploadGuard('wbMatFile'); } catch (e) {}
+                var f = document.getElementById('wbMatFile');
+                if (!f) return;
+                f.addEventListener('change', function () {
+                    var s = document.getElementById('wbMatFileName');
+                    var file = f.files && f.files[0];
+                    if (s) s.textContent = file ? file.name : '未选择文件（PDF / DOCX / TXT / MD）';
+                });
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+            else bind();
+        })();
         // 创意写完自动猜赛事：用户不用再从十几项里挑
         (function () {
             var ie = document.getElementById('idea');
@@ -8470,6 +8576,42 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     </div>
 </div>
 
+
+<!-- 从材料识别弹层：默认 display:none，点「从材料识别」才显示（wbMatOpen / wbMatClose）。
+     遮罩用独立 fixed 层，不用 box-shadow 大扩散——祖先只要有 overflow:hidden 就会把阴影裁掉 -->
+<div id="wbMatMask" onclick="wbMatClose()"
+     style="display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 120; background: rgba(0,0,0,.55);"></div>
+<div id="wbMatPanel"
+     style="display: none; position: fixed; z-index: 121; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow-y: auto;
+            background: var(--surface-solid); border: 1px solid var(--line); border-radius: 12px;
+            box-shadow: 0 16px 48px rgba(0,0,0,.45); padding: 18px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <b style="font-size: 15px; color: var(--text);">从材料识别并自动填充</b>
+        <span onclick="wbMatClose()" title="关闭"
+              style="margin-left: auto; cursor: pointer; color: var(--text-mute); font-size: 18px; line-height: 1; padding: 0 4px;">×</span>
+    </div>
+    <div style="margin-top: 8px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
+        把已有的申报书 / 项目材料粘进来，或上传 PDF / DOCX / TXT，AI 识别后自动填到赛事、创意、团队成员、实测数据、关键词。
+        <b style="color: var(--text);">文件只用于本次识别，不进共享知识库</b>。
+    </div>
+    <textarea id="wbMatText" rows="6" placeholder="粘贴申报书 / 项目材料文字…" style="margin-top: 10px; min-height: 120px;"></textarea>
+    <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <button type="button" onclick="document.getElementById('wbMatFile').click()"
+                style="padding: 8px 14px; font-size: 13px; border-radius: 8px; cursor: pointer;
+                       background: var(--surface-2); color: var(--text); border: 1px solid var(--line);">选择文件</button>
+        <span id="wbMatFileName" style="font-size: 12.5px; color: var(--text-mute);">未选择文件（PDF / DOCX / TXT / MD）</span>
+        <input type="file" id="wbMatFile" accept=".pdf,.docx,.txt,.md" style="display: none;">
+    </div>
+    <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" onclick="wbMatClose()"
+                style="padding: 9px 16px; font-size: 14px; border-radius: 8px; cursor: pointer;
+                       background: var(--surface-2); color: var(--text); border: 1px solid var(--line);">取消</button>
+        <button type="button" id="wbMatGo" onclick="wbMatGo()"
+                style="padding: 9px 18px; font-size: 14px; border-radius: 8px; cursor: pointer; border: none;
+                       background: var(--c-a); color: #04121b; font-weight: 600;">开始识别</button>
+    </div>
+</div>
 
 <script>
 function wbAdvToggle(id) {
