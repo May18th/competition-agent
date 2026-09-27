@@ -3606,6 +3606,41 @@ bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
     return html
 
 
+_upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
+
+
+def _probe_deepseek():
+    """轻量探测 DeepSeek 上游是否可用，60 秒缓存，避免每次 /api/health 都打外网。"""
+    now = time.time()
+    if now - _upstream_cache["checked_at"] < 60:
+        return _upstream_cache["deepseek"]
+    result = "down"
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        box = {}
+
+        def _call():
+            try:
+                r = llm.invoke([HumanMessage(content="回复两个字：OK")])
+                box["ok"] = bool(getattr(r, "content", "").strip())
+            except Exception:
+                box["ok"] = False
+
+        t = threading.Thread(target=_call, daemon=True)
+        t.start()
+        t.join(timeout=8)
+        if t.is_alive():
+            result = "timeout"
+        elif box.get("ok"):
+            result = "ok"
+    except Exception:
+        result = "down"
+    _upstream_cache["deepseek"] = result
+    _upstream_cache["checked_at"] = now
+    return result
+
+
 @app.route('/api/health')
 def health():
     """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间"""
@@ -3625,6 +3660,7 @@ def health():
         "quota": quota,
         "history_count": count_history(),
         "last_generation_time": latest[0]["time"] if latest else None,
+        "upstream": {"deepseek": _probe_deepseek()},
     })
 
 
