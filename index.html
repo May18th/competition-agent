@@ -6024,15 +6024,16 @@ mark.wb-ph {
                     if (document.hidden) { _hiddenAt = Date.now(); }
                     else if (_hiddenAt) { t0 += Date.now() - _hiddenAt; _hiddenAt = 0; }
                 });
-                // 看门狗：轮询最多等 5 分钟，超时就停止并明确报错，绝不让页面无限转圈
-                // （洪峰兜底队列生效时放宽到 15 分钟：queued 也会计时，5 分钟不够）
-                const WATCHDOG_MS = 5 * 60 * 1000;
+                // 看门狗：fast 5 分钟 / deep 12 分钟（深度版实测 3~8 分钟，负载高时更久，
+                // 5 分钟看门狗会在后端还在正常跑时误报「等待超时」）；
+                // queued 再统一放宽到 15 分钟。
+                const WATCHDOG_MS = (mode === 'deep' ? 12 : 5) * 60 * 1000;
                 let _queuedSeen = false;
                 return new Promise((resolve, reject) => {
                     const tick = setInterval(() => {
                         if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
                             clearInterval(tick);
-                            reject(new Error('等待超时（5 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
+                            reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
                             return;
                         }
                         fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)))

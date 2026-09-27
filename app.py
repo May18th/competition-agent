@@ -2297,7 +2297,11 @@ def _launch_worker(task_id):
                 _active_gen_count = max(0, _active_gen_count - 1)
             _promote_next()            # 腾出坑位后立刻给排队的任务补位
 
-    threading.Thread(target=worker, daemon=True).start()
+    # daemon=False：进程退出时等生成线程跑完（配套 systemd TimeoutStopSec=650 +
+    # gunicorn --graceful-timeout 620）。之前 daemon=True 导致每次部署重启都会把
+    # 在跑的生成任务拦腰杀掉——深度版一跑 4~8 分钟，部署频繁时用户必然遇到
+    # 「任务不存在或已过期」式假失败（2026-09-27 实锤三连杀）。
+    threading.Thread(target=worker, daemon=False).start()
 
 
 def _promote_next():
@@ -2463,7 +2467,7 @@ def cancel_generation(task_id):
 def get_task_status(task_id):
     t = tasks.get(task_id)
     if not t:
-        return jsonify({"success": False, "error": "任务不存在或已过期"})
+        return jsonify({"success": False, "error": "任务已失效（多为服务重启中断了在跑的生成，请重新生成一次）"})
     # 兜底超时：running 且 10 分钟没任何更新，判定为卡死，避免前端无限等待
     if t.get("status") == "running" and (time.time() - t.get("updated_at", 0)) > 600:
         t["status"] = "error"
