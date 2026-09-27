@@ -1442,6 +1442,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         @media (max-width: 420px) {
             .wb-anchor-btn { padding: 5px 10px; font-size: 12px; }
         }
+/* ---------- 字段旁「?」说明图标：长提示收进来，点/悬停才展开 ---------- */
+.wb-tip { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+          width: 14px; height: 14px; margin-left: 5px; border: 1px solid var(--line); border-radius: 50%;
+          background: var(--surface-2); color: var(--text-mute); font-size: 10px; line-height: 1;
+          cursor: pointer; user-select: none; vertical-align: middle; }
+.wb-tip:hover { color: var(--c-a); border-color: var(--c-a); }
 
 /* ---------- 多智能体流程面板 ---------- */
 .wb-agent-panel { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
@@ -1557,6 +1563,33 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
                 <span class="wb-dot"></span>历史
             </button>
+            <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbBgPanelToggle()">
+                <span class="wb-dot"></span>背景
+            </button>
+        </div>
+
+        <!-- 自定义背景面板：官方预设（程序化生成，无 IP/无真人）+ 本机上传。
+             上传的图只进浏览器 IndexedDB，绝不上传服务器 —— 不做公共素材库，
+             避免平台替用户传播他人作品（著作权/肖像权）。 -->
+        <div id="wbBgPanel" style="display: none; margin: 0 4px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+            <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px;">页面背景</div>
+            <div id="wbBgSwatches" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 8px;"></div>
+            <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--c-a); color: #fff; border-radius: 8px; font-size: 12.5px; cursor: pointer;">
+                    上传我的图片
+                    <input type="file" accept="image/*" onchange="wbBgUpload(this)" style="display: none;">
+                </label>
+                <button onclick="wbBgReset()" style="padding: 6px 12px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; cursor: pointer;">恢复默认</button>
+                <span style="font-size: 11.5px; color: var(--text-mute);">图片仅存本机，不上传服务器</span>
+            </div>
+            <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span style="font-size: 11.5px; color: var(--text-mute);">压暗</span>
+                <input type="range" min="0" max="0.85" step="0.05" value="0.55" oninput="wbBgSetDim(this.value)" style="flex: 1 1 140px; min-width: 120px; accent-color: var(--c-a);">
+                <span style="font-size: 11.5px; color: var(--text-mute);">（保证文字始终清晰）</span>
+            </div>
+            <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">
+                请使用自己拍摄、自己生成或已获授权的图片；预设背景均为本站程序化生成。
+            </div>
         </div>
 
         <!-- 输入区域 -->
@@ -1568,6 +1601,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; font-size: 11.5px; color: var(--text-mute); align-items: center; gap: 8px;">
                 <span id="wbRestoreText"></span>
                 <button onclick="wbClearForm()" style="padding: 4px 10px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清空重写</button>
+            </div>
+            <!-- 全站唯一常驻提示：其余长说明都收进字段旁的「?」图标（评委反馈文案过载） -->
+            <div style="margin-bottom: 10px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                信息越具体，生成内容越精准 · 输入内容已自动保存，刷新不丢失
             </div>
             <div class="wb-formgrid" style="display: grid; gap: 20px;">
                 <div class="form-group">
@@ -1616,11 +1653,15 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                          加新赛事时同步 datalist 和后端 data/ 文件名，onclick 值必须与 datalist 完全一致 -->
                     <div id="compQuickRow" style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
                                 -webkit-overflow-scrolling: touch; padding-bottom: 2px;">
-                        <span onclick="wbPickComp('iCAN大学生创新创业大赛')" title="iCAN大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
-                        <span onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" title="中国国际互联网+大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
-                        <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" title="挑战杯全国大学生课外学术科技作品竞赛（大挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
-                        <span onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" title="挑战杯中国大学生创业计划竞赛（小挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
-                        <span onclick="wbPickComp('全国大学生数学建模竞赛')" title="全国大学生数学建模竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
+                        <span data-comp="iCAN大学生创新创业大赛" onclick="wbPickComp('iCAN大学生创新创业大赛')" title="iCAN大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
+                        <span data-comp="中国国际互联网+大学生创新创业大赛" onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" title="中国国际互联网+大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
+                        <span data-comp="挑战杯全国大学生课外学术科技作品竞赛" onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" title="挑战杯全国大学生课外学术科技作品竞赛（大挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
+                        <span data-comp="挑战杯中国大学生创业计划竞赛（小挑）" onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" title="挑战杯中国大学生创业计划竞赛（小挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
+                        <span data-comp="全国大学生数学建模竞赛" onclick="wbPickComp('全国大学生数学建模竞赛')" title="全国大学生数学建模竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
+                        <!-- 「全部赛事」= 兜底入口：点它就展开上面的完整下拉（15 个）。
+                             下拉和快捷 chip 共用同一个输入框，选中态由 wbSyncCompChips() 统一回写，
+                             视觉上是一个控件而不是两个 -->
+                        <span onclick="wbCompAll()" title="展开全部赛事" style="flex: 0 0 auto; padding: 4px 10px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 12px; cursor: pointer; font-size: 12px;">全部赛事 ▾</span>
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -1718,16 +1759,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意</label>
                     <textarea id="idea" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
-                    <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
-                        信息越具体，生成内容越精准
-                        <span style="color: var(--text-mute); opacity: .75;"> · 输入内容已自动保存，刷新不丢失</span>
-                    </div>
                 </div>
 
                 <!-- 实测数据（选填）：后端 user_data 是最高优先级事实来源，填了的数字正文标「实测值」，
                      没填的部分才按测算值生成（图表里橙色标出）。整块可选，手机上默认折叠，不占首屏 -->
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 实测数据<span class="wb-opt">（选填，强烈建议：填了正文用真数）</span></label>
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg> 实测数据<span class="wb-opt">（选填，强烈建议：填了正文用真数）</span></label><span class="wb-tip" data-tip="填了的数字，正文会原文采用并标注「实测值」；没填的部分按测算值生成（图表里橙色标出），导出前请替换成你的真数。" onclick="wbShowTip(this)">?</span>
                     <div onclick="wbAdvToggle('userDataBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
                         填写试点数据 / 测试结果（可选）<span id="userDataBodyArrow">▾</span>
                     </div>
@@ -1754,9 +1791,6 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             </div>
                         </div>
                         <textarea id="udExtra" rows="2" placeholder="其它佐证（选填）：合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px; margin-top: 10px;"></textarea>
-                        <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
-                            填了的数字，正文会原文采用并标注「实测值」；没填的部分仍按测算值生成（图表里橙色标出），导出前请替换成你的真数。
-                        </div>
                         <!-- 上传数据文件：后端 /api/upload_file 会解析并智能识别文件类型，
                              识别结果摆出来让用户一键确认路由（实测数据 / 申报书草稿 / 官方文件） -->
                         <div style="margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
@@ -1783,7 +1817,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <!-- 文风：只在选了「深度完整版」时露出（humanize 后端约定只对深度版生效，
                      简洁版显示了选了也不起作用，反而误导）。显示/隐藏由 wbSyncHumanizeRow 控制 -->
                 <div class="form-group" id="humanizeRow" style="display: none;">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 文风<span class="wb-opt">（深度版可选）</span></label>
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 文风<span class="wb-opt">（深度版可选）</span></label><span class="wb-tip" data-tip="「去 AI 味」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。只对深度完整版生效；简洁版是「短而准」，不做这层处理。" onclick="wbShowTip(this)">?</span>
                     <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
                         <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
                             <input type="radio" name="humanize" value="standard" checked style="cursor: pointer;"> 标准
@@ -1791,10 +1825,6 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
                             <input type="radio" name="humanize" value="strong" style="cursor: pointer;"> 去 AI 味（强）
                         </label>
-                    </div>
-                    <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
-                        「去 AI 味」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。<br>
-                        只对深度完整版生效；简洁版是「短而准」，不做这层处理。
                     </div>
                 </div>
 
@@ -1862,11 +1892,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <label style="display: flex; align-items: flex-start; gap: 9px; cursor: pointer; user-select: none;">
                     <!-- 全局 input{width:100%} 会把这个 checkbox 拉满整行（实测 922px），
                          同一 flex 行的说明文字被挤成 26px 竖条 —— 必须显式定宽，与 2239 行 chkRoadshow 同法 -->
-                    <input type="checkbox" id="iterateOpt" style="cursor: pointer; margin: 2px 0 0; flex-shrink: 0; width: 15px; height: 15px; padding: 0; accent-color: var(--c-a);" onchange="wbSaveForm()">
+                    <input type="checkbox" id="iterateOpt" checked style="cursor: pointer; margin: 2px 0 0; flex-shrink: 0; width: 15px; height: 15px; padding: 0; accent-color: var(--c-a);" onchange="wbSaveForm()">
                     <span style="font-size: 13px; color: var(--text-dim); line-height: 1.65;">
                         <b style="color: var(--text);">低分自动补写</b>
-                        <span class="wb-opt">（选填，默认关）</span><br>
-                        勾上后，若 AI 自评分数偏低会自动返工一轮补强，<b>多等 30～60 秒</b>；不勾就是一次成稿、快。
+                        <span class="wb-opt">（默认开）</span>
+                        <span class="wb-tip" data-tip="勾上后，若 AI 自评分数偏低会自动返工一轮补强，多等 30～60 秒；不勾就是一次成稿、快。" onclick="event.preventDefault();event.stopPropagation();wbShowTip(this)">?</span>
                     </span>
                 </label>
             </div>
@@ -1930,7 +1960,15 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <button onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
                 <button onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
                 <button onclick="exportAll()" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
-                <button onclick="wbGoExport()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">PPT / 分项下载 →</button>
+                <!-- 导出入口去重：打包接口 /api/export_zip 已含 12_路演PPT.pptx（app.py 3104 行确认），
+                     独立的「PPT / 分项下载」按钮降级为打包旁边的小箭头菜单，功能保留、视觉不再重复 -->
+                <div style="position: relative; display: inline-block;">
+                    <button onclick="wbExpMenuToggle()" title="分项下载 / PPT 主题" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">▾</button>
+                    <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
+                        <div onclick="wbGoExport()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">分项下载 / PPT 主题 →</div>
+                        <div style="padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">打包已含 PPT（12_路演PPT.pptx）</div>
+                    </div>
+                </div>
                 <button onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">🔗 分享</button>
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
@@ -3076,7 +3114,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 var mins = d._t ? Math.max(1, Math.round((Date.now() - d._t) / 60000)) : 0;
                 var ago = mins >= 60 ? (Math.round(mins / 60) + ' 小时前') : (mins + ' 分钟前');
                 var tx = document.getElementById('wbRestoreText');
-                if (tx) tx.textContent = '已恢复上次填写的内容（' + ago + '）：赛事名称、创意、实测数据、关键词、草稿';
+                if (tx) tx.textContent = '已恢复上次填写内容（' + ago + '）';
                 box.style.display = 'flex';
             }
         }
@@ -4391,6 +4429,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             wbSaveForm();
             try { el.focus(); } catch (e) {}
         }
+        // 「全部赛事 ▾」：把完整 15 项下拉拉出来（datalist 在微信/QQ 内核不可靠，走自绘候选）
+        function wbCompAll() {
+            var el = document.getElementById('competition');
+            if (!el) return;
+            try { el.focus(); } catch (e) {}
+            try { el.select(); } catch (e) {}
+            wbCompOpen();
+        }
         function wbCompKey(e) {
             if (e.key === 'Escape') { wbCompClose(); return; }
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -4530,6 +4576,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     var sp = chips[i];
                     var m = /wbPickComp\('([^']*)'\)/.exec(sp.getAttribute('onclick') || '');
                     var name = m ? m[1] : '';
+                    // 非快捷 chip（末尾「全部赛事 ▾」走 wbCompAll，没有 wbPickComp）
+                    // 跳过，否则会把它的虚线强调样式刷成普通灰底
+                    if (!name) continue;
                     var on = !!name && name === cur;
                     sp.setAttribute('data-on', on ? '1' : '0');
                     sp.style.background = on ? 'var(--c-a)' : 'var(--surface-2)';
@@ -7747,6 +7796,259 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 if (document.hidden) { stop(); } else { stop(); draw(); }
             });
             draw();
+        /* ---------- 提示收敛：长说明收进字段旁的「?」图标 ----------
+           评委反馈首页文案过载。原本 5 条长提示常驻，现在只留 1 条在表单顶部，
+           其余进 tooltip：点/悬停才出现，不占版面。做成 fixed 浮层而不是 CSS ::after，
+           是因为卡片有 overflow:hidden / backdrop-filter，内联气泡会被裁掉 */
+        var wbTipBox = null;
+        function wbTipEl() {
+            if (!wbTipBox) {
+                wbTipBox = document.createElement('div');
+                wbTipBox.id = 'wbTipBox';
+                wbTipBox.style.cssText = 'position:fixed; z-index:3000; display:none; max-width:min(300px,82vw);'
+                    + ' padding:10px 12px; background:var(--surface-solid); color:var(--text);'
+                    + ' border:1px solid var(--line); border-radius:10px; font-size:12.5px; line-height:1.7;'
+                    + ' box-shadow:0 10px 30px rgba(0,0,0,.45); pointer-events:none;';
+                document.body.appendChild(wbTipBox);
+            }
+            return wbTipBox;
+        }
+        function wbShowTip(el, noToggle) {
+            var box = wbTipEl();
+            var txt = el ? (el.getAttribute('data-tip') || '') : '';
+            if (!txt) return;
+            // 再点一次同一个「?」就收起（移动端没有 hover，必须能靠点击关掉）
+            if (!noToggle && box.style.display === 'block' && box.dataset.src === String(el.id || '')) { wbHideTip(); return; }
+            box.innerHTML = txt;
+            box.style.display = 'block';
+            box.dataset.src = String(el.id || '');
+            var r = el.getBoundingClientRect();
+            var bw = box.offsetWidth, bh = box.offsetHeight;
+            var left = Math.min(Math.max(8, r.left + r.width / 2 - bw / 2), window.innerWidth - bw - 8);
+            var top = r.top - bh - 8;                       // 默认在「?」上方
+            if (top < 8) top = r.bottom + 8;                // 上方放不下就翻到下方
+            // 钳进视口：元素在页面靠下时（实测 top 算到 1091px、视口才 905）气泡会飘出屏幕
+            top = Math.max(8, Math.min(top, window.innerHeight - bh - 8));
+            box.style.left = left + 'px';
+            box.style.top = top + 'px';
+        }
+        function wbHideTip() {
+            if (wbTipBox) { wbTipBox.style.display = 'none'; wbTipBox.dataset.src = ''; }
+        }
+        window.wbShowTip = wbShowTip;
+        window.wbHideTip = wbHideTip;
+        (function () {
+            var tips = document.querySelectorAll('.wb-tip');
+            for (var i = 0; i < tips.length; i++) {
+                (function (el) {
+                    el.addEventListener('mouseenter', function () { wbShowTip(el, true); });
+                    el.addEventListener('mouseleave', function () { wbHideTip(); });
+                })(tips[i]);
+            }
+            document.addEventListener('click', function (e) {
+                if (e && e.target && e.target.classList && e.target.classList.contains('wb-tip')) return;
+                wbHideTip();
+            });
+            window.addEventListener('resize', wbHideTip);
+            window.addEventListener('scroll', wbHideTip, true);
+        })();
+
+        // 打包按钮旁的「▾」菜单（导出入口去重后，分项下载 / PPT 主题收在这里）
+        function wbExpMenuToggle() {
+            var m = document.getElementById('wbExpMenu');
+            if (!m) return;
+            m.style.display = (m.style.display === 'block') ? 'none' : 'block';
+        }
+        window.wbExpMenuToggle = wbExpMenuToggle;
+        document.addEventListener('click', function (e) {
+            var m = document.getElementById('wbExpMenu');
+            if (!m) return;
+            var wrap = m.parentNode;
+            if (wrap && wrap.contains(e.target)) return;
+            m.style.display = 'none';
+        });
+
+        /* ---------- 自定义背景：本机上传 + 官方预设库 ----------
+           合规边界：图片只存本机 IndexedDB，绝不上传服务器、不做公共素材库
+           （公共库等于平台再分发他人作品，著作权/肖像权风险由平台承担）。
+           预设全部为程序化生成的渐变/几何纹理，无 IP、无真人、无 Logo。 */
+        var WB_BG_PRESETS = [
+            { id: 'aurora', name: '极光', css: 'radial-gradient(1200px 700px at 12% 18%, rgba(56,189,248,.42), transparent 60%), radial-gradient(900px 620px at 82% 12%, rgba(168,85,247,.36), transparent 62%), radial-gradient(1000px 800px at 60% 92%, rgba(34,197,94,.22), transparent 65%), #070b18' },
+            { id: 'nebula', name: '星云', css: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.34), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.34), transparent 64%), linear-gradient(160deg, #0a0f22, #120b24)' },
+            { id: 'ocean', name: '深海', css: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.34), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.30), transparent 66%), linear-gradient(180deg, #04121f, #061a2c)' },
+            { id: 'ember', name: '熔岩', css: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.32), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.30), transparent 64%), linear-gradient(160deg, #150a10, #1c0f0a)' },
+            { id: 'ink', name: '水墨', css: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.26), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.30), transparent 64%), linear-gradient(180deg, #0b0e14, #10141c)' },
+            { id: 'cyber', name: '赛博', css: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.34), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.30), transparent 62%), linear-gradient(150deg, #0a0716, #131024)' },
+            { id: 'forest', name: '林雾', css: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.26), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.30), transparent 66%), linear-gradient(180deg, #07130f, #0a1712)' },
+            { id: 'plain', name: '纯净', css: 'linear-gradient(180deg, #080b14, #0d1220)' }
+        ];
+        var WB_BG_KEY = 'wb_bg_cfg_v1';
+        var wbBgLayer = null, wbBgUserUrl = null;
+        function wbBgLayerEl() {
+            if (!wbBgLayer) {
+                wbBgLayer = document.createElement('div');
+                wbBgLayer.id = 'wbUserBg';
+                // z-index:-1 → 画在 body 背景之上、内容之下；卡片毛玻璃仍会把它当背景虚化
+                wbBgLayer.style.cssText = 'position:fixed; inset:0; z-index:-1; pointer-events:none;'
+                    + ' background-size:cover; background-position:center; transition:opacity .45s ease;';
+                document.body.insertBefore(wbBgLayer, document.body.firstChild);
+            }
+            return wbBgLayer;
+        }
+        function wbBgLoadCfg() {
+            try { return JSON.parse(localStorage.getItem(WB_BG_KEY) || 'null') || {}; } catch (e) { return {}; }
+        }
+        function wbBgSaveCfg(c) {
+            try { localStorage.setItem(WB_BG_KEY, JSON.stringify(c || {})); } catch (e) {}
+        }
+        // IndexedDB 存 Blob：localStorage 只有 5MB 且只能存字符串，塞不下图片
+        function wbBgDb() {
+            return new Promise(function (res, rej) {
+                try {
+                    var rq = indexedDB.open('wb_bg_db', 1);
+                    rq.onupgradeneeded = function () {
+                        var db = rq.result;
+                        if (!db.objectStoreNames.contains('img')) db.createObjectStore('img');
+                    };
+                    rq.onsuccess = function () { res(rq.result); };
+                    rq.onerror = function () { rej(rq.error || new Error('IndexedDB 打开失败')); };
+                } catch (e) { rej(e); }
+            });
+        }
+        function wbBgPut(blob) {
+            return wbBgDb().then(function (db) {
+                return new Promise(function (res, rej) {
+                    var tx = db.transaction('img', 'readwrite');
+                    tx.objectStore('img').put(blob, 'current');
+                    tx.oncomplete = function () { res(true); };
+                    tx.onerror = function () { rej(tx.error); };
+                });
+            });
+        }
+        function wbBgGet() {
+            return wbBgDb().then(function (db) {
+                return new Promise(function (res) {
+                    var rq = db.transaction('img', 'readonly').objectStore('img').get('current');
+                    rq.onsuccess = function () { res(rq.result || null); };
+                    rq.onerror = function () { res(null); };
+                });
+            }).catch(function () { return null; });
+        }
+        function wbBgApply(cfg) {
+            var L = wbBgLayerEl();
+            var dim = cfg && typeof cfg.dim === 'number' ? cfg.dim : 0.55;   // 压暗：保证白字永远可读
+            var blur = cfg && typeof cfg.blur === 'number' ? cfg.blur : 0;
+            var img = cfg && cfg.src === 'user' ? wbBgUserUrl : null;
+            var preset = null;
+            for (var i = 0; i < WB_BG_PRESETS.length; i++) if (WB_BG_PRESETS[i].id === (cfg && cfg.src)) preset = WB_BG_PRESETS[i];
+            if (img) {
+                L.style.backgroundImage = 'url(' + img + ')';
+                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.75).toFixed(2) + ')';
+                L.style.opacity = '1';
+            } else if (preset) {
+                L.style.backgroundImage = preset.css;
+                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.55).toFixed(2) + ')';
+                L.style.opacity = '1';
+            } else {
+                L.style.opacity = '0';   // 默认：交回原生背景
+            }
+            wbBgSaveCfg(cfg || {});
+        }
+        function wbBgPick(id) {
+            var cfg = wbBgLoadCfg();
+            cfg.src = id;
+            wbBgApply(cfg);
+            wbBgRenderSwatches();   // 选中框跟着走
+            if (window.wbToast) wbToast('背景已切换：' + (id === 'user' ? '我的图片' : (WB_BG_PRESETS.filter(function (p) { return p.id === id; })[0] || {}).name || id), { type: 'ok' });
+        }
+        function wbBgUpload(input) {
+            var f = input && input.files && input.files[0];
+            if (!f) return;
+            if (!/^image\//.test(f.type)) { if (window.wbToast) wbToast('请选择图片文件', { type: 'error' }); return; }
+            var ok = window.confirm('这张图只保存在你本机浏览器里，不会上传到服务器。\n请确认它是你自己拍摄 / 自己生成 / 已获授权的图片。');
+            if (!ok) { input.value = ''; return; }
+            var img = new Image();
+            var url = URL.createObjectURL(f);
+            img.onload = function () {
+                // 压到长边 1600、转 JPEG：原图动辄 5~10MB，塞 IndexedDB 会拖慢首屏
+                var max = 1600, w = img.width, h = img.height;
+                var s = Math.min(1, max / Math.max(w, h));
+                var cv = document.createElement('canvas');
+                cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+                cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+                URL.revokeObjectURL(url);
+                cv.toBlob(function (blob) {
+                    if (!blob) { if (window.wbToast) wbToast('图片处理失败', { type: 'error' }); return; }
+                    wbBgPut(blob).then(function () {
+                        if (wbBgUserUrl) { try { URL.revokeObjectURL(wbBgUserUrl); } catch (e) {} }
+                        wbBgUserUrl = URL.createObjectURL(blob);
+                        var cfg = wbBgLoadCfg(); cfg.src = 'user';
+                        wbBgApply(cfg);
+                        if (window.wbToast) wbToast('背景已应用（仅本机保存）', { type: 'ok' });
+                    }).catch(function () {
+                        // 私密模式/老内核没有 IndexedDB：退回本次会话内可用的 blob URL，刷新后失效但不报错
+                        wbBgUserUrl = URL.createObjectURL(blob);
+                        var c2 = wbBgLoadCfg(); c2.src = 'user'; c2.dim = c2.dim || 0.55;
+                        wbBgApply(c2);
+                        if (window.wbToast) wbToast('已应用，但本浏览器不允许长期保存，刷新后会恢复默认', { type: 'warn' });
+                    });
+                }, 'image/jpeg', 0.82);
+            };
+            img.onerror = function () { if (window.wbToast) wbToast('图片读取失败', { type: 'error' }); };
+            img.src = url;
+        }
+        function wbBgReset() {
+            var cfg = wbBgLoadCfg();
+            cfg.src = '';
+            wbBgApply(cfg);
+            if (window.wbToast) wbToast('已恢复默认背景', { type: 'ok' });
+        }
+        function wbBgSetDim(v) { var c = wbBgLoadCfg(); c.dim = parseFloat(v); wbBgApply(c); }
+        function wbBgPanelToggle() {
+            var p = document.getElementById('wbBgPanel');
+            if (!p) return;
+            p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+        }
+        window.wbBgPick = wbBgPick;
+        window.wbBgUpload = wbBgUpload;
+        window.wbBgReset = wbBgReset;
+        window.wbBgSetDim = wbBgSetDim;
+        window.wbBgPanelToggle = wbBgPanelToggle;
+        function wbBgRenderSwatches() {
+            var box = document.getElementById('wbBgSwatches');
+            if (!box) return;
+            var cur = (wbBgLoadCfg() || {}).src || '';
+            var html = '';
+            WB_BG_PRESETS.forEach(function (p) {
+                var on = (cur === p.id);
+                html += '<div onclick="wbBgPick(\'' + p.id + '\')" title="' + p.name + '"'
+                    + ' style="cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid '
+                    + (on ? 'var(--c-a)' : 'var(--line)') + ';">'
+                    + '<div style="height: 38px; background: ' + p.css + ';"></div>'
+                    + '<div style="padding: 3px 0; text-align: center; font-size: 11.5px; background: var(--surface-solid); color: '
+                    + (on ? 'var(--c-a)' : 'var(--text-dim)') + ';">' + p.name + '</div></div>';
+            });
+            box.innerHTML = html;
+        }
+        window.wbBgRenderSwatches = wbBgRenderSwatches;
+        // 启动时恢复上次选择（读取失败就静默用默认背景，绝不留白屏）
+        (function () {
+            try {
+                wbBgRenderSwatches();
+                var cfg = wbBgLoadCfg();
+                if (!cfg || !cfg.src) return;
+                if (cfg.src === 'user') {
+                    wbBgGet().then(function (blob) {
+                        if (!blob) return;
+                        wbBgUserUrl = URL.createObjectURL(blob);
+                        wbBgApply(cfg);
+                    });
+                } else {
+                    wbBgApply(cfg);
+                }
+            } catch (e) {}
+        })();
+
         })();
 </script>
 <!-- 全局提示容器 -->
