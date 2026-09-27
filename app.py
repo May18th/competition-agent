@@ -20,6 +20,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file, make_response, g
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
+from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeSerializer
 from pypdf import PdfReader
 from docx import Document
@@ -143,6 +144,75 @@ def _set_uid_cookie(resp):
         resp.set_cookie('comp_uid', _sign_uid(g.uid), max_age=60 * 60 * 24 * 365,
                         httponly=True, samesite='Lax')
     return resp
+
+
+def _account_uid(user_id):
+    return 'acc' + str(user_id)
+
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json(silent=True) or request.form or {}
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
+    if not username or not password:
+        return jsonify({"success": False, "error": "用户名和密码不能为空"})
+    if len(username) < 2 or len(username) > 32:
+        return jsonify({"success": False, "error": "用户名需 2~32 个字符"})
+    if len(password) < 4:
+        return jsonify({"success": False, "error": "密码至少 4 位"})
+    conn = get_db()
+    if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+        conn.close()
+        return jsonify({"success": False, "error": "用户名已存在"})
+    ph = generate_password_hash(password)
+    cur = conn.execute("INSERT INTO users (username, password_hash, created_time) VALUES (?,?,?)",
+                       (username, ph, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    user_id = cur.lastrowid
+    conn.commit()
+    new_uid = _account_uid(user_id)
+    old_uid = _current_uid()
+    if old_uid != new_uid:
+        conn.execute("UPDATE history SET user_id=? WHERE user_id=?", (new_uid, old_uid))
+        conn.commit()
+    conn.close()
+    g.uid = new_uid
+    g.uid_should_sign = True
+    return jsonify({"success": True, "username": username})
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json(silent=True) or request.form or {}
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
+    conn = get_db()
+    row = conn.execute("SELECT id, password_hash FROM users WHERE username=?", (username,)).fetchone()
+    conn.close()
+    if not row or not check_password_hash(row[1], password):
+        return jsonify({"success": False, "error": "用户名或密码错误"})
+    g.uid = _account_uid(row[0])
+    g.uid_should_sign = True
+    return jsonify({"success": True, "username": username})
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    g.uid = uuid.uuid4().hex
+    g.uid_should_sign = True
+    return jsonify({"success": True})
+
+
+@app.route('/api/me')
+def me():
+    uid = _current_uid()
+    if uid.startswith('acc') and uid[3:].isdigit():
+        conn = get_db()
+        row = conn.execute("SELECT username FROM users WHERE id=?", (int(uid[3:]),)).fetchone()
+        conn.close()
+        if row:
+            return jsonify({"success": True, "logged_in": True, "username": row[0]})
+    return jsonify({"success": True, "logged_in": False, "username": None})
 
 
 def _current_uid():
@@ -345,6 +415,12 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   task_id TEXT, error TEXT, detail TEXT, created_time TEXT)''')
+    # 用户账号表（轻量登录：跨设备看同一份历史）
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT UNIQUE NOT NULL,
+                  password_hash TEXT NOT NULL,
+                  created_time TEXT)''')
     # 问题工单表：自动路由（前端/后端），可标记解决并留解决说明
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
