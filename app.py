@@ -2034,6 +2034,23 @@ def _run_generation(data):
         except Exception:
             _new_hid = None
 
+    # 最终篇幅闸门（简洁版）：writer 出口的压缩管不到 revise 节点——
+    # targeted_revise_agent 会用 LLM 输出整篇替换 proposal，字数会回弹。
+    # 装在这里才能真正覆盖所有出口（writer / revise / 以后新增的任何节点）。
+    try:
+        if (data.get("mode") or "fast") == "fast":
+            from competition_agents import _cjk_len as _gate_len, _compress_to_length as _gate_comp
+            _gate_before = _gate_len(result.get("proposal", ""))
+            if _gate_before > 1800:
+                _fixed, _n = _gate_comp(
+                    result.get("proposal", ""), 1800,
+                    result.get("one_liner") or (data.get("idea") or "")[:40])
+                if _fixed:
+                    result["proposal"] = _fixed
+                    print(f"📏 最终篇幅闸门：{_gate_before} -> {_n} 字")
+    except Exception as _e:
+        print(f"[final-length-gate] 跳过，保留原文：{_e}")
+
     try:
         from competition_agents import check_proposal_completeness
         completeness = check_proposal_completeness(
