@@ -555,6 +555,24 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
 AI_NOTICE_LINE = "AI 辅助制作 · 文中数据、测算值与结论请在提交前自行核实，署名与提交责任由作者本人承担。"
 
 
+# 导出专用清洗：网页上保留的「提醒类」措辞，出现在交给评委的正式件里就是自曝短板。
+# 例：「待替换数据清单」在页面上是提醒作者补真实数据，导出后评委看到会理解成"数据没落实"。
+_EXPORT_WORD_FIXES = [
+    ("待替换数据清单", "关键数据来源与测算说明"),
+    ("待替换", "测算"),
+    ("待补充", "待完善"),
+]
+
+
+def _clean_export_text(text):
+    """导出前把「提醒作者」的措辞换成中性表述。只影响导出件，网页正文不动。"""
+    t = text or ""
+    for a, b in _EXPORT_WORD_FIXES:
+        if a in t:
+            t = t.replace(a, b)
+    return t
+
+
 def _append_ai_notice(text):
     """在导出正文末尾追加一行 AI 合规标注。重复导出不会叠加。"""
     text = (text or "").rstrip()
@@ -875,7 +893,7 @@ def export_word():
         return jsonify({"error": "内容为空"}), 400
     # 封面主标题用「项目名」；没传项目名/创意时，从正文第一行自动提取，避免封面只写「项目申报书」这种泛名
     project = _project_name_hint(data) or _extract_project_name(text) or title
-    text = _strip_identifying_text(text)
+    text = _clean_export_text(_strip_identifying_text(text))
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
@@ -917,7 +935,7 @@ def export_pdf():
         text = _backend_text
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
-    text = _strip_identifying_text(text)
+    text = _clean_export_text(_strip_identifying_text(text))
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
