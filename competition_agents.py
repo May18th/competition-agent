@@ -925,7 +925,13 @@ def _compress_to_length(text, max_chars, topic, rounds=1):
                 "直接输出压缩后的完整申报书全文，不要任何说明。\n\n"
                 "当前申报书：\n%s" % (n, max_chars, cur)
             )
-            cur = llm.invoke([HumanMessage(content=prompt)]).content
+            new = (llm.invoke([HumanMessage(content=prompt)]).content or '').strip()
+            # 护栏：模型回了空/极短内容时不会抛异常，直接采信会把申报书压成空文。
+            # 低于上限 30% 视为异常输出，保留原文（宁可长，也不能空）。
+            if not new or _cjk_len(new) < max_chars * 0.3:
+                print(f"[compress] 压缩结果异常（{_cjk_len(new)} 字），保留原文 {n} 字")
+                break
+            cur = new
             n = _cjk_len(cur)
             print(f"📏 篇幅压缩第 {i + 1} 轮：{n} 字（上限 {max_chars}）")
         except Exception as e:
