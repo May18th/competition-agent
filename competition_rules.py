@@ -50,7 +50,10 @@ def competition_gap_report():
         if not name:
             scoring_gap = "无评分标准"
         elif any(m in body for m in INFER_MARKERS):
-            scoring_gap = "评分是推断/非官方口径"
+            # 官方明确「未公布统一权重、由各校自定」不是推断缺口，是官方真实口径
+            official_no_unified = any(k in body for k in (
+                "官方未公布", "未规定", "未做统一", "各校自定", "各校自行划定", "自行制定", "各校自行制定"))
+            scoring_gap = None if official_no_unified else "评分是推断/非官方口径"
         _, sec_body = _has_section(secs, "章节", "申报书", "结构", "必须包含")
         section_gap = None
         if not sec_body:
