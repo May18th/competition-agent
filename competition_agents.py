@@ -1280,9 +1280,8 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
 {_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["implementation_plan"] = response.content
     print(f"🗓️ 项目实施计划：已生成")
-    return state
+    return {"implementation_plan": response.content}
 
 
 def social_value_agent(state: CompetitionState) -> CompetitionState:
@@ -1306,9 +1305,8 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
 {_spec_for(state)}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["social_value"] = response.content
     print(f"🌍 社会价值：已生成")
-    return state
+    return {"social_value": response.content}
 
 
 def summary_agent(state: CompetitionState) -> CompetitionState:
@@ -1332,9 +1330,8 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 {_DE_AI_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["project_summary"] = response.content
     print(f"📝 项目简介：已生成")
-    return state
+    return {"project_summary": response.content}
 
 
 def _ref_block(state: dict, module_tag: str) -> str:
@@ -2451,9 +2448,9 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 
 
 def should_iterate(state: CompetitionState):
-    # 注意：writer 已经让 revision_count 从 0 变 1（初稿算第 1 版），
-    # 所以这里要 >= 3 才等于「最多修订 2 轮」，否则低分稿只改 1 轮就停了。
-    if state["approved"] or (state.get("revision_count") or 0) >= 3:
+    # 注意：writer 已经让 revision_count 从 0 变 1（初稿算第 1 版）。
+    # 这里 >= 2 等于「最多修订 1 轮」（提速用；若答辩发现低分稿质量不够，改回 >= 3 恢复 2 轮）。
+    if state["approved"] or (state.get("revision_count") or 0) >= 2:
         return ["defense", "ppt"]
     return ["revise"]
 
@@ -2543,8 +2540,15 @@ deep_workflow.add_edge("competitor", "plan")
 deep_workflow.add_edge("business", "plan")
 deep_workflow.add_edge("risk", "plan")
 deep_workflow.add_edge("tech", "plan")
-deep_workflow.add_edge("plan", "social")
-deep_workflow.add_edge("social", "summary")
+# plan / social / summary 三者互不依赖（都只读 idea + user_data + 范文检索），
+# 原来 plan→social→summary 串行白等两次 LLM 调用，改为三者并行扇出，再一起汇入 writer。
+_plan_srcs = ["rule_parser", "similarity_checker", "idea_evaluator", "one_liner",
+              "competitor", "business", "risk", "tech"]
+for _src in _plan_srcs:
+    deep_workflow.add_edge(_src, "social")
+    deep_workflow.add_edge(_src, "summary")
+deep_workflow.add_edge("plan", "writer")
+deep_workflow.add_edge("social", "writer")
 deep_workflow.add_edge("summary", "writer")
 deep_workflow.add_edge("writer", "judge")
 deep_workflow.add_edge("writer", "expert_review")
