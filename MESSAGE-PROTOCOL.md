@@ -6,6 +6,12 @@
 
 ---
 
+## 〇、前端设计守则（WorkBuddy 开工前必读）
+
+> WorkBuddy 每次改前端（尤其 `index.html`）前，必读仓库根目录 [`FRONTEND-RULES.md`](FRONTEND-RULES.md)，并遵守其中的前端设计守则。
+
+---
+
 ## 一、文件所有权（硬性）
 
 | 文件 | 归属 | 说明 |
