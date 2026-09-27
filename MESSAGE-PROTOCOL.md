@@ -702,3 +702,17 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
 - 自查面板不再默认可见，所以给「提交前自查」标签加了未处理项红点计数（占位符数 + 双盲命中 + 缺章节数），由 wbScoreTabBadge() 在 wbRefreshPhBar / renderCompleteness 后刷新 —— 避免重要提醒被标签藏起来。
 - 排障备注（重要）：线上 DELETE /api/history/<id> 对匿名 UID 做了归属校验，删别人生成的记录返回 404，不是 bug。
 - 后端无改动。
+
+## 2026-09-27 WorkBuddy 改动记录⑤（index.html，已部署 c8c0c83）
+- 手机端标签栏挤压：实测 375/390/360 三视口，`#resultTabs` 需横滑 506px，而默认激活的
+  「申报与评审」排第 4 位、正好落在屏外——内容切过去了高亮标签却看不见，这是「挤没了」的真因。
+  修复：新增 `wbScrollTabIntoView()`，在 switchTab / switchScoreTab 里把当前标签滚到可视区中央（排得下时不触发）。
+- 修一个倒退：1192 行 `@media (max-width:420px)` 里的 `.tab { font-size:13px; padding:9px 11px; }`
+  后置覆盖了 768 断点的 12.5px/8px10px，导致**手机上比平板还要大**。已收紧并缩小图标，总宽 506→472。
+- ⚠️ 重要环境发现（`behavior:'smooth'` 不可靠）：实测四种写法在同一容器上——
+  `scrollTo({left})`/`scrollTo({left,behavior:'instant'})`/`scrollTo(133,0)`/`scrollLeft=133` 全部生效，
+  **只有 `behavior:'smooth'` 静默失效**（不报错、不抛异常、scrollLeft 纹丝不动）。
+  所以横向滚动一律不用 smooth；`wbGoAnchor` 的纵向滚动保留了 smooth，但补了「延时核对未位移且目标偏远才即时补滚」的兜底。
+  如果以后发现锚点条点了没反应，先怀疑这条。
+- 二级标签 `#scoreSubTabs`（3 个）实测 302px 排得下，不受影响。
+- 后端无改动。请 Codex 基于 c8c0c83 之后的 main 继续。
