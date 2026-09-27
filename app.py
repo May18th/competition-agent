@@ -226,8 +226,12 @@ def _admin_guard():
 # ============ 初始化数据库 ============
 DB_PATH = os.path.join(os.path.dirname(__file__), "competition.db")
 
+def get_db():
+    """统一 SQLite 连接：timeout=5 秒，写锁冲突时等待而非秒抛 database is locked。"""
+    return sqlite3.connect(DB_PATH, timeout=5)
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     # WAL 模式：多用户并发读写时减少锁冲突，降低"database is locked"崩溃
     try:
@@ -317,7 +321,7 @@ def _seed_kb_if_needed():
         data = _json.loads(raw.decode("utf8"))
         stamp = hashlib.md5(raw).hexdigest()[:8] + ":" + str(len(data))
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db()
         c = conn.cursor()
         c.execute("CREATE TABLE IF NOT EXISTS kb_meta (k TEXT PRIMARY KEY, v TEXT)")
         row = c.execute("SELECT v FROM kb_meta WHERE k='seed_stamp'").fetchone()
@@ -379,7 +383,7 @@ def load_history(limit=200, offset=0, q=None, uid=None):
 
     uid 传入时只返回该匿名用户自己的记录；不传则返回全部（供 admin/健康检查用）。
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     sql = "SELECT id, competition_name, idea, mode, result_data, created_time, rating FROM history"
     params = []
@@ -401,7 +405,7 @@ def load_history(limit=200, offset=0, q=None, uid=None):
 
 
 def count_history(q=None, uid=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     conds, params = [], []
     if q:
@@ -421,7 +425,7 @@ def count_history(q=None, uid=None):
 
 def save_history_item(item):
     """插入一条历史记录到 SQLite，返回新 id"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute('''INSERT INTO history (competition_name, idea, mode, result_data, created_time, duration, status, user_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -446,7 +450,7 @@ def save_history_item(item):
 def record_gen_failure(task_id, error, detail=""):
     """记录一次生成失败（用于成功率统计 + 动态监视）。"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO gen_failures (task_id, error, detail, created_time) VALUES (?, ?, ?, ?)",
                   (str(task_id or "")[:32], str(error or "")[:200], str(detail or "")[:500],
@@ -463,7 +467,7 @@ def _migrate_history_json():
     json_path = app.config['HISTORY_FILE']
     if not os.path.exists(json_path):
         return
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM history")
     has_data = c.fetchone()[0] > 0
@@ -624,7 +628,7 @@ def _fetch_proposal_from_source(data):
         hid = data.get('history_id')
         if hid:
             import json as _json
-            conn = sqlite3.connect(DB_PATH)
+            conn = get_db()
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
             row = c.execute("SELECT result_data FROM history WHERE id=?", (int(hid),)).fetchone()
@@ -1113,7 +1117,7 @@ def _md_to_html(t):
 def create_share(history_id):
     import secrets
     from datetime import timedelta
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT id FROM history WHERE id=?", (history_id,))
     if not c.fetchone():
@@ -1133,7 +1137,7 @@ def create_share(history_id):
 @app.route('/share/<token>')
 def view_share(token):
     from datetime import datetime as _dt
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT history_id, expires_time FROM shares WHERE token=?", (token,))
     row = c.fetchone()
@@ -1146,7 +1150,7 @@ def view_share(token):
             return _share_page("链接已过期", "", "", "<p>该分享链接已过期，请联系分享者重新生成。</p>"), 410
     except Exception:
         pass
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT competition_name, idea, result_data FROM history WHERE id=?", (history_id,))
     hr = c.fetchone()
@@ -1167,7 +1171,7 @@ def view_share(token):
 
 @app.route('/api/history/<int:history_id>')
 def get_history_detail(history_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("SELECT result_data, rating FROM history WHERE id = ? AND user_id = ?",
               (history_id, _current_uid()))
@@ -1192,7 +1196,7 @@ def rate_history(history_id):
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
     if rating < 1 or rating > 5:
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
               (rating, history_id, _current_uid()))
@@ -1219,7 +1223,7 @@ def add_feedback():
     except (TypeError, ValueError):
         history_id = None
     category = _categorize_feedback(content)
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("INSERT INTO feedback (history_id, content, created_time, category, user_id) VALUES (?, ?, ?, ?, ?)",
               (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category, _current_uid()))
@@ -1234,7 +1238,7 @@ def add_feedback():
 @app.route('/api/feedback')
 def list_feedback():
     """后台查看全部反馈（最新的在前，封顶 500 条）。"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     rows = c.execute(
@@ -1251,7 +1255,7 @@ def export_feedback():
     from io import BytesIO
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     rows = c.execute(
@@ -1311,7 +1315,7 @@ def export_feedback():
 @app.route('/admin')
 def admin_home():
     """管理后台 · 总览首页：关键数字一屏看完，再点进详细面板 / 监视。"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
@@ -1479,7 +1483,7 @@ loadViz();
 @app.route('/admin/panel')
 def admin_dashboard():
     """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
@@ -1684,7 +1688,7 @@ def _html_escape(s):
 @app.route('/monitor')
 def monitor():
     """动态监视页：自动刷新，实时看服务状态 / 最近生成 / 失败 / 额度。"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     recent_gen = c.execute(
@@ -1795,7 +1799,7 @@ def create_issue(kind, source, content):
     try:
         import hashlib
         h = hashlib.md5((content or "").strip().encode("utf-8")).hexdigest()[:16]
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db()
         c = conn.cursor()
         row = c.execute("SELECT id FROM issues WHERE content=?", (content,)).fetchone()
         if row:
@@ -1813,7 +1817,7 @@ def create_issue(kind, source, content):
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
 def delete_history(history_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     c = conn.cursor()
     c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
     conn.commit()
@@ -3173,7 +3177,7 @@ def quota():
 def admin_stats():
     """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         trend = c.execute(
