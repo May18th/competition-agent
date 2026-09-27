@@ -2690,6 +2690,26 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <p style="color: var(--text-mute); text-align: center;">加载中...</p>
             </div>
             <div id="historyPager" class="history-pager"></div>
+            <!-- 换设备看同一份历史：不登录、不用密码，8 位同步码互相绑定一下就行。
+                 赛前不露用户名密码登录入口（后端留着，前端不接） -->
+            <div style="margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--c-a); border-radius: 10px; background: var(--surface-2);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 12.5px; font-weight: 600; color: var(--text-dim);">换设备继续看这份历史</span>
+                    <button onclick="wbSyncLoad()" class="wb-textbtn" style="padding: 5px 10px; font-size: 12.5px;">显示我的同步码</button>
+                </div>
+                <div id="wbSyncCodeRow" style="display: none; margin-top: 8px; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <code id="wbSyncCode" style="font-size: 17px; font-weight: 700; letter-spacing: 2px; color: var(--c-a);">--------</code>
+                    <button onclick="wbSyncCopy()" style="padding: 5px 10px; font-size: 12.5px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 7px; cursor: pointer;">复制</button>
+                </div>
+                <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+                    <input id="wbSyncInput" placeholder="输入另一台设备的同步码" autocomplete="off"
+                           style="flex: 1 1 140px; min-width: 120px; height: 34px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface-solid); color: var(--text); font-size: 13px;">
+                    <button onclick="wbSyncBind()" style="padding: 8px 14px; font-size: 13px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 7px; cursor: pointer; font-weight: 600;">同步</button>
+                </div>
+                <div style="margin-top: 6px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">
+                    同步码 8 位。绑定后这台设备就看到那台的历史，不用注册登录。
+                </div>
+            </div>
             <button class="wb-modal-close-btn" onclick="event.stopPropagation(); closeHistory()">关闭</button>
         </div>
     </div>
@@ -8233,6 +8253,84 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             } catch (e) {}
             return null;
         }
+
+        /* ---------- 一键同步码（2026-09-28，后端 /api/sync_code + /api/bind_uid） ----------
+           历史是按匿名 uid 隔离的，换设备/清 cookie 就看不到之前生成的。
+           同步码让两台设备共用一个 uid：A 显示码 → B 输入码 → B 看 A 的历史。
+           不登录、不用密码（赛前不露用户名密码入口，后端接口留着不接）。 */
+        function wbSyncLoad() {
+            var row = document.getElementById('wbSyncCodeRow');
+            var el = document.getElementById('wbSyncCode');
+            if (!row || !el) return;
+            el.textContent = '...';
+            row.style.display = 'flex';
+            fetch('/api/sync_code', { cache: 'no-store' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.success || !d.sync_code) {
+                        row.style.display = 'none';
+                        wbToast('没拿到同步码：' + ((d && d.error) || '请稍后再试'), { type: 'error' });
+                        return;
+                    }
+                    el.textContent = String(d.sync_code);
+                })
+                .catch(function () {
+                    row.style.display = 'none';
+                    wbToast('网络不通，同步码没取到', { type: 'error' });
+                });
+        }
+        window.wbSyncLoad = wbSyncLoad;
+
+        function wbSyncCopy() {
+            var code = String((document.getElementById('wbSyncCode') || {}).textContent || '').trim();
+            if (!code || code === '--------' || code === '...') {
+                wbToast('先点「显示我的同步码」', { type: 'warn' }); return;
+            }
+            function ok() { wbToast('已复制同步码：' + code, { type: 'success' }); }
+            function fallback() {
+                try {
+                    var ta = document.createElement('textarea');
+                    ta.value = code; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                    document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta); ok();
+                } catch (e) { wbToast('复制失败，请手动记下：' + code, { type: 'warn', ms: 6000 }); }
+            }
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(code).then(ok, fallback);
+                } else fallback();
+            } catch (e) { fallback(); }
+        }
+        window.wbSyncCopy = wbSyncCopy;
+
+        function wbSyncBind() {
+            var inp = document.getElementById('wbSyncInput');
+            var code = String((inp && inp.value) || '').trim().toUpperCase().replace(/\s+/g, '');
+            if (code.length < 6) { wbToast('请输入另一台设备上的 8 位同步码', { type: 'warn' }); return; }
+            var btn = document.querySelector('[onclick="wbSyncBind()"]');
+            var old = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = '同步中…'; }
+            fetch('/api/bind_uid', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (btn) { btn.disabled = false; btn.textContent = old; }
+                    if (!d || !d.success) {
+                        wbToast((d && d.error) || '同步失败，请检查同步码', { type: 'error' }); return;
+                    }
+                    if (inp) inp.value = '';
+                    wbToast('已同步，正在重新加载历史', { type: 'success' });
+                    try { loadHistory(0); } catch (e) {}
+                    try { if (typeof wbLoadHisTabs === 'function') wbLoadHisTabs(); } catch (e) {}
+                })
+                .catch(function () {
+                    if (btn) { btn.disabled = false; btn.textContent = old; }
+                    wbToast('网络不通，同步失败', { type: 'error' });
+                });
+        }
+        window.wbSyncBind = wbSyncBind;
 
         function loadHistory(offset) {
             _historyOffset = offset;
