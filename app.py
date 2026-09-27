@@ -1324,7 +1324,7 @@ h1{font-size:24px;margin:0 0 4px}
 </div>
 <div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败率：加载中…</div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="/static/echarts.min.js"></script>
 <script>
 var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
 function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';AF(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}

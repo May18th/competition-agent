@@ -2407,6 +2407,7 @@ mark.wb-ph {
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script>window.echarts || document.write('<script src="/static/echarts.min.js"><\/script>');</script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script>window.DOMPurify || document.write('<script src="/static/purify.min.js"><\/script>');</script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
     <script>
     if (typeof marked === 'undefined') {
@@ -8043,7 +8044,6 @@ window.addEventListener('resize', function () {
 </footer>
 </body>
 </html>
-
 
 
 
