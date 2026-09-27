@@ -156,15 +156,15 @@ def register():
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
     if not username or not password:
-        return jsonify({"success": False, "error": "用户名和密码不能为空"})
+        return jsonify({"success": False, "error": "用户名和密码不能为空"}), 400
     if len(username) < 2 or len(username) > 32:
-        return jsonify({"success": False, "error": "用户名需 2~32 个字符"})
+        return jsonify({"success": False, "error": "用户名需 2~32 个字符"}), 400
     if len(password) < 4:
-        return jsonify({"success": False, "error": "密码至少 4 位"})
+        return jsonify({"success": False, "error": "密码至少 4 位"}), 400
     conn = get_db()
     if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
         conn.close()
-        return jsonify({"success": False, "error": "用户名已存在"})
+        return jsonify({"success": False, "error": "用户名已存在"}), 409
     ph = generate_password_hash(password)
     cur = conn.execute("INSERT INTO users (username, password_hash, created_time) VALUES (?,?,?)",
                        (username, ph, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
@@ -190,7 +190,7 @@ def login():
     row = conn.execute("SELECT id, password_hash FROM users WHERE username=?", (username,)).fetchone()
     conn.close()
     if not row or not check_password_hash(row[1], password):
-        return jsonify({"success": False, "error": "用户名或密码错误"})
+        return jsonify({"success": False, "error": "用户名或密码错误"}), 401
     g.uid = _account_uid(row[0])
     g.uid_should_sign = True
     return jsonify({"success": True, "username": username})
