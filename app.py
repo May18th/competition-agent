@@ -2203,6 +2203,9 @@ def _start_generation(data):
                       "mode": data.get("mode", "fast"), "data": data}
 
     def worker():
+        # 必须声明 global：finally 里对 _active_gen_count 赋值，没有这句它会被当成局部变量，
+        # 触发 UnboundLocalError 且计数永远不回落——泄漏 4 次后所有人被「当前生成人数较多」焊死
+        global _active_gen_count
         set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
         attempts = 3                       # 1 次主尝试 + 2 次自动重试
         last_err = None
