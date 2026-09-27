@@ -1522,9 +1522,9 @@ mark.wb-ph {
                         <option value="RoboMaster全国大学生机器人大赛"></option>
                         <option value="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）"></option>
                     </datalist>
-                    <!-- 横滑一排：换行会占掉半屏，手机上还得滑很久才找得到。
-                         15 个内置赛事全在这里（P1-3：原来只有 5 个，后面的比赛在手机上选不到）；
-                         每个 chip 短名显示 + 完整赛事名作 title，横向可滑、不换行、不截断。
+                    <!-- 热门快捷 chip 只放 5 个最常用的，一键填入；完整 15 个赛事走上面的下拉
+                         （聚焦即全量列出、可滚动、当前选中项高亮），别再把 15 个都塞回这排——
+                         塞满后 grid 子项 min-width:auto 会把手机整页撑出横向滚动（实测 375→989px）。
                          加新赛事时同步 datalist 和后端 data/ 文件名，onclick 值必须与 datalist 完全一致 -->
                     <div id="compQuickRow" style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
                                 -webkit-overflow-scrolling: touch; padding-bottom: 2px;">
@@ -1533,16 +1533,6 @@ mark.wb-ph {
                         <span onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" title="挑战杯全国大学生课外学术科技作品竞赛（大挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
                         <span onclick="wbPickComp('挑战杯中国大学生创业计划竞赛（小挑）')" title="挑战杯中国大学生创业计划竞赛（小挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">小挑</span>
                         <span onclick="wbPickComp('全国大学生数学建模竞赛')" title="全国大学生数学建模竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">数模</span>
-                        <span onclick="wbPickComp('国家级大学生创新创业训练计划')" title="国家级大学生创新创业训练计划（大创）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大创</span>
-                        <span onclick="wbPickComp('全国大学生电子设计竞赛')" title="全国大学生电子设计竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">电赛</span>
-                        <span onclick="wbPickComp('蓝桥杯全国软件和信息技术专业人才大赛')" title="蓝桥杯全国软件和信息技术专业人才大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">蓝桥杯</span>
-                        <span onclick="wbPickComp('中国大学生计算机设计大赛')" title="中国大学生计算机设计大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">计算机设计</span>
-                        <span onclick="wbPickComp('全国大学生广告艺术大赛')" title="全国大学生广告艺术大赛（大广赛）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大广赛</span>
-                        <span onclick="wbPickComp('中国大学生服务外包创新创业大赛')" title="中国大学生服务外包创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">服务外包</span>
-                        <span onclick="wbPickComp('全国大学生信息安全竞赛')" title="全国大学生信息安全竞赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">信安赛</span>
-                        <span onclick="wbPickComp('西门子杯中国智能制造挑战赛')" title="西门子杯中国智能制造挑战赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">西门子杯</span>
-                        <span onclick="wbPickComp('RoboMaster全国大学生机器人大赛')" title="RoboMaster全国大学生机器人大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">RoboMaster</span>
-                        <span onclick="wbPickComp('一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）')" title="一带一路暨金砖国家技能发展与技术创新大赛（青年创客大赛）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">金砖创客</span>
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -4231,10 +4221,13 @@ mark.wb-ph {
         function wbCompHits(q) {
             q = String(q || '').trim().toLowerCase();
             var all = wbCompOptions();
-            if (!q) return all.slice(0, 8);
+            // 不再截断：原来 slice(0,8) 把 15 个内置赛事砍掉 7 个，
+            // 空查询时下拉里永远看不到后面的比赛（P1-3「后面的比赛选不到」的另一个根因）。
+            // 候选框本身 max-height 264px + 纵向滚动，全量列出不会撑破页面
+            if (!q) return all;
             return all.filter(function (n) {
                 return String(n).toLowerCase().indexOf(q) >= 0;
-            }).slice(0, 8);
+            });
         }
         // 聚焦就全选：选错了不用一个个删字，直接打字就整体替换掉旧赛事名。
         // 不直接清空 value 是因为那样一点进去内容就没了，误触会丢已填的东西。
