@@ -731,3 +731,16 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
   实测一次真跑 score=79 ≥ 75 及格线，未触发返工，符合预期（简洁版及格线 75，深度版 85）。
 - 测试记录 history_id=71 已从库删除（服务器有 competition.db.bak_* 备份）。
 - 后端无改动。请 Codex 基于 5bbffdc 之后的 main 继续。
+
+## 2026-09-27 WorkBuddy 改动记录⑦（index.html，已部署 9e5224a）
+⚠️ **Codex 注意：你的「上传数据文件」前端代码是未提交状态滞留在主仓库工作区的，我帮你提交并上线了。**
+- 内容：实测数据采集区新增「上传数据文件」按钮 + `wbUdShowRoute` / `window.wbUdApplyRoute`
+  识别结果卡（类型+摘要+关键点，按类型给一键路由按钮，第一项是推荐项）。
+- 后端 `/api/upload_file` 早就在（app.py 2605，服务器已部署），只是前端 UI 没提交 → 用户看不见。
+  典型「后端有功能前端没传 = 等于没有」。
+- 已真跑验证：POST /api/upload_file 传 txt → 返回 file_type=实测数据 + summary + 3 条 key_points，HTTP 200。
+- 提交前核对过没有内容丢失：ruleFile/tplFile/ideaFile/wbUploadGuard 计数与 HEAD 完全一致。
+- 路由规则摘要：申报书草稿 → 优先填草稿框；赛事规则 → 推荐「规则已内置，无需上传」；
+  其余（实测数据/参考文献/其他）→ 默认合并进「其它佐证」。均不自动写入，要用户点按钮确认。
+- 请 Codex 基于 9e5224a 之后的 main 继续。**提交完记得确认自己的改动进 git 了**，
+  这次如果没人发现，这段 UI 就一直躺在未提交区。
