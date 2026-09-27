@@ -2712,23 +2712,45 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         if (window.echarts && window.echarts.init && !window.echarts.__noop) return Promise.resolve(window.echarts);
         if (_wbEcP) return _wbEcP;
         _wbEcP = new Promise(function (resolve) {
-            function done() { resolve(window.echarts); }
+            function done(ok) {
+                if (!ok) window.__wbEcDown = true;   // 两条路都没拉到真身
+                resolve(window.echarts);
+            }
             function load(src, fallback) {
                 var s = document.createElement('script');
                 s.src = src;
                 s.async = true;
                 s.onload = function () {
-                    if (window.echarts && window.echarts.init && !window.echarts.__noop) done();
+                    if (window.echarts && window.echarts.init && !window.echarts.__noop) done(true);
                     else fallback();
                 };
                 s.onerror = fallback;
                 document.head.appendChild(s);
             }
             load('/static/echarts.min.js', function () {
-                load('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js', done);
+                load('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js', function () { done(false); });
             });
         });
         return _wbEcP;
+    }
+    // 图表库没拉到时的「错误态」：守则要求空/加载/错误三态都真实呈现，不能留一片空白让人以为卡住。
+    // 正文和导出都不依赖 echarts，所以这里明说"图表没了但申报书照常"。
+    function wbEchartsDown() {
+        ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el || el.getAttribute('data-wb-ecerr')) return;
+            el.setAttribute('data-wb-ecerr', '1');
+            el.title = '';                 // 出不来图就别再提示"点击放大"
+            el.style.cursor = 'default';
+            el.style.display = 'flex';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'center';
+            el.innerHTML = '<div style="text-align:center; font-size:12.5px; color:var(--text-mute); line-height:1.8; padding:0 14px;">'
+                + '图表库未能加载（本地与 CDN 都不可达）<br>申报书正文与导出不受影响'
+                + '<div style="margin-top:10px;"><button type="button" onclick="location.reload()" '
+                + 'style="padding:6px 14px; font-size:12px; border-radius:6px; border:1px solid var(--line); '
+                + 'background:transparent; color:var(--text-dim); cursor:pointer;">刷新重试</button></div></div>';
+        });
     }
     // 占位符高亮：后端「严禁编造假数据」后，拿不准的数字会写成【待你填写：xxx】/【示例值，需核实】。
     // 这些必须让学生一眼看见——混在正文里被当成真数据交上去，比没有更危险。
@@ -6647,6 +6669,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             setTimeout(async () => {
                                 // echarts 是按需加载的：这里等它到位再画（首屏不再为它买单）
                                 await wbLoadEcharts();
+                                // 两条路都没拉到 → 摆错误态，别让三个空白框挂在那儿
+                                if (window.echarts.__noop) { wbEchartsDown(); return; }
                                 // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致。
                                 // 网页侧把底改成半透明玻璃渐变（更贴页面主视觉）；系列色 CA 不动，
                                 // 否则会和后端导出的 PNG 配色对不上（导出件走 chart_renderer_pro）。
