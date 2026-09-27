@@ -1886,6 +1886,23 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     <textarea id="idea" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
                 </div>
 
+                <!-- 团队成员（选填）：后端已放宽口径——用户给的真实姓名/角色/分工原样写进团队章节，
+                     没给才回退「角色 + 职责」模板（competition_agents.py，Codex 2026-09-28）。
+                     整块可选，手机上默认折叠，不占首屏 -->
+                <div class="form-group">
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 团队成员<span class="wb-opt">（选填，强烈建议：有真人就填）</span></label>
+                    <div onclick="wbAdvToggle('teamBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
+                        填写团队成员 / 分工（可选）<span id="teamBodyArrow">▾</span>
+                    </div>
+                    <div id="teamBody">
+                        <textarea id="udTeam" rows="3" placeholder="张三（队长，计算机学院）：统筹进度 + 核心算法&#10;李四（机械学院）：结构设计 + 样机加工" style="min-height: 80px;"></textarea>
+                        <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
+                            有真实团队就填：<b style="color: var(--text);">姓名、学校/院系、角色、具体分工</b>，会原样写进团队章节。
+                            评委最想看到的是「人」，不填就只出「角色 + 职责」的通用模板。
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 实测数据（选填）：后端 user_data 是最高优先级事实来源，填了的数字正文标「实测值」，
                      没填的部分才按测算值生成（图表里橙色标出）。整块可选，手机上默认折叠，不占首屏 -->
                 <div class="form-group">
@@ -1894,6 +1911,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         填写试点数据 / 测试结果（可选）<span id="userDataBodyArrow">▾</span>
                     </div>
                     <div id="userDataBody">
+                        <!-- 引导前置：这块的价值（真数 vs 测算值）原先只藏在 label 的「选填」里，
+                             评委视角下它是信任核心，必须让用户在展开后第一眼看到 -->
+                        <div style="margin: 2px 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
+                            <b style="color: var(--text);">有真实数据一定要填</b>：这是评委最看重的部分 ——
+                            填了正文直接用真数并标「实测值」，不填则正文里的数字都是测算值（图表里橙色标出）。
+                        </div>
                         <!-- 字段名放输入框上方小标签，placeholder 只留示例：
                               原来字段名+示例全塞 placeholder，实测桌面 1440 下列宽仅 251px、
                               最长示例需 330px，截断 79px（用户截图报障） -->
@@ -3229,7 +3252,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         /* ---------- 表单自动保存：刷新 / 关掉再打开不丢 ---------- */
         var WB_FORM_KEY = 'wbFormDraft';
         var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft',
-            'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
+            'udTeam', 'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
         // 勾选项要单独走 checked：混进 WB_FORM_IDS 的话 el.value 恒为 "on"，恢复时会被当成永远勾上
         var WB_CHECK_IDS = ['iterateOpt'];
 
@@ -6394,6 +6417,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         ];
         function wbUserDataText() {
             var lines = [];
+            // 团队信息放最前：后端已改成「有真实团队成员就原样写进团队章节」，
+            // 它是评委判断「是不是真有人在做」的第一依据，别混在其它佐证后面被截断
+            var tm = document.getElementById('udTeam');
+            if (tm && String(tm.value || '').trim()) lines.push('团队成员：' + String(tm.value || '').trim());
             WB_UD_FIELDS.forEach(function (f) {
                 var el = document.getElementById(f[0]);
                 var v = el ? String(el.value || '').trim() : '';
@@ -8465,7 +8492,7 @@ function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
     // kbAdvBody（规则区）已按 P0-2 首页精简降级为全端默认折叠，不在这个列表里——
     // 放进来的话桌面端 resize 时会被重新展开，首屏又冒出规则上传入口
-    ['draftAdvBody', 'evBody', 'userDataBody'].forEach(function (id) {
+    ['draftAdvBody', 'evBody', 'teamBody', 'userDataBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;
