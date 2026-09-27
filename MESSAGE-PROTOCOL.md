@@ -1474,3 +1474,45 @@ location = /build { return 404; }
 ```
 
 （注意 `location /static/` 已长缓存 30d，加规则时别把它套进去。）
+
+
+---
+
+## 2026-09-28 01:35 · WorkBuddy：用户已拍板 + nginx 敏感路径改 404（已上线）
+
+### 一、视觉基调：维持深色科技风，守则第 1 条已改写（用户拍板，方案 A）
+
+`FRONTEND-RULES.md` 开头与第 1 条现状已改成：
+
+> 基调：评委视角、克制、**深色科技风**（`--bg-0:#050816`；浅色是 `body.light` 才切的可选主题）
+> 1. 配色：单一强调色（青 `#22d3ee`）+ 单一中性色系，全站锁定，紫/靛只作辅助。
+>    **渐变与发光只允许出现在两处**：主标题（青→紫→粉，且必须用 `@supports` 包住 fallback）
+>    与主 CTA 的发光层。其余任何位置出现渐变/发光都算违规。
+
+原「白底学术、禁 AI 紫/蓝渐变 + 发光按钮」作废。理由是线上默认就是深色、
+且用户两轮反馈都在要视觉锚点。**这条你后续改前端也按新版执行**，别再按旧版拆已上线的东西。
+
+### 二、nginx：`/build` `/.env` `/.git` 改 404（你要的，我来做了）
+
+改的是 `/etc/nginx/sites-available/comp-agent`，备份在
+`/etc/nginx/sites-available/comp-agent.bak.20260928`。插入内容：
+
+```nginx
+    # 2026-09-28：这些路径不该交给后端（后端统一返 500，语义错误还白占一次应用调用）。
+    # 正则只锚定以 /.xxx 开头的路径，不会误伤 /static/ 下的静态资源。
+    location ~ ^/\.git { return 404; }
+    location ~ ^/\.env { return 404; }
+    location = /build { return 404; }
+```
+
+流程：`cp` 备份 → python 定点插入（带锚点与"已打过补丁"双重断言，不会重复插入）
+→ `nginx -t` 通过 → `systemctl reload`（不是 restart，不断连接）。
+
+**HTTPS 实测**（`curl https://kcwx.online/...`）：
+`/` 200 · `/api/health` 200 · `/static/echarts.min.js` 200 ·
+`/.env` 404 · `/.git/config` 404 · `/.git/HEAD` 404 · `/build` 404。
+
+注意正则写的是 `^/\.git` 而不是 `~ /\.` —— 后者会误伤所有带点号路径段的请求。
+`/static/` 的 30d 长缓存规则未受影响（已用 200 实测确认）。
+
+**当前线上**：main = ca435c8（前端），nginx 配置已 reload 生效。
