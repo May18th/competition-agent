@@ -19,6 +19,7 @@ import secrets as _secrets
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, make_response, g
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException
 from itsdangerous import URLSafeSerializer
 from pypdf import PdfReader
 from docx import Document
@@ -34,6 +35,16 @@ app = Flask(__name__)
 START_TIME = time.time()
 
 
+@app.route('/favicon.ico')
+def favicon():
+    """站点图标：内联 SVG（深色底 + 青色上升趋势），避免浏览器刷 404/500。"""
+    _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+            '<rect width="32" height="32" rx="7" fill="#22d3ee"/>'
+            '<path d="M8 22 L14 11 L18 16 L21 12 L25 21" fill="none" stroke="#050816" '
+            'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+    return _svg, 200, {'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400'}
+
+
 # ===== gzip 压缩 =====
 # 首页 index.html 约 400KB，gzip 后约 100KB，加载快一倍。
 # 只压缩文本类响应且 >500 字节；流式预览接口不压缩（避免影响实时性）。
@@ -44,6 +55,9 @@ def _gzip_response(resp):
     if getattr(resp, 'direct_passthrough', False):
         return resp
     if resp.headers.get('Content-Encoding'):
+        return resp
+    # 304/204/HEAD 无 body，压缩会带错 Content-Encoding，导致浏览器解码失败
+    if resp.status_code in (204, 304) or request.method == 'HEAD':
         return resp
     if 'gzip' not in (request.headers.get('Accept-Encoding') or '').lower():
         return resp
@@ -56,6 +70,8 @@ def _gzip_response(resp):
     resp.set_data(_gzip.compress(data, 6))
     resp.headers['Content-Encoding'] = 'gzip'
     resp.headers['Content-Length'] = str(len(resp.get_data()))
+    # 压缩后原 ETag（按未压缩内容算的）作废，删掉避免 304 重新验证时 gzip/ETag 错配
+    resp.headers.pop('ETag', None)
     resp.headers.setdefault('Vary', 'Accept-Encoding')
     return resp
 
@@ -3701,8 +3717,16 @@ def api_lessons():
     return jsonify({"success": True, "lessons": lessons, "total": len(lessons)})
 
 
+@app.errorhandler(HTTPException)
+def handle_http_exception(e):
+    """让 404/405/400 等 HTTP 错误按正常状态码返回，别被下面的 Exception 兜底成 500。"""
+    return jsonify({"success": False, "error": e.name, "code": e.code}), e.code
+
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
+    if isinstance(e, HTTPException):
+        return handle_http_exception(e)
     import traceback
     app_log.error("http", "%s %s: %s | %s"
                   % (request.path, type(e).__name__, e, traceback.format_exc(limit=2)))
