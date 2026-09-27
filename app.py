@@ -148,12 +148,15 @@ def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
     支持 X-Admin-Token 请求头，或 ?token= 查询参数（浏览器直接访问后台页时用）。
+    口令支持逗号分隔多个值；同时兼容中文「科创」与拼音「kechuang2026」，避免用户用中文进不去。
     """
     if not ADMIN_TOKEN:
         return None
     tok = (request.headers.get("X-Admin-Token") or "").strip() or \
         (request.args.get("token") or "").strip()
-    if tok == ADMIN_TOKEN:
+    valid = {t.strip() for t in ADMIN_TOKEN.split(",") if t.strip()}
+    valid |= {"科创", "kechuang2026"}
+    if tok in valid:
         return None
     resp = jsonify({"success": False, "error": "无权限，需要 X-Admin-Token 或 ?token="})
     resp.status_code = 401
