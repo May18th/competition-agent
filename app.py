@@ -170,13 +170,14 @@ _distill_lock = threading.Lock()
 _distill_hits = {}
 
 
-def _distill_rate_limited():
-    # 键优先 uid（cookie）再退回 IP——与 _rate_limited 同理：校园网 NAT 下
-    # 按 IP 限 3 次/10 分钟会把全校共用出口的用户锁死。
+def _distill_rate_limited(kind):
+    # 键 = uid（cookie）+ 蒸馏类型。之前 6 个按钮共享同一个窗口（3 次/10 分钟），
+    # 用户挨个点两三个就把所有按钮锁死，截图里 6 个按钮全是 429 就是这么来的。
+    # 按类型分窗：点「写作范式」不影响「答辩范式」，各自 3 次/10 分钟。
     try:
-        key = _current_uid() or _client_ip()
+        key = "%s|%s" % (_current_uid() or _client_ip(), kind)
     except Exception:
-        key = _client_ip()
+        key = "ip|%s" % _client_ip()
     now = time.time()
     with _distill_lock:
         hits = [t for t in _distill_hits.get(key, []) if now - t < _DISTILL_WINDOW_SEC]
@@ -193,11 +194,15 @@ def _admin_guard():
     """后台/管理接口统一鉴权 + 蒸馏接口限流。"""
     p = request.path
     if p.startswith("/api/distill"):
-        if _distill_rate_limited():
-            resp = jsonify({"success": False, "error": "蒸馏太频繁，请 10 分钟后再试"})
+        # 鉴权前置于限流：未授权的请求不该消耗限流名额
+        auth = _require_admin()
+        if auth is not None:
+            return auth
+        if _distill_rate_limited(p):
+            resp = jsonify({"success": False, "error": "该类型蒸馏太频繁，请 10 分钟后再试"})
             resp.status_code = 429
             return resp
-        return _require_admin()
+        return None
     # 只保护「写操作 / 烧钱操作」；后台只读页面（/admin /monitor /admin/panel）
     # 和只读分析接口直接打开，学生项目降低使用门槛，避免总被「无权限」卡住。
     if p in ("/api/kb/add", "/api/kb/delete"):
