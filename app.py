@@ -136,18 +136,23 @@ def _ensure_uid():
     g.uid = uid
     g.uid_is_new = 'comp_uid' not in request.cookies
     g.uid_should_sign = g.uid_is_new or legacy
+    g.uid_max_age = 60 * 60 * 24 * 365
 
 
 @app.after_request
 def _set_uid_cookie(resp):
     if getattr(g, 'uid_should_sign', False):
-        resp.set_cookie('comp_uid', _sign_uid(g.uid), max_age=60 * 60 * 24 * 365,
+        resp.set_cookie('comp_uid', _sign_uid(g.uid), max_age=getattr(g, 'uid_max_age', 60 * 60 * 24 * 365),
                         httponly=True, samesite='Lax')
     return resp
 
 
 def _account_uid(user_id):
     return 'acc' + str(user_id)
+
+
+_LOGIN_FAILS = {}   # username -> [时间戳]，15 分钟窗口
+_LOGIN_LOCK = {}    # username -> 锁定到期时间戳
 
 
 @app.route('/api/register', methods=['POST'])
@@ -159,8 +164,8 @@ def register():
         return jsonify({"success": False, "error": "用户名和密码不能为空"}), 400
     if len(username) < 2 or len(username) > 32:
         return jsonify({"success": False, "error": "用户名需 2~32 个字符"}), 400
-    if len(password) < 4:
-        return jsonify({"success": False, "error": "密码至少 4 位"}), 400
+    if len(password) < 6 or not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        return jsonify({"success": False, "error": "密码至少 6 位，且需同时包含字母和数字"}), 400
     conn = get_db()
     if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
         conn.close()
@@ -178,6 +183,7 @@ def register():
     conn.close()
     g.uid = new_uid
     g.uid_should_sign = True
+    g.uid_max_age = 60 * 60 * 24 * 30 if data.get('remember') else 60 * 60 * 24
     return jsonify({"success": True, "username": username})
 
 
@@ -186,14 +192,49 @@ def login():
     data = request.get_json(silent=True) or request.form or {}
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
+    now = time.time()
+    if now < _LOGIN_LOCK.get(username, 0):
+        return jsonify({"success": False, "error": "失败次数过多，账号已临时锁定，请 15 分钟后再试"}), 429
     conn = get_db()
     row = conn.execute("SELECT id, password_hash FROM users WHERE username=?", (username,)).fetchone()
     conn.close()
     if not row or not check_password_hash(row[1], password):
+        fails = [t for t in _LOGIN_FAILS.get(username, []) if now - t < 900]
+        fails.append(now)
+        _LOGIN_FAILS[username] = fails
+        if len(fails) >= 5:
+            _LOGIN_LOCK[username] = now + 900
+            _LOGIN_FAILS[username] = []
         return jsonify({"success": False, "error": "用户名或密码错误"}), 401
+    _LOGIN_FAILS.pop(username, None)
+    _LOGIN_LOCK.pop(username, None)
     g.uid = _account_uid(row[0])
     g.uid_should_sign = True
+    g.uid_max_age = 60 * 60 * 24 * 30 if data.get('remember') else 60 * 60 * 24
     return jsonify({"success": True, "username": username})
+
+
+@app.route('/api/change_password', methods=['POST'])
+def change_password():
+    uid = _current_uid()
+    if not (uid.startswith('acc') and uid[3:].isdigit()):
+        return jsonify({"success": False, "error": "请先登录"}), 401
+    data = request.get_json(silent=True) or request.form or {}
+    old = str(data.get('old_password') or '')
+    new = str(data.get('new_password') or '')
+    if not old or not new:
+        return jsonify({"success": False, "error": "新旧密码不能为空"}), 400
+    if len(new) < 6 or not (any(c.isalpha() for c in new) and any(c.isdigit() for c in new)):
+        return jsonify({"success": False, "error": "新密码至少 6 位，且需同时包含字母和数字"}), 400
+    conn = get_db()
+    row = conn.execute("SELECT password_hash FROM users WHERE id=?", (int(uid[3:]),)).fetchone()
+    if not row or not check_password_hash(row[0], old):
+        conn.close()
+        return jsonify({"success": False, "error": "原密码错误"}), 401
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(new), int(uid[3:])))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 
 @app.route('/api/logout', methods=['POST'])
