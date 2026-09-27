@@ -3102,6 +3102,11 @@ mark.wb-ph {
                         doc_type: _DOC_TYPE[id] || 'report',
                         competition_name: wbCompName(),
                         project_name: ((window._lastData || {}).one_liner || (window._lastData || {}).idea || ''),
+                        // 后端原文兜底：页面 DOM 在并发生成/断网时可能被串台或半截渲染污染，
+                        // 传 task_id/history_id 让后端用库里的 proposal 原文覆盖。
+                        // 只对申报书传——后端该分支取的就是 proposal，传给别的文档会串内容。
+                        task_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._currentTaskId || null) : null,
+                        history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null,
                         // 只有申报书/分析这类主文档配图表，规则解析等不适合插图
                         charts: (id === 'proposalText' || _DOC_TYPE[id] === 'analysis') ? wbCharts() : [],
                         school: m.school, team: m.team, advisor: m.advisor})
@@ -3176,7 +3181,10 @@ mark.wb-ph {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({title: name, text: text,
-                        competition_name: wbCompName()})
+                        competition_name: wbCompName(),
+                        // 与 Word 导出同理：只对申报书传，让后端用库里原文覆盖被污染的 DOM 文本
+                        task_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._currentTaskId || null) : null,
+                        history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null})
                 });
                 if (!res.ok) {
                     var m = 'PDF导出失败';
@@ -6018,6 +6026,8 @@ mark.wb-ph {
                     throw new Error(start.error || '任务创建失败');
                 }
                 _currentTaskId = start.task_id;
+                // 暴露给导出用：导出申报书时连同 task_id 一起提交，后端可回库取干净原文
+                window._currentTaskId = start.task_id;
                 let t0 = Date.now();
                 let _hiddenAt = 0;
                 document.addEventListener('visibilitychange', function () {

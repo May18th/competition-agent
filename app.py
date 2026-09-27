@@ -911,6 +911,10 @@ def export_pdf():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     title = data.get('title', '申报书')
+    # 与 export_word 同一兜底：iCAN 交的就是 PDF，DOM 文本被污染时一样会带进提交件
+    _backend_text = _fetch_proposal_from_source(data)
+    if _backend_text:
+        text = _backend_text
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
     text = _strip_identifying_text(text)
