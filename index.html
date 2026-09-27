@@ -1456,6 +1456,10 @@ mark.wb-ph {
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap;">
+            <!-- 今日额度：直接读 /api/quota（和 /api/health 是同一份数据）。
+                 默认隐藏，拿到数才显示——接口挂了就当没这回事，绝不留个永远转圈的占位 -->
+            <span id="quotaBadge" style="display: none; margin-right: auto; align-self: center; font-size: 12px; color: var(--text-mute);"
+                  title="每日调用上限，次日零点重置"></span>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
                 <span class="wb-dot"></span>使用说明
             </button>
@@ -1717,6 +1721,19 @@ mark.wb-ph {
                         </div>
                     </label>
                 </div>
+            </div>
+            <!-- 简洁版「低分自动补写」开关：与 Codex 约定 should_iterate_fast 只在显式传
+                 iterate=true 且低分时才返工一轮，默认关闭以保证「50 秒出稿」的定位。
+                 深度版本来就该迭代（后端 should_iterate 未动），所以选深度版时整行隐藏 -->
+            <div id="iterateRow" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;">
+                <label style="display: flex; align-items: flex-start; gap: 9px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="iterateOpt" style="cursor: pointer; margin: 2px 0 0; flex-shrink: 0;" onchange="wbSaveForm()">
+                    <span style="font-size: 13px; color: var(--text-dim); line-height: 1.65;">
+                        <b style="color: var(--text);">低分自动补写</b>
+                        <span class="wb-opt">（选填，默认关）</span><br>
+                        勾上后，若 AI 自评分数偏低会自动返工一轮补强，<b>多等 30～60 秒</b>；不勾就是一次成稿、快。
+                    </span>
+                </label>
             </div>
             <button id="startBtn" class="btn-primary" onclick="startWork()">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
@@ -2706,6 +2723,8 @@ mark.wb-ph {
         var WB_FORM_KEY = 'wbFormDraft';
         var WB_FORM_IDS = ['competition', 'idea', 'keywords', 'proposal_draft',
             'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
+        // 勾选项要单独走 checked：混进 WB_FORM_IDS 的话 el.value 恒为 "on"，恢复时会被当成永远勾上
+        var WB_CHECK_IDS = ['iterateOpt'];
 
         var WB_SAVE_OFF = false;   // 清空表单期间抑制自动保存，否则刚删又被写回
         function wbSaveForm() {
@@ -2715,6 +2734,10 @@ mark.wb-ph {
                 WB_FORM_IDS.forEach(function (id) {
                     var el = document.getElementById(id);
                     if (el) d[id] = el.value;
+                });
+                WB_CHECK_IDS.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) d[id] = !!el.checked;
                 });
                 var r = document.querySelector('input[name=mode]:checked');
                 if (r) d.mode = r.value;
@@ -2728,6 +2751,10 @@ mark.wb-ph {
             WB_FORM_IDS.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el) { el.value = ''; el.dispatchEvent(new Event('change')); }
+            });
+            WB_CHECK_IDS.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.checked = false; el.dispatchEvent(new Event('change')); }
             });
             WB_SAVE_OFF = false;
             var box = document.getElementById('wbRestoreTip');
@@ -2753,6 +2780,41 @@ mark.wb-ph {
             row.style.display = (m && m.value === 'deep') ? 'block' : 'none';
         }
 
+        // 简洁版专属的「低分自动补写」开关：只在选简洁版时露出。
+        // 注意：#iterateRow 在 HTML 里初始就是 display:none，所以这里必须显式写 'block'/'none'，
+        // 写 '' 会回落到内联的 none，永远不显示（这个坑已经踩过两次）。
+        function wbSyncIterateRow() {
+            var row = document.getElementById('iterateRow');
+            if (!row) return;
+            var m = document.querySelector('input[name=mode]:checked');
+            row.style.display = (m && m.value === 'fast') ? 'block' : 'none';
+        }
+
+        // 今日额度：读现成的 /api/quota（和 /api/health 是同一份），拿到数才显示。
+        // 这是锦上添花的信息，接口不通就保持隐藏——绝不留个「加载中…」占位在那儿碍眼
+        function wbLoadQuota() {
+            var el = document.getElementById('quotaBadge');
+            if (!el) return;
+            fetch('/api/quota')
+                .then(function (r) { return r.json(); })
+                .then(function (q) {
+                    if (!q || !q.success || typeof q.remaining !== 'number') return;
+                    el.style.display = 'inline-block';   // 初始是 none，必须显式写
+                    if (q.exceeded) {
+                        el.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>'
+                            + ' 今日额度已用完（' + q.calls + '/' + q.limit + '），明日零点重置';
+                        el.style.color = 'var(--warn-text)';
+                    } else {
+                        // 剩不到两成时提前变黄提醒，别等真用完了才发现
+                        var low = q.limit > 0 && (q.remaining / q.limit) <= 0.2;
+                        el.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>'
+                            + ' 今日剩余 ' + q.remaining + '/' + q.limit + ' 次';
+                        el.style.color = low ? 'var(--warn-text)' : 'var(--text-mute)';
+                    }
+                })
+                .catch(function () {});
+        }
+
         function wbLoadForm() {
             var d = null;
             try { d = JSON.parse(localStorage.getItem(WB_FORM_KEY) || 'null'); } catch (e) {}
@@ -2761,6 +2823,10 @@ mark.wb-ph {
             WB_FORM_IDS.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el && d[id]) { el.value = d[id]; hit++; }
+            });
+            WB_CHECK_IDS.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && typeof d[id] === 'boolean') { el.checked = d[id]; }
             });
             if (d.mode) {
                 var r = document.querySelector('input[name=mode][value="' + d.mode + '"]');
@@ -2793,8 +2859,15 @@ mark.wb-ph {
             for (var i = 0; i < radios.length; i++) {
                 radios[i].addEventListener('change', wbSaveForm);
                 radios[i].addEventListener('change', wbSyncHumanizeRow);
+                radios[i].addEventListener('change', wbSyncIterateRow);
             }
             wbSyncHumanizeRow();
+            wbSyncIterateRow();
+            WB_CHECK_IDS.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('change', wbSaveForm);
+            });
+            wbLoadQuota();
         })();
         wbLoadForm();
         // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
@@ -5772,6 +5845,11 @@ mark.wb-ph {
                         ? ((document.querySelector('input[name=humanize]:checked') || {}).value || 'standard')
                         : 'standard'),
                     keywords: (document.getElementById('keywords') || {}).value || '',
+                    // 简洁版「低分自动补写」：后端 should_iterate_fast 只在显式收到 true 时才返工一轮，
+                    // 默认 false 保持「50 秒出稿」。深度版迭代由后端自行控制，这里统一传 false 不干扰。
+                    iterate: !!(mode === 'fast'
+                        && document.getElementById('iterateOpt')
+                        && document.getElementById('iterateOpt').checked),
                     // 用户实测数据：后端注入为最高优先级事实来源，给了的数字原文使用并标「实测值」，
                     // 没给的才用测算值。全空就传空串，后端 _user_data_ref 返回空、不影响原有链路
                     user_data: wbUserDataText(),
@@ -5885,6 +5963,7 @@ mark.wb-ph {
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
+                try { wbLoadQuota(); } catch (e) {}   // 刚跑完一轮，额度数字已经变了
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
