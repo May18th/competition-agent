@@ -184,6 +184,33 @@ _RE_OL = re.compile(r'^(\d+)[.、)]\s+(.*)$')
 _RE_UL = re.compile(r'^[-*•·＋]\s+(.*)$')
 _RE_SEP = re.compile(r'^\|[\s:\-|]+\|$')
 _RE_CAPTION = re.compile(r'^[表图]\s*[\d\-—.]')
+# 裸标题（LLM 偶尔不输出 # 号，章节标题是纯文本行）：
+# 一级「一、xxx / 第X章」、二级「（一）xxx」、多级「1.1 xxx / 10.2.1 xxx」
+_RE_HEAD_CN1 = re.compile(r'^(?:第[一二三四五六七八九十百\d]+[章节篇部]|[一二三四五六七八九十]+、)\s*\S')
+_RE_HEAD_CN2 = re.compile(r'^（[一二三四五六七八九十]+）\s*\S')
+_RE_HEAD_NUM = re.compile(r'^(\d+(?:\.\d+)+)[、.\s]\s*\S')
+
+
+def _plain_head_level(line):
+    """识别没带 # 的「裸标题」行，返回层级（0 = 不是标题）。
+
+    fast 模式的 LLM 有时整篇申报书章节都是「一、项目背景」这种纯文本行，
+    不识别的话导出 Word 的目录只剩「## 待替换数据清单」一条。
+    防误伤：超过 40 字、以句读结尾、或行内含句号的，按正文处理。
+    """
+    s = line.strip()
+    if not s or len(s) > 40:
+        return 0
+    if s.endswith(('。', '，', '；', '：', ',', ';', ':', '.')) or '。' in s:
+        return 0
+    if _RE_HEAD_CN1.match(s):
+        return 1
+    if _RE_HEAD_CN2.match(s):
+        return 2
+    m = _RE_HEAD_NUM.match(s)
+    if m:
+        return min(m.group(1).count('.') + 1, 4)
+    return 0
 
 
 def _is_sep(line):
@@ -199,6 +226,7 @@ def _is_block_start(line):
         return True
     return bool(_RE_CODE.match(line) or _RE_HR.match(line) or _RE_HEAD.match(line)
                 or _RE_OL.match(line) or _RE_UL.match(line)
+                or _plain_head_level(line)
                 or line.startswith(('>', '|')))
 
 
@@ -228,6 +256,12 @@ def _blocks(text):
         m = _RE_HEAD.match(s)
         if m:
             out.append(('h', min(len(m.group(1)), 4), m.group(2).strip()))
+            i += 1
+            continue
+        # 裸标题：LLM 偶尔不输出 # 号，直接是「一、项目背景」「（一）xxx」纯文本行
+        hl = _plain_head_level(s)
+        if hl:
+            out.append(('h', hl, s))
             i += 1
             continue
         if s.startswith('|') and i + 1 < n and _is_sep(lines[i + 1].strip()):
