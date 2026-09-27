@@ -2689,8 +2689,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>window.marked || document.write('<script src="/static/marked.min.js"><\/script>');</script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <script>window.echarts || document.write('<script src="/static/echarts.min.js"><\/script>');</script>
+    <!-- echarts 不再同步加载：它有 1MB，首页根本用不到却阻塞首屏渲染。
+         改成按需拉（见下方 wbLoadEcharts），只在真要画示例图表时才下载 -->
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <script>window.DOMPurify || document.write('<script src="/static/purify.min.js"><\/script>');</script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
@@ -2700,9 +2700,35 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             return '<pre style="white-space:pre-wrap">' + String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
         } };
     }
+    // echarts 按需加载：先挂一个带 __noop 标记的空壳（任何直接访问都不至于 ReferenceError），
+    // 真要画图时用 wbLoadEcharts() 拉真身（本地静态文件优先，CDN 兜底），加载失败就继续用空壳，
+    // 结果是图表区空着、正文照常出，不会整页报错卡住。
     if (typeof echarts === 'undefined') {
-        var _noopChart = { setOption: function () {}, resize: function () {}, dispose: function () {} };
-        window.echarts = { init: function () { return _noopChart; }, getInstanceByDom: function () { return null; } };
+        var _noopChart = { setOption: function () {}, resize: function () {}, dispose: function () {}, getDataURL: function () { return ''; } };
+        window.echarts = { __noop: true, init: function () { return _noopChart; }, getInstanceByDom: function () { return null; } };
+    }
+    var _wbEcP = null;
+    function wbLoadEcharts() {
+        if (window.echarts && window.echarts.init && !window.echarts.__noop) return Promise.resolve(window.echarts);
+        if (_wbEcP) return _wbEcP;
+        _wbEcP = new Promise(function (resolve) {
+            function done() { resolve(window.echarts); }
+            function load(src, fallback) {
+                var s = document.createElement('script');
+                s.src = src;
+                s.async = true;
+                s.onload = function () {
+                    if (window.echarts && window.echarts.init && !window.echarts.__noop) done();
+                    else fallback();
+                };
+                s.onerror = fallback;
+                document.head.appendChild(s);
+            }
+            load('/static/echarts.min.js', function () {
+                load('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js', done);
+            });
+        });
+        return _wbEcP;
     }
     // 占位符高亮：后端「严禁编造假数据」后，拿不准的数字会写成【待你填写：xxx】/【示例值，需核实】。
     // 这些必须让学生一眼看见——混在正文里被当成真数据交上去，比没有更危险。
@@ -6618,7 +6644,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         }
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
                         if (isDeep && !(data.data.rich_charts || []).length) {
-                            setTimeout(() => {
+                            setTimeout(async () => {
+                                // echarts 是按需加载的：这里等它到位再画（首屏不再为它买单）
+                                await wbLoadEcharts();
                                 // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致。
                                 // 网页侧把底改成半透明玻璃渐变（更贴页面主视觉）；系列色 CA 不动，
                                 // 否则会和后端导出的 PNG 配色对不上（导出件走 chart_renderer_pro）。
