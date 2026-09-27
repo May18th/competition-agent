@@ -1126,6 +1126,30 @@ body.light .wb-sec-no { box-shadow: none; }
     background: rgba(192, 57, 43, .08);
 }
 
+/* 佐证材料：输入框和上传区合成一块（原来是两个互不相干的框） */
+.wb-ud-box {
+    margin-top: 10px; padding: 12px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface-2);
+}
+.wb-ud-head {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--text-dim); margin-bottom: 8px;
+}
+.wb-drop {
+    margin-top: 8px; padding: 13px 12px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    flex-wrap: wrap; text-align: center;
+    border: 1px dashed var(--line); border-radius: 8px;
+    background: var(--surface-solid);
+    font-size: 12.5px; color: var(--text-dim); cursor: pointer;
+    transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.wb-drop:hover { border-color: var(--c-a); background: rgba(34, 211, 238, .06); }
+.wb-drop:focus-visible { outline: 2px solid var(--c-a); outline-offset: 2px; }
+.wb-drop.is-over { border-color: var(--c-a); background: rgba(34, 211, 238, .12); transform: scale(1.008); }
+.wb-drop .wb-drop-sub { flex: 1 1 240px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6; }
+
 /* 5) 输入框聚焦：青色描边 + 青色外发光（原来光晕 .14 几乎看不出来） */
 input:focus, textarea:focus, select:focus {
     border-color: #22d3ee;
@@ -1891,18 +1915,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                 <input type="text" id="udCost" placeholder="如 单套硬件 260 元" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
                             </div>
                         </div>
-                        <textarea id="udExtra" rows="2" placeholder="其它佐证（选填）：合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px; margin-top: 10px;"></textarea>
-                        <!-- 上传数据文件：后端 /api/upload_file 会解析并智能识别文件类型，
-                             识别结果摆出来让用户一键确认路由（实测数据 / 申报书草稿 / 官方文件） -->
-                        <div style="margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
-                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                                <button type="button" onclick="document.getElementById('udFile').click()"
-                                        style="padding: 6px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap;">
-                                    上传数据文件
-                                </button>
-                                <span style="font-size: 12px; color: var(--text-mute); line-height: 1.6;">
-                                    测试报告 / 调研数据 / 用户反馈（pdf · docx · txt · md · csv · xlsx），AI 自动识别并填到对应位置
-                                </span>
+                        <!-- 佐证材料：写文字和传文件是同一件事（都进正文的实测依据），合成一块，
+                             不再是一个输入框 + 一个孤零零的上传框。
+                             #udExtra / #udFile 的 id 不动 —— 后端字段路径和上传逻辑都依赖它们 -->
+                        <div class="wb-ud-box">
+                            <div class="wb-ud-head">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg>
+                                佐证材料<span class="wb-opt">（选填：写在下面，或把文件拖进来）</span>
+                            </div>
+                            <textarea id="udExtra" rows="2" placeholder="合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px;"></textarea>
+                            <div id="udDrop" class="wb-drop" role="button" tabindex="0"
+                                 onclick="document.getElementById('udFile').click()">
+                                <svg class="wb-ico" style="width: 17px; height: 17px;" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg>
+                                <span><b>点击上传</b> 或把文件拖到这里</span>
+                                <span class="wb-drop-sub">测试报告 / 调研数据 / 用户反馈（pdf · docx · txt · md · csv · xlsx），AI 自动识别后填到对应位置</span>
                             </div>
                             <input type="file" id="udFile" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm" style="display: none;">
                             <div id="udFileInfo" style="display: none; margin-top: 10px; font-size: 12.5px; line-height: 1.7;"></div>
@@ -2844,10 +2870,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         // ============ 实测数据「上传数据文件」+ 智能识别路由（Codex 待办 P0-1）============
         // 后端 /api/upload_file 解析文本后用 LLM 判断 file_type（赛事规则|申报书草稿|实测数据|参考文献|其他），
         // 前端把识别结果摆出来，让用户一键确认路由——不自动写入，避免误覆盖已填内容。
-        document.getElementById('udFile').addEventListener('change', async function (e) {
-            const file = e.target.files[0];
+        async function wbUdHandleFile(file) {
             if (!file) return;
-            e.target.value = '';   // 清空，允许重复选同一个文件
             var info = document.getElementById('udFileInfo');
             var ext = (String(file.name).match(/\.[^.]+$/) || [''])[0].toLowerCase();
             if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'].indexOf(ext) >= 0) {
@@ -2884,7 +2908,43 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 return;
             }
             wbUdShowRoute(info, file.name, d, text);
+        }
+
+        document.getElementById('udFile').addEventListener('change', function (e) {
+            var f = e.target.files[0];
+            e.target.value = '';   // 清空，允许重复选同一个文件
+            if (f) wbUdHandleFile(f);
         });
+
+        // 拖拽上传：拖到佐证区就能接住。只在 .wb-drop 上接管 drag/drop，
+        // 页面其它地方保持浏览器默认行为，不会误把文件拖成导航跳转
+        (function () {
+            var z = document.getElementById('udDrop');
+            if (!z) return;
+            ['dragenter', 'dragover'].forEach(function (ev) {
+                z.addEventListener(ev, function (e) {
+                    e.preventDefault(); e.stopPropagation(); z.classList.add('is-over');
+                });
+            });
+            z.addEventListener('dragleave', function (e) {
+                e.preventDefault(); e.stopPropagation();
+                try { if (z.contains(e.relatedTarget)) return; } catch (err) {}
+                z.classList.remove('is-over');
+            });
+            z.addEventListener('drop', function (e) {
+                e.preventDefault(); e.stopPropagation();
+                z.classList.remove('is-over');
+                var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (f) wbUdHandleFile(f);
+            });
+            // 键盘可达：聚焦后回车/空格等同点击
+            z.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    document.getElementById('udFile').click();
+                }
+            });
+        })();
 
         // 识别结果卡：类型 + 摘要 + 关键点 + 按类型给出一键路由（第一个按钮是推荐项）
         function wbUdShowRoute(info, fname, d, text) {
