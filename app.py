@@ -2217,6 +2217,17 @@ def generate():
 # tasks / report_stage / set_current_task / clear_current_task 已下沉到 stage_reporter.py（零依赖）。
 
 
+def _sync_gen_marker():
+    """把在跑生成任务数写到磁盘，供 scripts/safe_restart.sh 判断能否安全重启。
+    tasks/计数都是进程内存态，重启即丢；部署前等它归零，避免把用户的深度版拦腰杀掉
+    （2026-09-27 实锤：三次重启连杀三个在跑的深度任务）。"""
+    try:
+        with open("/tmp/comp_agent_gens", "w") as f:
+            f.write(str(_active_gen_count))
+    except Exception:
+        pass
+
+
 def _start_generation(data):
     """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。
     有空位直接开跑；满了进 FIFO 排队（status=queued），任务结束自动补位，
@@ -2240,6 +2251,7 @@ def _start_generation(data):
             _sweep_tasks()
             return task_id, None      # status=queued，前端轮询显示「排队第 N 位」
         _active_gen_count += 1
+        _sync_gen_marker()
     tasks[task_id]["status"] = "running"
     _launch_worker(task_id)
     _sweep_tasks()
@@ -2295,13 +2307,15 @@ def _launch_worker(task_id):
             clear_current_task()
             with _active_gen_lock:
                 _active_gen_count = max(0, _active_gen_count - 1)
+                _sync_gen_marker()
             _promote_next()            # 腾出坑位后立刻给排队的任务补位
 
-    # daemon=False：进程退出时等生成线程跑完（配套 systemd TimeoutStopSec=650 +
-    # gunicorn --graceful-timeout 620）。之前 daemon=True 导致每次部署重启都会把
-    # 在跑的生成任务拦腰杀掉——深度版一跑 4~8 分钟，部署频繁时用户必然遇到
-    # 「任务不存在或已过期」式假失败（2026-09-27 实锤三连杀）。
-    threading.Thread(target=worker, daemon=False).start()
+    # ⚠️ 必须 daemon=True：试过 daemon=False + gunicorn --graceful-timeout，
+    #   结果 SIGTERM 后主线程立即进入解释器关闭，langgraph 的线程池报
+    #   「cannot schedule new futures after interpreter shutdown」，任务照样秒死且日志一堆噪音。
+    #   正解不是让任务扛住重启，而是让**重启等任务跑完**——见 scripts/safe_restart.sh：
+    #   它读 /tmp/comp_agent_gens 里的在跑数量，归零才 systemctl restart。
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def _promote_next():
@@ -2317,6 +2331,7 @@ def _promote_next():
                 t["status"] = "running"
                 t["updated_at"] = time.time()
                 _active_gen_count += 1
+                _sync_gen_marker()
                 _launch_worker(tid)
                 return
 
