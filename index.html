@@ -1778,7 +1778,19 @@ mark.wb-ph {
                         <div id="fastProgressText" style="flex: 1; min-width: 0; text-align: center; color: var(--c-a); font-size: 14px;">
                             ⏳ 正在解析赛事规则... 0%
                         </div>
+                        <span id="lenBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">已生成 0 字</span>
                         <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">⏱ 预计 --</span>
+                    </div>
+                </div>
+                <!-- 等待期冷知识轮播：生成要等 47 秒~2 分钟，进度条下面给点有用的东西看 -->
+                <div id="wbTipCard" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
+                    <div style="display: flex; align-items: flex-start;">
+                        <span style="flex-shrink: 0; margin-right: 8px; font-size: 15px; line-height: 1.5;">💡</span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时补一条赛事冷知识</div>
+                            <div id="wbTipText" style="font-size: 13px; color: var(--text); line-height: 1.55;"></div>
+                        </div>
+                        <span id="wbSparkCount" style="display: none; flex-shrink: 0; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">💡 0</span>
                     </div>
                 </div>
                 <!-- 深度版步骤 -->
@@ -5731,10 +5743,17 @@ mark.wb-ph {
         var _streamLen = {};          // 字段 -> 已渲染字数，用于判断是否有新增
         var _streamAccum = {};        // 字段 -> 已累积全文（配合后端 cursor 增量，只拉新增后缀）
         var _streamShown = false;     // 结果区是否已因流式内容提前展开
-        var _streamTotal = 0;         // 已产出总字数（给进度条显示）
+        var _streamTotal = 0;         // 已产出总字数（给进度条显示，裸 length 口径）
+        var _streamCjk = 0;           // 已产出有效字数（剥 Markdown 符号，口径对齐后端 _cjk_len）
+        // 与后端 competition_agents._cjk_len 同一口径：# * ` - | > ( ) （ ） [ ] 和空白都不算字，
+        // 否则进度条上写「已生成 3000 字」，实际正文只有 2400 字，用户按字数估算篇幅会被带偏
+        function wbCjkLen(text) {
+            return (text || '').replace(/[#*`\-\|>()\[\]（）()\s]/g, '').length;
+        }
 
         function streamReset() {
-            _streamLen = {}; _streamAccum = {}; _streamShown = false; _streamTotal = 0;
+            _streamLen = {}; _streamAccum = {}; _streamShown = false; _streamTotal = 0; _streamCjk = 0;
+            window._wbCjkLen = 0;
             document.querySelectorAll('.content-block.streaming').forEach(function (el) {
                 el.classList.remove('streaming');
             });
@@ -5842,6 +5861,7 @@ mark.wb-ph {
                 if (txt.length <= prev) return;      // 没有新增就别重渲染，省掉闪烁
                 _streamLen[key] = txt.length;
                 fresh += txt.length - prev;
+                _streamCjk += wbCjkLen(txt.slice(prev));   // 只算本次新增片段的有效字数
                 twSet(key, txt);          // 交给打字机逐字揭示，不再整块覆盖
                 el.classList.add('streaming');
                 // 该区块所属 Tab 打上脉冲点（提示用户在别的页签有内容流入）
@@ -5862,6 +5882,7 @@ mark.wb-ph {
             }
             if (fresh > 0) {
                 _streamTotal += fresh;
+                window._wbCjkLen = _streamCjk;   // 给等待区的「已生成 X 字」徽章取数
                 // 第一次有内容就把骨架屏换成真实结果区
                 if (!_streamShown) {
                     _streamShown = true;
@@ -8047,6 +8068,228 @@ window.addEventListener('resize', function () {
         try { light = localStorage.getItem('wbLight') === '1'; } catch (e) {}
         applyTheme(light);
     })();
+})();
+</script>
+<script>
+/* ===== WorkBuddy 接手：等待期三件套 =====
+   A 冷知识轮播 / B 实时字数徽章 / C 点灵感碎片
+   设计原则：自驱动 + 零侵入。只在 #progressSteps 上挂一个 MutationObserver 感知「生成开始/结束」，
+   不往主流程塞任何回调，也不调用主 IIFE 的内部函数（wbToast 之类跨块取不到，这里自带轻量提示）。
+   万一整块失效，最坏结果是等待区少三样装饰，不影响生成。 */
+(function () {
+    // 冷知识：全部取自 data/ 下各赛事官方资料与提交物要求，不编造数字
+    var TIPS = [
+        ['iCAN', 'iCAN 总决赛总分 = 巡展评分 20% + 分组答辩评分 80%，现场演示和答辩才是大头。'],
+        ['iCAN', 'iCAN 创新赛道是双盲评审：材料里出现院校或导师信息，一处扣 5 分。'],
+        ['iCAN', 'iCAN 创新赛道评分：创新性 30、商业性 25、技术方案 25、产品介绍 20。'],
+        ['iCAN', 'iCAN 不收纯方案：作品必须有可演示的实物原型，只有 PPT 或仿真不能参赛。'],
+        ['iCAN', 'iCAN 最重的一条扣分是「AI 只做套壳、没承担核心业务」。'],
+        ['iCAN', 'iCAN 团队限 2-8 人，最多 3 名指导教师，每人只能报 1 支队伍。'],
+        ['iCAN', '演示视频只讲 PPT、没有实物运行画面，是 iCAN 明确的扣分项。'],
+        ['挑战杯', '挑战杯「大挑」是学术科技作品竞赛，「小挑」是创业计划竞赛，评审重心完全不同。'],
+        ['挑战杯', '大挑三类作品的奖项比例约为特等 3%、一等 8%、二等 24%、三等 65%。'],
+        ['挑战杯', '大挑科技发明制作要求有学生为第一完成人的专利或软件著作权。'],
+        ['挑战杯', '大挑篇幅有硬杠：自然科学类论文 8000 字以内，哲社类调查报告 15000 字以内。'],
+        ['挑战杯', '大挑里伪造实验数据、抄袭、知识产权权属不清，是一票否决项。'],
+        ['互联网', '互联网+ 评分：创新 30、教育 25、商业与社会价值 25、团队 20。'],
+        ['互联网', '互联网+ 明确不看好纯概念、简单 API 套壳和同质化的餐饮文创项目。'],
+        ['小挑', '小挑评分：创新意义 25、实践过程 20、社会价值 20、发展前景 20、团队协作 15。'],
+        ['小挑', '小挑发金银铜奖，大挑发特等奖和一、二、三等奖——别在材料里写错奖项名。'],
+        ['通用', '创新点别只写「用了 AI」，要写清 AI 参与了哪一步决策——评委看的是核心作用。'],
+        ['通用', '测算值写清「来源 + 年份 + 口径」，答辩时能少挨三问，也显得你真的查过。'],
+        ['通用', '评委翻材料的前两分钟基本只看目录和摘要，正文写完后记得回头改一遍摘要。'],
+        ['通用', 'AI 辅助生成的内容要主动标注：iCAN 要求注明「AI 辅助制作」。']
+    ];
+
+    var tipCard = null, tipText = null, lenBadge = null, sparkCount = null;
+    var tipTimer = null, lenTimer = null, sparkTimer = null, layer = null;
+    var tipQueue = [], tipIdx = 0, score = 0, running = false;
+
+    function el(id) { return document.getElementById(id); }
+    function shuffle(a) {
+        for (var i = a.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var t = a[i]; a[i] = a[j]; a[j] = t;
+        }
+        return a;
+    }
+    function clear(t) { if (t) { clearInterval(t); } return null; }
+
+    /* ---------- A 冷知识轮播 ---------- */
+    function tipBuild() {
+        var comp = '';
+        try { var c = el('competition'); comp = c ? (c.value || '') : ''; } catch (e) {}
+        var hit = [], rest = [];
+        TIPS.forEach(function (t) { (comp.indexOf(t[0]) >= 0 ? hit : rest).push(t[1]); });
+        tipQueue = shuffle(hit).concat(shuffle(rest));   // 当前赛事的先播
+        tipIdx = 0;
+    }
+    function tipShow() {
+        if (!tipText || !tipQueue.length) return;
+        tipText.style.opacity = '0';
+        setTimeout(function () {
+            if (!tipText) return;
+            tipText.innerText = tipQueue[tipIdx % tipQueue.length];
+            tipIdx++;
+            tipText.style.opacity = '1';
+        }, 180);
+    }
+    function tipStart() {
+        tipBuild();
+        if (tipCard) tipCard.style.display = 'block';
+        if (tipText) tipText.style.transition = 'opacity .3s';
+        tipShow();
+        tipTimer = clear(tipTimer);
+        tipTimer = setInterval(tipShow, 6000);
+    }
+    function tipStop() {
+        tipTimer = clear(tipTimer);
+        if (tipCard) tipCard.style.display = 'none';
+    }
+
+    /* ---------- B 实时字数徽章（口径对齐后端 _cjk_len） ---------- */
+    function lenStart() {
+        lenTimer = clear(lenTimer);
+        lenTimer = setInterval(function () {
+            if (!lenBadge) return;
+            var n = window._wbCjkLen || 0;
+            if (n > 0) {
+                lenBadge.style.display = 'inline-block';
+                lenBadge.innerText = '已生成 ' + n + ' 字';
+            } else {
+                lenBadge.style.display = 'none';
+            }
+        }, 500);
+    }
+    function lenStop() {
+        lenTimer = clear(lenTimer);
+        if (lenBadge) lenBadge.style.display = 'none';
+    }
+
+    /* ---------- C 点灵感碎片 ---------- */
+    function injectCss() {
+        if (el('wbSparkCss')) return;
+        var s = document.createElement('style');
+        s.id = 'wbSparkCss';
+        s.textContent =
+            '@keyframes wbSparkFloat{0%{transform:translateY(0) scale(.85);opacity:0}' +
+            '12%{opacity:1}100%{transform:translateY(-78vh) scale(1.05);opacity:0}}' +
+            '.wb-spark{position:absolute;pointer-events:auto;cursor:pointer;font-size:22px;' +
+            'line-height:1;-webkit-user-select:none;user-select:none;animation:wbSparkFloat 7s linear forwards}' +
+            '.wb-spark-hit{animation:none;transition:transform .25s ease-out,opacity .25s ease-out;' +
+            'transform:scale(1.7);opacity:0}';
+        document.head.appendChild(s);
+    }
+    function spawnSpark() {
+        if (!layer || layer.childNodes.length > 5) return;   // 同屏最多 5 个，别糊满屏幕
+        var s = document.createElement('div');
+        s.className = 'wb-spark';
+        s.innerText = '💡';
+        s.style.left = (6 + Math.random() * 84) + '%';
+        s.style.bottom = (6 + Math.random() * 10) + '%';
+        s.style.animationDuration = (6 + Math.random() * 2.5) + 's';
+        var dead = false;
+        function pop() {
+            if (dead) return;
+            dead = true;
+            score++;
+            if (sparkCount) {
+                sparkCount.style.display = 'inline-block';
+                sparkCount.innerText = '💡 ' + score;
+            }
+            s.className = 'wb-spark wb-spark-hit';
+            setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 280);
+        }
+        s.addEventListener('click', pop);
+        s.addEventListener('touchstart', function (e) {
+            if (e.cancelable) e.preventDefault();
+            pop();
+        }, { passive: false });
+        layer.appendChild(s);
+        setTimeout(function () { if (s.parentNode && !dead) s.parentNode.removeChild(s); }, 8500);
+    }
+    function sparkStart() {
+        score = 0;
+        injectCss();
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.id = 'wbSparkLayer';
+            // 全屏飘浮层独立 fixed（不用 box-shadow 大扩散，祖先 overflow 一裁就没了）
+            layer.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;' +
+                'pointer-events:none;z-index:9998;overflow:hidden;';
+            document.body.appendChild(layer);
+        }
+        if (sparkCount) { sparkCount.style.display = 'inline-block'; sparkCount.innerText = '💡 0'; }
+        sparkTimer = clear(sparkTimer);
+        sparkTimer = setInterval(spawnSpark, 1100);
+        setTimeout(spawnSpark, 400);
+    }
+    function sparkStop() {
+        sparkTimer = clear(sparkTimer);
+        if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+        layer = null;
+        if (sparkCount) sparkCount.style.display = 'none';
+        if (score > 0) miniToast('本次收集了 ' + score + ' 个灵感碎片');
+    }
+    // 自带轻量提示：主 IIFE 里的 wbToast 挂不到 window 上，跨块取不到，这里不依赖它
+    function miniToast(msg) {
+        var t = document.createElement('div');
+        t.innerText = msg;
+        t.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);' +
+            'z-index:9999;max-width:80%;padding:9px 16px;border-radius:999px;white-space:nowrap;' +
+            'background:var(--surface-2);border:1px solid var(--line);color:var(--text);' +
+            'font-size:13px;opacity:0;transition:opacity .25s;';
+        document.body.appendChild(t);
+        setTimeout(function () { t.style.opacity = '1'; }, 20);
+        setTimeout(function () {
+            t.style.opacity = '0';
+            setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 320);
+        }, 2600);
+    }
+
+    /* ---------- 总控：生成开始/结束 ---------- */
+    function allStart() {
+        if (running) return;
+        running = true;
+        try { tipStart(); } catch (e) {}
+        try { lenStart(); } catch (e) {}
+        try { sparkStart(); } catch (e) {}
+    }
+    function allStop() {
+        if (!running) return;
+        running = false;
+        try { sparkStop(); } catch (e) {}
+        try { lenStop(); } catch (e) {}
+        try { tipStop(); } catch (e) {}
+    }
+    function check() {
+        var ps = el('progressSteps');
+        if (!ps) return;
+        if (ps.style.display !== 'none') allStart();
+        else allStop();
+    }
+
+    function init() {
+        tipCard = el('wbTipCard');
+        tipText = el('wbTipText');
+        lenBadge = el('lenBadge');
+        sparkCount = el('wbSparkCount');
+        var ps = el('progressSteps');
+        if (!ps) return;
+        if (window.MutationObserver) {
+            try {
+                new MutationObserver(check).observe(ps, { attributes: true, attributeFilter: ['style'] });
+                return;
+            } catch (e) {}
+        }
+        setInterval(check, 800);   // 老内核兜底：没有 MutationObserver 就轮询
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+    window.wbWaitKit = { start: allStart, stop: allStop };
 })();
 </script>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
