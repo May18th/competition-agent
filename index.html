@@ -1698,14 +1698,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <label style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--c-a); color: #fff; border-radius: 8px; font-size: 12.5px; cursor: pointer;">
                     上传我的图片
-                    <input type="file" accept="image/*" onchange="wbBgUpload(this)" style="display: none;">
+                    <input type="file" id="wbBgFileInput" accept="image/*" onchange="wbBgUpload(this)" style="display: none;">
                 </label>
                 <button onclick="wbBgReset()" style="padding: 6px 12px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; cursor: pointer;">恢复默认</button>
                 <span style="font-size: 11.5px; color: var(--text-mute);">图片仅存本机，不上传服务器</span>
             </div>
             <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <span style="font-size: 11.5px; color: var(--text-mute);">压暗</span>
-                <input type="range" min="0" max="0.85" step="0.05" value="0.55" oninput="wbBgSetDim(this.value)" style="flex: 1 1 140px; min-width: 120px; accent-color: var(--c-a);">
+                <input type="range" min="0" max="0.85" step="0.05" value="0.45" oninput="wbBgSetDim(this.value)" style="flex: 1 1 140px; min-width: 120px; accent-color: var(--c-a);">
                 <span style="font-size: 11.5px; color: var(--text-mute);">（保证文字始终清晰）</span>
             </div>
             <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">
@@ -8184,7 +8184,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         }
         function wbBgApply(cfg) {
             var L = wbBgLayerEl();
-            var dim = cfg && typeof cfg.dim === 'number' ? cfg.dim : 0.55;   // 压暗：保证白字永远可读
+            // 0.45：用户图 brightness≈0.66。原先 0.55（brightness 0.59）把上传的图压得太灰，
+            // 用户会以为「图坏了」；嫌亮/嫌暗都可以拖面板里的压暗滑块
+            var dim = cfg && typeof cfg.dim === 'number' ? cfg.dim : 0.45;
             var blur = cfg && typeof cfg.blur === 'number' ? cfg.blur : 0;
             var img = cfg && cfg.src === 'user' ? wbBgUserUrl : null;
             var preset = null;
@@ -8207,6 +8209,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             wbBgSaveCfg(cfg || {});
         }
         function wbBgPick(id) {
+            // 没图却点了「我的图片」（如清过浏览器数据）：别把背景切成一片空
+            if (id === 'user' && !wbBgUserUrl) {
+                if (window.wbToast) wbToast('还没有上传过图片，先点「上传我的图片」', { type: 'warn' });
+                return;
+            }
             var cfg = wbBgLoadCfg();
             cfg.src = id;
             wbBgApply(cfg);
@@ -8236,12 +8243,16 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         wbBgUserUrl = URL.createObjectURL(blob);
                         var cfg = wbBgLoadCfg(); cfg.src = 'user';
                         wbBgApply(cfg);
+                        wbBgRenderSwatches();   // 让「我的图片」卡出现（上传前它没有图可用）
+                        input.value = '';       // 清空，否则再选同一个文件不触发 change
                         if (window.wbToast) wbToast('背景已应用（仅本机保存）', { type: 'ok' });
                     }).catch(function () {
                         // 私密模式/老内核没有 IndexedDB：退回本次会话内可用的 blob URL，刷新后失效但不报错
                         wbBgUserUrl = URL.createObjectURL(blob);
-                        var c2 = wbBgLoadCfg(); c2.src = 'user'; c2.dim = c2.dim || 0.55;
+                        var c2 = wbBgLoadCfg(); c2.src = 'user'; c2.dim = c2.dim || 0.45;
                         wbBgApply(c2);
+                        wbBgRenderSwatches();
+                        input.value = '';
                         if (window.wbToast) wbToast('已应用，但本浏览器不允许长期保存，刷新后会恢复默认', { type: 'warn' });
                     });
                 }, 'image/jpeg', 0.82);
@@ -8275,6 +8286,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             if (!box) return;
             var cur = (wbBgLoadCfg() || {}).src || '';
             var html = '';
+            // 「我的图片」：上传过就显示缩略图并可一键切回（之前没有这个入口，
+            // 用户一旦切到预设就再也切不回自己那张图，只能重新上传）；
+            // 没上传过时点它直接唤起选择框
+            var hasUser = !!wbBgUserUrl;
+            var onUser = (cur === 'user');
+            html += '<div onclick="' + (hasUser ? 'wbBgPick(\'user\')' : 'document.getElementById(\'wbBgFileInput\').click()') + '"'
+                + ' title="' + (hasUser ? '我的图片' : '点击上传我的图片') + '"'
+                + ' style="cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid '
+                + (onUser ? 'var(--c-a)' : 'var(--line)') + ';">'
+                + '<div style="height: 38px; background: ' + (hasUser ? 'url(' + wbBgUserUrl + ') center/cover no-repeat, ' : '') + 'var(--surface-solid);'
+                + ' display: flex; align-items: center; justify-content: center; color: var(--text-mute); font-size: 17px;">'
+                + (hasUser ? '' : '＋') + '</div>'
+                + '<div style="padding: 3px 0; text-align: center; font-size: 11.5px; background: var(--surface-solid); color: '
+                + (onUser ? 'var(--c-a)' : 'var(--text-dim)') + ';">我的图片</div></div>';
             WB_BG_PRESETS.forEach(function (p) {
                 var on = (cur === p.id);
                 html += '<div onclick="wbBgPick(\'' + p.id + '\')" title="' + p.name + '"'
@@ -8295,9 +8320,18 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 if (!cfg || !cfg.src) return;
                 if (cfg.src === 'user') {
                     wbBgGet().then(function (blob) {
-                        if (!blob) return;
+                        if (!blob) {
+                            // 配置还在但图片没了（清过浏览器数据 / 换了浏览器）：
+                            // 别让「我的图片」一直指向一个不存在的背景
+                            var c = wbBgLoadCfg();
+                            delete c.src;
+                            wbBgSaveCfg(c);
+                            wbBgRenderSwatches();
+                            return;
+                        }
                         wbBgUserUrl = URL.createObjectURL(blob);
                         wbBgApply(cfg);
+                        wbBgRenderSwatches();   // 图读回来了，「我的图片」卡才显示缩略图
                     });
                 } else {
                     wbBgApply(cfg);
