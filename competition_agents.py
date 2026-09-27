@@ -492,6 +492,7 @@ def get_competition_knowledge_structured(competition_name: str) -> dict:
 _kbv_chunks = []
 _kbv_term_df = {}
 _kbv_ready = False
+_kbv_lock = threading.Lock()
 
 
 def _kbv_char_terms(text):
@@ -510,22 +511,26 @@ def _kbv_char_terms(text):
 
 def _kbv_build():
     global _kbv_chunks, _kbv_term_df, _kbv_ready
-    _kbv_chunks = []
-    for comp, content in competition_knowledge.items():
-        parsed = parse_knowledge(content)
-        for field in ('scoring', 'sections', 'requirements', 'intro', 'preference', 'penalty'):
-            text = (parsed.get(field) or '').strip()
-            if not text:
-                continue
-            _kbv_chunks.append({
-                "competition": comp, "section": field,
-                "text": text, "terms": _kbv_char_terms(text),
-            })
-    _kbv_term_df = {}
-    for c in _kbv_chunks:
-        for t in c["terms"]:
-            _kbv_term_df[t] = _kbv_term_df.get(t, 0) + 1
-    _kbv_ready = True
+    with _kbv_lock:
+        # 双重检查：并发生成时多个线程可能同时走进来，第二个直接返回
+        if _kbv_ready:
+            return
+        _kbv_chunks = []
+        for comp, content in competition_knowledge.items():
+            parsed = parse_knowledge(content)
+            for field in ('scoring', 'sections', 'requirements', 'intro', 'preference', 'penalty'):
+                text = (parsed.get(field) or '').strip()
+                if not text:
+                    continue
+                _kbv_chunks.append({
+                    "competition": comp, "section": field,
+                    "text": text, "terms": _kbv_char_terms(text),
+                })
+        _kbv_term_df = {}
+        for c in _kbv_chunks:
+            for t in c["terms"]:
+                _kbv_term_df[t] = _kbv_term_df.get(t, 0) + 1
+        _kbv_ready = True
 
 
 def _kbv_idf(term):
@@ -1831,7 +1836,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 
 【篇幅硬性要求】
 1. 全文总字数按下方官方章节数浮动：每章 120～180 字；章节少约 900 字、章节多约 1800 字，每章不足 100 字视为不合格。
-2. 章节严格按下方官方模板组织，标题原样使用（含「一、二、三、」序号），不要增删章节、不要中途省略、不要自造或合并章节：
+2. 章节严格按下方官方模板组织，每个标题**必须用「## 」开头**（Markdown 二级标题）并保留「一、二、三、」序号，不要增删章节、不要中途省略、不要自造或合并章节；**输出后按官方顺序自检一遍，确保不乱序、不缺章**：
 
 {_fast_chapter_block(state)}
 

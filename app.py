@@ -582,6 +582,37 @@ def _normalize_heading_title(s):
     return re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", s or "")
 
 
+def _fetch_proposal_from_source(data):
+    """导出时若传 task_id / history_id，从后端取 proposal 原文，覆盖前端 DOM 文本。
+
+    背景：前端 DOM 文本在并发生成/断网时可能被串台或半截渲染污染，
+    后端 result_data / tasks 里存的才是干净原文。
+    """
+    try:
+        tid = str(data.get('task_id') or '').strip()
+        if tid and tid in tasks:
+            d = tasks[tid].get('data') or {}
+            p = (d.get('proposal') or '').strip()
+            if p:
+                return p
+        hid = data.get('history_id')
+        if hid:
+            import json as _json
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            row = c.execute("SELECT result_data FROM history WHERE id=?", (int(hid),)).fetchone()
+            conn.close()
+            if row:
+                rd = _json.loads(row['result_data'] or '{}')
+                p = (rd.get('proposal') or '').strip()
+                if p:
+                    return p
+    except Exception as e:
+        print(f"[export_word] 后端原文覆盖失败，退回前端文本：{e}")
+    return ''
+
+
 def _reorder_markdown_by_chapters(text, ordered_titles):
     """按官方章节顺序重排 Markdown 正文，缺省部分保持原有先后追加到末尾。
 
@@ -834,6 +865,10 @@ def upload_pdf():
 def export_word():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
+    # 后端原文覆盖：前端 DOM 文本可能被串台/断网污染，传 task_id / history_id 时优先取后端原文
+    _backend_text = _fetch_proposal_from_source(data)
+    if _backend_text:
+        text = _backend_text
     title = data.get('title', '导出文档')
     charts = data.get('charts') or []
     if not text.strip():
