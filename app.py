@@ -171,15 +171,20 @@ _distill_hits = {}
 
 
 def _distill_rate_limited():
-    ip = _client_ip()
+    # 键优先 uid（cookie）再退回 IP——与 _rate_limited 同理：校园网 NAT 下
+    # 按 IP 限 3 次/10 分钟会把全校共用出口的用户锁死。
+    try:
+        key = _current_uid() or _client_ip()
+    except Exception:
+        key = _client_ip()
     now = time.time()
     with _distill_lock:
-        hits = [t for t in _distill_hits.get(ip, []) if now - t < _DISTILL_WINDOW_SEC]
+        hits = [t for t in _distill_hits.get(key, []) if now - t < _DISTILL_WINDOW_SEC]
         if len(hits) >= _DISTILL_LIMIT:
-            _distill_hits[ip] = hits
+            _distill_hits[key] = hits
             return True
         hits.append(now)
-        _distill_hits[ip] = hits
+        _distill_hits[key] = hits
         return False
 
 
@@ -2228,6 +2233,11 @@ def _sync_gen_marker():
         pass
 
 
+# 启动即归零：进程刚起来时必然没有在跑任务。不写的话，上次被强杀残留的
+# marker>0 会让 safe_restart.sh 之后每次部署都空等 10 分钟。
+_sync_gen_marker()
+
+
 def _start_generation(data):
     """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。
     有空位直接开跑；满了进 FIFO 排队（status=queued），任务结束自动补位，
@@ -2490,8 +2500,10 @@ def get_task_status(task_id):
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
-    # 排队兜底：queued 超过 10 分钟没被补位（只可能发生在服务重启丢队列后），判过期
-    if t.get("status") == "queued" and (time.time() - t.get("updated_at", 0)) > 600:
+    # 排队兜底：queued 超过 30 分钟没被补位，判过期。
+    # ⚠️ 不能短：深度版单篇 4~8 分钟，队尾第 5 位之后等 10 分钟以上完全正常，
+    #   之前按 10 分钟判过期会把排队中的真实用户误杀（2026-09-27 自查发现）。
+    if t.get("status") == "queued" and (time.time() - t.get("updated_at", 0)) > 1800:
         t["status"] = "error"
         t["error"] = "任务排队超时，请重新生成"
         t["error_code"] = "timeout"

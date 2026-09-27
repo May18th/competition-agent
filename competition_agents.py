@@ -64,8 +64,12 @@ def _quota_load():
 
 def _quota_save(data):
     try:
-        with open(_QUOTA_FILE, "w", encoding="utf-8") as f:
+        # 原子写：先写临时文件再替换。原地写时进程崩溃/断电会留下半截 JSON，
+        # _quota_load 解析失败 → 当天计数清零 → 配额形同虚设（并发下触发概率不低）。
+        tmp = _QUOTA_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             _json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, _QUOTA_FILE)
     except Exception:
         pass
 
@@ -88,17 +92,23 @@ def get_quota_status():
 # 闸门从 4 抬到 16（与 MAX_CONCURRENT_GEN 对齐）——原值 4 会让 16 路生成
 # 在所有 LLM 调用上排 4 深的长队，多路并发形同虚设。
 _LLM_GATE = threading.Semaphore(16)
+_quota_lock = threading.Lock()
 _llm_invoke_original = llm.invoke
 
 
 def _llm_invoke_with_quota(*args, **kwargs):
-    data = _quota_load()
-    if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
-        raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
+    # ⚠️ 读-改-写必须加锁：16 路生成并发时无锁的「load→+1→save」会互相覆盖
+    # 丢计数（配额被低估）。锁只包文件操作，不包 LLM 调用本身，不串行化。
+    with _quota_lock:
+        data = _quota_load()
+        if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
+            raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
     with _LLM_GATE:
         result = _llm_invoke_original(*args, **kwargs)
-    data["calls"] = data.get("calls", 0) + 1
-    _quota_save(data)
+    with _quota_lock:
+        data = _quota_load()
+        data["calls"] = data.get("calls", 0) + 1
+        _quota_save(data)
     return result
 
 
