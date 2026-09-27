@@ -1784,12 +1784,12 @@ mark.wb-ph {
                         <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">⏱ 预计 --</span>
                     </div>
                 </div>
-                <!-- 等待期冷知识轮播：生成要等 47 秒~2 分钟，进度条下面给点有用的东西看 -->
+                <!-- 等待期冷知识轮播：生成要等 47 秒~2 分钟，进度条下面放点有趣的，打发时间用 -->
                 <div id="wbTipCard" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
                     <div style="display: flex; align-items: flex-start;">
                         <span style="flex-shrink: 0; margin-right: 8px; font-size: 15px; line-height: 1.5;">💡</span>
                         <div style="flex: 1; min-width: 0;">
-                            <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时补一条赛事冷知识</div>
+                            <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时看个冷知识<span id="wbTipNext" style="cursor: pointer; color: var(--c-a); margin-left: 8px; user-select: none;" title="换下一条">↻ 换一条</span></div>
                             <div id="wbTipText" style="font-size: 13px; color: var(--text); line-height: 1.55;"></div>
                         </div>
                         <span id="wbSparkCount" style="display: none; flex-shrink: 0; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">💡 0</span>
@@ -8079,31 +8079,34 @@ window.addEventListener('resize', function () {
    不往主流程塞任何回调，也不调用主 IIFE 的内部函数（wbToast 之类跨块取不到，这里自带轻量提示）。
    万一整块失效，最坏结果是等待区少三样装饰，不影响生成。 */
 (function () {
-    // 冷知识：全部取自 data/ 下各赛事官方资料与提交物要求，不编造数字
+    // 冷知识：以科技史趣闻为主 + 少量「真的吗」调剂。全部是有据可查的真事，不编数字。
+    // 写法刻意走「钩子 + 反转」：用户在等生成，要的是有意思，不是比赛条文。
     var TIPS = [
-        ['iCAN', 'iCAN 总决赛总分 = 巡展评分 20% + 分组答辩评分 80%，现场演示和答辩才是大头。'],
-        ['iCAN', 'iCAN 创新赛道是双盲评审：材料里出现院校或导师信息，一处扣 5 分。'],
-        ['iCAN', 'iCAN 创新赛道评分：创新性 30、商业性 25、技术方案 25、产品介绍 20。'],
-        ['iCAN', 'iCAN 不收纯方案：作品必须有可演示的实物原型，只有 PPT 或仿真不能参赛。'],
-        ['iCAN', 'iCAN 最重的一条扣分是「AI 只做套壳、没承担核心业务」。'],
-        ['iCAN', 'iCAN 团队限 2-8 人，最多 3 名指导教师，每人只能报 1 支队伍。'],
-        ['iCAN', '演示视频只讲 PPT、没有实物运行画面，是 iCAN 明确的扣分项。'],
-        ['挑战杯', '挑战杯「大挑」是学术科技作品竞赛，「小挑」是创业计划竞赛，评审重心完全不同。'],
-        ['挑战杯', '大挑三类作品的奖项比例约为特等 3%、一等 8%、二等 24%、三等 65%。'],
-        ['挑战杯', '大挑科技发明制作要求有学生为第一完成人的专利或软件著作权。'],
-        ['挑战杯', '大挑篇幅有硬杠：自然科学类论文 8000 字以内，哲社类调查报告 15000 字以内。'],
-        ['挑战杯', '大挑里伪造实验数据、抄袭、知识产权权属不清，是一票否决项。'],
-        ['互联网', '互联网+ 评分：创新 30、教育 25、商业与社会价值 25、团队 20。'],
-        ['互联网', '互联网+ 明确不看好纯概念、简单 API 套壳和同质化的餐饮文创项目。'],
-        ['小挑', '小挑评分：创新意义 25、实践过程 20、社会价值 20、发展前景 20、团队协作 15。'],
-        ['小挑', '小挑发金银铜奖，大挑发特等奖和一、二、三等奖——别在材料里写错奖项名。'],
-        ['通用', '创新点别只写「用了 AI」，要写清 AI 参与了哪一步决策——评委看的是核心作用。'],
-        ['通用', '测算值写清「来源 + 年份 + 口径」，答辩时能少挨三问，也显得你真的查过。'],
-        ['通用', '评委翻材料的前两分钟基本只看目录和摘要，正文写完后记得回头改一遍摘要。'],
-        ['通用', 'AI 辅助生成的内容要主动标注：iCAN 要求注明「AI 辅助制作」。']
+        '微波炉的发明，来自一块在雷达工程师口袋里融化的巧克力——1945 年他没心疼巧克力，反而琢磨：这玩意儿能加热食物。',
+        '便利贴用的胶水，本是个失败项目：实验室想造强力胶，结果做出一贴就掉的「次品」，几年后成了办公室销量冠军。',
+        '蓝牙的名字来自 10 世纪一位丹麦国王，传说他统一了丹麦和挪威——就像蓝牙统一各种设备。logo 就是他的名字缩写。',
+        '二维码的发明人是个围棋迷，黑白格子的灵感直接来自围棋棋盘。',
+        '1973 年世界第一通手机电话，是摩托罗拉工程师打给老对手贝尔实验室的——内容大概是：猜猜我在哪儿，用手机跟你说话。',
+        '任天堂 1889 年开业时是做花札纸牌的，卖了七十多年纸牌才转型电子游戏。',
+        '诺基亚 1865 年起家时是造纸厂，后来卖过胶鞋和电缆，手机只是中途的转型。',
+        '世界上第一条手机短信 1992 年才发出，内容只有一句：Merry Christmas。',
+        '青霉素的发现始于一次度假：弗莱明回来发现培养皿发霉了——别人可能直接扔了，他凑近看了看。',
+        '第一只电脑鼠标是木头做的，外壳就是个小木盒。',
+        '不粘锅涂层特氟龙，是化学家研究制冷剂时发现的：气瓶明明有气却倒不出来，他干脆把瓶子剖开看了看。',
+        '雨刷是一位女士 1903 年发明的：她坐电车时看见司机一边开车、一边伸手擦挡风玻璃。',
+        '洗碗机发明人说过一句硬气的话：「要是没人发明洗碟机，我就自己造一个。」后来她真的造出来了。',
+        'Wi-Fi 的核心算法来自一群研究黑洞的射电天文学家——他们本来是在捕捉来自宇宙深处的微弱信号。',
+        '「bug」的著名由来：1947 年哈佛一台电脑频繁死机，工程师拆开发现一只飞蛾卡在继电器里，顺手把它贴进了工作日志。',
+        '第一代 iPhone 发布时没有复制粘贴、没有 App Store，发布会现场演示的机器还是工程师提前调好「最佳路线」的。',
+        'YouTube 最早是个视频相亲网站，一直没人来相亲，创始人索性开放所有人上传视频。',
+        'Slack 原本是家游戏公司做游戏时留下的内部聊天工具——游戏凉了，聊天工具却市值几百亿。',
+        '谷歌最早叫 BackRub（揉背），因为它靠统计网页的「反向链接」来排名。',
+        'USB 的发明者亲口承认：接口分正反面是个设计失误——所以你总感觉要插三次才成功。',
+        '蜂蜜基本不会变质——考古学家挖出过几千年前的蜂蜜，据说还能吃。',
+        '香蕉在植物学上属于浆果，草莓反而不是。'
     ];
 
-    var tipCard = null, tipText = null, lenBadge = null, sparkCount = null;
+    var tipCard = null, tipText = null, lenBadge = null, sparkCount = null, tipNext = null;
     var tipTimer = null, lenTimer = null, sparkTimer = null, layer = null;
     var tipQueue = [], tipIdx = 0, score = 0, running = false;
 
@@ -8119,11 +8122,7 @@ window.addEventListener('resize', function () {
 
     /* ---------- A 冷知识轮播 ---------- */
     function tipBuild() {
-        var comp = '';
-        try { var c = el('competition'); comp = c ? (c.value || '') : ''; } catch (e) {}
-        var hit = [], rest = [];
-        TIPS.forEach(function (t) { (comp.indexOf(t[0]) >= 0 ? hit : rest).push(t[1]); });
-        tipQueue = shuffle(hit).concat(shuffle(rest));   // 当前赛事的先播
+        tipQueue = shuffle(TIPS.slice());   // 纯趣味内容，不再按赛事排序
         tipIdx = 0;
     }
     function tipShow() {
@@ -8136,13 +8135,16 @@ window.addEventListener('resize', function () {
             tipText.style.opacity = '1';
         }, 180);
     }
+    function restartTipTimer() {
+        tipTimer = clear(tipTimer);
+        tipTimer = setInterval(tipShow, 7000);   // 条数变长，6 秒→7 秒，读起来从容些
+    }
     function tipStart() {
         tipBuild();
         if (tipCard) tipCard.style.display = 'block';
         if (tipText) tipText.style.transition = 'opacity .3s';
         tipShow();
-        tipTimer = clear(tipTimer);
-        tipTimer = setInterval(tipShow, 6000);
+        restartTipTimer();
     }
     function tipStop() {
         tipTimer = clear(tipTimer);
@@ -8274,8 +8276,10 @@ window.addEventListener('resize', function () {
     function init() {
         tipCard = el('wbTipCard');
         tipText = el('wbTipText');
+        tipNext = el('wbTipNext');
         lenBadge = el('lenBadge');
         sparkCount = el('wbSparkCount');
+        if (tipNext) tipNext.onclick = function () { tipShow(); restartTipTimer(); };
         var ps = el('progressSteps');
         if (!ps) return;
         if (window.MutationObserver) {
