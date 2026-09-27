@@ -83,9 +83,11 @@ def get_quota_status():
     }
 
 
-# 峰值并发闸：深度版 START 阶段最多 8 个节点并行打 DeepSeek，
-# 限制到 4 个一批，避免瞬时并发过高触发限流。
-_LLM_GATE = threading.Semaphore(4)
+# 峰值并发闸：全局 LLM 调用并发上限。
+# 2026-09-27 实测：DeepSeek 单 key 24 路并发零 429（max_tokens=1 探测），
+# 闸门从 4 抬到 16（与 MAX_CONCURRENT_GEN 对齐）——原值 4 会让 16 路生成
+# 在所有 LLM 调用上排 4 深的长队，多路并发形同虚设。
+_LLM_GATE = threading.Semaphore(16)
 _llm_invoke_original = llm.invoke
 
 
