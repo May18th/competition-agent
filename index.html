@@ -395,14 +395,19 @@ body {
 }
 .hero .wb-em .wb-ico-xl { width: .82em; height: .82em; vertical-align: -.06em; }
 .hero p { font-size: 14.5px; color: var(--text-dim); line-height: 1.75; max-width: 46ch; margin: 0 auto; }
-/* 技术亮点：单独成条，不与副标题抢层级 */
+/* 技术亮点：小字注释层级 —— 去掉胶囊边框/底色，灰字弱化，只做背书不做卖点 */
 .hero p.wb-hero-tech{
-    display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center;
-    margin: 10px auto 0; padding: 6px 14px;
+    display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;
+    margin: 8px auto 0; padding: 0;
     max-width: min(760px, 100%);   /* 继承 .hero p 的 46ch 会被挤成三行 */
-    border: 1px solid rgba(34,211,238,.28); border-radius: 999px;
-    background: rgba(34,211,238,.07);
-    font-size: 12.5px; line-height: 1.5; color: var(--c-a);
+    font-size: 12px; line-height: 1.6; color: var(--text-mute);
+}
+.hero p.wb-hero-tech .wb-ico { width: 13px; height: 13px; }
+/* 图形标志：hero 的视觉锚点。svg / img 同一套样式，logo 定稿后直接换标签 */
+.hero .wb-hero-logo{
+    display: block; width: 54px; height: 54px; margin: 0 auto 12px;
+    border-radius: 13px;
+    box-shadow: 0 8px 22px rgba(102, 114, 216, .30);
 }
 .wb-hero-tech .wb-dot { flex: none; }
 /* ---------- 档位标识 ---------- */
@@ -1622,6 +1627,53 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 #wbStyleBar select { flex: 1 1 160px; min-width: 140px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 13px; }
 #wbStyleBar button { flex: none; padding: 7px 12px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 12.5px; }
 #wbStyleBar .sb-note { flex: 1 1 100%; font-size: 12px; color: var(--text-mute); }
+
+/* ===== 风格收敛：去模板味（实色按钮 / 实色徽章 / 移动端 hero 压缩 / 表单卡片统一） ===== */
+/* 1) 主按钮：渐变+流光扫过+紫色光晕 → 实色 accent + 中性阴影。
+    「开始生成」是全页最重要的一个动作，靠位置和字号立住就够，不靠发光 */
+.btn-primary {
+    background: var(--c-a);
+    animation: none;
+}
+.btn-primary::after { display: none; }
+.btn-primary:hover:not(:disabled) {
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .22);
+}
+#startBtn {
+    box-shadow: 0 8px 22px rgba(15, 23, 42, .22);
+}
+body.light #startBtn,
+body.light .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 8px 22px rgba(79, 70, 229, .24);
+}
+
+/* 2) 向导步骤徽章同步去渐变：和主按钮同一套实色语言 */
+.step-badge {
+    background: var(--c-a);
+    background-size: auto;
+    animation: none;
+}
+
+/* 3) 折叠表单区统一卡片规格：圆角 / 描边 / 底色 / 内距与赛事要求卡一致，
+    不再出现「裸表单」散落在卡片里 */
+#teamBody, #userDataBody, #advParamBody, #draftAdvBody {
+    margin-top: 10px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-2);
+}
+
+/* 4) 移动端首屏压缩：hero 让位给创意输入框，第一屏就能开写 */
+@media (max-width: 768px) {
+    .hero { padding: 10px 16px 4px; margin-bottom: 6px; }
+    .hero .wb-hero-logo { width: 36px; height: 36px; margin-bottom: 5px; border-radius: 9px; }
+    .hero h1 { font-size: 23px; margin-bottom: 3px; }
+    .hero p { font-size: 12.5px; }
+    .hero p.wb-hero-tech { font-size: 11px; margin-top: 3px; }
+    /* 顶排工具按钮（使用说明/历史/背景）贴紧 hero，别在首屏占独立一行 */
+    #wbTopTools { margin: 0 4px 4px !important; }
+}
 </style>
 </head>
 <body>
@@ -1699,14 +1751,23 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         </div>
 
         <!-- Hero -->
+        <!-- Hero：层级 = 图形标志 → 一句话价值主张 → 小字技术说明（不再三行平铺）。
+             标志目前是内联 SVG 占位（申报书+对勾徽章，贴「生成申报材料」这件事本身）；
+             logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
+             <img src="/static/logo.png" class="wb-hero-logo" alt="赛创助手"> 即可，样式已写好 -->
         <div class="hero">
-            <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>输入创意，生成符合赛事评审规则的申报书：简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书</p>
-            <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模）。
-                 单独做成一条，不与副标题连成一段灰色文字 -->
+            <svg class="wb-hero-logo" viewBox="0 0 48 48" aria-hidden="true" role="img">
+                <rect x="3" y="3" width="42" height="42" rx="12" fill="var(--c-a)"/>
+                <path d="M18 11h9l7 7v17a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 16 35V13.5A2.5 2.5 0 0 1 18 11z" fill="rgba(255,255,255,.94)"/>
+                <path d="M27 11v7h7" fill="none" stroke="var(--c-a)" stroke-width="2.2" stroke-linejoin="round"/>
+                <path d="M20 27.5l3.6 3.6 6.4-7.2" fill="none" stroke="var(--c-a)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <h1>赛创助手</h1>
+            <p>输入创意，生成符合评审规则的完整申报材料</p>
+            <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点 -->
             <p class="wb-hero-tech">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>
-                基于 LangGraph 多智能体工作流，15 个赛事知识库自动匹配评审规则</p>
+                基于 LangGraph 多智能体工作流 · 15 个赛事知识库自动匹配评审规则</p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -1833,7 +1894,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     </div>
 
                     <!-- 赛事要求卡：跟着赛事名自动切换文档类型与章节结构，可直接改 -->
-                    <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-solid);">
+                    <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
                             <div onclick="evToggleBody()" style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px;">
                                 本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span><span id="evSummary" style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span><span id="evBodyArrow" style="color: var(--c-a); font-weight: 400;">▾</span>
