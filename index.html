@@ -353,7 +353,7 @@ body {
 .container { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
 
 /* ---------- Hero ---------- */
-.hero { text-align: center; padding: 44px 20px 28px; margin-bottom: 22px; }
+.hero { text-align: center; padding: 26px 20px 18px; margin-bottom: 14px; }
 .hero h1 {
     font-size: clamp(24px, 3.8vw, 38px);
     font-weight: 800;
@@ -973,6 +973,23 @@ mark.wb-ph {
 #coachTip.coach-below::before { top: -8px; border-bottom: 8px solid var(--c-a); }
 #coachTip.coach-above::before { bottom: -8px; border-top: 8px solid var(--c-a); }
 
+/* ---------- 开始生成按钮：sticky 悬浮底栏 ---------- */
+/* 长表单场景按钮原位置远超首屏（实测手机 top≈1826 / 桌面 1736，视口 744/673）。
+   不用 fixed：.card 的 backdrop-filter 会让 fixed 相对卡片而非视口定位（CSS 规范行为，
+   实测按钮停在文档流位置）；sticky 不受影响，且滚过自然位置后自动回落到进度条上方，
+   生成中看进度时按钮不挡屏幕。QQ/夸克老内核不支持 :has 时优雅退化为原布局。 */
+#startBtn {
+    position: sticky;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 900;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .45);
+}
+.card:has(#startBtn) { overflow: visible; }
+.card:has(#startBtn)::after { display: none; }
+@media (min-width: 769px) {
+    #startBtn { display: block; width: fit-content; margin: 14px auto 0; }
+}
+
 /* ---------- 响应式（统一放最后） ---------- */
 @media (max-width: 768px) {
     /* 手机上把留白压掉：原来一屏只能看到标题 + 半张卡，要滑很久才摸到输入框 */
@@ -1087,6 +1104,9 @@ mark.wb-ph {
     .card { padding: 10px 10px; margin-bottom: 8px; }
     .card-title { margin-bottom: 8px; }
     .form-group { margin-bottom: 10px; }
+
+    /* 5) 开始生成按钮悬浮底栏（sticky 规则在全局区，这里只做全宽） */
+    #startBtn { display: block; width: 100%; }
 
     /* 5) 微信/QQ 内置浏览器顶部导航遮挡：给 body 加顶部留白 */
     body.in-app { padding-top: 44px; }
@@ -1454,15 +1474,16 @@ mark.wb-ph {
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>输入创意，3 分钟生成按比赛规则写的申报书初稿</p>
+            <p>输入创意，3 分钟生成符合赛事评审规则的申报书初稿</p>
+            <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模） -->
+            <p style="margin-top: 7px; font-size: 12.5px; line-height: 1.5; color: var(--c-a); opacity: .92;">
+                基于 LangGraph 多智能体工作流・15 个赛事知识库自动匹配评审规则</p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap;">
-            <!-- 今日额度：直接读 /api/quota（和 /api/health 是同一份数据）。
-                 默认隐藏，拿到数才显示——接口挂了就当没这回事，绝不留个永远转圈的占位 -->
-            <span id="quotaBadge" style="display: none; margin-right: auto; align-self: center; font-size: 12px; color: var(--text-mute);"
-                  title="每日调用上限，次日零点重置"></span>
+            <!-- 今日额度不再前端展示（用户拍板）：数字是全站剩余不是个人维度，
+                 显眼了反而让用户困惑、也把运营盘子亮给评委。后端 /api/quota 接口保留，后台可查 -->
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
                 <span class="wb-dot"></span>使用说明
             </button>
@@ -1746,7 +1767,7 @@ mark.wb-ph {
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">2 分钟出 5000 字接近成稿</b><br>
+                            <b style="color: var(--c-b);">约 3.5 分钟出 5000 字接近成稿</b><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -2944,30 +2965,9 @@ mark.wb-ph {
             row.style.display = (m && m.value === 'fast') ? 'block' : 'none';
         }
 
-        // 今日额度：读现成的 /api/quota（和 /api/health 是同一份），拿到数才显示。
-        // 这是锦上添花的信息，接口不通就保持隐藏——绝不留个「加载中…」占位在那儿碍眼
-        function wbLoadQuota() {
-            var el = document.getElementById('quotaBadge');
-            if (!el) return;
-            fetch('/api/quota')
-                .then(function (r) { return r.json(); })
-                .then(function (q) {
-                    if (!q || !q.success || typeof q.remaining !== 'number') return;
-                    el.style.display = 'inline-block';   // 初始是 none，必须显式写
-                    if (q.exceeded) {
-                        el.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>'
-                            + ' 今日额度已用完（' + q.calls + '/' + q.limit + '），明日零点重置';
-                        el.style.color = 'var(--warn-text)';
-                    } else {
-                        // 剩不到两成时提前变黄提醒，别等真用完了才发现
-                        var low = q.limit > 0 && (q.remaining / q.limit) <= 0.2;
-                        el.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>'
-                            + ' 今日剩余 ' + q.remaining + '/' + q.limit + ' 次';
-                        el.style.color = low ? 'var(--warn-text)' : 'var(--text-mute)';
-                    }
-                })
-                .catch(function () {});
-        }
+        // 今日额度已不在前端展示（用户拍板：数字是全站剩余、不是个人维度，
+        // 显眼了反而让用户困惑，也把运营盘子亮给评委）。
+        // 后端 /api/quota 接口保留不动，后台运维仍可查。
 
         function wbLoadForm() {
             var d = null;
@@ -3021,7 +3021,6 @@ mark.wb-ph {
                 var el = document.getElementById(id);
                 if (el) el.addEventListener('change', wbSaveForm);
             });
-            wbLoadQuota();
         })();
         wbLoadForm();
         // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
@@ -6156,7 +6155,6 @@ mark.wb-ph {
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
-                try { wbLoadQuota(); } catch (e) {}   // 刚跑完一轮，额度数字已经变了
                 document.getElementById('fastProgress').style.width = '100%';
                 setTimeout(() => {
                     document.getElementById('progressSteps').style.display = 'none';
