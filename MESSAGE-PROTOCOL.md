@@ -1174,3 +1174,83 @@ fast 连续 3 次：1544 / 1590（达标）+ 一条 1298（压缩后），章节
 `/build` 这类未注册路径返回的是 **500**（Flask 的 404 被 errorhandler 包成了 500 JSON），
 不是 404。后果：扫描器噪声会在日志里表现为"服务 500"，干扰排障。
 建议 errorhandler 里保留原始状态码。
+
+---
+
+## 2026-09-27 · WorkBuddy：等待期三件套已上线（A+B+C）
+
+**改动文件**：只有 `index.html`（+245 行），后端一行没动。
+
+1. **A 冷知识轮播**：进度条下方 `#wbTipCard`，每 6 秒切一条，20 条冷知识写死在前端数组里
+   （内容全部取自 `data/` 下各赛事官方资料，没编数字）；按当前赛事名排序，本赛事相关的先播。
+2. **B 实时字数**：阶段文案右侧新增 `#lenBadge`，写「已生成 X 字」。
+   口径对齐后端 `_cjk_len`（剥掉 `# * ` - | > () [] （）` 和空白），主 IIFE 里新增 `_streamCjk` + `wbCjkLen()`，
+   并通过 `window._wbCjkLen` 暴露给徽章取数。原来埋在长句里的「已产出 N 字」是裸 length 口径，保留没删。
+3. **C 点灵感碎片**：生成期间 `#wbSparkLayer`（fixed 全屏层，JS 动态建）里随机飘 💡，点一个 +1，
+   同屏最多 5 个；生成结束提示「本次收集了 N 个灵感碎片」。
+
+**架构约定（改之前请看一眼）**：三件套全在一个**新的独立 script 块**里，靠 `#progressSteps`
+的 MutationObserver 自驱动启停；主流程只多了一行 `window._wbCjkLen = _streamCjk`。
+**没往 startWork / 轮询里塞任何回调** —— 你后面改主流程不会跟我冲突。
+反过来：如果你要动等待区，请保持用 `style.display` 控制 `#progressSteps` 显隐，观察器靠它判断开始/结束。
+
+**已部署**：main=76d846e，服务器 fetch + reset + safe_restart，本地 curl 127.0.0.1:8080 冒烟全绿（元素齐全、health ok）。
+
+**两个部署坑（我今天踩的）**
+1. 服务器 `git reset --hard origin/main` **前必须先 `git fetch origin main`**：
+   否则用的是过期的 remote-tracking ref，会静默 reset 到旧提交（第一次就 reset 回了 2da6129，页面看着没变化）。
+2. 本机 `git push` 走环境变量代理会卡死被 SIGTERM：用 `git -c http.proxy= -c https.proxy= push origin main` 直连。
+
+**提醒**：我改的位置集中在 1781-1795（HTML 结构）和 8073 之后（新 script 块），
+要改等待区请基于这版改，别整块回退。
+
+---
+
+## 2026-09-27 21:55 · WorkBuddy：修「低分自动补写」竖条挤压（用户截图报障）
+
+**现象**：简洁版模式下，`#iterateRow` 整行高 679px，说明文字被挤成 26px 竖条一字一列。
+
+**根因**（Edge headless 几何探针实测，不是猜的）：全局 `input, textarea, select { width:100% }`
+（index.html 533 行）把这个 checkbox 拉到 922px 宽，它 inline 的 `flex-shrink:0` 又禁止收缩，
+同一 flex 行的 `<span>` 说明文字只剩 26px → 竖排 → 整行被撑到 679px。
+只在简洁版下显示（深度版 iterateRow 是 display:none），所以一直没被发现。
+仓库里另外两个 checkbox（2239 行 chkRoadshow、6695 行 introNoMore）都显式写了 width:15px——
+前人踩过同一个坑，就这处漏了。
+
+**修复**（9d82a29，只有 index.html 2 行）：iterateOpt 显式 `width:15px; height:15px; padding:0; accent-color`。
+修复后实测：整行 679px→87px，checkbox 15×15，文字恢复 852px 单行。
+
+**给 Codex 的约定**：以后任何放进 flex 行的 `<input>`（尤其 checkbox）都要显式定宽，
+全局 input{width:100%} 是默认规则，别信"浏览器默认尺寸"。
+
+**部署**：main=9d82a29，服务器已 fetch+reset+safe_restart，首页 200。
+（另：等待期三件套在 76d846e 前的 a60fe95，已在线上。）
+
+---
+
+## 2026-09-27 · Codex：电子设计专题赛细分 + 范文库补齐 7 段（后端，e55f201）
+
+**改动文件**（只有后端内容，没碰 index.html）：
+
+1. `data/电子设计.txt` ——「立项/结题/赛道要求」从一句笼统话展开成 3 个专题赛：
+   模拟电子系统设计专题赛（TI 杯）/ 信息科技前沿专题赛 / 英特尔杯嵌入式 AI 专题赛，
+   含各自赛制、TI 指定处理器平台、评奖比例等（取自用户提供的官方 PDF）。
+   ⚠️ 这段只在生成 prompt 里生效（`parse_knowledge` → `requirements` 字段）；
+   **不进 `static/competition_index.json`**（build_comp_index.py 只抽 评分/章节/偏好/扣分/赛道设置，
+   不抽「立项/结题/赛道要求」），所以前端「赛事要求卡」不变，**无需重建 index**。
+   注：txt 里用了 `###`/`####` 子标题，`parse_knowledge` 只按 `##` 切分，子标题会被当成正文保留，这是预期。
+
+2. `knowledge_base/seed_samples.json` —— 8 段 → 15 段，新增 7 段：
+   西门子杯（锂电极片缺陷视觉检测）/ 计算机设计（实验报告智能批改）/ 蓝桥杯（AGV 路径规划）/
+   RoboMaster（步兵视觉自瞄）/ 信息安全（物联网固件漏洞检测）/ 大广赛（反诈公益广告）/ 金砖（光伏巡检）。
+   每段都标「示范样本（AI 撰写，非真实获奖稿）」，数字标「测算值/原型测试值」，无占位符、无臆造已发生事实。
+   **15 个赛事现在每个都有 1 段范文了。**
+
+**给 WorkBuddy 的提示**：
+- 范文库 UI 现在能直接看到 7 段新的；DB 总条数从 33 → 40（15 段是种子、其余是队友上传/其他导入）。
+- 种子自动入库：重启时 `_seed_kb_if_needed()` 靠 seed_stamp 变化触发，老的按内容哈希去重，无需手动导库。
+- （可选，非本次必须）若想让「电子设计 3 个专题赛」在前端赛事卡上可见，需 build_comp_index.py 加提取 +
+  前端展示；目前它是生成期信息，不在前端展示。
+
+**已部署**：e55f201 已推 GitHub；服务器已部署到 9d82a29（含 WorkBuddy 的复选框修复），
+日志确认 `范文库种子已导入 15 段`，服务 active。
