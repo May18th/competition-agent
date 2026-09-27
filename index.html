@@ -3764,6 +3764,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     var oldV = WB_COMP_INDEX && WB_COMP_INDEX.version;
                     WB_COMP_INDEX = d;
                     try { localStorage.setItem(WB_COMP_IDX_KEY, JSON.stringify(d)); } catch (e) {}
+                    // 候选清单可能已缓存过（当时索引还没到），让它下次重新算，把索引里的新赛事并进来
+                    _compOpts = null;
                     // 版本变了说明后端资料更新过，重画一次要求卡
                     if (oldV !== d.version) { try { renderEventCard(); } catch (e) {} }
                 })
@@ -4577,14 +4579,38 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
         /* ---------- 赛事选择：输入即过滤 + 一键清空 ---------- */
         var _compOpts = null;
+        // 同一个赛事在不同来源里写法不一样：datalist 是「RoboMaster全国大学生机器人大赛」，
+        // 知识库索引的 title 是「RoboMaster 全国大学生机器人大赛」，还有带引号的
+        // 「"挑战杯" 中国大学生创业计划竞赛（小挑）」和带副标题后缀的「…（高教社杯）」。
+        // 不去归一化的话下拉里会出现两条看着一样的赛事。尾部括号后缀一并剥掉
+        // （「…（小挑）」与「…」指的是同一个比赛，但括号在中间时不剥）。
+        function _compNorm(s) {
+            var t = String(s || '').replace(/\s+/g, '').replace(/[""''「」《》]/g, '').toLowerCase();
+            var prev;
+            do { prev = t; t = t.replace(/[（(][^（()）]*[）)]$/, ''); } while (t !== prev);
+            return t;
+        }
         function wbCompOptions() {
             if (_compOpts) return _compOpts;
             var os = document.querySelectorAll('#competitionList option');
             _compOpts = Array.prototype.map.call(os, function (o) { return o.value; });
-            // 知识库索引里收录的赛事也算候选（清单可能比 datalist 更新）
+            // 知识库索引里收录的赛事也算候选（后端 data/*.txt 加了新赛事，下拉要能选到）。
+            // 两个坑：① WB_COMP_INDEX 是 {version, items}，不是数组，直接 forEach 会抛错被 catch 吞掉，
+            // 结果索引里的赛事一个都进不来；② item 的赛事名在 title 字段（没有 name）。
+            // 另外 title 常带空格（"RoboMaster 全国…"）而 datalist 不带，必须去空格后去重，
+            // 否则下拉里会出现两条看着一样的赛事。
             try {
-                (window.WB_COMP_INDEX || []).forEach(function (it) {
-                    if (it && it.name && _compOpts.indexOf(it.name) < 0) _compOpts.push(it.name);
+                var idx = window.WB_COMP_INDEX;
+                var arr = (idx && idx.items) ? idx.items : (Object.prototype.toString.call(idx) === '[object Array]' ? idx : []);
+                var have = {};
+                _compOpts.forEach(function (n) { have[_compNorm(n)] = 1; });
+                arr.forEach(function (it) {
+                    var nm = it && (it.name || it.title);
+                    if (!nm) return;
+                    var k = _compNorm(nm);
+                    if (!k || have[k]) return;
+                    have[k] = 1;
+                    _compOpts.push(nm);
                 });
             } catch (e) {}
             return _compOpts;
@@ -4609,19 +4635,69 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             }
             wbCompOpen();
         }
+        /* 空查询时按「类型」分组：15 项一长条在小屏上滚不到底也分不清性质，
+           分组头只作视觉分隔、不可点，点击行为仍在赛事名上（wbCompFill）。
+           类型以后端 data/competition_profiles.json 的 type 为准；
+           配置还没拉到 / 只有一类 / 正在搜索时，回落成原来的平铺，行为不变。 */
+        var WB_COMP_TYPE_ORDER = ['工程创新类', '创新创业类', '学术类', '创新训练类', '建模类', '工科类', '经管类'];
+        // 不用 wbMatchProfile：它对「挑战杯」这类 3 字泛称只取第一个命中，
+        // 会把「小挑（创业计划）」分进「学术类（大挑）」——大挑小挑性质完全不同，
+        // 分错类比不分更误导。这里改成「取最长覆盖」：短别名（<4 字）一律不参与。
+        function wbCompTypeOf(name) {
+            var n = String(name || '').toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+            if (!n) return '';
+            var best = null, bs = 0;
+            (WB_COMP_PROFILES || []).forEach(function (it) {
+                var keys = [it.name].concat(it.aliases || []);
+                keys.forEach(function (k) {
+                    var kk = String(k || '').toLowerCase().replace(/[""'']/g, '').replace(/\s+/g, '');
+                    if (kk.length < 4) return;
+                    var s = 0;
+                    if (n === kk) s = 1000;
+                    else if (n.indexOf(kk) >= 0 || kk.indexOf(n) >= 0) s = Math.min(kk.length, n.length);
+                    if (s > bs) { bs = s; best = it; }
+                });
+            });
+            return (best && best.type) ? String(best.type) : '';
+        }
+        function wbCompGroups(hits) {
+            var buckets = {}, seen = [];
+            hits.forEach(function (n) {
+                var t = wbCompTypeOf(n) || '其它';
+                if (!buckets[t]) { buckets[t] = []; seen.push(t); }
+                buckets[t].push(n);
+            });
+            seen.sort(function (a, b) {
+                var ia = WB_COMP_TYPE_ORDER.indexOf(a), ib = WB_COMP_TYPE_ORDER.indexOf(b);
+                return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+            });
+            return seen.map(function (t) { return { type: t, items: buckets[t] }; });
+        }
+        function wbCompItemHtml(n, cur) {
+            var on = (String(n).trim() === String(cur || '').trim());
+            return '<div data-wbcomp="' + _esc(n) + '" ontouchstart="" onclick="wbCompFill(this.getAttribute(\'data-wbcomp\'))" ' +
+                'style="padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); ' +
+                'color: ' + (on ? 'var(--c-a)' : 'var(--text)') + '; ' +
+                'background: ' + (on ? 'var(--surface-2)' : 'transparent') + ';">' + _esc(n) + '</div>';
+        }
         function wbCompOpen() {
             var el = document.getElementById('competition');
             var box = document.getElementById('compSuggest');
             if (!el || !box) return;
             var hits = wbCompHits(el.value);
             if (!hits.length) { box.style.display = 'none'; return; }
-            box.innerHTML = hits.map(function (n, i) {
-                var on = (String(n).trim() === String(el.value).trim());
-                return '<div data-wbcomp="' + _esc(n) + '" ontouchstart="" onclick="wbCompFill(this.getAttribute(\'data-wbcomp\'))" ' +
-                    'style="padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--line); ' +
-                    'color: ' + (on ? 'var(--c-a)' : 'var(--text)') + '; ' +
-                    'background: ' + (on ? 'var(--surface-2)' : 'transparent') + ';">' + _esc(n) + '</div>';
-            }).join('');
+            var q = String(el.value || '').trim();
+            var gs = (q || !WB_COMP_PROFILES || !WB_COMP_PROFILES.length) ? null : wbCompGroups(hits);
+            if (gs && gs.length >= 2) {
+                box.innerHTML = gs.map(function (g) {
+                    return '<div data-wbgroup="1" style="padding: 7px 12px 5px; font-size: 11px; letter-spacing: .5px; ' +
+                        'color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--line); cursor: default;">' +
+                        _esc(g.type) + ' · ' + g.items.length + '</div>' +
+                        g.items.map(function (n) { return wbCompItemHtml(n, q); }).join('');
+                }).join('');
+            } else {
+                box.innerHTML = hits.map(function (n) { return wbCompItemHtml(n, q); }).join('');
+            }
             box.style.display = 'block';
             var clr = document.getElementById('compClear');
             if (clr) clr.style.display = String(el.value || '').trim() ? 'block' : 'none';
@@ -4672,15 +4748,17 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 e.preventDefault();
                 var box = document.getElementById('compSuggest');
                 if (!box || box.style.display === 'none') { wbCompOpen(); return; }
+                // 只遍历可点的赛事名，分组头（data-wbgroup）跳过，否则上下键会停在分隔条上
+                var items = box.querySelectorAll('[data-wbcomp]');
                 var cur = -1;
-                for (var i = 0; i < box.children.length; i++) {
-                    if (box.children[i].style.background && box.children[i].style.background !== 'transparent') cur = i;
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i].style.background && items[i].style.background !== 'transparent') cur = i;
                 }
                 var nxt = (e.key === 'ArrowDown') ? cur + 1 : cur - 1;
-                if (nxt < 0) nxt = box.children.length - 1;
-                if (nxt >= box.children.length) nxt = 0;
-                for (var j = 0; j < box.children.length; j++) {
-                    box.children[j].style.background = (j === nxt) ? 'var(--surface-2)' : 'transparent';
+                if (nxt < 0) nxt = items.length - 1;
+                if (nxt >= items.length) nxt = 0;
+                for (var j = 0; j < items.length; j++) {
+                    items[j].style.background = (j === nxt) ? 'var(--surface-2)' : 'transparent';
                 }
             }
         }
