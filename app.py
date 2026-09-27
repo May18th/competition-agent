@@ -15,9 +15,11 @@ import os
 import sqlite3
 import re
 import gzip as _gzip
+import secrets as _secrets
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, make_response, g
 from werkzeug.utils import secure_filename
+from itsdangerous import URLSafeSerializer
 from pypdf import PdfReader
 from docx import Document
 from competition_agents import fast_app, deep_app, CompetitionState
@@ -62,19 +64,67 @@ def _gzip_response(resp):
 # 首次访问下发一个长期匿名 cookie（comp_uid），历史记录/反馈按它隔离，
 # 让公网随机访客之间看不到彼此的生成记录，同时不做复杂登录系统。
 # 注：admin / 导出 / 分享链接仍是全局或 token 校验，范文库按设计保持团队共享。
+# uid cookie 用 HMAC 签名（itsdangerous），防伪造绕过限流/冒用他人隔离键；
+# 签名密钥存 .uid_secret（gitignore、首次自动生成、重启不变）。旧版无签名
+# 的 32 位 hex cookie 兼容接受，本次响应重签平滑升级，不丢老用户历史。
+
+def _load_uid_secret():
+    _p = os.path.join(os.path.dirname(__file__), '.uid_secret')
+    try:
+        with open(_p, encoding='utf-8') as _f:
+            _s = _f.read().strip()
+        if _s:
+            return _s
+    except FileNotFoundError:
+        pass
+    _s = _secrets.token_hex(32)
+    try:
+        with open(_p, 'w', encoding='utf-8') as _f:
+            _f.write(_s)
+    except Exception:
+        pass
+    return _s
+
+
+_UID_SIGNER = URLSafeSerializer(_load_uid_secret(), salt='comp-uid')
+
+
+def _sign_uid(uid):
+    return _UID_SIGNER.dumps(uid)
+
+
+def _unsign_uid(value):
+    try:
+        _u = _UID_SIGNER.loads(value)
+        return _u if isinstance(_u, str) and _u else None
+    except Exception:
+        return None
+
+
 @app.before_request
 def _ensure_uid():
-    uid = (request.cookies.get('comp_uid') or '').strip()
-    if not uid or len(uid) > 64 or not uid.isalnum():
+    raw = (request.cookies.get('comp_uid') or '').strip()
+    legacy = False
+    if not raw:
+        uid = uuid.uuid4().hex
+    elif '.' in raw:
+        _u = _unsign_uid(raw)
+        uid = _u if _u else uuid.uuid4().hex
+    elif len(raw) <= 64 and raw.isalnum():
+        # 旧版无签名 cookie：兼容接受，本次响应重签升级
+        uid = raw
+        legacy = True
+    else:
         uid = uuid.uuid4().hex
     g.uid = uid
     g.uid_is_new = 'comp_uid' not in request.cookies
+    g.uid_should_sign = g.uid_is_new or legacy
 
 
 @app.after_request
 def _set_uid_cookie(resp):
-    if getattr(g, 'uid_is_new', False):
-        resp.set_cookie('comp_uid', g.uid, max_age=60 * 60 * 24 * 365,
+    if getattr(g, 'uid_should_sign', False):
+        resp.set_cookie('comp_uid', _sign_uid(g.uid), max_age=60 * 60 * 24 * 365,
                         httponly=True, samesite='Lax')
     return resp
 

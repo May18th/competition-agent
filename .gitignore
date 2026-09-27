@@ -1,4 +1,5 @@
 .env
+.uid_secret
 __pycache__/
 *.pyc
 uploads/
