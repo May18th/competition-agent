@@ -1214,7 +1214,11 @@ mark.wb-ph {
     /* iOS 下输入框字号 <16px 会自动放大页面，这里统一抬到 16px */
     input, select, textarea { font-size: 16px !important; }
     button { font-size: 15px; }
-    .tab { font-size: 13px; padding: 9px 11px; }
+    /* 手机上 5 个栏目一屏排不下（实测 375 宽时要滚 506px），这里收紧字号与内边距
+       争取少滑一点。注意别比 768 那段更大——此前这里写 13px/11px 反而把标签撑宽，
+       正是手机上看着「挤成一团」的来源。 */
+    .tab { font-size: 12.5px; padding: 8px 10px; }
+    .tab .wb-ico { width: .92em; height: .92em; margin-right: .26em; }
     .btn-primary { padding: 16px 20px; font-size: 17px; }
     .wb-theme-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .wb-theme-thumb { height: 62px; }
@@ -5675,7 +5679,10 @@ mark.wb-ph {
                 var p = document.getElementById('wbSubPanel-' + t[0]);
                 if (p) p.style.display = (t[0] === name) ? 'block' : 'none';
                 var b = document.getElementById(t[1]);
-                if (b) b.classList.toggle('active', t[0] === name);
+                if (b) {
+                    b.classList.toggle('active', t[0] === name);
+                    if (t[0] === name) wbScrollTabIntoView(b);
+                }
             });
         }
         // 自查面板默认不在眼前，未处理项要显示在标签上，否则重要提醒等于被藏起来
@@ -6180,6 +6187,34 @@ mark.wb-ph {
             }
         }
 
+        // 手机上一排放不下 5 个栏目，容器虽然能横滑，但默认激活的「申报与评审」排在第四位、
+        // 刚好落在屏外——内容切过去了，高亮的标签却看不见，看着像被挤没了。
+        // 所以每次切栏目都把当前标签滚到可视区中央；面板宽度够、不用滑时直接跳过。
+        function wbScrollTabIntoView(btn) {
+            if (!btn) return;
+            var box = btn.parentNode;
+            while (box && box !== document.body &&
+                   String(box.className || '').indexOf('tabs') < 0) box = box.parentNode;
+            if (!box || box === document.body) return;
+            if (!box.scrollWidth || box.scrollWidth <= box.clientWidth + 1) return;
+            var br = box.getBoundingClientRect(), tr = btn.getBoundingClientRect();
+            if (!tr.width) return;
+            var delta = (tr.left - br.left) - (br.width - tr.width) / 2;
+            var max = box.scrollWidth - box.clientWidth;
+            var left = Math.max(0, Math.min(max, box.scrollLeft + delta));
+            // ⚠️ 这里刻意不用 behavior:'smooth'。实测（Edge headless + 多视口）发现：
+            // 带 smooth 的写法在部分内核里会被静默忽略 —— 不报错、不抛异常、但 scrollLeft 一动不动，
+            // 结果就是「激活的标签停在屏幕外」。宁可瞬间跳到位，也不要悄悄失效。
+            // 标签条是短距离横向滚动，瞬时跳转几乎不违和，可靠性优先。
+            try {
+                box.scrollTo({ left: left });
+            } catch (e) {
+                box.scrollLeft = left;   // 老内核（QQ/夸克）不认 options 对象
+            }
+            // 个别内核的 scrollTo 实现有偏差，同步校准一次（不依赖定时器）
+            if (Math.abs(box.scrollLeft - left) > 4) box.scrollLeft = left;
+        }
+
         // tab切换
         // 栏目按钮 id 表：锚点条要能不带 event 直接切栏目（原来是靠 event.currentTarget，
         // 程序化调用时没有 event，会直接报错）
@@ -6200,7 +6235,7 @@ mark.wb-ph {
             document.getElementById('tab-' + tabName).classList.add('active');
             var _btn = (event && event.currentTarget) ||
                        document.getElementById(WB_TAB_BTN[tabName] || '');
-            if (_btn) _btn.classList.add('active');
+            if (_btn) { _btn.classList.add('active'); wbScrollTabIntoView(_btn); }
             if (tabName === 'kb') { kbLoadTags(); kbList(); }
             if (tabName === 'logs') { loadLogs(); loadLessons(); }
         }
@@ -6267,6 +6302,19 @@ mark.wb-ph {
                 } catch (e) {
                     target.scrollIntoView();   // 老内核（QQ/夸克）不支持 smooth 的兜底
                 }
+                // ⚠️ 平滑滚动可能「认下参数却不跑动画」——标签栏那次实测就撞上了：
+                // 同为 scroll 系 API 的 behavior:'smooth' 不报错、scrollLeft 却纹丝不动。
+                // 锚点条要是也这样，就是「点了没反应」。这里延后核对一次：
+                // 既没滚动、目标又还离得远，才补一次即时滚动；正常情况下完全不触发。
+                var _y0 = window.pageYOffset;
+                setTimeout(function () {
+                    try {
+                        var _top = target.getBoundingClientRect().top;
+                        if (Math.abs(window.pageYOffset - _y0) < 2 && Math.abs(_top - 76) > 60) {
+                            target.scrollIntoView();
+                        }
+                    } catch (e) {}
+                }, 450);
                 // 闪一下边框，让用户知道跳到哪了
                 try {
                     var old = target.style.boxShadow;
