@@ -1375,6 +1375,44 @@ def _user_data_ref(state: dict) -> str:
     )
 
 
+def extract_material_profile(text: str) -> dict:
+    """把上传的材料（申报书/项目书/数据）提炼成结构化项目画像，供前端自动填充输入框。
+
+    只提取材料里真实存在的信息，严禁编造；拿不准的字段留空字符串。
+    """
+    text = (text or "").strip()
+    if not text:
+        return {}
+    prompt = f"""你是科创赛事材料解析专家。下面是一段用户上传的项目材料（申报书、项目计划书、数据表格等）。请从中提取用于「申报书生成工具」的结构化信息，用来自动填充输入框。
+
+只提取材料里真实存在的信息，严禁编造或推测材料里没有的内容；拿不准的字段就留空字符串。
+
+严格输出 JSON（不要 markdown 代码块、不要任何解释），字段如下：
+{{"competition_name": "赛事名称（材料里明确出现的，如挑战杯/互联网+/iCAN/数模等；没有则空字符串）",
+  "idea": "项目创意一句话（做什么、解决什么问题，从摘要/项目背景提炼，50 字内；没有则空字符串）",
+  "team": "团队成员信息（姓名、学校院系、角色、具体分工；没有则空字符串）",
+  "user_data": "实测数据与关键指标（具体数字、规模、成本、试点结果等；没有则空字符串）",
+  "keywords": "关键词（3~6 个，逗号分隔；没有则空字符串）"}}
+
+材料内容：
+{text[:8000]}
+"""
+    try:
+        from langchain_core.messages import HumanMessage
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        out = (resp.content or "").strip()
+        out = re.sub(r'^```(?:json)?\s*|\s*```$', '', out, flags=re.S)
+        s, e = out.find('{'), out.rfind('}')
+        if s >= 0 and e > s:
+            out = out[s:e + 1]
+        data = _json.loads(out)
+        if isinstance(data, dict):
+            return {k: str(v).strip() for k, v in data.items() if isinstance(v, (str, int, float))}
+        return {}
+    except Exception:
+        return {}
+
+
 def _smart_extract_user_data(user_data: str) -> str:
     """把用户上传的实测数据/文件内容用 LLM 提炼成「结构化事实清单」，按章节归类。
 

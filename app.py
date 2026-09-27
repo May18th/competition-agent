@@ -941,6 +941,48 @@ def upload_pdf():
     return jsonify({"success": True, "text": text[:20000]})
 
 
+@app.route('/api/parse_material', methods=['POST'])
+def parse_material():
+    """上传材料 → 解析文本 → LLM 提炼结构化项目画像，用于前端自动填充输入框。"""
+    text = ""
+    if 'file' in request.files and request.files['file'] and request.files['file'].filename:
+        file = request.files['file']
+        raw_name = file.filename or ''
+        ext = os.path.splitext(raw_name)[1].lower()
+        if ext not in ('.pdf', '.docx', '.txt', '.md'):
+            return jsonify({"success": False, "error": "请上传 PDF / DOCX / TXT / MD"})
+        data_bytes = file.read(MAX_UPLOAD_SIZE + 1)
+        if len(data_bytes) > MAX_UPLOAD_SIZE:
+            return jsonify({"success": False, "error": "文件过大（上限 20MB），请压缩或拆分后再传"})
+        base = secure_filename(os.path.splitext(raw_name)[0]) or 'upload'
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], base + '_' + str(int(time.time())) + ext)
+        with open(filepath, 'wb') as f:
+            f.write(data_bytes)
+        try:
+            if ext == '.pdf':
+                text = _pdf_to_text(filepath)
+            elif ext == '.docx':
+                text = _docx_to_md(filepath)
+            else:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    text = f.read()
+        except Exception as e:
+            return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+    else:
+        text = (request.form.get('text') or '').strip()
+        if not text:
+            try:
+                text = str((request.get_json(silent=True) or {}).get('text') or '')
+            except Exception:
+                text = ''
+    text = re.sub(r'\n\s*\n', '\n', (text or '')).strip()
+    if not text:
+        return jsonify({"success": False, "error": "没有可解析的文字（请上传 PDF/DOCX/TXT/MD，或直接粘贴文字）"})
+    from competition_agents import extract_material_profile
+    profile = extract_material_profile(text)
+    return jsonify({"success": True, "profile": profile})
+
+
 @app.route('/api/export_word', methods=['POST'])
 def export_word():
     data = request.get_json(force=True, silent=True) or {}
