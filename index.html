@@ -892,7 +892,10 @@ button:hover { transform: translateY(-1px); }
 
 /* ---------- 弹窗 ---------- */
 .modal-overlay {
+    /* padding 是故意留的：内容盒撑满整屏时用户点不到遮罩，表现为「点遮罩关不掉」
+       （2026-09-28 实测 introModal 正因此中招：点 (6,6) 命中的是 introBox 不是遮罩） */
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    padding: 16px; box-sizing: border-box;
     background: rgba(3,6,20,.72);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
@@ -901,6 +904,7 @@ button:hover { transform: translateY(-1px); }
     z-index: 1000;
 }
 .modal {
+    position: relative;
     background: linear-gradient(160deg, rgba(19,25,58,.98), rgba(10,14,38,.98));
     border: 1px solid var(--line-strong);
     border-radius: var(--radius);
@@ -909,9 +913,23 @@ button:hover { transform: translateY(-1px); }
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     box-shadow: 0 26px 70px rgba(0,0,0,.6);
 }
 .modal h2 { margin-bottom: 16px; color: #fff; }
+/* 弹窗显式关闭：手机没有 Esc，光靠点遮罩（还常被内容盒挡住）等于关不掉 */
+.wb-modal-x {
+    position: absolute; top: 10px; right: 12px; z-index: 5;
+    width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
+    background: var(--surface-solid); border: 1px solid var(--line-strong);
+    color: var(--text-dim); font-size: 17px; line-height: 1;
+}
+.wb-modal-close-btn {
+    display: block; margin: 14px auto 0; padding: 11px 30px;
+    background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; font-size: 14px; cursor: pointer;
+}
 .history-item {
     padding: 12px;
     border-bottom: 1px solid var(--line);
@@ -1217,9 +1235,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     /* 不用 gap：部分旧内核（QQ/夸克的老 Chromium）不支持 flex gap，用 margin 兜底 */
     .wb-guide-step { flex: 0 0 100%; margin-right: 8px; scroll-snap-align: start; padding: 11px 12px; }
     .wb-guide-hint { display: block; }
-    /* 手机上的快捷导出条：竖排 + 按钮全宽（手指点得到） */
-    #quickExportBar { flex-direction: column; align-items: stretch !important; gap: 8px; }
-    #quickExportBar button { width: 100%; padding: 13px 16px; font-size: 15px; }
+    /* 手机上的快捷导出条：主按钮一行，次要操作收进「更多」菜单。
+       原来竖排 + 按钮全宽，5 个按钮各占一行，滚到底要划很久（2026-09-28 手机实测） */
+    #quickExportBar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #quickExportBar button { width: auto; padding: 11px 12px; font-size: 13.5px; }
+    #quickExportBar .qe-primary { flex: 1 1 100%; }
+    #quickExportBar .qe-secondary { display: none; }
+    #quickExportBar .qe-note { display: none; }
     #quickExportBar > span { line-height: 1.6; }
     .result-hero { padding: 18px 12px; }
     /* 表格在手机上可横滑，不会被裁掉 */
@@ -1666,7 +1688,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         <!-- Hero -->
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
-            <p>输入创意，3 分钟生成符合赛事评审规则的申报书初稿</p>
+            <p>输入创意，生成符合赛事评审规则的申报书：简洁版约 40 秒，深度版约 4~5 分钟</p>
             <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模）。
                  单独做成一条，不与副标题连成一段灰色文字 -->
             <p class="wb-hero-tech">
@@ -2039,7 +2061,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 3.5 分钟出 5000 字接近成稿</b><br>
+                            <b style="color: var(--c-b);">约 4~5 分钟出万字级完整方案书</b><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -2120,19 +2142,22 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                  之前它排在评分、自查卡、章节校验后面，用户要滚好几屏才找到「下载」 -->
             <div id="quickExportBar">
                 <span class="qe-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 生成完了，直接拿走</span>
-                <button onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
-                <button onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
-                <button onclick="exportAll()" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
+                <button class="qe-primary" onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
+                <button class="qe-secondary" onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
+                <button class="qe-secondary" onclick="exportAll()" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
                 <!-- 导出入口去重：打包接口 /api/export_zip 已含 12_路演PPT.pptx（app.py 3104 行确认），
                      独立的「PPT / 分项下载」按钮降级为打包旁边的小箭头菜单，功能保留、视觉不再重复 -->
                 <div style="position: relative; display: inline-block;">
-                    <button onclick="wbExpMenuToggle()" title="分项下载 / PPT 主题" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">▾</button>
+                    <button onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">更多 ▾</button>
                     <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
+                        <div onclick="document.getElementById('wbExpMenu').style.display='none';exportOnePDF('proposalText', '项目申报书全文')" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">下载 PDF</div>
+                        <div onclick="document.getElementById('wbExpMenu').style.display='none';exportAll()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">一键打包全部</div>
+                        <div onclick="document.getElementById('wbExpMenu').style.display='none';wbShare()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">🔗 分享链接</div>
                         <div onclick="wbGoExport()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">分项下载 / PPT 主题 →</div>
                         <div style="padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">打包已含 PPT（12_路演PPT.pptx）</div>
                     </div>
                 </div>
-                <button onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">🔗 分享</button>
+                <button class="qe-secondary" onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">🔗 分享</button>
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
 
@@ -2646,13 +2671,16 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
     <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
         <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
+            <button class="wb-modal-x" onclick="event.stopPropagation(); closeIntro()" title="关闭" aria-label="关闭">&times;</button>
             <div id="introBody"></div>
+            <button class="wb-modal-close-btn" onclick="event.stopPropagation(); closeIntro()">关闭</button>
         </div>
     </div>
 
     <!-- 历史记录弹窗 -->
     <div id="historyModal" class="modal-overlay" onclick="closeHistory(event)">
         <div class="modal">
+            <button class="wb-modal-x" onclick="event.stopPropagation(); closeHistory()" title="关闭" aria-label="关闭">&times;</button>
             <h2><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-history"/></svg> 历史记录</h2>
             <div id="hisTabs" class="his-tabs"></div>
             <input id="historySearch" class="history-search" placeholder="搜索赛事名或创意关键词" oninput="loadHistory(0)">
@@ -2662,6 +2690,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 <p style="color: var(--text-mute); text-align: center;">加载中...</p>
             </div>
             <div id="historyPager" class="history-pager"></div>
+            <button class="wb-modal-close-btn" onclick="event.stopPropagation(); closeHistory()">关闭</button>
         </div>
     </div>
 
@@ -2673,10 +2702,16 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     <h2 id="chartModalTitle" style="margin:0; font-size:16px; color:#fff;"></h2>
                     <div id="chartModalCaption" style="font-size:12.5px; color:var(--text-mute); margin-top:4px;"></div>
                 </div>
-                <button onclick="event.stopPropagation(); closeChartModal();" title="关闭"
-                        style="flex:none; width:32px; height:32px; border-radius:8px; cursor:pointer;
-                               background:var(--surface-solid); border:1px solid var(--line);
-                               color:var(--text); font-size:18px; line-height:1;">&times;</button>
+                <div style="flex:none; display:flex; gap:6px;">
+                    <button onclick="event.stopPropagation(); wbChartOpenFull()" title="新窗口全屏查看"
+                            style="width:32px; height:32px; border-radius:8px; cursor:pointer;
+                                   background:var(--surface-solid); border:1px solid var(--line);
+                                   color:var(--text); font-size:14px; line-height:1;">&#8599;</button>
+                    <button onclick="event.stopPropagation(); closeChartModal();" title="关闭"
+                            style="width:32px; height:32px; border-radius:8px; cursor:pointer;
+                                   background:var(--surface-solid); border:1px solid var(--line);
+                                   color:var(--text); font-size:18px; line-height:1;">&times;</button>
+                </div>
             </div>
             <div id="chartModalBody" style="display:flex; align-items:center; justify-content:center;
                                             background:#fff; border-radius:10px; padding:14px; overflow:auto;">
@@ -2699,6 +2734,15 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         document.body.style.overflow = 'hidden';
     }
 
+    /* 图太大在弹窗里看不全时用新窗口看（本项目预览不用 iframe，图片直接开原图） */
+    function wbChartOpenFull() {
+        var src = document.getElementById('chartModalImg').src;
+        if (!src) return;
+        try { window.open(src, '_blank', 'noopener'); }
+        catch (e) { try { wbToast('浏览器拦了新窗口，请允许弹窗后重试', { type: 'warn' }); } catch (e2) {} }
+    }
+    window.wbChartOpenFull = wbChartOpenFull;
+
     /* 只有点到遮罩本身才关闭，点弹窗内部不关 */
     function closeChartModal(ev) {
         if (ev && ev.target !== document.getElementById('chartModal')) return;
@@ -2715,8 +2759,24 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         openChartModal(c.url, c.title, c.caption);
     }
 
+    /* Esc 统一收口：手机没有 Esc 键，桌面/外接键盘用户会按；一次只关最上面那个 */
+    function wbCloseTopModal() {
+        var ids = ['chartModal', 'historyModal', 'introModal'];
+        for (var i = 0; i < ids.length; i++) {
+            var m = document.getElementById(ids[i]);
+            if (m && m.style.display && m.style.display !== 'none') {
+                if (ids[i] === 'chartModal') closeChartModal();
+                else if (ids[i] === 'historyModal') closeHistory();
+                else closeIntro();
+                return true;
+            }
+        }
+        return false;
+    }
+    window.wbCloseTopModal = wbCloseTopModal;
+
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') closeChartModal();
+        if (e.key === 'Escape') { closeChartModal(); wbCloseTopModal(); }
     });
     </script>
 
@@ -3793,7 +3853,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                            "四、技术方案与系统架构", "五、功能说明与 AI 核心作用",
                            "六、使用说明", "七、应用前景与商业模式", "八、团队分工与知识产权"],
                 // 官方口径（与 data/competition_profiles.json 一致）：创新性30/技术实现30/实用价值20/用户体验10/展示效果10
-                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["展示效果", 10]],
+                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["应用前景", 10]],
                 deduct: "扣分点：AI 只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
                 // 官方提交物（AI 应用创新挑战赛）：应用方案 PDF + 演示视频 + 可运行程序
                 submit: ["应用方案 PDF（≤20页、≤50MB）", "演示视频 MP4（≤5分钟）",
@@ -4298,7 +4358,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         var COACH_STEPS = [
             { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
             { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 40 秒出核心内容，深度版约 2 分钟产出全套申报材料。' }
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 40 秒出核心内容，深度版约 4~5 分钟产出万字级完整申报材料。' }
         ];
         var _coachIdx = 0;
 
@@ -6718,7 +6778,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     if (document.hidden) { _hiddenAt = Date.now(); }
                     else if (_hiddenAt) { t0 += Date.now() - _hiddenAt; _hiddenAt = 0; }
                 });
-                // 看门狗：fast 5 分钟 / deep 12 分钟（深度版实测 3~8 分钟，负载高时更久，
+                // 看门狗：fast 5 分钟 / deep 12 分钟（深度版实测 4~5 分钟、产出约 1.2 万字，负载高时更久，
                 // 5 分钟看门狗会在后端还在正常跑时误报「等待超时」）；
                 // queued 再统一放宽到 15 分钟。
                 const WATCHDOG_MS = (mode === 'deep' ? 12 : 5) * 60 * 1000;
@@ -6780,7 +6840,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                         }
                                     }
                                     _setBar(res2.pct || 0,
-                                        (isOptimize ? '优化' : '深度版') + (_etaTxt || '预计 2-3 分钟') + '，正在生成内容，无需等待，可以先去做别的事'
+                                        (isOptimize ? '优化' : '深度版') + (_etaTxt || (isOptimize ? '预计 2-3 分钟' : '预计 4~5 分钟')) + '，正在生成内容，无需等待，可以先去做别的事'
                                         + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
                                         + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
                                         + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
@@ -6907,7 +6967,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书扩写至 <b>约5000字 / 12章</b>，自动配数据图表'],
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>万字级 / 12章</b>，自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
@@ -7309,8 +7369,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版约 40 秒出初稿；深度版约 2 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版约 40 秒（约 1300 字）；深度版约 2 分钟（约 5000 字 / 12 章 + 图表 + PPT + 多专家评审）'],
+                    ? '简洁版约 40 秒出初稿；深度版约 4~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版约 40 秒（约 1300 字）；深度版约 4~5 分钟（万字级 / 12 章 + 图表 + PPT + 多专家评审）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -7377,7 +7437,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
                  '· 页面看着是旧的 → 刷新一下（电脑 Ctrl+F5）<br>' +
                  '· 微信里只能选图片 → 换 Safari 打开，或直接复制文字粘贴<br>' +
-                 '· 深度版约 2 分钟属正常，卡住可点「终止生成」<br>' +
+                 '· 深度版约 4~5 分钟属正常，卡住可点「终止生成」<br>' +
                  '· 只有深度版才有 PPT 和图表<br>' +
                  '· 出问题看「运行日志」页签，点「复制报告」发给开发' +
                  '</div>';
@@ -8074,9 +8134,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         }
 
         function closeHistory(event) {
-            if (event.target === document.getElementById('historyModal')) {
-                document.getElementById('historyModal').style.display = 'none';
-            }
+            var m = document.getElementById('historyModal');
+            if (!m) return;
+            // 只有「点到遮罩本身」才关，点弹窗内部不关。
+            // 没传事件也要能关（右上角 ×、底部「关闭」按钮、Esc 都走这条路）——
+            // 2026-09-28 修：原实现直接读 event.target，无参调用会抛错，导致 × 和 Esc 全都关不掉。
+            if (event && event.target && event.target !== m) return;
+            m.style.display = 'none';
         }
 
         var _historyLimit = 10;
