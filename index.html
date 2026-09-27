@@ -1732,11 +1732,26 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         填写试点数据 / 测试结果（可选）<span id="userDataBodyArrow">▾</span>
                     </div>
                     <div id="userDataBody">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
-                            <input type="text" id="udSite" placeholder="试点单位 / 落地场景：如 xx大学后勤处" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
-                            <input type="text" id="udScale" placeholder="测试用户数 / 样本量：如 内测 120 人" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
-                            <input type="text" id="udMetric" placeholder="实测指标：如 识别准确率 93.7%、响应 1.2 秒" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
-                            <input type="text" id="udCost" placeholder="成本：如 单套硬件 260 元" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                        <!-- 字段名放输入框上方小标签，placeholder 只留示例：
+                              原来字段名+示例全塞 placeholder，实测桌面 1440 下列宽仅 251px、
+                              最长示例需 330px，截断 79px（用户截图报障） -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px 12px;">
+                            <div>
+                                <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 4px;">试点单位 / 落地场景</div>
+                                <input type="text" id="udSite" placeholder="如 xx大学后勤处" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 4px;">测试用户数 / 样本量</div>
+                                <input type="text" id="udScale" placeholder="如 内测 120 人" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 4px;">实测指标</div>
+                                <input type="text" id="udMetric" placeholder="如 准确率 93.7%、响应 1.2 秒" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: var(--text-mute); margin-bottom: 4px;">成本</div>
+                                <input type="text" id="udCost" placeholder="如 单套硬件 260 元" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                            </div>
                         </div>
                         <textarea id="udExtra" rows="2" placeholder="其它佐证（选填）：合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px; margin-top: 10px;"></textarea>
                         <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
