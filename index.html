@@ -353,18 +353,28 @@ body {
 .container { max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
 
 /* ---------- Hero ---------- */
-.hero { text-align: center; padding: 26px 20px 18px; margin-bottom: 14px; }
+.hero { text-align: center; padding: 34px 20px 20px; margin-bottom: 16px; }
+/* 主标题是全页唯一的品牌锚点：先给一个必定可见的实色，
+   渐变只在支持 background-clip:text 的内核上叠加 —— 否则老内核（QQ/夸克部分版本）
+   会把 color:transparent 直接渲染成「标题消失」，页面顶部就空了一块 */
 .hero h1 {
-    font-size: clamp(24px, 3.8vw, 38px);
+    font-size: clamp(28px, 4.4vw, 46px);
     font-weight: 800;
-    margin-bottom: 10px;
-    letter-spacing: .5px;
-    line-height: 1.25;
-    background: linear-gradient(92deg, #67e8f9 0%, #818cf8 42%, #e879f9 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    margin-bottom: 12px;
+    letter-spacing: -.5px;
+    line-height: 1.18;
+    color: #EAF2FF;
     animation: wbGlow 5s ease-in-out infinite;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .hero h1 {
+        background: linear-gradient(96deg, #7dd3fc 0%, #a5b4fc 45%, #f0abfc 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 26px rgba(125,211,252,.30), 0 0 54px rgba(165,180,252,.14);
+    }
 }
 .hero .wb-em{
     -webkit-text-fill-color: #fff;
@@ -373,7 +383,18 @@ body {
     margin-right: 6px;
     animation: wbFloatIcon 3.2s ease-in-out infinite;
 }
-.hero p { font-size: 14.5px; color: var(--text-dim); line-height: 1.75; }
+.hero .wb-em .wb-ico-xl { width: .82em; height: .82em; vertical-align: -.06em; }
+.hero p { font-size: 14.5px; color: var(--text-dim); line-height: 1.75; max-width: 46ch; margin: 0 auto; }
+/* 技术亮点：单独成条，不与副标题抢层级 */
+.hero p.wb-hero-tech{
+    display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center;
+    margin: 10px auto 0; padding: 6px 14px;
+    max-width: min(760px, 100%);   /* 继承 .hero p 的 46ch 会被挤成三行 */
+    border: 1px solid rgba(34,211,238,.28); border-radius: 999px;
+    background: rgba(34,211,238,.07);
+    font-size: 12.5px; line-height: 1.5; color: var(--c-a);
+}
+.wb-hero-tech .wb-dot { flex: none; }
 /* ---------- 档位标识 ---------- */
 .tier-tag{
     display: inline-flex; align-items: center; gap: 6px;
@@ -978,16 +999,41 @@ mark.wb-ph {
    不用 fixed：.card 的 backdrop-filter 会让 fixed 相对卡片而非视口定位（CSS 规范行为，
    实测按钮停在文档流位置）；sticky 不受影响，且滚过自然位置后自动回落到进度条上方，
    生成中看进度时按钮不挡屏幕。QQ/夸克老内核不支持 :has 时优雅退化为原布局。 */
-#startBtn {
+/* 全页最重要的动作，所以它单独占一条，不跟任何可折叠入口挤在一起。
+   悬停底栏自带底板：否则 sticky 浮起来时背后就是正文，看着像「贴在别人旁边」 */
+#startBar {
     position: sticky;
     bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: 900;
-    box-shadow: 0 8px 26px rgba(0, 0, 0, .45);
+    margin-top: 18px;
+    padding: 13px 14px calc(13px + env(safe-area-inset-bottom, 0px));
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, .10);
+    background: linear-gradient(180deg, rgba(12, 17, 40, .74), rgba(8, 12, 30, .93));
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .09);
 }
-.card:has(#startBtn) { overflow: visible; }
-.card:has(#startBtn)::after { display: none; }
-@media (min-width: 769px) {
-    #startBtn { display: block; width: fit-content; margin: 14px auto 0; }
+/* 顶部一条渐变高光，把 CTA 条和上面的表单分开 */
+#startBar::before {
+    content: ""; display: block; height: 1px; margin: -13px -14px 12px;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, .45), rgba(165, 180, 252, .45), transparent);
+}
+body.light #startBar {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(244, 247, 255, .97));
+    border-color: var(--line);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, .14), inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+/* 不支持 :has 的旧内核退化为原布局（按钮仍在，只是没有底板） */
+.card:has(#startBar) { overflow: visible; }
+.card:has(#startBar)::after { display: none; }
+#startBtn {
+    display: block;
+    width: min(520px, 100%);
+    margin: 0 auto;
+    font-size: 17.5px;
+    letter-spacing: 1px;
+    box-shadow: 0 10px 30px rgba(99, 102, 241, .45), 0 0 24px rgba(34, 211, 238, .20), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 
 /* ===== 视觉增强（WorkBuddy）：把「已有但过弱」的效果调强 ===== */
@@ -1007,13 +1053,13 @@ mark.wb-ph {
 }
 .wb-bg::after { background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 42%, rgba(3,5,14,.40) 100%); }
 
-/* 2) 标题：更亮的青→紫渐变 + 光晕。
-      background-clip:text 下文字填充是透明的，text-shadow 会按字形画出光晕（比 filter 兼容性好） */
-.hero h1 {
-    background: linear-gradient(96deg, #7dd3fc 0%, #a5b4fc 45%, #f0abfc 100%);
-    text-shadow: 0 0 26px rgba(125,211,252,.32), 0 0 54px rgba(165,180,252,.16);
-}
+/* 2) 标题渐变已上移到 .hero h1 定义处，并用 @supports 包住（无条件 color:transparent
+      会让不支持 background-clip:text 的内核直接把标题渲染没）。浅色主题下不要光晕。 */
 body.light .hero h1 { text-shadow: none; }
+body.light .hero h1 { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    body.light .hero h1 { color: transparent; }
+}
 
 /* 3) 卡片：描边提亮 + 顶部高光加强 */
 .card {
@@ -1030,6 +1076,54 @@ body.light .card { border-color: var(--line); }
 .btn-primary:active:not(:disabled) {
     transform: translateY(0) scale(.985);
     box-shadow: 0 6px 18px rgba(99,102,241,.45);
+}
+
+/* 主 CTA 的悬停 / 按下要明显强于次级按钮（全页只有它配得上这层光） */
+#startBtn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 48px rgba(99, 102, 241, .62), 0 0 34px rgba(34, 211, 238, .34), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+#startBtn:active:not(:disabled) {
+    transform: translateY(0) scale(.985);
+    box-shadow: 0 6px 18px rgba(99, 102, 241, .5);
+}
+
+/* 章节列表：给每行一个序号圆点，纯文字行在长表单里完全抓不住眼 */
+.wb-sec-row {
+    padding: 2px 5px 2px 3px;
+    border-radius: 8px;
+    transition: background .18s ease;
+}
+.wb-sec-row:hover { background: rgba(255, 255, 255, .05); }
+body.light .wb-sec-row:hover { background: rgba(15, 23, 42, .04); }
+.wb-sec-no {
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    font-size: 11.5px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #0B1024;
+    background: linear-gradient(135deg, #7dd3fc 0%, #a5b4fc 100%);
+    box-shadow: 0 2px 8px rgba(34, 211, 238, .28);
+}
+body.light .wb-sec-no { box-shadow: none; }
+/* 删除这类破坏性动作：细边框 + 悬停转警示色，让人先看清再点 */
+.wb-textbtn {
+    padding: 4px 10px;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12.5px;
+    white-space: nowrap;
+    transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.wb-textbtn:hover {
+    color: var(--danger, #C0392B);
+    border-color: rgba(192, 57, 43, .5);
+    background: rgba(192, 57, 43, .08);
 }
 
 /* 5) 输入框聚焦：青色描边 + 青色外发光（原来光晕 .14 几乎看不出来） */
@@ -1063,13 +1157,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     body { padding: 8px; }
     .container { padding: 0; }
     .hero { padding: 14px 10px 10px; margin-bottom: 12px; }
-    .hero h1 { font-size: 21px; line-height: 1.35; }
+    .hero h1 { font-size: 26px; line-height: 1.3; }
     .hero p { font-size: 13.5px; margin-top: 6px; }
     .card { padding: 14px 12px; border-radius: 14px; margin-bottom: 12px; }
     .card-title { font-size: 16px; margin-bottom: 12px; gap: 8px; }
     /* 现场演示再收一轮：实测首屏被引导区吃掉 546px，表单被挤到屏幕外 */
     .hero { padding: 10px 10px 6px; margin-bottom: 8px; }
-    .hero h1 { font-size: 19px; margin-bottom: 4px; }
+    .hero h1 { font-size: 24px; margin-bottom: 5px; }
     .hero p { font-size: 12.5px; margin-top: 4px; }
     .card { padding: 12px 11px; margin-bottom: 10px; }
     .card-title { margin-bottom: 10px; }
@@ -1166,20 +1260,21 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     /* 4) 再压一轮留白，一屏多显示内容 */
     body { padding: max(8px, env(safe-area-inset-top, 0px)) 4px 150px 4px; }
     .hero { padding: 8px 8px 4px; margin-bottom: 6px; }
-    .hero h1 { font-size: 18px; }
+    .hero h1 { font-size: 22px; }
     .hero p { font-size: 12px; margin-top: 3px; }
     .card { padding: 10px 10px; margin-bottom: 8px; }
     .card-title { margin-bottom: 8px; }
     .form-group { margin-bottom: 10px; }
 
-    /* 5) 开始生成按钮悬浮底栏（sticky 规则在全局区，这里只做全宽） */
+    /* 5) 开始生成按钮悬浮底栏（sticky 规则在全局区，这里只收紧内边距） */
+    #startBar { margin-top: 14px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
     #startBtn { display: block; width: 100%; }
 
     /* 5) 微信/QQ 内置浏览器顶部导航遮挡：给 body 加顶部留白 */
     body.in-app { padding-top: 44px; }
 
     /* 6) 「清空重写」按钮放大，手指好点 */
-    #wbRestoreTip button { padding: 10px 16px; font-size: 14px; }
+    #wbClearBtn { padding: 8px 14px; font-size: 13.5px; }
 
     /* 7) 项目创意输入框加高，打字能看到完整内容 */
     #idea { min-height: 150px !important; }
@@ -1283,7 +1378,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     body { padding: 6px; }
     .container { padding: 0; }
     .hero { padding: 10px 4px 8px; margin-bottom: 10px; }
-    .hero h1 { font-size: 20px; line-height: 1.3; }
+    .hero h1 { font-size: 23px; line-height: 1.28; }
     .hero p { font-size: 13px; }
     .card { padding: 12px 10px; border-radius: 12px; margin-bottom: 10px; }
     .card-title { font-size: 15px; margin-bottom: 10px; }
@@ -1548,9 +1643,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         <div class="hero">
             <h1><span class="wb-em"><svg class="wb-ico wb-ico-xl" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg></span>赛创助手</h1>
             <p>输入创意，3 分钟生成符合赛事评审规则的申报书初稿</p>
-            <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模） -->
-            <p style="margin-top: 7px; font-size: 12.5px; line-height: 1.5; color: var(--c-a); opacity: .92;">
-                基于 LangGraph 多智能体工作流・15 个赛事知识库自动匹配评审规则</p>
+            <!-- 技术亮点：第一屏就让评委看到技术点（多智能体工作流 + 赛事知识库规模）。
+                 单独做成一条，不与副标题连成一段灰色文字 -->
+            <p class="wb-hero-tech">
+                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>
+                基于 LangGraph 多智能体工作流，15 个赛事知识库自动匹配评审规则</p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -1597,10 +1694,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             <div class="card-title">
                 <span class="step-badge">1</span>
                 赛事信息
+                <!-- 「清空重写」从恢复提示旁边挪到卡片标题右侧：原来的位置字号小、贴着一行灰字，
+                     既找不到也容易误点。这里常驻可见，点击后二次确认 -->
+                <button id="wbClearBtn" class="wb-textbtn" style="margin-left: auto;"
+                        title="清空已填内容并删除本机草稿"
+                        onclick="wbClearFormAsk()">清空重写</button>
             </div>
             <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; font-size: 11.5px; color: var(--text-mute); align-items: center; gap: 8px;">
                 <span id="wbRestoreText"></span>
-                <button onclick="wbClearForm()" style="padding: 4px 10px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清空重写</button>
             </div>
             <!-- 全站唯一常驻提示：其余长说明都收进字段旁的「?」图标（评委反馈文案过载） -->
             <div style="margin-bottom: 10px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -1900,9 +2001,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     </span>
                 </label>
             </div>
-            <button id="startBtn" class="btn-primary" onclick="startWork()">
-                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
-            </button>
+            <!-- 主 CTA 独立成条：不再和上方任何一行贴在一起 -->
+            <div id="startBar">
+                <button id="startBtn" class="btn-primary" onclick="startWork()">
+                    <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
+                </button>
+            </div>
             <div id="progressSteps" class="progress-steps" style="display: none;">
                 <!-- 简洁版进度条 -->
                 <div id="fastProgressBar" style="display: block; width: 100%;">
@@ -3040,6 +3144,22 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             } catch (e) {}
         }
 
+        // 清空是不可逆的（会连本机草稿一起删），按钮又挪到了显眼位置，必须二次确认
+        function wbClearFormAsk() {
+            var n = 0;
+            try {
+                WB_FORM_IDS.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el && String(el.value || '').trim()) n++;
+                });
+            } catch (e) {}
+            var msg = n > 0
+                ? '确定清空已填写的 ' + n + ' 项内容？本机草稿也会一起删除，无法恢复。'
+                : '确定清空表单并删除本机草稿？';
+            if (!window.confirm(msg)) return;
+            wbClearForm();
+        }
+
         function wbClearForm() {
             WB_SAVE_OFF = true;   // 清空过程中触发的 change 不要再存一次
             try { localStorage.removeItem(WB_FORM_KEY); } catch (e) {}
@@ -3780,11 +3900,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 var hasExtra = c.sections.length > LIM;
                 var rows = c.sections.map(function (s, i) {
                     var hide = (hasExtra && !_evSecAll && i >= LIM);
-                    return '<div style="display: ' + (hide ? 'none' : 'flex') +
-                        '; gap: 6px; align-items: center; margin-bottom: 6px;">' +
-                        '<span style="color: var(--text-mute); flex: 0 0 auto;">' + (i + 1) + '.</span>' +
-                        '<input class="ev-sec" value="' + _esc(s) + '" onchange="evSave()" style="flex: 1; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 13px;">' +
-                        '<button onclick="evDelSection(' + i + ')" style="flex: 0 0 auto; padding: 4px 8px; background: transparent; color: var(--text-mute); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">删</button>' +
+                    // 序号做成圆点徽章：原来只是一个灰色「1.」，整列看起来就是一排灰字
+                    return '<div class="wb-sec-row" style="display: ' + (hide ? 'none' : 'flex') +
+                        '; gap: 8px; align-items: center; margin-bottom: 5px;">' +
+                        '<span class="wb-sec-no" aria-hidden="true">' + (i + 1) + '</span>' +
+                        '<input class="ev-sec" value="' + _esc(s) + '" onchange="evSave()" aria-label="第 ' + (i + 1) + ' 章" style="flex: 1; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 13px;">' +
+                        '<button onclick="evDelSection(' + i + ')" class="wb-textbtn" style="flex: 0 0 auto; padding: 4px 9px; font-size: 12px;" title="删除第 ' + (i + 1) + ' 章">删</button>' +
                         '</div>';
                 }).join('');
                 if (hasExtra) {
