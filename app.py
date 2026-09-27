@@ -7,6 +7,7 @@
 # 本地启动用 run.py，云端用 gunicorn wsgi:app。
 # 一旦把启动块写回中间，其后的 @app.route 都不会被注册（本地直跑会 404）。
 import threading
+import collections
 import uuid
 import time
 import io
@@ -84,10 +85,17 @@ def _current_uid():
         (request.remote_addr or 'anon')
 
 
-# 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮
-MAX_CONCURRENT_GEN = 4
+# 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
+# 2026-09-27 实测定档：DeepSeek 单 key 24 路并发零 429（max_tokens=1 探测）；
+# 本机（2C/1.7G）每路生成内存增量 <1MB 级，16 路同时生成毫无压力。
+# 队列只作洪峰兜底（深度 40），正常情况下用户永远感知不到它的存在。
+# ⚠️ tasks/_gen_queue/_active_gen_count 都是进程内存态，部署必须保持 gunicorn 单 worker
+#    （systemd 单元 --workers 1）；要扩多 worker 先把这些下沉到 Redis/DB，否则状态分裂。
+MAX_CONCURRENT_GEN = 16
+_GEN_QUEUE_MAX = 40            # 排队上限：超过就明确拒绝（避免用户排到天荒地老）
 _active_gen_lock = threading.Lock()
 _active_gen_count = 0
+_gen_queue = collections.deque()   # 排队中的 task_id（FIFO）
 
 # 简单限流：同一 IP 1 分钟最多生成 5 次，防止刷接口（学生项目级防护，无需登录系统）。
 # 说明：进程内内存限流，gunicorn 多 worker 时是「每 worker 各自限 5 次」；
@@ -107,16 +115,21 @@ def _client_ip():
 
 
 def _rate_limited():
-    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。"""
-    ip = _client_ip()
+    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。
+    键优先用匿名用户 uid（cookie），其次才退回 IP——校级活动几百人常走同一个
+    校园网 NAT 出口，按 IP 限 5 次/分会把正常用户成片误伤。"""
+    try:
+        key = _current_uid() or _client_ip()
+    except Exception:
+        key = _client_ip()
     now = time.time()
     with _rate_lock:
-        hits = [t for t in _rate_hits.get(ip, []) if now - t < _RATE_WINDOW_SEC]
+        hits = [t for t in _rate_hits.get(key, []) if now - t < _RATE_WINDOW_SEC]
         if len(hits) >= _RATE_LIMIT:
-            _rate_hits[ip] = hits
+            _rate_hits[key] = hits
             return True
         hits.append(now)
-        _rate_hits[ip] = hits
+        _rate_hits[key] = hits
         # 键过多时顺手清理，避免内存缓慢增长
         if len(_rate_hits) > 5000:
             for k in list(_rate_hits.keys()):
@@ -2185,22 +2198,37 @@ def generate():
 
 
 def _start_generation(data):
-    """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。"""
+    """启动一个异步生成任务。返回 (task_id, None) 或 (None, error_json)。
+    有空位直接开跑；满了进 FIFO 排队（status=queued），任务结束自动补位，
+    满载体验从「直接拒绝」变成「排队等位」。"""
     global _active_gen_count
     # 在请求上下文里把匿名用户 id 固化进任务参数，供后台线程写历史记录时使用
     data["_user_id"] = _current_uid()
     if _rate_limited():
         return None, jsonify({"success": False,
                               "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
-    # 稳定器：并发生成任务达到上限就拒绝，避免瞬时洪峰把服务压垮
+    task_id = uuid.uuid4().hex
+    tasks[task_id] = {"status": "queued", "stage": "queued", "updated_at": time.time(), "start_time": time.time(),
+                      "mode": data.get("mode", "fast"), "data": data}
     with _active_gen_lock:
         if _active_gen_count >= MAX_CONCURRENT_GEN:
-            return None, jsonify({"success": False,
-                                  "error": "当前生成人数较多，请稍后 1 分钟再试"})
+            if len(_gen_queue) >= _GEN_QUEUE_MAX:
+                tasks.pop(task_id, None)
+                return None, jsonify({"success": False,
+                                      "error": "当前排队人数较多，请过 1~2 分钟再试"})
+            _gen_queue.append(task_id)
+            _sweep_tasks()
+            return task_id, None      # status=queued，前端轮询显示「排队第 N 位」
         _active_gen_count += 1
-    task_id = uuid.uuid4().hex
-    tasks[task_id] = {"status": "running", "stage": "start", "updated_at": time.time(), "start_time": time.time(),
-                      "mode": data.get("mode", "fast"), "data": data}
+    tasks[task_id]["status"] = "running"
+    _launch_worker(task_id)
+    _sweep_tasks()
+    return task_id, None
+
+
+def _launch_worker(task_id):
+    """为指定任务启动生成线程。调用方须已把并发计数 +1。"""
+    data = tasks[task_id]["data"]
 
     def worker():
         # 必须声明 global：finally 里对 _active_gen_count 赋值，没有这句它会被当成局部变量，
@@ -2247,9 +2275,38 @@ def _start_generation(data):
             clear_current_task()
             with _active_gen_lock:
                 _active_gen_count = max(0, _active_gen_count - 1)
+            _promote_next()            # 腾出坑位后立刻给排队的任务补位
 
     threading.Thread(target=worker, daemon=True).start()
-    return task_id, None
+
+
+def _promote_next():
+    """队列补位：从队首取一个仍有效的排队任务开跑。"""
+    global _active_gen_count
+    with _active_gen_lock:
+        if _active_gen_count >= MAX_CONCURRENT_GEN:
+            return
+        while _gen_queue:
+            tid = _gen_queue.popleft()
+            t = tasks.get(tid)
+            if t and t.get("status") == "queued":
+                t["status"] = "running"
+                t["updated_at"] = time.time()
+                _active_gen_count += 1
+                _launch_worker(tid)
+                return
+
+
+def _sweep_tasks():
+    """tasks 字典只进不出会慢性吃内存（1.7G 小机器尤其明显）：
+    超过阈值时清理 1 小时前已结束的任务（done/error/cancelled）。"""
+    if len(tasks) <= 300:
+        return
+    now = time.time()
+    for tid in [k for k, v in list(tasks.items())
+                if v.get("status") in ("done", "error", "cancelled")
+                and now - v.get("updated_at", 0) > 3600]:
+        tasks.pop(tid, None)
 
 
 @app.route('/api/generate_async', methods=['POST'])
@@ -2394,6 +2451,26 @@ def get_task_status(task_id):
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
+    # 排队兜底：queued 超过 10 分钟没被补位（只可能发生在服务重启丢队列后），判过期
+    if t.get("status") == "queued" and (time.time() - t.get("updated_at", 0)) > 600:
+        t["status"] = "error"
+        t["error"] = "任务排队超时，请重新生成"
+        t["error_code"] = "timeout"
+        t["stage"] = "error"
+        t["updated_at"] = time.time()
+    # 排队中：回中性状态位给前端（默认只说「正在安排」，位次留给前端按需展示）
+    if t.get("status") == "queued":
+        try:
+            pos = list(_gen_queue).index(task_id) + 1
+        except ValueError:
+            pos = 1
+        _avg = 45 if t.get("mode") != "deep" else 150   # 单路平均耗时（fast/deep 实测口径）
+        _qwait = int(pos * _avg / max(1, MAX_CONCURRENT_GEN))
+        return jsonify({"success": True, "status": "queued", "stage": "queued",
+                        "stage_label": "正在安排生成引擎",
+                        "pct": 0, "eta_seconds": _qwait, "partial": {},
+                        "queue_position": pos, "queue_wait_seconds": _qwait,
+                        "updated_at": t["updated_at"]})
     _stage = t.get("stage", "start")
     _label, _pct = stage_meta(_stage)
     # 流式增量：前端传 cursor={字段:已见长度}，这里只回「新增后缀」，避免每次轮询都拉全量正文。

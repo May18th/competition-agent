@@ -2769,7 +2769,7 @@ mark.wb-ph {
                 }
             } catch (err) {
                 document.getElementById('ideaFileName').innerText = '上传失败：连不上服务';
-                wbToast('上传失败：连不上本地服务，请确认网站还在运行', { type: 'error' });
+                wbToast('上传失败：网络连接异常，请稍后刷新重试', { type: 'error' });
             }
         });
 
@@ -4358,7 +4358,7 @@ mark.wb-ph {
             if (!_kbState) {
                 cov.textContent = '读取失败';
                 cov.style.color = 'var(--warn-text)';
-                cur.innerHTML = '<span style="color:var(--warn-text);">未能读取 /api/knowledge_status，请确认服务已启动（桌面「科创助手-启动服务.bat」）</span>';
+                cur.innerHTML = '<span style="color:var(--warn-text);">知识库读取失败，请稍后刷新重试</span>';
                 return;
             }
             var list = _kbHitList();
@@ -6024,10 +6024,12 @@ mark.wb-ph {
                     else if (_hiddenAt) { t0 += Date.now() - _hiddenAt; _hiddenAt = 0; }
                 });
                 // 看门狗：轮询最多等 5 分钟，超时就停止并明确报错，绝不让页面无限转圈
+                // （洪峰兜底队列生效时放宽到 15 分钟：queued 也会计时，5 分钟不够）
                 const WATCHDOG_MS = 5 * 60 * 1000;
+                let _queuedSeen = false;
                 return new Promise((resolve, reject) => {
                     const tick = setInterval(() => {
-                        if (Date.now() - t0 > WATCHDOG_MS) {
+                        if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
                             clearInterval(tick);
                             reject(new Error('等待超时（5 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
                             return;
@@ -6039,6 +6041,20 @@ mark.wb-ph {
                                     clearInterval(tick);
                                     reject(new Error((res2.error || '任务已失效') +
                                         (res2.detail ? '（' + res2.detail + '）' : '')));
+                                    return;
+                                }
+                                if (res2.status === 'queued') {
+                                    // 排队兜底（并发 16 路正常永远碰不到）：默认只说「正在安排」，
+                                    // 超过 20 秒还没轮到才诚实显示位次；queued 期间放宽看门狗到 15 分钟
+                                    _queuedSeen = true;
+                                    var _qp = res2.queue_position || 1;
+                                    var _qw = res2.queue_wait_seconds || 0;
+                                    var _qmsg = (Date.now() - t0 > 20000 && _qp > 1)
+                                        ? ('生成需求较多，你前面还有 ' + (_qp - 1) + ' 人，预计 ' +
+                                           (_qw >= 60 ? Math.ceil(_qw / 60) + ' 分钟' : _qw + ' 秒') + '内开始，无需操作')
+                                        : '生成需求较多，正在为你安排引擎，马上开始，无需操作';
+                                    _setBar(2, _qmsg);
+                                    try { wbAgentStage('queued', '等待中'); } catch (e) {}
                                     return;
                                 }
                                 if (res2.status === 'running') {
@@ -6382,10 +6398,10 @@ mark.wb-ph {
                 } else {
                     var _net = String((err && err.message) || err || '');
                     wbToast(_net.indexOf('Failed to fetch') >= 0
-                        ? '连不上本地服务，请确认网站还在运行'
+                        ? '网络连接异常，请稍后刷新重试'
                         : '请求出错：' + _net, {
                         type: 'error',
-                        sub: '若服务已停止，请双击桌面「科创助手-启动服务.bat」重新启动'
+                        sub: '当前访问人数较多，建议1分钟后重试'
                     });
                 }
             });
