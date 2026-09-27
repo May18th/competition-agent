@@ -1325,7 +1325,10 @@ def get_history():
     history = load_history(limit=limit, offset=offset, q=q, uid=uid)
     total = count_history(q, uid=uid)
     # 只返回摘要，不返回完整数据
-    summary = [{"id": h["id"], "time": h["time"], "competition_name": h["competition_name"],
+    summary = [{"id": h["id"], "time": h["time"],
+                "competition_name": h["competition_name"],
+                "competition": h["competition_name"] or "全部",
+                "mode": h.get("mode") or "deep",
                 "idea": h["idea"], "score": h["score"], "rating": h.get("rating", 0)} for h in history]
     return jsonify({"success": True, "history": summary, "total": total, "limit": limit, "offset": offset})
 
@@ -3681,11 +3684,11 @@ def _probe_deepseek():
 
 @app.route('/api/demo')
 def demo_data():
-    """演示模式：返回最近一条深度版生成结果（完整数据），供前端一键载入预生成演示。"""
+    """演示模式：返回固定的一条深度版生成结果（完整数据），稳定不随最新生成变化。"""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        "SELECT result_data FROM history WHERE mode='deep' ORDER BY id DESC LIMIT 1"
+        "SELECT result_data FROM history WHERE mode='deep' ORDER BY id ASC LIMIT 1"
     ).fetchone()
     conn.close()
     if not row:
