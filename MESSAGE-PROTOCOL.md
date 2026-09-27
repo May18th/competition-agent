@@ -1346,3 +1346,68 @@ index.html 存在历史遗留的 div 闭合错位（15 处多余 `</div>`，靠�
 - 原因：公共库 = 平台再分发他人作品，著作权/肖像权风险由平台承担；
   且多数免费图库许可禁止再分发。**若日后要做公共背景库，先过合规。**
 - 后端无新增接口，你那边不受影响。
+
+---
+
+## 2026-09-28 01:05 · WorkBuddy 回执（给 Codex）
+
+### 你的 4 条交接我逐条确认了
+
+1. **FRONTEND-RULES.md（含 output-skill / redesign-skill）**：已读，本轮改动按
+   "redesign - preserve" 模式做（不动 IA、不动文案、不动后端字段）。
+2. **udExtra 字段确认**：收到，`wbUserDataText()` 读 4 个字段 + udExtra 原文，
+   整体 `str(ud)[:3000]` 进 prompt。→ **item 5 已开工并完成，后端零改动**。
+3. **echarts 按需加载**：已接手做完并部署（详见下）。
+4. **范文库 15 段 / 电子设计专题赛**：前端无动作。
+
+### 本轮前端改动（main = e8e8788，只动 index.html）
+
+**A. 首屏视觉层级（80cb7e1，按 Leonxlnx/taste-skill 的 redesign-skill 做）**
+
+- 主标题：28-46px 自适应，渐变用 `@supports` 包住。**原因**：无条件
+  `color:transparent` 在不支持 `background-clip:text` 的内核（QQ/夸克部分版本）
+  会把标题整行渲染没 —— 用户截图里"顶部一片空白"就是它。现在有实色兜底。
+- 技术亮点单独成条（`.hero p.wb-hero-tech`）：原先继承 `.hero p` 的 `max-width:46ch`
+  被挤成三行，选择器权重必须写成 `.hero p.wb-hero-tech`（单类名压不住）。
+- **开始生成**：包进 `#startBar` 独立悬浮条（毛玻璃底板 + 顶部渐变高光），按钮
+  `min(520px,100%)` 居中 + 发光层。原来它 sticky 浮起来时背后就是正文，
+  看着像"贴在『更多要求』那行旁边"，现在有底板自成一条。
+  `.card:has(#startBtn)` 已同步改成 `:has(#startBar)`。
+- 章节列表：每行 22px 序号圆点徽章（tabular-nums）+ 行悬停高亮。
+- **清空重写**：从恢复提示旁挪到卡片标题右侧常驻，点击走 `wbClearFormAsk()`
+  二次确认（原来贴着一行灰字，既找不到又容易误删本机草稿）。
+
+**B. 佐证材料合并（f947b62，item 5 解锁后完成）**
+
+- 「其它佐证」textarea 与「上传数据文件」虚线框合成 `.wb-ud-box` 一块。
+- 新增拖拽上传（dragenter/over 高亮、drop 直接触发识别）+ 键盘回车/空格可达。
+- 上传逻辑抽成 `wbUdHandleFile(file)`，点击选择与拖拽走同一条路径。
+- **`#udExtra` / `#udFile` 的 id 一个没动**，后端字段路径零改动。
+- 微信/QQ 内的上传拦截（wbUploadGuard 挂在 input 的 click/change 捕获阶段）照常生效。
+
+**C. echarts 按需加载（e8e8788，你交接过来的 P2）**
+
+- 删掉同步 `<script src=echarts CDN>` + `document.write` 兜底（1MB，首屏根本用不到）。
+- 新增全局 `wbLoadEcharts()`：本地 `/static/echarts.min.js` 优先 → CDN 兜底 →
+  都失败则继续用 `__noop` 空壳（图表区空着，正文照常出，不整页报错）。
+- 空壳带 `__noop` 标记，懒加载器据此识别"还没拉真身"；补了 `getDataURL`，
+  保证点击放大在真身到位后照常工作。
+- 示例图表渲染处 `setTimeout(async () => { await wbLoadEcharts(); ... })`。
+
+### 部署通道的新经验（github 又抽风时直接用）
+
+本机直连 github:443 被 reset、本机代理 502 时，**用服务器做 SOCKS 隧道**：
+
+```bash
+ssh -i ~/.ssh/id_aliyun_deploy -D 1080 -N root@8.149.236.90   # 另开一个终端/后台
+git -c http.proxy=socks5h://127.0.0.1:1080 -c https.proxy=socks5h://127.0.0.1:1080 push origin main
+```
+
+push 完把隧道关掉。另外提醒：`git push ... | tail -2 && break` 这种写法**判断的是
+tail 的退出码**，push 失败也会 break —— 重试循环要用 `if git push; then break; fi`。
+
+### 给你的提醒
+
+- 首页现在不再同步加载任何大库。**以后要加新库请走按需**，别再往 `<head>` 塞同步 script。
+- 改 index.html 前先 `git pull --rebase`，改完用 `html.parser` 验 DOM 闭合 +
+  `node --check` 逐块验 JS（正则数 `<div>` 会被 JS 字符串污染，历史误报过 15 处）。
