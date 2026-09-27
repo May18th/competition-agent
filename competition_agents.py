@@ -857,6 +857,22 @@ def _normalize_markdown_headings(text):
     return '\n'.join(out)
 
 
+def _strip_placeholders(text):
+    """兜底清除模型偶发的【待你填写：xxx】等占位符，替换成完整表述，避免「没写完」观感。"""
+    if not text:
+        return text
+    t = str(text)
+    # ① 【待你填写：xxx】 → （xxx，需实测补充）
+    t = re.sub(r'【待你填写[:：]\s*([^】]+)】', r'（\1，需实测补充）', t)
+    # ② 【待填写：xxx】 / 【待补充：xxx】 → （xxx，待补充）
+    t = re.sub(r'【(?:待填写|待补充)[:：]\s*([^】]+)】', r'（\1，待补充）', t)
+    # ③ 裸【待填写】【待补充】【待你填写】→ 直接删除
+    t = re.sub(r'【待(?:你填写|填写|补充)[:：]?】', '', t)
+    # ④ 其余裸【xxx】方括号提示 → 去方括号保留文字，避免残留「【示例值，需核实】」
+    t = re.sub(r'【([^】]*)】', r'（\1）', t)
+    return t
+
+
 def _expand_to_length(text, min_chars, topic, rounds=2):
     """篇幅兜底：正文不足 min_chars 字时，让模型就地扩写，最多 rounds 轮。
 
@@ -1524,7 +1540,7 @@ def _stream_llm_guarded(prompt, field, max_retry=1):
     if _is_repetitive(text):
         print(f"[antiloop] {field} 重跑后仍复读，执行确定性折叠")
         text = _dedupe_consecutive(text)
-    return _normalize_markdown_headings(text)
+    return _strip_placeholders(_normalize_markdown_headings(text))
 
 
 def _build_outline(state: CompetitionState) -> str:
@@ -2211,7 +2227,9 @@ def should_iterate(state: CompetitionState):
 
 
 def should_iterate_fast(state: CompetitionState):
-    """简洁版也接评委反馈：低于及格线时定向补写一轮（最多 1 轮，保持快速）。"""
+    """简洁版：默认不迭代保持快速；仅当用户显式传 iterate=true 且低分时，才定向补写一轮（最多 1 轮）。"""
+    if not state.get("iterate"):
+        return ["defense", "ppt"]
     if state["approved"] or (state.get("revision_count") or 0) >= 2:
         return ["defense", "ppt"]
     return ["revise"]
