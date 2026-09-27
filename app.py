@@ -211,14 +211,15 @@ def _admin_guard():
 
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
-# 由 media_routes.py 提供，WorkBuddy 注册。
-# ⚠️ 改 app.py 时请不要删这段，删了前端的图表和 PPT 下载会 404。
-try:
-    from media_routes import media_bp
-    app.register_blueprint(media_bp)
-    print("✅ 媒体模块已注册：/api/media/*")
-except Exception as _media_err:
-    print("⚠️ 媒体模块注册失败：", _media_err)
+# 已废弃：前端早已切到 rich_pipeline + chart_renderer + export_zip 主链路，
+# media_routes/media_factory/deck_agent 是死链（nginx 0 业务调用，归档日志全是扫描器）。
+# 2026-09-27 渐进摘除第一步：注释注册，观察 24h 后再删文件。
+# try:
+#     from media_routes import media_bp
+#     app.register_blueprint(media_bp)
+#     print("✅ 媒体模块已注册：/api/media/*")
+# except Exception as _media_err:
+#     print("⚠️ 媒体模块注册失败：", _media_err)
 # ===== 媒体模块结束 =====
 
 
