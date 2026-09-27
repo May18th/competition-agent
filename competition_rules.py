@@ -50,9 +50,12 @@ def competition_gap_report():
         if not name:
             scoring_gap = "无评分标准"
         elif any(m in body for m in INFER_MARKERS):
-            # 官方明确「未公布统一权重、由各校自定」不是推断缺口，是官方真实口径
+            # 官方明确「未公布统一权重、由各校自定」不是推断缺口，是官方真实口径。
+            # 「未公开」要一并豁免：数学建模的官方口径就是"公布四项评议标准、未公开精确权重"，
+            # 资料里诚实标注了"参考权重（非官方规定）"，反被"非官方"标记命中 —— 这是误报不是缺口。
             official_no_unified = any(k in body for k in (
-                "官方未公布", "未规定", "未做统一", "各校自定", "各校自行划定", "自行制定", "各校自行制定"))
+                "官方未公布", "未公布统一", "未公开", "未规定", "未做统一",
+                "各校自定", "各校自行划定", "自行制定", "各校自行制定"))
             scoring_gap = None if official_no_unified else "评分是推断/非官方口径"
         _, sec_body = _has_section(secs, "章节", "申报书", "结构", "必须包含")
         section_gap = None
