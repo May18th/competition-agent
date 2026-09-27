@@ -2974,6 +2974,7 @@ def get_task_status(task_id):
         "pct": _pct,
         "eta_seconds": _eta,
         "partial": _partial,
+        "meta": t.get("meta") or {},
         "updated_at": t["updated_at"]
     }
     if t["status"] == "done":
@@ -3642,6 +3643,24 @@ def _probe_deepseek():
     _upstream_cache["deepseek"] = result
     _upstream_cache["checked_at"] = now
     return result
+
+
+@app.route('/api/demo')
+def demo_data():
+    """演示模式：返回最近一条深度版生成结果（完整数据），供前端一键载入预生成演示。"""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT result_data FROM history WHERE mode='deep' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "暂无演示数据，请先生成一次深度版"})
+    try:
+        data = json.loads(row["result_data"])
+    except Exception:
+        return jsonify({"success": False, "error": "演示数据解析失败"})
+    return jsonify({"success": True, "data": data})
 
 
 @app.route('/api/health')

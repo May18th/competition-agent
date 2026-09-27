@@ -94,6 +94,21 @@ def set_partial_field(field, text):
     tasks[tid]["updated_at"] = time.time()
 
 
+def set_stage_meta(key, value):
+    """写入当前任务的可展示元数据（已检索知识库数 / 命中评分标准数 / 当前写作章节名等）。
+
+    供 Agent 内部边生成边上报，前端 /api/status 的 meta 字段直接透传；无数据时返回空值不报错。
+    """
+    tid = current_task_id()
+    if not tid or tid not in tasks:
+        return
+    t = tasks[tid]
+    if not isinstance(t.get("meta"), dict):
+        t["meta"] = {}
+    t["meta"][key] = value
+    t["updated_at"] = time.time()
+
+
 # 演讲稿流式缓冲区（task_id -> 已生成的文本，供前端实时预览）
 _speech_stream = {}
 

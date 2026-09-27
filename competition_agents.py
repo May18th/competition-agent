@@ -6,7 +6,7 @@ from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import HumanMessage
-from stage_reporter import report_stage as _report_stage, set_partial_field
+from stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
 
 
 # ============ 配置 ============
@@ -1709,8 +1709,12 @@ def _stream_llm(prompt, field, every=8):
         for i, ch in enumerate(llm.stream([HumanMessage(content=prompt)])):
             buf.append(ch.content or "")
             if i % every == 0:
-                set_partial_field(field, "".join(buf))
-        set_partial_field(field, "".join(buf))
+                _text = "".join(buf)
+                set_partial_field(field, _text)
+                _report_current_chapter(_text)
+        _text = "".join(buf)
+        set_partial_field(field, _text)
+        _report_current_chapter(_text)
     except Exception as e:
         partial_text = "".join(buf)
         print(f"[stream] {field} 流式中断（{e}），已生成 {len(partial_text)} 字")
@@ -1718,6 +1722,13 @@ def _stream_llm(prompt, field, every=8):
             return llm.invoke([HumanMessage(content=prompt)]).content.strip()
         return partial_text.strip()
     return "".join(buf).strip()
+
+
+def _report_current_chapter(text):
+    """从已生成文本里取最后一个 Markdown 标题作为「当前写作章节」，上报给前端展示。"""
+    heads = re.findall(r'^#{1,3}\s*(.+)$', text or '', flags=re.MULTILINE)
+    if heads:
+        set_stage_meta("current_chapter", heads[-1].strip())
 
 
 def _stream_llm_guarded(prompt, field, max_retry=1):
