@@ -1593,22 +1593,29 @@ mark.wb-ph {
                     <div id="kbDetail" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); font-size: 12.5px; max-height: 320px; overflow: auto;"></div>
                     <textarea id="rules" style="display: none;"></textarea>
 
-                    <!-- 赛事官方文件：上传后作为撰写依据（后端 rule_content → 规则解析 → 写作，链路已通） -->
-                    <div style="margin-top: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
+                    <!-- 上传官方文件降级为默认折叠的小字入口（Codex 待办 P0-2）：
+                         15 个赛事评分标准已内置，正常流程不需要传规则；
+                         只有官方模板/最新通知有特殊要求时才展开补充。 -->
+                    <div onclick="wbAdvToggle('ruleUploadBody')" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
+                        补充官方文件（可选，一般不用传）<span id="ruleUploadBodyArrow">▸</span>
+                    </div>
+                    <div id="ruleUploadBody" style="display: none;">
+                    <div style="margin-top: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <div style="font-size: 13px; font-weight: 600; color: var(--text);">
-                                上传赛事官方文件<span style="font-weight: 400; color: var(--text-mute);">（评分标准 / 章节要求，AI 会照着写）</span>
+                                补充赛事官方文件<span style="font-weight: 400; color: var(--text-mute);">（有最新通知/官方模板才需要）</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="document.getElementById('ruleFile').click()" style="padding: 6px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">选择文件</button>
+                                <button onclick="document.getElementById('ruleFile').click()" style="padding: 6px 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">选择文件</button>
                                 <button onclick="clearRuleDoc()" style="padding: 6px 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px;">清除</button>
                             </div>
                         </div>
                         <input type="file" id="ruleFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                         <div id="ruleDocInfo" style="margin-top: 8px; font-size: 12.5px; color: var(--text-mute); line-height: 1.7;">
-                            未上传。上传官方文件后，将按其评分维度与章节要求生成。
+                            未上传。评分标准已内置，一般不用传；只有官方文件有特殊章节要求时才需要补充。
                         </div>
                         <div id="ruleDocPreview" style="display: none; margin-top: 8px; max-height: 140px; overflow: auto; padding: 10px; background: var(--surface-2); border-radius: 6px; font-size: 12px; color: var(--text-dim); white-space: pre-wrap;"></div>
+                    </div>
                     </div>
                 </div>
                     </div>
@@ -1638,6 +1645,21 @@ mark.wb-ph {
                         <textarea id="udExtra" rows="2" placeholder="其它佐证（选填）：合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px; margin-top: 10px;"></textarea>
                         <div style="font-size: 12px; color: var(--text-mute); margin-top: 6px; line-height: 1.6;">
                             填了的数字，正文会原文采用并标注「实测值」；没填的部分仍按测算值生成（图表里橙色标出），导出前请替换成你的真数。
+                        </div>
+                        <!-- 上传数据文件：后端 /api/upload_file 会解析并智能识别文件类型，
+                             识别结果摆出来让用户一键确认路由（实测数据 / 申报书草稿 / 官方文件） -->
+                        <div style="margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-solid);">
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <button type="button" onclick="document.getElementById('udFile').click()"
+                                        style="padding: 6px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap;">
+                                    上传数据文件
+                                </button>
+                                <span style="font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                                    测试报告 / 调研数据 / 用户反馈（pdf · docx · txt · md · csv · xlsx），AI 自动识别并填到对应位置
+                                </span>
+                            </div>
+                            <input type="file" id="udFile" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm" style="display: none;">
+                            <div id="udFileInfo" style="display: none; margin-top: 10px; font-size: 12.5px; line-height: 1.7;"></div>
                         </div>
                     </div>
                 </div>
@@ -2550,6 +2572,115 @@ mark.wb-ph {
             if (info) info.textContent = '未上传。上传官方文件后，将按其评分维度与章节要求生成。';
             wbToast('已清除赛事规则', { type: 'ok' });
         }
+
+        // ============ 实测数据「上传数据文件」+ 智能识别路由（Codex 待办 P0-1）============
+        // 后端 /api/upload_file 解析文本后用 LLM 判断 file_type（赛事规则|申报书草稿|实测数据|参考文献|其他），
+        // 前端把识别结果摆出来，让用户一键确认路由——不自动写入，避免误覆盖已填内容。
+        document.getElementById('udFile').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            e.target.value = '';   // 清空，允许重复选同一个文件
+            var info = document.getElementById('udFileInfo');
+            var ext = (String(file.name).match(/\.[^.]+$/) || [''])[0].toLowerCase();
+            if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'].indexOf(ext) >= 0) {
+                wbToast('图片暂不识别：请导出为 PDF 或文字后再上传', { type: 'warn', ms: 3600 });
+                return;
+            }
+            if (ext === '.doc') {
+                wbToast('旧版 .doc 读不了：请在 Word 里「另存为 .docx」再上传', { type: 'warn', ms: 4200 });
+                return;
+            }
+            if (info) { info.style.display = 'block'; info.textContent = '正在识别：' + file.name + ' …'; }
+            var d = null;
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('purpose', 'user_data');
+                const res = await fetch('/api/upload_file', { method: 'POST', body: fd });
+                d = await res.json();
+            } catch (err) {
+                if (info) info.textContent = '识别失败：连不上服务，请稍后重试';
+                wbToast('识别失败：连不上服务', { type: 'error' });
+                return;
+            }
+            if (!d || !d.success) {
+                var em = (d && d.error) || '未知错误';
+                if (info) info.textContent = '识别失败：' + em;
+                wbToast('识别失败：' + em, { type: 'error' });
+                return;
+            }
+            var text = String(d.text || '').trim();
+            if (!text) {
+                if (info) info.textContent = '文件里没读到文字（扫描版读不出），请换文字版或直接把要点粘到上面';
+                wbToast('没读到文字：请换文字版文件', { type: 'warn' });
+                return;
+            }
+            wbUdShowRoute(info, file.name, d, text);
+        });
+
+        // 识别结果卡：类型 + 摘要 + 关键点 + 按类型给出一键路由（第一个按钮是推荐项）
+        function wbUdShowRoute(info, fname, d, text) {
+            var t = String(d.file_type || '其他');
+            var kps = (d.key_points || []).slice(0, 3);
+            var routes;
+            if (t === '申报书草稿') {
+                routes = [{ key: 'draft', label: '填到申报书草稿' }, { key: 'user_data', label: '合并进实测数据' }];
+            } else if (t === '赛事规则') {
+                routes = [{ key: 'builtin', label: '规则已内置，无需上传（推荐）' }, { key: 'rule', label: '仍要作为官方文件补充' }];
+            } else {   // 实测数据 / 参考文献 / 其他 → 默认都进「其它佐证」
+                routes = [{ key: 'user_data', label: '合并进实测数据' }, { key: 'draft', label: '填到申报书草稿' }];
+            }
+            info.innerHTML = '<div style="padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);">'
+                + '<div>已识别为 <b style="color: var(--c-a);">' + _esc(t) + '</b>'
+                + (d.summary ? '：' + _esc(d.summary) : '')
+                + ' <span style="color: var(--text-mute);">（' + _esc(fname) + ' · ' + text.length + ' 字）</span></div>'
+                + (kps.length ? '<div style="margin-top: 6px; color: var(--text-dim);">关键点：' + kps.map(function (k) { return _esc(k); }).join('；') + '</div>' : '')
+                + '<div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">'
+                + routes.map(function (r, i) {
+                    return '<button type="button" onclick="wbUdApplyRoute(\'' + r.key + '\')" style="padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; '
+                        + (i === 0 ? 'background: var(--c-a); color: #fff; border: none;'
+                                   : 'background: var(--surface-solid); color: var(--text-dim); border: 1px solid var(--line);') + '">'
+                        + r.label + '</button>';
+                }).join('')
+                + '</div></div>';
+            window._wbUdPending = { text: text, fname: fname };
+        }
+
+        // 用户确认后的落地动作（结果卡里的按钮是字符串拼的 onclick，显式挂 window 最稳）
+        window.wbUdApplyRoute = function (key) {
+            var p = window._wbUdPending;
+            var info = document.getElementById('udFileInfo');
+            if (!p) { if (info) info.style.display = 'none'; return; }
+            var destLabel = { rule: '官方文件', draft: '申报书草稿', user_data: '实测数据' };
+            if (key === 'builtin') {
+                if (info) info.innerHTML = '好的，规则已内置，本次文件不使用。可继续上传其它文件。';
+                window._wbUdPending = null;
+                return;
+            }
+            if (key === 'rule') {
+                var box = document.getElementById('rules');
+                if (box) box.value = p.text;
+                wbToast('已作为官方文件载入，生成时会按它的要求来写', { type: 'ok' });
+            } else if (key === 'draft') {
+                var dr = document.getElementById('proposal_draft');
+                if (dr) {
+                    dr.value = dr.value.trim() ? dr.value.trim() + '\n\n' + p.text : p.text;
+                    dr.dispatchEvent(new Event('change'));
+                }
+                wbToast('已填入申报书草稿框（追加，不覆盖已有内容）', { type: 'ok' });
+            } else {
+                var ex = document.getElementById('udExtra');
+                if (ex) {
+                    var add = '【上传文件：' + p.fname + '】\n' + p.text;
+                    ex.value = ex.value.trim() ? ex.value.trim() + '\n\n' + add : add;
+                    ex.dispatchEvent(new Event('change'));
+                }
+                wbToast('已合并进实测数据·其它佐证', { type: 'ok' });
+            }
+            if (info) info.innerHTML = '已完成：《' + _esc(p.fname) + '》→ ' + (destLabel[key] || '实测数据') + '。可继续上传其它文件。';
+            window._wbUdPending = null;
+            wbSaveForm();
+        };
 
         // 导入模板：上传官方/学校的模板文件 → 自动识别章节 → 填进赛事要求卡
         // 复用 /api/upload_pdf 抽文本，前端用正则抽标题，不用新增后端接口
@@ -7358,7 +7489,7 @@ mark.wb-ph {
         // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
-        ['ruleFile', 'tplFile', 'ideaFile'].forEach(wbUploadGuard);
+        ['ruleFile', 'tplFile', 'ideaFile', 'udFile'].forEach(wbUploadGuard);
         // 创意写完自动猜赛事：用户不用再从十几项里挑
         (function () {
             var ie = document.getElementById('idea');
