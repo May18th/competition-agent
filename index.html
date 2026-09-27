@@ -1675,7 +1675,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap;">
+        <!-- z-index 提到引导遮罩（1500）之上：否则首次访问引导还在时，手指点这三个按钮
+             会被全屏遮罩吃掉（点了只是关掉遮罩，用户看到的就是「点了没反应」） -->
+        <div id="wbTopTools" style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap; position: relative; z-index: 1600;">
             <!-- 今日额度不再前端展示（用户拍板）：数字是全站剩余不是个人维度，
                  显眼了反而让用户困惑、也把运营盘子亮给评委。后端 /api/quota 接口保留，后台可查 -->
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
@@ -1692,7 +1694,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         <!-- 自定义背景面板：官方预设（程序化生成，无 IP/无真人）+ 本机上传。
              上传的图只进浏览器 IndexedDB，绝不上传服务器 —— 不做公共素材库，
              避免平台替用户传播他人作品（著作权/肖像权）。 -->
-        <div id="wbBgPanel" style="display: none; margin: 0 4px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+        <div id="wbBgPanel" style="display: none; margin: 0 4px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); position: relative; z-index: 1600;">
             <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px;">页面背景</div>
             <div id="wbBgSwatches" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 8px;"></div>
             <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -1776,8 +1778,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                          （聚焦即全量列出、可滚动、当前选中项高亮），别再把 15 个都塞回这排——
                          塞满后 grid 子项 min-width:auto 会把手机整页撑出横向滚动（实测 375→989px）。
                          加新赛事时同步 datalist 和后端 data/ 文件名，onclick 值必须与 datalist 完全一致 -->
-                    <div id="compQuickRow" style="display: flex; margin-top: 8px; overflow-x: auto; white-space: nowrap;
-                                -webkit-overflow-scrolling: touch; padding-bottom: 2px;">
+                    <!-- 375px 实测：六个标签总宽 382px > 容器 343px，最后一个「全部赛事 ▾」被切掉一半，
+                         看着像「全部」。改成 flex-wrap 换行：窄屏自动折行，每个标签文字都完整、都能点；
+                         宽屏仍然一行。原来靠 overflow-x 横滑，用户根本不知道右边还有东西。 -->
+                    <div id="compQuickRow" style="display: flex; flex-wrap: wrap; margin-top: 8px; padding-bottom: 2px;">
                         <span data-comp="iCAN大学生创新创业大赛" onclick="wbPickComp('iCAN大学生创新创业大赛')" title="iCAN大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">iCAN</span>
                         <span data-comp="中国国际互联网+大学生创新创业大赛" onclick="wbPickComp('中国国际互联网+大学生创新创业大赛')" title="中国国际互联网+大学生创新创业大赛" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">互联网+</span>
                         <span data-comp="挑战杯全国大学生课外学术科技作品竞赛" onclick="wbPickComp('挑战杯全国大学生课外学术科技作品竞赛')" title="挑战杯全国大学生课外学术科技作品竞赛（大挑）" style="flex: 0 0 auto; margin-right: 6px; padding: 4px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px;">大挑</span>
@@ -2820,6 +2824,44 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     </script>
     <script>
 
+        /* ---------- 本机存储降级（2026-09-28 移动端实测） ----------
+           iOS Safari / 微信 / QQ 内核会拦掉本机存储，控制台报
+           "Tracking Prevention blocked access to storage"，此时 localStorage 读写直接抛异常。
+           后果不只是草稿丢：引导状态记不住（每次进页面都重新弹遮罩，还会吃掉顶栏点击）、
+           历史页因为 uid 对不上查不到自己的记录。
+           统一包一层：localStorage → sessionStorage → 内存。写不进 localStorage 时打标记，
+           页面给一次明确提示，功能继续走，不静默失效。 */
+        var _wbMemStore = {};
+        var _wbStoreBlocked = false;
+        function _wbStoreGet(k) {
+            try { var v = localStorage.getItem(k); if (v !== null && v !== undefined) return v; } catch (e) {}
+            try { var s2 = sessionStorage.getItem(k); if (s2 !== null && s2 !== undefined) return s2; } catch (e) {}
+            return Object.prototype.hasOwnProperty.call(_wbMemStore, k) ? _wbMemStore[k] : null;
+        }
+        function _wbStoreSet(k, v) {
+            var ok = false;
+            try { localStorage.setItem(k, v); ok = true; } catch (e) {}
+            try { sessionStorage.setItem(k, v); } catch (e) {}
+            try { _wbMemStore[k] = v; } catch (e) {}
+            if (!ok) _wbStoreBlocked = true;
+            return ok;
+        }
+        function _wbStoreDel(k) {
+            try { localStorage.removeItem(k); } catch (e) {}
+            try { sessionStorage.removeItem(k); } catch (e) {}
+            try { delete _wbMemStore[k]; } catch (e) {}
+        }
+        function wbStoreProbe() {
+            try {
+                localStorage.setItem('__wb_probe__', '1');
+                localStorage.removeItem('__wb_probe__');
+                return true;
+            } catch (e) {
+                _wbStoreBlocked = true;
+                return false;
+            }
+        }
+
         // 手机端上传兼容
         // 微信内置浏览器的 file 选择器只给「图片 / 视频」，选不到 PDF / Word（微信自身限制，改不了），
         // 所以：微信里直接把上传按钮废掉并给明确指引，避免用户反复踩坑；普通手机浏览器展开说明。
@@ -3124,7 +3166,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 }
                 var c = evCurrent();
                 c.sections = secs.slice(0, 20);
-                try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (err) {}
+                try { _wbStoreSet(c.key, JSON.stringify({ sections: c.sections })); } catch (err) {}
                 renderEventCard();
                 var card = document.getElementById('eventReqCard');
                 if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3195,11 +3237,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             };
         }
         function wbSaveMeta() {
-            try { localStorage.setItem('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
+            try { _wbStoreSet('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
         }
         function wbLoadMeta() {
             try {
-                var m = JSON.parse(localStorage.getItem('wbDocMeta') || '{}');
+                var m = JSON.parse(_wbStoreGet('wbDocMeta') || '{}');
                 if (m.school) document.getElementById('wbSchool').value = m.school;
                 if (m.team) document.getElementById('wbTeam').value = m.team;
                 if (m.advisor) document.getElementById('wbAdvisor').value = m.advisor;
@@ -3277,7 +3319,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 });
                 var r = document.querySelector('input[name=mode]:checked');
                 if (r) d.mode = r.value;
-                localStorage.setItem(WB_FORM_KEY, JSON.stringify(d));
+                _wbStoreSet(WB_FORM_KEY, JSON.stringify(d));
             } catch (e) {}
         }
 
@@ -3299,7 +3341,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
         function wbClearForm() {
             WB_SAVE_OFF = true;   // 清空过程中触发的 change 不要再存一次
-            try { localStorage.removeItem(WB_FORM_KEY); } catch (e) {}
+            try { _wbStoreDel(WB_FORM_KEY); } catch (e) {}
             WB_FORM_IDS.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el) { el.value = ''; el.dispatchEvent(new Event('change')); }
@@ -3348,7 +3390,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
         function wbLoadForm() {
             var d = null;
-            try { d = JSON.parse(localStorage.getItem(WB_FORM_KEY) || 'null'); } catch (e) {}
+            try { d = JSON.parse(_wbStoreGet(WB_FORM_KEY) || 'null'); } catch (e) {}
             if (!d) return;
             var hit = 0;
             WB_FORM_IDS.forEach(function (id) {
@@ -3410,11 +3452,23 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             }
             try { onCompetitionChange(); } catch (e) {}
         })();
+        // 存储被拦时明确说一次：否则「历史是空的」「草稿刷新就没了」对用户全是黑盒
+        (function () {
+            try {
+                if (wbStoreProbe()) return;
+                setTimeout(function () {
+                    try {
+                        wbToast('浏览器限制了本机存储（Tracking Prevention）：草稿与历史只在本次会话保留，'
+                            + '换普通浏览器或关掉无痕模式可长期保存', { type: 'warn', ms: 5600 });
+                    } catch (e) {}
+                }, 1600);
+            } catch (e) {}
+        })();
         // 首次进入才做交互引导（箭头指向 + 一句话，点一下就走），走完写 localStorage，之后不再出现。
         // 首屏那三步卡片是常驻的，不算打扰；完整说明按需点右上角「这是什么 / 使用说明」。
         (function () {
             var done = false;
-            try { done = localStorage.getItem('wbCoachDone') === '1'; } catch (e) {}
+            try { done = _wbStoreGet('wbCoachDone') === '1'; } catch (e) {}
             if (done) return;
             setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
         })();
@@ -3552,7 +3606,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                   if (d) d.style.display = '';
                   if (btn) btn.textContent = '已提交';
                   wbToast('收到了，谢谢', { type: 'ok' });
-                  try { localStorage.setItem('wbRatedV', String(wbRateVal)); } catch (e) {}
+                  try { _wbStoreSet('wbRatedV', String(wbRateVal)); } catch (e) {}
               })
               .catch(function () {
                   if (btn) { btn.disabled = false; btn.textContent = '提交反馈'; }
@@ -3783,7 +3837,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         function wbLoadCompIndex() {
             // 先读缓存，让首屏就能立刻匹配（哪怕这次 fetch 还没回来）
             try {
-                var c = JSON.parse(localStorage.getItem(WB_COMP_IDX_KEY) || 'null');
+                var c = JSON.parse(_wbStoreGet(WB_COMP_IDX_KEY) || 'null');
                 if (c && c.items && c.items.length) WB_COMP_INDEX = c;
             } catch (e) {}
             fetch('/static/competition_index.json', { cache: 'no-cache' })
@@ -3792,7 +3846,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                     if (!d || !d.items || !d.items.length) return;
                     var oldV = WB_COMP_INDEX && WB_COMP_INDEX.version;
                     WB_COMP_INDEX = d;
-                    try { localStorage.setItem(WB_COMP_IDX_KEY, JSON.stringify(d)); } catch (e) {}
+                    try { _wbStoreSet(WB_COMP_IDX_KEY, JSON.stringify(d)); } catch (e) {}
                     // 候选清单可能已缓存过（当时索引还没到），让它下次重新算，把索引里的新赛事并进来
                     _compOpts = null;
                     // 版本变了说明后端资料更新过，重画一次要求卡
@@ -3810,7 +3864,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
         function wbLoadProfiles() {
             try {
-                var c = JSON.parse(localStorage.getItem(WB_COMP_PROF_KEY) || 'null');
+                var c = JSON.parse(_wbStoreGet(WB_COMP_PROF_KEY) || 'null');
                 if (c && c.length) WB_COMP_PROFILES = c;
             } catch (e) {}
             fetch('/api/competition_profiles', { cache: 'no-cache' })
@@ -3818,7 +3872,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 .then(function (d) {
                     if (!d || !d.success || !d.competitions || !d.competitions.length) return;
                     WB_COMP_PROFILES = d.competitions;
-                    try { localStorage.setItem(WB_COMP_PROF_KEY, JSON.stringify(d.competitions)); } catch (e) {}
+                    try { _wbStoreSet(WB_COMP_PROF_KEY, JSON.stringify(d.competitions)); } catch (e) {}
                     try { renderEventCard(); } catch (e) {}
                 })
                 .catch(function () { /* 拉不到就用缓存 / 回落到内置规则 */ });
@@ -3913,7 +3967,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var base = req || EV_DEFAULT;
             var key = 'wbEventReq_' + (req ? (req.label + name) : name);
             var custom = null;
-            try { custom = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
+            try { custom = JSON.parse(_wbStoreGet(key) || 'null'); } catch (e) {}
 
             // 赛道：只有知识库真写了「## 赛道设置」的赛事才有。
             // 默认选中第一个（iCAN 是创新赛道——它的禁忌是「别写学校/导师」，
@@ -3944,11 +3998,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var tk = c._tracks.filter(function (t) { return t.key === tkey; })[0];
             if (!tk) return;
             var saved = null;
-            try { saved = JSON.parse(localStorage.getItem(c.key) || 'null'); } catch (e) {}
+            try { saved = JSON.parse(_wbStoreGet(c.key) || 'null'); } catch (e) {}
             // 已有自定义章节 → 只换赛道标记，不动用户改过的结构
             var keep = (saved && saved.sections && saved.sections.length) ? saved.sections : null;
             try {
-                localStorage.setItem(c.key, JSON.stringify({
+                _wbStoreSet(c.key, JSON.stringify({
                     sections: keep || [], track: tkey
                 }));
             } catch (e) {}
@@ -3981,14 +4035,14 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 if (v) arr.push(v);
             }
             c.sections = arr;
-            try { localStorage.setItem(c.key, JSON.stringify({ sections: arr })); } catch (e) {}
+            try { _wbStoreSet(c.key, JSON.stringify({ sections: arr })); } catch (e) {}
         }
 
         function evAddSection() {
             evSave();
             var c = evCurrent();
             c.sections.push('新章节 ' + (c.sections.length + 1));
-            try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
+            try { _wbStoreSet(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
             renderEventCard();
         }
 
@@ -3996,13 +4050,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             evSave();
             var c = evCurrent();
             c.sections.splice(i, 1);
-            try { localStorage.setItem(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
+            try { _wbStoreSet(c.key, JSON.stringify({ sections: c.sections })); } catch (e) {}
             renderEventCard();
         }
 
         function evReset() {
             var c = evCurrent();
-            try { localStorage.removeItem(c.key); } catch (e) {}
+            try { _wbStoreDel(c.key); } catch (e) {}
             renderEventCard();
         }
 
@@ -4276,7 +4330,25 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                 if (!document.getElementById('wbCoachVeil')) {
                     var veil = document.createElement('div');
                     veil.id = 'wbCoachVeil';
-                    veil.addEventListener('click', function () { coachEnd(); });
+                    // 遮罩盖住整屏，用户第一次点顶栏（背景/历史/使用说明）会被它吃掉，
+                    // 体感就是「点了没反应」。这里做穿透：先临时让遮罩不接收事件，
+                    // 看落点底下是不是顶栏里的按钮 —— 是就结束引导并把这个点击转给它。
+                    veil.addEventListener('click', function (ev) {
+                        var under = null;
+                        try {
+                            veil.style.pointerEvents = 'none';
+                            under = document.elementFromPoint(ev.clientX, ev.clientY);
+                        } catch (e) {}
+                        finally { veil.style.pointerEvents = ''; }
+                        try {
+                            if (under && under !== veil && under.closest && under.closest('#wbTopTools')) {
+                                coachEnd();
+                                under.click();
+                                return;
+                            }
+                        } catch (e) {}
+                        coachEnd();
+                    });
                     document.body.appendChild(veil);
                 }
                 el.classList.add('wb-coach-target');
@@ -4325,7 +4397,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         function coachEnd() {
             _coachClear();
             try { document.removeEventListener('keydown', _coachEsc); } catch (e) {}
-            try { localStorage.setItem('wbCoachDone', '1'); } catch (e) {}
+            try { _wbStoreSet('wbCoachDone', '1'); } catch (e) {}
         }
 
         /* ---------- 首页三步引导（常驻卡片，不是弹窗） ---------- */
@@ -4335,7 +4407,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         var WB_GUIDE_SEL = ['#idea', '.version-card', '#startBtn'];
         var _wbGuide = [false, false, false];
 
-        function _wbGuideSave() { try { localStorage.setItem(WB_GUIDE_KEY, JSON.stringify(_wbGuide)); } catch (e) {} }
+        function _wbGuideSave() { try { _wbStoreSet(WB_GUIDE_KEY, JSON.stringify(_wbGuide)); } catch (e) {} }
 
         function wbGuidePaint() {
             for (var i = 0; i < 3; i++) {
@@ -4363,7 +4435,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         (function () {
             try {
                 if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches
-                    && !localStorage.getItem('wbGuideKeep')) {
+                    && !_wbStoreGet('wbGuideKeep')) {
                     wbGuideCollapse();
                 }
             } catch (e) {}
@@ -4464,7 +4536,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var g = document.getElementById('wbGuide');
             if (!g) return;
             try {
-                var s = JSON.parse(localStorage.getItem(WB_GUIDE_KEY) || 'null');
+                var s = JSON.parse(_wbStoreGet(WB_GUIDE_KEY) || 'null');
                 if (s && s.length === 3) _wbGuide = [!!s[0], !!s[1], !!s[2]];
             } catch (e) {}
             wbGuidePaint();
@@ -6552,12 +6624,47 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
             let _maxPct = 0;
-            const _setBar = (pct, label) => {
+            var _curStageLabel = '';
+            // 进度条在页面 y≈1500px 处（移动端实测），光更新它用户根本看不到——
+            // 视口里只有顶上那条 sticky 的开始按钮。所以同一个百分比/阶段也写进按钮文案，
+            // 用户不滚动也能看到「正在推进」（深度版要等 3 分半，看不到反馈会以为卡死）。
+            const _setBar = (pct, label, stageText) => {
                 if (pct > _maxPct) _maxPct = pct;
                 document.getElementById('fastProgress').style.width = Math.max(_maxPct, 0) + '%';
                 document.getElementById('fastProgressText').innerText = label;
+                var _b = document.getElementById('startBtn');
+                if (_b && _b.disabled) {
+                    _b.innerHTML = '<span class="spinner"></span> ' +
+                        (isOptimize ? '正在优化 ' : '正在生成 ') + Math.max(_maxPct, 0) + '%' +
+                        ((stageText || _curStageLabel) ? ' · ' + (stageText || _curStageLabel) : '');
+                }
             };
             _setBar(2, '正在提交任务…');
+            // 生成一开始就把进度区带进视野：移动端实测进度条在 y≈1500px，不滚过去等于没有。
+            setTimeout(function () {
+                var _ps = document.getElementById('progressSteps');
+                if (!_ps) return;
+                try { _ps.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+                // 平滑滚动在微信 / 夸克内核里经常不动（实测 headless 下也是 0），
+                // 700ms 后检查一次：还在视野外就直接定位，保证用户一定看得到进度条。
+                setTimeout(function () {
+                    try {
+                        var r = _ps.getBoundingClientRect();
+                        var vh = window.innerHeight || 600;
+                        if (r.top > vh * 0.85 || r.bottom < 60) {
+                            var delta = r.top - vh / 2 + r.height / 2;
+                            // 页面是 body{overflow-y:auto} 的自滚动容器，window.scrollTo 对它无效，
+                            // 必须同时驱动 scrollingElement 和 body，少一个就滚不动
+                            try { window.scrollBy(0, delta); } catch (e) {}
+                            try {
+                                var sc = document.scrollingElement || document.documentElement;
+                                sc.scrollTop += delta;
+                            } catch (e) {}
+                            try { document.body.scrollTop += delta; } catch (e) {}
+                        }
+                    } catch (e) {}
+                }, 700);
+            }, 60);
 
             fetch('/api/generate_async', {
                 method: 'POST',
@@ -6642,7 +6749,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                         ? ('生成需求较多，你前面还有 ' + (_qp - 1) + ' 人，预计 ' +
                                            (_qw >= 60 ? Math.ceil(_qw / 60) + ' 分钟' : _qw + ' 秒') + '内开始，无需操作')
                                         : '生成需求较多，正在为你安排引擎，马上开始，无需操作';
-                                    _setBar(2, _qmsg);
+                                    _curStageLabel = '等待中';
+                                    _setBar(2, _qmsg, '等待中');
                                     try { wbAgentStage('queued', '等待中'); } catch (e) {}
                                     return;
                                 }
@@ -6656,6 +6764,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                                     });
                                     paintPartial(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
+                                    if (res2.stage_label) _curStageLabel = String(res2.stage_label);
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
                                     var _etaTxt = _eta > 0
                                         ? '预计还需 ' + (_eta >= 60 ? ('约 ' + Math.round(_eta / 60) + ' 分钟') : ('约 ' + _eta + ' 秒'))
@@ -6843,6 +6952,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
                         // 不依赖渲染结果的：同步执行
                         // 分享需要知道这条结果对应哪条历史记录
                         window._lastHistoryId = (data.data && data.data.history_id) || window._lastHistoryId || null;
+                        // 生成完就存一份在本机：后端历史按 uid 隔离，手机端 uid 存不住时
+                        // 只剩这份能保证「刷新后还能打开刚才那版」
+                        try {
+                            if (window._lastHistoryId) {
+                                wbLocalHistPush({
+                                    id: window._lastHistoryId,
+                                    competition_name: competition || '',
+                                    idea: idea || proposal_draft || '',
+                                    time: _wbNowStr(),
+                                    score: (data.data || {}).score,
+                                    data: data.data
+                                });
+                            }
+                        } catch (e) {}
                         wbHideRetry();
                         wbFabShow(!!(data.data && data.data.rich_deck));
                         renderCompleteness(data.data.completeness);
@@ -7290,12 +7413,16 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         })();
 
         function showIntro(force) {
+            // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
+            try {
+                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+            } catch (e) {}
             var modal = document.getElementById('introModal');
             var box = document.getElementById('introBox');
             var body = document.getElementById('introBody');
             if (!modal || !box || !body) return;
             if (!force) {
-                try { if (localStorage.getItem('wbIntroSeen') === '1') return; } catch (e) {}
+                try { if (_wbStoreGet('wbIntroSeen') === '1') return; } catch (e) {}
             }
             body.innerHTML = introHTML();
             if (WB_IS_MOBILE) {
@@ -7319,7 +7446,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var noMore = document.getElementById('introNoMore');
             var skip = (!noMore || noMore.checked);
             if (remember !== false && skip) {
-                try { localStorage.setItem('wbIntroSeen', '1'); } catch (e) {}
+                try { _wbStoreSet('wbIntroSeen', '1'); } catch (e) {}
             }
             // 手机端：关掉引导直接进输入区并唤起键盘
             // （focus 必须在点击的同一个调用栈里同步执行，iOS 才认这是用户手势，
@@ -7937,6 +8064,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     };
 
         function showHistory() {
+            // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
+            try {
+                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+            } catch (e) {}
             document.getElementById('historyModal').style.display = 'flex';
             loadHistory(0);
             try { wbLoadHisTabs(); } catch (e) {}
@@ -7950,6 +8081,44 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
         var _historyLimit = 10;
         var _historyOffset = 0;
+        /* ---------- 历史记录的本机兜底（2026-09-28 移动端实测） ----------
+           后端历史按 user_id 隔离，user_id 来自 httponly cookie。手机端存储被拦
+           （控制台 Tracking Prevention blocked access to storage）时 cookie 存不住，
+           下次请求就是新的 uid —— 于是「明明刚生成完，历史页却是 0 条」。
+           本机这份不能替代后端，但能保证「刚生成的结果刷新后还能打开」：
+           生成完成时顺手存一份到 sessionStorage（同标签页刷新不丢），
+           后端查不到时用它兜底。超过 1.2MB 的只存摘要，避免撑爆配额。 */
+        var WB_LOCAL_HIST_KEY = 'wbLocalHist';
+        function _wbNowStr() {
+            var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        }
+        function wbLocalHistList() {
+            try { return JSON.parse(_wbStoreGet(WB_LOCAL_HIST_KEY) || '[]') || []; } catch (e) { return []; }
+        }
+        function wbLocalHistPush(rec) {
+            try {
+                var big = 0;
+                try { big = JSON.stringify(rec.data || {}).length; } catch (e) {}
+                var slim = rec;
+                if (big > 1200000) {
+                    slim = { id: rec.id, competition_name: rec.competition_name, idea: rec.idea,
+                             time: rec.time, score: rec.score, _tooBig: true };
+                }
+                var list = wbLocalHistList().filter(function (x) { return String(x.id) !== String(rec.id); });
+                list.unshift(slim);
+                _wbStoreSet(WB_LOCAL_HIST_KEY, JSON.stringify(list.slice(0, 3)));
+            } catch (e) {}
+        }
+        function wbLocalHistFind(id) {
+            try {
+                var l = wbLocalHistList();
+                for (var i = 0; i < l.length; i++) if (String(l[i].id) === String(id)) return l[i];
+            } catch (e) {}
+            return null;
+        }
+
         function loadHistory(offset) {
             _historyOffset = offset;
             var q = (document.getElementById('historySearch') || {}).value || '';
@@ -7969,7 +8138,30 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             var list = document.getElementById('historyList');
             var items = d.history || [];
             if (!items.length) {
-                list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">暂无历史记录</p>';
+                var _locList = [];
+                try { _locList = wbLocalHistList(); } catch (e) {}
+                if (_locList.length) {
+                    list.innerHTML =
+                        '<p style="color: var(--text-mute); text-align: center; font-size: 12.5px; line-height: 1.7; margin-bottom: 8px;">'
+                        + '浏览器限制了本机存储，后端暂时查不到你的记录；下面是<b>本次会话</b>生成的，'
+                        + '换个浏览器或关掉无痕模式就能长期保存。</p>' +
+                        _locList.map(function (h) {
+                            return '<div class="history-item" style="cursor: pointer;" onclick="openHistory(' + h.id + ')">' +
+                                '<div class="history-info">' +
+                                    '<div class="history-title">' + _esc(h.competition_name || '') + '</div>' +
+                                    '<div class="history-idea">' + _esc((h.idea || '').slice(0, 60)) + '</div>' +
+                                    '<div class="history-meta">' + _esc(h.time || '') + ' · 得分 ' +
+                                        _esc(h.score == null ? '-' : h.score) +
+                                        ' · <span style="color: var(--c-a);">本机记录</span></div>' +
+                                '</div>' +
+                                '<div style="display: flex; gap: 6px; flex-shrink: 0;">' +
+                                    '<button class="history-open" onclick="event.stopPropagation();openHistory(' + h.id + ')">打开</button>' +
+                                '</div>' +
+                            '</div>';
+                        }).join('');
+                } else {
+                    list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">暂无历史记录</p>';
+                }
             } else {
                 list.innerHTML = items.map(function (h) {
                     // 整条都可点开（之前只有「删除」，点不开内容，等于历史记录没法用）
@@ -8005,11 +8197,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         async function openHistory(id) {
             var modal = document.getElementById('historyModal');
             try {
-                var res = await fetch('/api/history/' + id);
-                var d = await res.json();
+                var d = null;
+                try {
+                    var res = await fetch('/api/history/' + id);
+                    d = await res.json();
+                } catch (e) { d = null; }
                 if (!d || !d.success || !d.data) {
-                    wbToast('这条记录加载失败：' + ((d && d.error) || '没有数据'), { type: 'error' });
-                    return;
+                    // 后端按 uid 隔离，手机端 uid 存不住时这条会「记录不存在」。
+                    // 用生成时存在本机的那份兜底，历史不至于点了打不开。
+                    var _loc = wbLocalHistFind(id);
+                    if (_loc && _loc.data) { d = { success: true, data: _loc.data }; }
+                    else {
+                        wbToast('这条记录加载失败：' + ((d && d.error) || '没有数据'), { type: 'error' });
+                        return;
+                    }
                 }
                 var data = d.data;
                 window._lastData = data;
@@ -8355,10 +8556,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
             return wbBgLayer;
         }
         function wbBgLoadCfg() {
-            try { return JSON.parse(localStorage.getItem(WB_BG_KEY) || 'null') || {}; } catch (e) { return {}; }
+            try { return JSON.parse(_wbStoreGet(WB_BG_KEY) || 'null') || {}; } catch (e) { return {}; }
         }
         function wbBgSaveCfg(c) {
-            try { localStorage.setItem(WB_BG_KEY, JSON.stringify(c || {})); } catch (e) {}
+            try { _wbStoreSet(WB_BG_KEY, JSON.stringify(c || {})); } catch (e) {}
         }
         // IndexedDB 存 Blob：localStorage 只有 5MB 且只能存字符串，塞不下图片
         function wbBgDb() {
@@ -8479,6 +8680,11 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         }
         function wbBgSetDim(v) { var c = wbBgLoadCfg(); c.dim = parseFloat(v); wbBgApply(c); }
         function wbBgPanelToggle() {
+            // 首次访问的引导遮罩（#wbCoachVeil，z-index 1500）还在时，点开的面板会躺在遮罩下面，
+            // 用户看到的就是「点了背景没反应」。既然用户已经在主动用页面了，引导就该让位。
+            try {
+                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+            } catch (e) {}
             var p = document.getElementById('wbBgPanel');
             if (!p) return;
             p.style.display = (p.style.display === 'block') ? 'none' : 'block';
@@ -8992,7 +9198,7 @@ window.addEventListener('resize', function () {
                 ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>'
                 : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
         }
-        try { localStorage.setItem('wbLight', light ? '1' : '0'); } catch (e) {}
+        try { _wbStoreSet('wbLight', light ? '1' : '0'); } catch (e) {}
     }
 
     window.wbToggleTheme = function () {
@@ -9001,7 +9207,7 @@ window.addEventListener('resize', function () {
     (function initTheme() {
         // 默认夜间，读取本地记忆；用户选过夜间则下次进来直接暗色
         var light = false;
-        try { light = localStorage.getItem('wbLight') === '1'; } catch (e) {}
+        try { light = _wbStoreGet('wbLight') === '1'; } catch (e) {}
         applyTheme(light);
     })();
 })();
