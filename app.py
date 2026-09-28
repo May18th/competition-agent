@@ -761,6 +761,32 @@ def _migrate_history_json():
 _migrate_history_json()
 
 
+def _normalize_history_competition_names():
+    """把历史记录的赛事名统一为官方全称（第十二轮刺：互联网+ 两种写法并存）。"""
+    try:
+        from competition_agents import get_competition_profile
+        conn = get_db()
+        c = conn.cursor()
+        rows = c.execute("SELECT id, competition_name FROM history WHERE IFNULL(competition_name,'') != ''").fetchall()
+        updates = []
+        for rid, comp in rows:
+            prof = get_competition_profile(comp)
+            official = (prof or {}).get("name", "")
+            if official and official != comp:
+                updates.append((official, rid))
+        for official, rid in updates:
+            c.execute("UPDATE history SET competition_name = ? WHERE id = ?", (official, rid))
+        conn.commit()
+        conn.close()
+        if updates:
+            print(f"[history] 已统一 {len(updates)} 条赛事名为官方全称")
+    except Exception as e:
+        print(f"[history] 赛事名统一失败：{e}")
+
+
+_normalize_history_competition_names()
+
+
 # ============ 网页界面 ============
 
 
@@ -908,7 +934,7 @@ def _fetch_record_from_source(data):
         if tid and tid in tasks:
             d = tasks[tid].get('data') or {}
             if d:
-                return d
+                return _clean_legacy_record(d)
         hid = data.get('history_id')
         if hid:
             import json as _json
@@ -920,10 +946,35 @@ def _fetch_record_from_source(data):
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
                 if rd:
-                    return rd
+                    return _clean_legacy_record(rd)
     except Exception as e:
         print(f"[export] 后端记录原文覆盖失败，退回前端数据：{e}")
     return None
+
+
+def _clean_legacy_record(obj):
+    """历史旧记录产物清洗（第二十三轮刺）：
+    旧版脱敏把校名写成「（隐去）」占位符，这里递归替换成自然泛化「某高校」；
+    并清理旧版 deck 里残留的 prompt 特征句（旧 PPT 生成 bug）。
+    """
+    if isinstance(obj, str):
+        return obj.replace("（隐去）", "某高校")
+    if isinstance(obj, dict):
+        out = {k: _clean_legacy_record(v) for k, v in obj.items()}
+        # deck 幻灯片：清 prompt 特征句（如「用表格呈现…」）
+        try:
+            deck = out.get("rich_deck")
+            if isinstance(deck, dict) and isinstance(deck.get("slides"), list):
+                from rich_pipeline import _clean_deck_slides
+                deck = dict(deck)
+                deck["slides"] = _clean_deck_slides(deck["slides"])
+                out["rich_deck"] = deck
+        except Exception:
+            pass
+        return out
+    if isinstance(obj, list):
+        return [_clean_legacy_record(x) for x in obj]
+    return obj
 
 
 def _reorder_markdown_by_chapters(text, ordered_titles):
@@ -1552,10 +1603,17 @@ def add_feedback():
     except (TypeError, ValueError):
         history_id = None
     category = _categorize_feedback(content)
+    # 前端把星级「拼进文本」（如「评分 4 星（不错，省了事）」），这里解析出来，
+    # 同步写入 history.rating，否则满意度统计/分布一直是 0（第四轮刺）。
+    import re as _re
+    _rm = _re.search(r'评分\s*([1-5])\s*星', content)
+    rating = int(_rm.group(1)) if _rm else None
     conn = get_db()
     c = conn.cursor()
     c.execute("INSERT INTO feedback (history_id, content, created_time, category, user_id) VALUES (?, ?, ?, ?, ?)",
               (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category, _current_uid()))
+    if rating is not None and history_id:
+        c.execute("UPDATE history SET rating = ? WHERE id = ?", (rating, history_id))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
@@ -2261,14 +2319,14 @@ def _strip_identifying_text(t):
     # 指导教师 / 负责人 + 姓名（含职称）
     t = re.sub(
         r'(指导老师|指导教师|负责人|队长|联系人)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
-        '指导教师（隐去）', t)
+        '指导教师（某老师）', t)
     # 院校全称（高置信度）：只隐「XX大学」，不再隐「XX学校」——
     # 「学校」在正文里几乎总是泛化词（不同学校/各个学校/学校名称），不是具体校名，
     # 之前把「不同学校柜体」删成「（隐去）柜体」就是这条误伤的。
     # 具体高校以「大学/学院」命名，双盲要隐的也是它们，「学校」无需脱敏。
-    t = re.sub(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城|名称|地址|简称|全称|校名)', '（隐去）', t)
+    t = re.sub(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城|名称|地址|简称|全称|校名)', '某高校', t)
     # 学院：只认较长校名（如「职业技术学院」「文理学院」），避开「商学院」等院系
-    t = re.sub(r'[\u4e00-\u9fa5]{4,8}学院', '（隐去）', t)
+    t = re.sub(r'[\u4e00-\u9fa5]{4,8}学院', '某高校', t)
     # 「姓名：待填写」「电话：待补充」等无方括号占位 → （由团队补充），
     # 避免「待填写」三个字原样出现在交给评委的文档里
     t = re.sub(r'([：:])\s*(待填写|待你填写|待补充|待填)', r'\1（由团队补充）', t)
