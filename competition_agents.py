@@ -1871,7 +1871,9 @@ def _write_proposal_half(common, chapter_titles, continue_mode):
             "本次只写以下章节，标题原样输出，每个章节都要有实质内容"
             "（数据 + 场景 + 技术名词 + 验证证据），不允许一句话带过：\n\n"
             + chap_block +
-            "\n\n直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白或结尾说明。"
+            "\n\n硬性要求：上面列出的**每一个**章节标题都必须输出，一个都不能漏，"
+            "尤其是最后一个标题也要写完完整正文，不允许写到一半提前结束。"
+            "直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白或结尾说明。"
         )
     else:
         tail = (
@@ -1879,7 +1881,9 @@ def _write_proposal_half(common, chapter_titles, continue_mode):
             "本次只写以下章节，标题原样输出，每个章节都要有实质内容"
             "（数据 + 场景 + 技术名词 + 验证证据），不允许一句话带过：\n\n"
             + chap_block +
-            "\n\n直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白。"
+            "\n\n硬性要求：上面列出的**每一个**章节标题都必须输出，一个都不能漏，"
+            "尤其是最后一个标题也要写完完整正文，不允许写到一半提前结束。"
+            "直接输出这些章节的正文（从第一个「## 」标题开始），不要任何开场白。"
         )
     field = "proposal" if not continue_mode else "_proposal_p2"
     return _stream_llm_guarded(common + "\n\n" + tail, field)
