@@ -61,6 +61,13 @@
         ]
       ],
       "focus": "重 AI 核心作用与场景创新：AI 必须参与核心服务过程（理解信息/生成内容/辅助判断/自然交互），而非只是辅助写代码或生成页面；Demo 可稳定演示；须有完整使用说明与量化测试结果。",
+      "scoring_by_track": {
+        "tracks": [
+          {"id": "innovation", "name": "创新赛道", "is_default": true, "scoring": [["创新性", 35], ["实用性", 25], ["原创性", 20], ["技术方案", 20]], "source": "https://www.g-ican.com/competition/details?id=79", "checked_date": "2026-09-28", "note": "总分=巡展20%+答辩80%；巡展=实用性25/技术创新性25/现场演示50"},
+          {"id": "entrepreneurship", "name": "创业赛道", "scoring": [["创新性", 20], ["商业性", 35], ["技术方案", 25], ["团队情况", 20]], "source": "https://www.g-ican.com/competition/details?id=79", "checked_date": "2026-09-28", "note": "官网旧版口径，2026创业赛道规则待官网核实"},
+          {"id": "challenge", "name": "挑战赛道", "scoring": null, "source": null, "checked_date": "2026-09-28", "note": "官方规则待核实，暂按通用标准"}
+        ]
+      },
       "word_requirement": {
         "official": "应用方案 PDF 不超过 20 页且 ≤50MB；演示视频 MP4 ≤5分钟；可运行程序须提供链接或源码；硬件赛道另交硬件设计说明+实物原型照片",
         "suggested": "按 20 页容量控制，约 6000-8000 字 + 6-10 张图"
@@ -110,6 +117,19 @@
     ]
   ],
   "focus": "重落地：商业闭环、市场验证、财务测算、团队执行力与育人价值并重，避免只有概念没有订单/试点。",
+  "scoring_by_track": {
+    "tracks": [
+      {"id": "higher_creative", "name": "高教主赛道·创意组", "is_default": true, "scoring": [["个人成长", 30], ["项目创新", 30], ["产业价值", 25], ["团队协作", 15]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "higher_startup", "name": "高教主赛道·创业组", "scoring": [["个人成长", 25], ["项目创新", 30], ["产业价值", 30], ["团队协作", 15]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "red_public", "name": "红旅·公益组", "scoring": [["个人成长", 30], ["公益价值", 10], ["项目创新", 20], ["发展前景", 20], ["团队协作", 20]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "red_creative", "name": "红旅·创意组", "scoring": [["个人成长", 30], ["项目创新", 30], ["发展前景", 20], ["团队协作", 20]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "red_startup", "name": "红旅·创业组", "scoring": [["个人成长", 25], ["项目创新", 30], ["发展前景", 25], ["团队协作", 20]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "voc_creative", "name": "职教·创意组", "scoring": [["个人成长", 30], ["项目创新", 30], ["产业价值", 25], ["团队协作", 15]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "voc_startup", "name": "职教·创业组", "scoring": [["个人成长", 25], ["项目创新", 30], ["产业价值", 30], ["团队协作", 15]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "industry_proposition", "name": "产业·企业命题组", "scoring": [["个人成长", 30], ["项目创新", 20], ["团队协作", 20], ["实现成效", 20], ["项目分析", 10]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"},
+      {"id": "industry_transform", "name": "产业·成果转化组", "scoring": [["个人成长", 25], ["项目创新", 30], ["产业价值", 30], ["团队协作", 15]], "source": "https://cy.ncss.cn", "checked_date": "2026-09-28", "note": "2026 官方评审规则"}
+    ]
+  },
       "word_requirement": {
         "official": null,
         "suggested": "系统内深度版建议4500-6000字"

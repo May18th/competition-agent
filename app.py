@@ -2920,6 +2920,7 @@ def _run_generation(data):
 
         state: CompetitionState = {
             "competition_name": data.get("competition_name", ""),
+            "track": data.get("track", ""),
             "rule_content": data.get("rule_content", ""),
             "idea": idea,
             "proposal_draft": proposal_draft,
@@ -4452,6 +4453,83 @@ def admin_stats():
         "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
+    })
+
+
+@app.route('/api/stats')
+def api_stats():
+    """第一百六十一轮：前后台数据一致性——前台档位卡片唯一数据源。
+    从 history 实时统计简洁版(fast)/深度版(deep)的字数中位、时长中位、样本数与区间。
+    口径：排除 duration<=1s 的测试异常样本；字数取 result_data.proposal_chars，缺失则回退按正文有效字重算。"""
+    try:
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT mode, duration, result_data FROM history WHERE duration > 1").fetchall()
+        conn.close()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    try:
+        from competition_agents import _cjk_len
+    except Exception:
+        _cjk_len = lambda s: len(re.sub(r'\s', '', s or ""))
+
+    def _word_count(result_data):
+        try:
+            d = json.loads(result_data or "{}")
+        except Exception:
+            return None
+        if not isinstance(d, dict):
+            return None
+        if d.get("proposal_chars"):
+            try:
+                return int(d["proposal_chars"])
+            except (TypeError, ValueError):
+                pass
+        if d.get("proposal"):
+            return int(_cjk_len(d["proposal"]))
+        return None
+
+    buckets = {"fast": {"chars": [], "dur": []}, "deep": {"chars": [], "dur": []}}
+    for r in rows:
+        mode = (r["mode"] or "").strip().lower()
+        if mode not in buckets:
+            continue
+        wc = _word_count(r["result_data"])
+        if wc and wc > 0:
+            buckets[mode]["chars"].append(wc)
+        dur = r["duration"]
+        if dur and float(dur) > 1:
+            buckets[mode]["dur"].append(float(dur))
+
+    def _median(v):
+        if not v:
+            return 0
+        s = sorted(v)
+        n = len(s)
+        mid = n // 2
+        return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+
+    def _stats(mode):
+        b = buckets[mode]
+        chars = b["chars"]
+        durs = b["dur"]
+        return {
+            "sample_count": len(chars),
+            "chars_median": int(round(_median(chars))),
+            "chars_min": int(min(chars)) if chars else 0,
+            "chars_max": int(max(chars)) if chars else 0,
+            "duration_median_sec": round(_median(durs), 1),
+            "duration_min_sec": round(min(durs), 1) if durs else 0,
+            "duration_max_sec": round(max(durs), 1) if durs else 0,
+        }
+
+    return jsonify({
+        "success": True,
+        "fast": _stats("fast"),
+        "deep": _stats("deep"),
     })
 
 

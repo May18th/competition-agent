@@ -615,6 +615,7 @@ def merge_state(old, new):
 class CompetitionState(TypedDict):
     # 输入
     competition_name: str
+    track: str
     rule_content: str
     idea: str
     proposal_draft: str
@@ -1094,7 +1095,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
     kb = get_competition_knowledge_structured(state['competition_name'])
     # 第一百五十二轮：生成开始即上报「已匹配赛事 + 官方评分维度」，前端第一时间展示知识库智能
     set_stage_meta("matched_competition", kb.get('matched_name') or comp)
-    set_stage_meta("scoring_dims", _official_scoring_dims(comp))
+    set_stage_meta("scoring_dims", _official_scoring_dims(comp, state.get("track")))
     if hits:
         kb_block = f"【基于 RAG 向量检索命中的知识库片段（{kb.get('matched_name') or comp}）】\n{hits}\n"
     elif kb.get("matched"):
@@ -2245,12 +2246,35 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
     return {"idea_score": idea_score, "idea_feedback": response.content, "scores": scores}
 
 
-def _official_scoring_dims(competition_name):
-    """从赛事 profile 取官方评分维度/权重（结构化 scoring 列表）；无则返回空列表。"""
+def _official_scoring_dims(competition_name, track=None):
+    """从赛事 profile 取官方评分维度/权重（结构化 scoring 列表）；无则返回空列表。
+
+    第一百六十三轮：支持赛道/组别二级规则。传 track 时优先取 scoring_by_track 对应赛道，
+    未命中则取 is_default 赛道，最终回退 profile.scoring（无赛道区分的赛事统一规则）。
+    """
     try:
         profile = get_competition_profile(competition_name)
+        scoring = None
+        sbt = profile.get("scoring_by_track")
+        if isinstance(sbt, dict):
+            tracks = sbt.get("tracks") or []
+            tk = str(track or "").strip().lower()
+            if tk:
+                for t in tracks:
+                    if not isinstance(t, dict):
+                        continue
+                    if tk == str(t.get("id") or "").lower() or tk in str(t.get("name") or ""):
+                        scoring = t.get("scoring")
+                        break
+            if scoring is None:
+                for t in tracks:
+                    if isinstance(t, dict) and t.get("is_default"):
+                        scoring = t.get("scoring")
+                        break
+        if scoring is None:
+            scoring = profile.get("scoring") or []
         dims = []
-        for item in (profile.get("scoring") or []):
+        for item in (scoring or []):
             if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
                 try:
                     weight = float(item[1])
@@ -2267,7 +2291,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
     """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
     _report_stage("judging")
     # 评分维度/权重：以规则解析出的赛事官方规则为准；无官方规则才回退前端 scoring_weights，再无回退默认五维。
-    official = _official_scoring_dims(state.get("competition_name", ""))
+    official = _official_scoring_dims(state.get("competition_name", ""), state.get("track"))
     dims = []
     if official:
         dims = [(d["name"], d["weight"]) for d in official]

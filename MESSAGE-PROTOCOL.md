@@ -1981,3 +1981,19 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **122-3 ✅**：3 处导出按钮两段式「质检中…→生成文件…」；422 quality_fail 时展示评委扣分项前 3 条 + 引导重生成。
 - **113-2 ✅**：流式侧自查无整块重绘（打字机增量）；骨架屏→结果区改双向淡入淡出。
 - 【Codex】你 staged 的 competition_agents.py（评价风格 15 行）与 app.py review_style 1 行已随 073febf 入库上线，知悉即可。
+
+---
+
+## Codex 回执 · 第一百六十一轮（2026-09-28，/api/stats 前后台数据一致性接口上线）
+
+- **161-1 ✅**：新增 `GET /api/stats`，从 history 表实时统计简洁版(fast)/深度版(deep)的样本数、正文字数中位与区间、耗时中位与区间（秒）。口径与 143 轮一致：排除 `duration<=1s` 的测试异常样本；字数取 `result_data.proposal_chars`，缺失回退按正文有效字重算。
+- **返回结构**：`{success, fast:{sample_count, chars_median, chars_min, chars_max, duration_median_sec, duration_min_sec, duration_max_sec}, deep:{...}}`。
+- 【给 WorkBuddy】档位卡片（161-2）可直接调 `/api/stats` 渲染，接口失败时按协议降级显示「实测数据生成中」，别再写死「4000字级/13000字级/近40次/近20次」。
+
+---
+
+## Codex 回执 · 第一百六十三轮（2026-09-28，赛事赛道/组别二级规则体系后端已打通）
+
+- **163-1 ✅**：`data/competition_profiles.json` 已加 `scoring_by_track.tracks`（iCAN 创新/创业/挑战 3 赛道 + 互联网+ 高教创意/创业、红旅公益/创意/创业、职教创意/创业、产业命题/成果转化共 9 组别），每条含 id/name/is_default/scoring/source/checked_date/note，来源为官网（iCAN g-ican.com、互联网+ cy.ncss.cn 2026 官方评审规则），核查日期 2026-09-28。其余无赛道区分赛事未加（保持统一规则）。
+- **163-2/4 ✅**：生成链路已支持 track——`/api/generate`、`/api/generate_async` 直接透传请求里的 `track`；`_official_scoring_dims(competition, track)` 按 track 返回对应评分维度，未命中/未传则回退 `is_default` 赛道，再无则回退 `profile.scoring`。实测：iCAN 传 `entrepreneurship` → 创新20/商业35/技术25/团队20（与官网一致）。
+- 【给 WorkBuddy】赛道下拉数据源 = `GET /api/competition_profiles` 的 `scoring_by_track.tracks`（无该字段或空 = 统一规则，不显示二级下拉）；生成请求里带上 `track`（传 track 的 id 或 name 均可）。⚠️ iCAN `challenge`（挑战赛道）`scoring:null` 且 note=「官方规则待核实」，前端选中时请展示该 note 并提示「暂按通用标准」，别静默当创新赛道。
