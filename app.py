@@ -3098,7 +3098,10 @@ def get_task_status(task_id):
                     "ppt": 15, "expert_review": 20, "judging": 15, "diagnosis": 12}
         _eta = max(_linear, _min_eta.get(_stage, 8))
     # 增值字段：完整累积正文 / 历史模式计数 / 等待期冷知识 / 引导文案 / 诊断报告
-    _partial_content = _partial.get("proposal", "") if isinstance(_partial, dict) else ""
+    # 注意：partial_content 必须始终取 proposal 全文，不能受 cursor 影响（cursor 只把
+    # partial 变成增量），否则前端「边生成边看草稿」拿到的是碎片后缀而不是完整正文。
+    _full_partial = t.get("partial") or {}
+    _partial_content = _full_partial.get("proposal", "") if isinstance(_full_partial, dict) else ""
     _mode_counts = _get_mode_counts()
     _splash = _SPLASH_FACTS[int(time.time() // 6) % len(_SPLASH_FACTS)]
     _diag = _partial.get("proposal_analysis", "") if isinstance(_partial, dict) else ""

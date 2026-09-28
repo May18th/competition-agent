@@ -57,3 +57,8 @@
 
 - 之前 `export_zip` 已回源，但 `export_pptx` 还直接读前端 POST 的 `deck`，历史打开后可能拿到别的记录的 PPT。
 - 修复（`app.py`）：`export_pptx` 同样先 `_fetch_record_from_source` 回源，`deck` 取记录里的 `rich_deck`，`tables/charts` 取 `rich_tables/rich_charts`（兼容前端旧字段 `deck/tables/charts`），前端仅覆盖 theme/variant。至此 Word/PDF（proposal 回源）、PPT（rich_deck 回源）、打包（全量回源）四入口内容都绑定当前记录。
+
+## 9. `partial_content` 受 cursor 污染返回碎片后缀（第十三轮支撑）
+
+- `/api/status` 里 `partial_content` 在 cursor 增量处理**之后**才取 `_partial.get("proposal")`，前端传 cursor 时拿到的是「新增后缀」而非完整正文，与字段注释「完整累积正文」矛盾，也导致等待区草稿预览对不上。
+- 修复：`partial_content` 改从 `t["partial"]`（cursor 之前的全量）取 proposal 全文；`partial` 字段仍按 cursor 返回增量，两者职责分开。
