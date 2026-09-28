@@ -167,7 +167,7 @@ def set_theme(theme=None):
     return str(theme or "tech").lower()
 
 _FIGSIZE = (10.0, 5.4)
-_DPI = 110
+_DPI = 80
 
 
 def _new_fig():
@@ -200,7 +200,7 @@ def _save(fig, path, title=None, caption=None, source=None):
             fig.text(0.985, 0.012, "数据来源：" + src[:32], fontsize=8.5,
                      color=FG_DIM, ha="right", alpha=0.9)
     fig.tight_layout(rect=(0.02, 0.06, 0.98, 0.92))
-    fig.savefig(path, facecolor=BG, dpi=_DPI)
+    fig.savefig(path, facecolor=BG, dpi=_DPI, pil_kwargs={'optimize': True})
     plt.close(fig)
     return path
 

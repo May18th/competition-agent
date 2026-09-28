@@ -817,6 +817,20 @@ def _safe_unlink(path):
         pass
 
 
+def _mem_available_mb():
+    """读取当前可用内存（MB）。Linux 走 /proc/meminfo，失败返回 -1（不阻断）。"""
+    try:
+        with open("/proc/meminfo", "r") as f:
+            mem = {}
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    mem[k.strip()] = int(v.strip().split()[0])  # kB
+        return (mem.get("MemAvailable") or mem.get("MemFree") or 0) // 1024
+    except Exception:
+        return -1
+
+
 def log_error_event(type, path, message, detail=""):
     """前端/接口异常上报：同 type+message 5 分钟内去重合并计数，避免刷爆。"""
     try:
@@ -3131,6 +3145,11 @@ def _start_generation(data):
     global _active_gen_count
     # 在请求上下文里把匿名用户 id 固化进任务参数，供后台线程写历史记录时使用
     data["_user_id"] = _current_uid()
+    # 内存保护（第一百一十五轮）：可用内存过低时拒新生成，避免 OOM 静默失败
+    _avail = _mem_available_mb()
+    if _avail != -1 and _avail < 256:
+        return None, jsonify({"success": False, "code": "busy",
+                              "error": "当前服务繁忙（内存紧张），请 1 分钟后再试"})
     # 今日额度撞顶（第九十九轮）：提前拦下，前端据此 toast「今日生成额度已满，明日恢复」
     try:
         from competition_agents import get_quota_status
