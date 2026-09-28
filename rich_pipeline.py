@@ -246,6 +246,54 @@ def _fallback_deck(result, idea):
     return {"slides": slides}
 
 
+def _outline_deck(outline):
+    """第一百七十轮：PPT 严格以 ppt_outline 为唯一结构输入——大纲 N 页 → PPT N 页，
+    每页标题/要点/顺序一一对应，讲解稿写入备注。无大纲返回空 slides + outline_missing 标记，
+    不再生成固定页数模板。"""
+    outline = (outline or "").strip()
+    if not outline:
+        return {"slides": [], "outline_missing": True}
+    slides = []
+    cur = None
+    for line in outline.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # 标题：## x / # x / 1. x / 第1页 x / 01 / x
+        m = re.match(r"^#{1,4}\s+(.*)", line) or re.match(r"^(?:页?\d+|[（(]?\d+[）)])[.、:：\s]+(.*)", line)
+        if m:
+            title = m.group(1).strip().lstrip("#* ").strip()
+            if not title or len(title) > 40:
+                continue
+            # 跳过文档级标题（「PPT 大纲」「路演大纲」「目录」等），它只是整份大纲的名字，不是某一页
+            if re.match(r"^(?:PPT|路演)?\s*大纲$|^目录$", title, re.IGNORECASE):
+                continue
+            if cur:
+                slides.append(cur)
+            cur = {"type": "bullets", "title": title, "bullets": [], "note": ""}
+            continue
+        if not cur:
+            # 第一个标题之前的说明文字（如「PPT大纲」自身标题），跳过
+            continue
+        if re.match(r"^[-*•·]\s*", line) or re.match(r"^\d+[.、)）]\s*", line):
+            clean = re.sub(r"^[-*•·]\s*|\d+[.、)）]\s*", "", line).strip()
+            if clean:
+                cur["bullets"].append(clean)
+        else:
+            # 非要点行 = 讲解稿/说明 → 写入演讲者备注
+            clean = re.sub(r"^(讲解稿|备注|说明)[:：]\s*", "", line).strip()
+            if 15 <= len(clean) <= 220:
+                cur["note"] = (cur["note"] + "\n" + clean).strip() if cur["note"] else clean
+    if cur:
+        slides.append(cur)
+    if not slides:
+        return {"slides": [], "outline_missing": True}
+    # 大纲第一页通常就是「封面」，标记为 cover，避免下游再插一个空封面导致页数 +1
+    if "封面" in slides[0].get("title", ""):
+        slides[0]["type"] = "cover"
+    return {"slides": slides}
+
+
 _PROMPT_LEAK_PREFIXES = (
     "用表格", "用图表", "用一段", "用数据", "用一张", "请给", "请输", "请用",
     "按如下", "按要求", "只输出", "不要任何", "不要写", "不要出现", "呈现三条",
@@ -354,13 +402,13 @@ def build_rich_assets(result, competition="", idea="", theme=None):
         kb_data = _load_kb_industry_data(competition)
     except Exception:
         pass
-    _pred_assets = {"charts": [{"id": "c%d" % i} for i in range(1, 9)],
-                    "tables": [{"id": "t%d" % i} for i in range(1, 5)]}
     assets, deck = {}, None
+    # 第一百七十轮：PPT 结构唯一来源 = ppt_outline 大纲，不再让 LLM 自由设计页数/替换大纲。
+    _outline = (result.get("ppt_outline") or "").strip()
     try:
         with ThreadPoolExecutor(max_workers=2) as _ex:
             _f_assets = _ex.submit(_gen_assets, result, competition, idea, kb_data)
-            _f_deck = _ex.submit(_gen_deck, result, competition, idea, _pred_assets)
+            _f_deck = _ex.submit(_outline_deck, _outline)
             assets = _f_assets.result() or {}
             deck = _f_deck.result()
     except Exception as e:
@@ -370,9 +418,10 @@ def build_rich_assets(result, competition="", idea="", theme=None):
         except Exception as e2:
             print(f"[rich] 图表/表格设计失败，降级：{e2}")
         try:
-            deck = _gen_deck(result, competition, idea, assets)
+            deck = _outline_deck(_outline)
         except Exception as e3:
             print(f"[rich] PPT 结构生成失败，降级：{e3}")
+            deck = {"slides": [], "outline_missing": True}
 
     charts, tables = [], []
     # 图表 PNG 用本次生成唯一后缀命名，避免每次生成都写 chart_c1.png 同名覆盖——
@@ -409,7 +458,9 @@ def build_rich_assets(result, competition="", idea="", theme=None):
 
     # ---- 2. PPT 结构（已在上面并行生成 deck）----
     slides = (deck or {}).get("slides") or []
-    if not slides:
+    outline_missing = bool((deck or {}).get("outline_missing"))
+    if not slides and not outline_missing:
+        # 旧兜底仅在大纲解析失败时使用；无大纲(outline_missing)不再生成固定页数模板
         try:
             deck = _fallback_deck(result, idea)
             slides = deck.get("slides") or []
