@@ -4356,7 +4356,9 @@ def admin_stats():
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
         failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
-        avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
+        # 第一百四十三轮：排除 duration≤1s 测试异常样本，用中位数口径，不被个别极值拉偏
+        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE duration > 1").fetchall()]
+        avg_dur = sorted(_durs)[len(_durs) // 2] if _durs else 0
         fb = c.execute(
             "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
         rating = c.execute(
