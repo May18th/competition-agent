@@ -8966,6 +8966,9 @@ body.light .btn-primary:hover:not(:disabled) {
                 }
                 var data = d.data;
                 window._lastData = data;
+                // 打开历史必须同步记下 history_id，否则 wbShare 和导出回源都会拿不到 id，
+                // 表现成「分享提示还没存进历史」「导出不回源当前记录」。
+                window._lastHistoryId = id;
                 wbFabShow(!!data.rich_deck);
                 var isDeep = !!(data.competitor_analysis || data.business_model || data.tech_solution);
                 window._lastMode = data.mode || (isDeep ? 'deep' : 'fast');
