@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 40 秒出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:image" content="https://kcwx.online/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -96,12 +96,7 @@
              logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
              <img src="/static/logo.png" class="wb-hero-logo" alt="赛创助手"> 即可，样式已写好 -->
         <div class="hero">
-            <svg class="wb-hero-logo" viewBox="0 0 48 48" aria-hidden="true" role="img">
-                <rect x="3" y="3" width="42" height="42" rx="12" fill="var(--c-a)"/>
-                <path d="M18 11h9l7 7v17a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 16 35V13.5A2.5 2.5 0 0 1 18 11z" fill="rgba(255,255,255,.94)"/>
-                <path d="M27 11v7h7" fill="none" stroke="var(--c-a)" stroke-width="2.2" stroke-linejoin="round"/>
-                <path d="M20 27.5l3.6 3.6 6.4-7.2" fill="none" stroke="var(--c-a)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <img src="/static/logo.png" class="wb-hero-logo" alt="赛创助手" width="54" height="54">
             <h1>赛创助手</h1>
             <p>输入创意，生成符合评审规则的完整申报材料</p>
             <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点 -->
@@ -650,6 +645,12 @@
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
                     这个分数是模拟评委给的，帮你定位薄弱部分，<b>不用写进正式材料</b>。
                 </div>
+            </div>
+            <!-- 创意评分五维雷达图：只看创意本身的强弱（创新/可行/市场/壁垒/社会），与「评分依据」的文档质量五维是两回事 -->
+            <div id="ideaRadarBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
+                <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;">创意五维雷达</div>
+                <div id="ideaRadar" style="width: 100%; max-width: 420px; margin: 0 auto;"></div>
+                <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); text-align: center;">创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%</div>
             </div>
                 <!-- 一句话定位 -->
                 <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 16px; margin-top: 16px;">
@@ -1401,7 +1402,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 

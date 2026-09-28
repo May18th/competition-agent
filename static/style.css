@@ -579,10 +579,9 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .btn-primary {
     position: relative;
     overflow: hidden;
-    background: var(--grad);
-    background-size: 220% 220%;
-    animation: wbGradShift 9s ease infinite;
-    color: #fff;
+    /* 去蓝紫渐变+流光（评委观感花哨），改实色 accent —— 待验收清单·页面风格优化#1 */
+    background: var(--c-a);
+    color: #06283d;
     border: none;
     padding: 17px 48px;
     border-radius: 14px;
@@ -594,21 +593,11 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     transition: transform .25s, box-shadow .25s, opacity .25s;
     box-shadow: 0 10px 32px rgba(99,102,241,.42);
 }
-.btn-primary::after{
-    content: '';
-    position: absolute; top: 0; left: -70%;
-    width: 42%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent);
-    transform: skewX(-22deg);
-    animation: wbSweep 3.2s ease-in-out infinite;
-    pointer-events: none;
-}
 .btn-primary:hover:not(:disabled){
     transform: translateY(-3px);
-    box-shadow: 0 16px 44px rgba(99,102,241,.55), 0 0 0 1px rgba(255,255,255,.12);
+    box-shadow: 0 14px 34px rgba(14, 116, 144, .38);
 }
 .btn-primary:disabled { opacity: .72; cursor: not-allowed; }
-.btn-primary:disabled::after { animation: none; display: none; }
 
 /* ---------- 进度 ---------- */
 .progress-steps { margin-top: 18px; display: block; }

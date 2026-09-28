@@ -1641,7 +1641,7 @@
         var COACH_STEPS = [
             { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
             { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 40 秒出 1000 字，深度版约 4~5 分钟产出 8000 字级完整申报材料。' }
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 1 分钟出 1000 字，深度版约 4~5 分钟产出 8000 字级完整申报材料。' }
         ];
         var _coachIdx = 0;
 
@@ -2505,6 +2505,73 @@
                 '<summary style="cursor: pointer; user-select: none; font-size: 12.5px; color: var(--text-dim);">' +
                 '展开 ' + list.length + ' 个评审维度（权重 × 得分 → 加权）</summary>' +
                 '<div style="margin-top: 10px;">' + h + '</div></details>';
+            box.style.display = 'block';
+        }
+
+        // 创意五维雷达图（纯 SVG，不依赖 ECharts）：只看创意本身的强弱。
+        // scores = {innovation:{name,score,weight}, feasibility:..., market:..., barrier:..., social:...}
+        function renderIdeaRadar(scores) {
+            var box = document.getElementById('ideaRadarBox');
+            var el = document.getElementById('ideaRadar');
+            if (!box || !el) return;
+            var dims = [['创新性', 'innovation'], ['可行性', 'feasibility'], ['市场价值', 'market'],
+                        ['技术壁垒', 'barrier'], ['社会价值', 'social']];
+            var vals = [];
+            var any = false;
+            dims.forEach(function (d) {
+                var o = (scores && scores[d[1]]) || {};
+                var sc = (o.score === null || o.score === undefined || o.score === '') ? null : Number(o.score);
+                if (sc !== null && isNaN(sc)) sc = null;
+                if (sc !== null) { any = true; sc = Math.max(0, Math.min(100, sc)); }
+                vals.push({ name: d[0], score: sc });
+            });
+            if (!any) { box.style.display = 'none'; return; }
+
+            var W = 400, H = 400, cx = 200, cy = 205, R = 132, N = 5;
+            function pt(i, r) {
+                var a = -Math.PI / 2 + i * 2 * Math.PI / N;
+                return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+            }
+            function poly(radius, stroke, fill, sw) {
+                var pts = [];
+                for (var i = 0; i < N; i++) { var p = pt(i, radius); pts.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
+                return '<polygon points="' + pts.join(' ') + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"/>';
+            }
+            var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">';
+            // 网格（5 层） + 轴线
+            for (var g = 5; g >= 1; g--) {
+                svg += poly(R * g / 5, 'rgba(148,163,184,.25)', (g === 5 ? 'rgba(148,163,184,.04)' : 'none'), 1);
+            }
+            for (var k = 0; k < N; k++) {
+                var p0 = pt(k, 0), p1 = pt(k, R);
+                svg += '<line x1="' + p0[0] + '" y1="' + p0[1] + '" x2="' + p1[0] + '" y2="' + p1[1] + '" stroke="rgba(148,163,184,.25)" stroke-width="1"/>';
+            }
+            // 数据多边形
+            var dp = [];
+            for (var q = 0; q < N; q++) {
+                var sc = vals[q].score;
+                var r = (sc === null) ? 0 : R * sc / 100;
+                var pp = pt(q, r);
+                dp.push(pp[0].toFixed(1) + ',' + pp[1].toFixed(1));
+            }
+            svg += '<polygon points="' + dp.join(' ') + '" fill="rgba(34,211,238,.28)" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round"/>';
+            // 顶点 + 标签
+            for (var z = 0; z < N; z++) {
+                var vp = pt(z, R);
+                var vd = pt(z, (vals[z].score === null ? 0 : R * vals[z].score / 100));
+                svg += '<circle cx="' + vd[0] + '" cy="' + vd[1] + '" r="3.5" fill="#22d3ee"/>';
+                // 标签位置：沿半径外推一点
+                var lp = pt(z, R + 30);
+                var anchor = 'middle';
+                var lx = lp[0];
+                if (Math.abs(lx - cx) < 30) anchor = 'middle';
+                else if (lx < cx) anchor = 'end';
+                else anchor = 'start';
+                var scTxt = (vals[z].score === null) ? '—' : Math.round(vals[z].score);
+                svg += '<text x="' + lx + '" y="' + (lp[1] + 4) + '" text-anchor="' + anchor + '" font-size="12.5" style="fill:var(--text-dim)">' + vals[z].name + ' ' + scTxt + '</text>';
+            }
+            svg += '</svg>';
+            el.innerHTML = svg;
             box.style.display = 'block';
         }
 
@@ -4431,6 +4498,7 @@
                         _P(3, function () { document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback); });
                         _P(4, function () { renderExpertReview(data.data.expert_review); });
                         _P(4, function () { renderJudgeScores(data.data.judge_scores); });
+                        _P(4, function () { renderIdeaRadar(data.data.scores); });
                         _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis); });
                         // ---- 6~8：深度版专属板块 ----
                         if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis); });
@@ -4897,8 +4965,8 @@
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版约 40 秒出 1000 字；深度版约 4~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版约 40 秒出 1000 字；深度版约 4~5 分钟（8000 字级 / 12 章 + 图表 + PPT + 多专家评审）'],
+                    ? '简洁版约 1 分钟出 1000 字；深度版约 4~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版约 1 分钟出 1000 字；深度版约 4~5 分钟（8000 字级 / 12 章 + 图表 + PPT + 多专家评审）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -5027,6 +5095,15 @@
             }
             modal.style.display = 'flex';
         }
+
+        // Esc 关闭使用说明弹窗：点暗处已支持，键盘党/桌面端习惯 Esc（待验收清单一#3）
+        try {
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                var md = document.getElementById('introModal');
+                if (md && md.offsetParent !== null) closeIntro();
+            });
+        } catch (e) {}
 
         function closeIntro(remember) {
             var modal = document.getElementById('introModal');
@@ -5915,6 +5992,7 @@
                 set('pptOutline', data.ppt_outline);
                 try { renderExpertReview(data.expert_review); } catch (e) {}
                 try { renderJudgeScores(data.judge_scores); } catch (e) {}
+                try { renderIdeaRadar(data.scores); } catch (e) {}
                 try { wbRefreshPhBar(); } catch (e) {}
                 try { renderCompleteness(data.completeness); } catch (e) {}
                 try { renderRich(data, isDeep); } catch (e) {}
