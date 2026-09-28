@@ -776,9 +776,24 @@ def record_gen_failure(task_id, error, detail="", type="generate", path="", comp
         pass
 
 
+def _safe_unlink(path):
+    """安全删除临时落盘文件，失败忽略（第九十二轮：上传文件解析后即删不留档）。"""
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 def log_error_event(type, path, message, detail=""):
     """前端/接口异常上报：同 type+message 5 分钟内去重合并计数，避免刷爆。"""
     try:
+        # 脱敏（第九十二轮）：错误信息可能含用户输入的创意/手机号/邮箱，写库前先隐去身份信息
+        try:
+            message = _strip_identifying_text(message or "")
+            detail = _strip_identifying_text(detail or "")
+        except Exception:
+            pass
         conn = get_db()
         c = conn.cursor()
         since = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M")
@@ -1365,6 +1380,9 @@ def parse_material():
                     text = f.read()
         except Exception as e:
             return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+        finally:
+            # 解析完成即删落盘文件（第九十二轮）：用户材料不留档
+            _safe_unlink(filepath)
     else:
         text = (request.form.get('text') or '').strip()
         if not text:
@@ -3938,6 +3956,35 @@ def quota():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/api/admin/quota')
+def admin_quota():
+    """额度监视（第九十一轮）：今日 quota + 近 7 日每日生成数（近似调用活跃度）。"""
+    try:
+        from competition_agents import get_quota_status
+        q = get_quota_status()
+        calls = int(q.get("calls") or 0)
+        limit = int(q.get("limit") or 0)
+        percent = round(calls * 100.0 / limit, 1) if limit else 0
+        conn = get_db()
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
+            "WHERE created_time >= date('now','-7 day') GROUP BY d ORDER BY d").fetchall()
+        conn.close()
+        day_map = {r[0]: r[1] for r in rows}
+        daily = []
+        for i in range(6, -1, -1):
+            day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+            daily.append({"date": day, "count": day_map.get(day, 0)})
+        return jsonify({
+            "success": True, "calls": calls, "limit": limit,
+            "remaining": max(0, limit - calls), "percent": percent,
+            "exceeded": calls >= limit, "daily": daily,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/log_error', methods=['POST'])
 def log_error():
     """前端/接口异常上报（第八十一轮）：白屏/JS错误/下载失败/导出失败统一落库。
@@ -4417,10 +4464,11 @@ def kb_add():
     elif stype not in ('材料', '模板'):
         stype = '材料'
     summary = data.get('summary') or _auto_summary(content)
+    source = (data.get('source') or '').strip() or '来源未注明'
 
     try:
         from kb_samples import add_sample
-        sid, is_new = add_sample(content, tags, source=data.get('source', ''),
+        sid, is_new = add_sample(content, tags, source=source,
                                  score=score, type=stype, summary=summary)
         return jsonify({"success": True, "id": sid, "duplicate": not is_new,
                         "score": score, "type": stype, "auto_scored": auto_scored})
