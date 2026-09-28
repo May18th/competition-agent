@@ -110,9 +110,37 @@ res.append(chk('CSS 括号平衡', css_src.count('{') == css_src.count('}'),
                '(%d/%d)' % (css_src.count('{'), css_src.count('}'))))
 # 第一百零八轮铁律：静态资源版本号必须是时间戳唯一值（v=20xxxxxx[x]），禁止 v=N 递增复用
 # （N 复用会让 Cloudflare 捧着旧缓存不放——17:30 全站 JS 不执行那次就是 v=11 被 CF 缓存了坏版）
+# 注意：不要求 style.css 与 app.js 的版本号相同 —— 三方协作下各自 bump 自己改的那个资源
+# 才是正确做法（Codex 改 app.js 就 bump app.js 到 g，WorkBuddy 改 style.css 就 bump style.css 到 f，
+# 强行统一反而会让人为了对齐而误 bump 别人的资源、或反过来忘了 bump 自己的）。
+# 唯一红线是：每个引用都必须是时间戳唯一值，且不能出现 v=N 这种可被 CF 长期缓存的递增号。
 _refs = re.findall(r'(?:app\.js|style\.css)\?v=([^"\']+)', html_src)
-_ts_ok = bool(_refs) and all(re.fullmatch(r'2026\d{4}[a-z]?', v) for v in _refs) and len(set(_refs)) == 1
-res.append(chk('版本号为时间戳唯一值(禁 v=N)', _ts_ok, '(refs: %s)' % _refs))
+_ts_ok = bool(_refs) and all(re.fullmatch(r'2026\d{4}[a-z]?', v) for v in _refs)
+res.append(chk('版本号均为时间戳唯一值(禁 v=N)', _ts_ok, '(refs: %s)' % sorted(set(_refs))))
+
+# 第一百一十轮：主色漂移专项。
+# 107 轮把主色从靛紫换成青系时，只替换了「无空格」写法 rgba(99,102,241,...) ——
+# 而 #startBtn 写的是「带空格」的 rgba(99, 102, 241, .45)，于是漏网：
+# 主色换了、按钮阴影还是靛紫，直到 110 轮被豆包查出来。
+# 所以：①必须正则容忍空格；②收编成 --c-a-rgb/--c-b-rgb 变量后这里应当 0 命中；
+# ③必须剔除 /* */ 注释，否则根因注释里的示例色值会被当成正文（探针自污染）。
+_css_code = re.sub(r'/\*.*?\*/', '', css_src, flags=re.S)
+_drift = re.findall(
+    r'rgba?\(\s*(?:99\s*,\s*102\s*,\s*241|79\s*,\s*70\s*,\s*229|90\s*,\s*95\s*,\s*239'
+    r'|139\s*,\s*92\s*,\s*246|192\s*,\s*132\s*,\s*252|168\s*,\s*85\s*,\s*247'
+    r'|102\s*,\s*114\s*,\s*216|168\s*,\s*120\s*,\s*216|124\s*,\s*58\s*,\s*237)\s*[,)]',
+    _css_code, flags=re.I)
+res.append(chk('style.css 无靛紫/紫硬编码(主色不漂移)', not _drift,
+               '(残留 %d 处: %s)' % (len(_drift), _drift[:4]) if _drift else ''))
+res.append(chk('主色三元组变量已定义(:root+light)',
+               '--c-a-rgb:' in _css_code and '--c-b-rgb:' in _css_code
+               and len(re.findall(r'--c-a-rgb:', _css_code)) >= 2))
+# app.js 的图表配色 CA 是「跨端一致性」硬约束（注释写明：改了就和后端导出 PNG 对不上），
+# 所以这里要断言它没被误改，防止后来人（包括我）顺手把它也换掉。
+_ca = re.search(r"const CA = \[([^\]]+)\]", js_src)
+res.append(chk('图表系列色 CA 未被误改(与导出PNG一致)',
+               bool(_ca) and "'#818CF8'" in _ca.group(1) and "'#C084FC'" in _ca.group(1),
+               '(CA=%s)' % (_ca.group(1)[:40] if _ca else 'NOT FOUND')))
 
 print('--- 汇总 ---')
 allok = dom_ok and js_ok and ok == len(blocks) and all(res)

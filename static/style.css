@@ -8,6 +8,13 @@
        夜间用亮版（深底上要看得见），日间在 body.light 里用深版（白底上要压得住字） */
     --c-a:#38bdf8;
     --c-b:#2dd4bf;
+    /* 第一百一十轮：RGB 三元组版本，专供 rgba()/阴影/光晕使用。
+       起因是 #startBtn 阴影写了 `rgba(99, 102, 241, ...)` 这种「带空格」的硬编码，
+       107 轮只替换了无空格写法（`99,102,241`）而漏掉它 —— 收编成变量后，
+       以后换主色只需要改这里两行，不会再出现「主色换了、阴影还是旧的」。
+       写法带 fallback：var(--c-a-rgb, 56,189,248)，老 Chromium 不认变量时也不至于变成黑影。 */
+    --c-a-rgb:56,189,248;
+    --c-b-rgb:45,212,191;
     --c-a-soft:rgba(56,189,248,.14);
     --grad:linear-gradient(120deg,#22d3ee 0%,#38bdf8 48%,#2dd4bf 100%);
     --grad-soft:linear-gradient(120deg,rgba(56,189,248,.16) 0%,rgba(45,212,191,.16) 100%);
@@ -95,6 +102,9 @@ body.light {
        改深青 #0e7490 / 青绿 #0f766e —— 按钮白字对比 5.36/5.47，均过 AA */
     --c-a:#0e7490;
     --c-b:#0f766e;
+    /* 日间同样是三元组（见 :root 注释），这里必须是深版，白底上的阴影才压得住 */
+    --c-a-rgb:14,116,144;
+    --c-b-rgb:15,118,110;
     --c-a-soft:rgba(14,116,144,.12);
     --text:#1a2340;
     --text-soft:#2a3558;
@@ -327,7 +337,7 @@ body {
         /* 中心亮、四周暗的微弱径向渐变（内容区更聚焦） */
         radial-gradient(1300px 900px at 50% 18%, rgba(255,255,255,.055), transparent 68%),
         radial-gradient(1200px 700px at 12% -8%, rgba(34,211,238,.14), transparent 60%),
-        radial-gradient(900px 600px at 92% 4%, rgba(168,85,247,.13), transparent 62%),
+        radial-gradient(900px 600px at 92% 4%, rgba(var(--c-b-rgb, 45,212,191), .13), transparent 62%),
         radial-gradient(1000px 800px at 50% 108%, rgba(59,130,246,.12), transparent 60%),
         linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 55%, #131a4a 100%);
 }
@@ -354,7 +364,7 @@ body {
     background: radial-gradient(circle, rgba(34,211,238,.55), transparent 68%);
     animation: wbFloat1 24s ease-in-out infinite; }
 .wb-orb-2{ width:600px; height:600px; right:-180px; top:8%;
-    background: radial-gradient(circle, rgba(168,85,247,.50), transparent 68%);
+    background: radial-gradient(circle, rgba(var(--c-b-rgb, 45,212,191), .50), transparent 68%);
     animation: wbFloat2 30s ease-in-out infinite; }
 .wb-orb-3{ width:480px; height:480px; left:38%; bottom:-220px;
     background: radial-gradient(circle, rgba(59,130,246,.42), transparent 68%);
@@ -373,7 +383,7 @@ body {
 @keyframes wbScan{ 0%{ top:-180px; } 100%{ top:100%; } }
 @keyframes wbSheen{ 0%{ background-position:-120% 0; } 100%{ background-position:220% 0; } }
 @keyframes wbGradShift{ 0%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } 100%{ background-position:0% 50%; } }
-@keyframes wbGlow{ 0%,100%{ filter: drop-shadow(0 0 10px rgba(34,211,238,.30)); } 50%{ filter: drop-shadow(0 0 22px rgba(168,85,247,.48)); } }
+@keyframes wbGlow{ 0%,100%{ filter: drop-shadow(0 0 10px rgba(34,211,238,.30)); } 50%{ filter: drop-shadow(0 0 22px rgba(var(--c-b-rgb, 45,212,191), .48)); } }
 @keyframes wbFloatIcon{ 0%,100%{ transform:translateY(0) rotate(-4deg); } 50%{ transform:translateY(-7px) rotate(4deg); } }
 @keyframes wbSweep{ 0%{ left:-70%; } 62%,100%{ left:135%; } }
 @keyframes wbPulseDot{ 0%,100%{ opacity:.35; transform:scale(.85); } 50%{ opacity:1; transform:scale(1.25); } }
@@ -426,7 +436,7 @@ body {
 .hero .wb-hero-logo{
     display: block; width: 54px; height: 54px; margin: 0 auto 12px;
     border-radius: 13px;
-    box-shadow: 0 8px 22px rgba(102, 114, 216, .30);
+    box-shadow: 0 8px 22px rgba(var(--c-a-rgb, 56,189,248), .30);
 }
 .wb-hero-tech .wb-dot { flex: none; }
 /* ---------- 档位标识 ---------- */
@@ -1090,7 +1100,13 @@ body.light #startBar {
     margin: 0 auto;
     font-size: 17.5px;
     letter-spacing: 1px;
-    box-shadow: 0 10px 30px rgba(99, 102, 241, .45), 0 0 24px rgba(34, 211, 238, .20), inset 0 1px 0 rgba(255, 255, 255, .18);
+    /* 110 轮：这里原本写着一层「主色大光晕」box-shadow，但它其实是一条**永不生效的死代码**——
+       文件后面「风格收敛·去模板味」段的 #startBtn 规则（同优先级、位置更靠后）会把它整个覆盖掉，
+       真实渲染的一直是那里的中性阴影 rgba(15,23,42,.22)。
+       这条色调残留也就是这么来的：107 轮改主色时只替换了无空格写法 `99,102,241`，
+       漏了这条带空格的 `99, 102, 241`，而它又因为被覆盖而从未在画面上露出马脚，只能在源码里被翻出来。
+       删掉它，避免后来人以为「改这里能改按钮外观」——静态外观请去「风格收敛」段改。
+       悬停/按下时的主色光晕是有意保留的，见下面 #startBtn:hover，那里用的是变量不会被覆盖。 */
 }
 
 /* ===== 视觉增强（WorkBuddy）：把「已有但过弱」的效果调强 ===== */
@@ -1179,11 +1195,11 @@ button:not(:disabled):active, .tab:active, .wb-anchor-btn:active, [onclick]:acti
 /* 主 CTA 的悬停 / 按下要明显强于次级按钮（全页只有它配得上这层光） */
 #startBtn:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 18px 48px rgba(99, 102, 241, .62), 0 0 34px rgba(34, 211, 238, .34), inset 0 1px 0 rgba(255, 255, 255, .22);
+    box-shadow: 0 18px 48px rgba(var(--c-a-rgb, 56,189,248), .62), 0 0 34px rgba(34, 211, 238, .34), inset 0 1px 0 rgba(255, 255, 255, .22);
 }
 #startBtn:active:not(:disabled) {
     transform: translateY(0) scale(.985);
-    box-shadow: 0 6px 18px rgba(99, 102, 241, .5);
+    box-shadow: 0 6px 18px rgba(var(--c-a-rgb, 56,189,248), .5);
 }
 
 /* 章节列表：给每行一个序号圆点，纯文字行在长表单里完全抓不住眼 */
@@ -1704,6 +1720,17 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 body.light #startBtn,
 body.light .btn-primary:hover:not(:disabled) {
     box-shadow: 0 8px 22px rgba(14, 116, 144, .24);
+}
+
+/* 1b) 110 轮补漏：上面「去掉渐变光晕」的决策当时漏了一批按钮——
+    首页/导出区里还有 10 多处按钮是**内联**的
+    `style="background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%)"`（下载 PPT / 一键打包 /
+    重新生成 / 提交反馈 …），内联样式压不住 class，所以 .btn-primary 的实色改法对它们无效，
+    结果就是「同一个网站两套主按钮外观」：有的实色、有的带渐变。
+    这里用属性选择器把它们一并收编成实色：一处生效、以后新增的内联按钮也自动跟随，
+    不用去逐个改内联代码（那些行还分布在 app.js 里，改起来容易和别人撞车）。 */
+[style*="linear-gradient(135deg, var(--c-a)"] {
+    background: var(--c-a) !important;
 }
 
 /* 2) 向导步骤徽章同步去渐变：和主按钮同一套实色语言 */
