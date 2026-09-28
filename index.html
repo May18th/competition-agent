@@ -19,7 +19,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
@@ -89,6 +89,14 @@
             <div style="color: var(--text-dim);">这是微信的限制，改不了。要传 Word / PDF：<br>
                 ① 点右上角 <b>···</b> <span class="wb-point-arrow">↗</span> → <b>在 Safari 中打开</b>（推荐）；<br>
                 ② 或者把文字复制好，回来点「粘贴文本」直接粘到草稿框，不用传文件。</div>
+            <!-- 第八十六轮【中】：原来只提示「上传」受限，没提「下载」——但下载才是真正的坑：
+                 微信内核会拦掉 JS blob 下载（fetch-blob 取不到文件），用户生成完点下载毫无反应。
+                 这条必须和上传提示并列，而且要在生成之前就说清，别等点不动了才知道。 -->
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--text-dim);">
+                <b style="color: var(--text);">下载也会被拦：</b>微信里点下载 Word / PDF 可能没反应。生成完成后：<br>
+                ① 点右上角 <b>···</b> <span class="wb-point-arrow">↗</span> → <b>在浏览器中打开</b>，再下载；<br>
+                ② 或者复制下面的分享链接，换到任意浏览器打开，就能直接下载（链接 7 天内有效）。跨设备也能这样找回结果。
+            </div>
             <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                 <button onclick="wbCopyLink()" style="padding: 6px 12px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">复制网址</button>
                 <span id="wxLink" style="font-size: 12px; color: var(--text-mute); word-break: break-all;"></span>
@@ -174,7 +182,7 @@
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 第 1 步 · 赛事名称</label>
                     <!-- 既能下拉选，也能自己填（手机上没法从下拉里挑未收录的赛事） -->
                     <div style="position: relative;">
-                        <input type="text" id="competition" list="competitionList" autocomplete="off"
+                        <input type="text" id="competition" list="competitionList" autocomplete="off" aria-label="赛事名称"
                                onchange="onCompetitionChange()" oninput="onCompetitionChange();wbCompInput()"
                                onfocus="wbCompFocus()" onkeydown="wbCompKey(event)"
                                placeholder="输入关键词即可，如：iCAN、挑战杯、数模"
@@ -227,6 +235,12 @@
                              下拉和快捷 chip 共用同一个输入框，选中态由 wbSyncCompChips() 统一回写，
                              视觉上是一个控件而不是两个 -->
                         <span id="wbCompAllBtn" onclick="wbCompAll()" title="展开全部赛事" style="flex: 0 0 auto; padding: 4px 10px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 12px; cursor: pointer; font-size: 12px;">全部赛事 ▾</span>
+                    </div>
+                    <!-- 第八十四轮催办：快捷 chip 只放 5 个常用赛事（塞满会把 375px 撑出横向滚动），
+                         但用户看不出「到底有几个赛事可选」，会以为只有这 5 个 → 补一行明示数量，
+                         并指向「全部赛事」。用块级小字，宽度自适应，不会影响窄屏布局。 -->
+                    <div id="compCountHint" style="margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                        共 <b id="compCountNum" style="color: var(--c-a);">15</b> 个内置赛事：点右侧「全部赛事 ▾」展开完整清单；不在清单里也可以直接手输，按通用科创赛事标准生成。
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -329,7 +343,7 @@
                                 title="上传或粘贴已有材料，AI 识别后自动填充创意/团队/实测数据等"
                                 onclick="wbMatOpen()">从材料识别</button>
                     </label>
-                    <textarea id="idea" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
+                    <textarea id="idea" aria-label="项目创意" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
                 </div>
 
                 <!-- 团队成员（选填）：后端已放宽口径——用户给的真实姓名/角色/分工原样写进团队章节，
@@ -346,7 +360,7 @@
                                 onclick="event.stopPropagation(); wbTeamSuggest()">智能建议分工</button>
                     </div>
                     <div id="teamBody">
-                        <textarea id="udTeam" rows="3" placeholder="张三（队长，计算机学院）：统筹进度 + 核心算法&#10;李四（机械学院）：结构设计 + 样机加工" style="min-height: 80px;"></textarea>
+                        <textarea id="udTeam" aria-label="团队成员" rows="3" placeholder="张三（队长，计算机学院）：统筹进度 + 核心算法&#10;李四（机械学院）：结构设计 + 样机加工" style="min-height: 80px;"></textarea>
                         <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
                             有真实团队就填：<b style="color: var(--text);">姓名、学校/院系、角色、具体分工</b>，会原样写进团队章节。
                             评委最想看到的是「人」，不填就只出「角色 + 职责」的通用模板。
@@ -397,7 +411,7 @@
                                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-barchart"/></svg>
                                 佐证材料<span class="wb-opt">（选填：写在下面，或把文件拖进来）</span>
                             </div>
-                            <textarea id="udExtra" rows="2" placeholder="合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px;"></textarea>
+                            <textarea id="udExtra" aria-label="实测数据与佐证" rows="2" placeholder="合作意向、与现有方案的对比数据、已完成的验证…" style="min-height: 60px;"></textarea>
                             <div id="udDrop" class="wb-drop" role="button" tabindex="0"
                                  onclick="document.getElementById('udFile').click()">
                                 <svg class="wb-ico" style="width: 17px; height: 17px;" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg>
@@ -420,7 +434,7 @@
                             跳过也能生成。只有想让写法更贴近某一类范文、或想去掉「AI 味」时才需要动这里。
                         </div>
                         <label style="display:block; font-size:12px; color:var(--text-mute); margin-bottom:4px;">关键词</label>
-                        <input type="text" id="keywords" placeholder="如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
+                        <input type="text" id="keywords" aria-label="关键词" placeholder="如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
                         <div style="margin-top: 2px; font-size: 11.5px; color: var(--text-mute);">用于匹配范文库里同类型的示范写法，逗号分隔。</div>
                         <div id="humanizeRow" style="display: none; margin-top: 12px;">
                             <label style="display:block; font-size:12px; color:var(--text-mute); margin-bottom:4px;">文风<span style="color:var(--text-mute);">（深度版可选）</span></label><span class="wb-tip" data-tip="「去 AI 味」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。只对深度完整版生效；简洁版是「短而准」，不做这层处理。" onclick="wbShowTip(this)">?</span>
@@ -910,7 +924,7 @@
                             </div>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
                                 <input id="wbSchool" type="text" placeholder="学校名称" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
-                                <input id="wbTeam" type="text" placeholder="团队名称" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
+                                <input id="wbTeam" type="text" aria-label="团队名称" placeholder="团队名称" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
                                 <input id="wbAdvisor" type="text" placeholder="指导老师" oninput="wbSaveMeta()" style="padding: 8px 10px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px;">
                             </div>
                         </div>
@@ -1121,8 +1135,14 @@
                                    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">提交反馈</button>
                 </div>
                 <div id="wbRateDone" style="display: none; margin-top: 9px; font-size: 12.5px; color: var(--ok);">
-                    收到了，谢谢 —— 这条会直接进改进清单
+                    已收到，谢谢！
                 </div>
+            </div>
+
+            <!-- 第八十九轮【低】：结果卡片收尾的轻量感谢。文案随赛事名变化，不堆感叹号。
+                 文本由 wbSyncFooterComp() 统一回填，和页脚「当前赛事」同源，不会两处打架。 -->
+            <div id="wbThanksLine" style="margin-top: 14px; text-align: center; font-size: 12.5px; color: var(--text-mute); line-height: 1.7;">
+                感谢使用，祝你备赛顺利
             </div>
         </div>
     </div>
@@ -1356,12 +1376,15 @@
     });
     </script>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script>window.marked || document.write('<script src="/static/marked.min.js"><\/script>');</script>
+    <!-- 第八十轮【中】marked 本地化：原来走 jsdelivr CDN（国内不稳，抽风时 marked 加载失败
+         → 结果页渲染抛错、看起来像「生成卡住」）。本地 /static/marked.min.js 早就在服务器上，
+         直接把顺序倒过来：本地优先，CDN 只作兜底 —— 少一个跨境请求，也不会白屏。 -->
+    <script src="/static/marked.min.js"></script>
+    <script>window.marked || document.write('<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>');</script>
     <!-- echarts 不再同步加载：它有 1MB，首页根本用不到却阻塞首屏渲染。
          改成按需拉（见下方 wbLoadEcharts），只在真要画示例图表时才下载 -->
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-    <script>window.DOMPurify || document.write('<script src="/static/purify.min.js"><\/script>');</script>
+    <script src="/static/purify.min.js"></script>
+    <script>window.DOMPurify || document.write('<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"><\/script>');</script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
     <script>
     if (typeof marked === 'undefined') {
@@ -1458,7 +1481,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/app.js?v=10"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -2238,7 +2261,9 @@ window.addEventListener('resize', function () {
             <div style="margin-bottom: 7px;"><b>2. 学术诚信</b>：请遵守所在赛事与学校关于 AI 使用的相关规定；作品的署名、原创性与提交行为由你本人负责。</div>
             <div style="margin-bottom: 7px;"><b>3. 数据核实</b>：提交前请用权威来源核实文中引用的市场数据、测算值与文献；涉及实验、实测的部分，请以你自己的真实数据为准。</div>
             <div style="margin-bottom: 7px;"><b>4. 结果说明</b>：评审结果取决于作品本身质量与赛事评审标准，本工具不对获奖、入围或评审结论作出承诺。</div>
-            <div><b>5. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
+            <div style="margin-bottom: 7px;"><b>5. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
+            <!-- 第八十三轮【中】：评委/用户会关注数据去向，正面说清比含糊更可信（不写吓人条款） -->
+            <div><b>6. 数据说明</b>：你输入的创意与生成记录用于生成材料、改进本工具，仅管理员可查看；主动创建的分享链接 7 天后自动失效；历史记录可在「历史」面板随时删除。</div>
         </div>
     </details>
 </footer>

@@ -74,8 +74,8 @@
 #etaBadge { font-variant-numeric: tabular-nums; }
 /* 夜间/日间切换：默认深色（夜间），body.light 覆盖成浅色（日间） */
 body.light {
-    --bg-0:#eef2fb;
-    --bg-1:#e4e9f7;
+    --bg-0:#ffffff;
+    --bg-1:#f7f9fc;
     --c-a:#4f46e5;
     --c-b:#7c3aed;
     --c-a-soft:rgba(79,70,229,.12);
@@ -1079,6 +1079,30 @@ body.light #startBar {
 }
 .wb-bg::after { background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 42%, rgba(3,5,14,.40) 100%); }
 
+/* 1.5) 浅色主题下的背景层：**必须整层重写**。
+   第六十七轮【高】的根因就在这里——.wb-bg 的渐变末端写死了深色 #070b1e，
+   ::after 又叠了一层 rgba(3,5,14,.55) 的压暗，浅色主题从未覆盖过这两条，
+   所以「切了日间」页面依旧是浅蓝→深黑的渐变，用户反馈「背景刺眼」就是这个。
+   白底方案：纯白起底 + 极浅冷灰收尾 + 光球降到几乎不可见 + 去掉压暗。 */
+body.light .wb-bg {
+    background:
+        radial-gradient(1200px 800px at 50% 16%, rgba(79,70,229,.05), transparent 70%),
+        radial-gradient(900px 600px at 10% -6%, rgba(14,165,233,.06), transparent 62%),
+        radial-gradient(760px 520px at 94% 2%, rgba(139,92,246,.05), transparent 64%),
+        linear-gradient(180deg, #ffffff 0%, #fbfcfe 55%, #f4f7fb 100%);
+}
+body.light .wb-bg::after {
+    /* 浅色下不需要「四周压暗」——那是深色主题用来聚焦的，放到白底上只会显脏 */
+    background: radial-gradient(ellipse 82% 64% at 50% 30%, transparent 62%, rgba(15,23,42,.035) 100%);
+}
+body.light .wb-orb { opacity: .18; filter: blur(96px); }
+body.light .wb-grid {
+    background-image:
+        linear-gradient(rgba(60,80,150,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(60,80,150,.055) 1px, transparent 1px);
+}
+body.light ::-webkit-scrollbar-thumb { background: rgba(100,120,170,.30); }
+
 /* 2) 标题渐变已上移到 .hero h1 定义处，并用 @supports 包住（无条件 color:transparent
       会让不支持 background-clip:text 的内核直接把标题渲染没）。浅色主题下不要光晕。 */
 body.light .hero h1 { text-shadow: none; }
@@ -1676,4 +1700,53 @@ body.light .btn-primary:hover:not(:disabled) {
     .hero p.wb-hero-tech { font-size: 11px; margin-top: 3px; }
     /* 顶排工具按钮（使用说明/历史/背景）贴紧 hero，别在首屏占独立一行 */
     #wbTopTools { margin: 0 4px 4px !important; }
+}
+
+/* ---------- 打印样式（第八十七轮【低】）----------
+   评委/用户常用「打印 → 另存为 PDF」。原来 @media print 一条都没有，
+   结果是：背景层 position:fixed 会重复铺满每页、深色渐变直接吃满纸、工具栏遮住正文、
+   折叠区内容整块打不出来。这里只做「可打印化」，不改屏幕上的观感。 */
+@media print {
+    /* 1) 背景层整层砍掉：它是 fixed + 多段 radial-gradient，打印时会按页重复渲染 */
+    .wb-bg, .wb-grid, .wb-orb, .wb-scan, #wbParticles { display: none !important; }
+    html, body {
+        background: #fff !important;
+        color: #111 !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+    }
+    /* 2) 交互件一律不打印：按钮/悬浮球/浮层/提示条没有纸面意义，还会遮住正文 */
+    #startBar, #themeToggle, #wbExportDock, #wbExpMenu, #wbTopTools, #wbAnchorBar,
+    #wbStyleBar, #wbFab, #wbFabPanel, #wbAdvisor, #agentPanel, #quickExportBar,
+    #wxBanner, #wbToast, #wbUaMask, #wbTipCard, #wbMatMask, #wbMatPanel,
+    #historyModal, #introModal, #chartModal, #wbBanBar, #dataTodoBar, #typoBar,
+    #wbPartialNote, #wbKeepCard, #wbSubCheckDot, #retryWrap, #cancelWrap,
+    #resultTabs, .his-tab, .tab-bar, #compClear, #compSuggest, #compQuickRow,
+    #uploadRow, .wb-tip, .wb-adv-toggle, #wbRateBox {
+        display: none !important;
+    }
+    /* 3) 折叠区全部展开：屏幕上折叠是为了省首屏，纸上折叠等于把正文丢了 */
+    #kbAdvBody, #ruleUploadBody, #teamBody, #userDataBody, #advParamBody,
+    #draftAdvBody, #evBody, #kbDetail, #introBody, details > * {
+        display: block !important;
+    }
+    details { display: block !important; }
+    details > summary { list-style: none; }
+    details > summary::after { content: ""; }
+    /* 4) 去掉大面积色块与阴影：省墨、避免灰底压字 */
+    .card, #eventReqCard, #kbBody, .wb-card {
+        box-shadow: none !important;
+        background: #fff !important;
+        border: 1px solid #bbb !important;
+        break-inside: avoid;
+    }
+    .container { max-width: none !important; padding: 0 !important; }
+    .hero h1 { color: #111 !important; -webkit-text-fill-color: #111 !important; text-shadow: none !important; }
+    a { color: #111 !important; text-decoration: none !important; }
+    /* 5) 分页：标题不孤悬页尾、图表/表格/图片不被拦腰切断 */
+    h1, h2, h3, .card-title { break-after: avoid; page-break-after: avoid; }
+    img, svg, canvas, table, .wb-chart, #richCharts, #richTables, pre, blockquote {
+        break-inside: avoid; page-break-inside: avoid; max-width: 100% !important;
+    }
+    @page { margin: 14mm 12mm; }
 }

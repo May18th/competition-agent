@@ -900,9 +900,16 @@
               .then(function (j) {
                   if (j && j.success === false) throw new Error(j.error || '提交失败');
                   var d = document.getElementById('wbRateDone');
-                  if (d) d.style.display = '';
+                  // 第八十九轮【低】：用户反馈「打分完没任何回应，体验干」。
+                  // ① 显式写 'block'（写 '' 会回落到样式表/内联的 none，本项目已踩过两次）；
+                  // ② 1.5s 后自动收起，不长期占着结果页底部。
+                  if (d) {
+                      d.style.display = 'block';
+                      if (d._t) clearTimeout(d._t);
+                      d._t = setTimeout(function () { d.style.display = 'none'; }, 1500);
+                  }
                   if (btn) btn.textContent = '已提交';
-                  wbToast('收到了，谢谢', { type: 'ok' });
+                  wbToast('感谢你的反馈，我们会持续改进！', { type: 'ok' });
                   try { _wbStoreSet('wbRatedV', String(wbRateVal)); } catch (e) {}
               })
               .catch(function () {
@@ -2083,6 +2090,10 @@
                     _compOpts.push(nm);
                 });
             } catch (e) {}
+            // 数量明示（第八十四轮催办）：写死数字迟早和清单脱节，直接回填真实条数。
+            // 卡片是懒渲染的，此刻 #compCountNum 可能还没进 DOM，所以取不到就跳过、不报错。
+            var _cn = document.getElementById('compCountNum');
+            if (_cn) _cn.textContent = String(_compOpts.length);
             return _compOpts;
         }
         function wbCompHits(q) {
@@ -2198,9 +2209,12 @@
             var gs = (q || !WB_COMP_PROFILES || !WB_COMP_PROFILES.length) ? null : wbCompGroups(hits);
             if (gs && gs.length >= 2) {
                 box.innerHTML = gs.map(function (g) {
-                    return '<div data-wbgroup="1" style="padding: 7px 12px 5px; font-size: 11px; letter-spacing: .5px; ' +
-                        'color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--line); cursor: default;">' +
-                        _esc(g.type) + ' · ' + g.items.length + '</div>' +
+                    // 第八十五轮【低】刺：分组头原来用 var(--muted)——全站没定义这个变量，
+                    // 颜色声明非法被静默丢弃，分组头就继承了正文色，看着跟赛事条目一模一样。
+                    // 顺手把它做成真正的「分组标题」：加粗 + 字距 + 吸顶，与可点条目明显分层。
+                    return '<div data-wbgroup="1" style="position: sticky; top: 0; padding: 8px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 1px; ' +
+                        'color: var(--text-mute); background: var(--surface-2); border-bottom: 1px solid var(--line); cursor: default;">' +
+                        _esc(g.type) + ' · ' + g.items.length + ' 个</div>' +
                         g.items.map(function (n) { return wbCompItemHtml(n, q); }).join('');
                 }).join('');
             } else {
@@ -2432,10 +2446,12 @@
         // 页脚赛事名跟着当前赛事走（原来写死 iCAN，切赛事不联动）
         function wbSyncFooterComp() {
             var el = document.getElementById('wbFooterComp');
-            if (!el) return;
             var n = wbCompName();
             var s = wbCompShort(n) || String(n || '').trim();
-            el.textContent = s ? (' · 当前赛事：' + s) : '';
+            if (el) el.textContent = s ? (' · 当前赛事：' + s) : '';
+            // 结果卡片底部那句感谢（第八十九轮【低】）与页脚同源回填，避免两处各写一份赛事名
+            var th = document.getElementById('wbThanksLine');
+            if (th) th.textContent = s ? ('感谢使用，祝 ' + s + ' 备赛顺利') : '感谢使用，祝你备赛顺利';
         }
         function onCompetitionChange() {
             wbSyncCompChips();
@@ -4163,6 +4179,13 @@
             if (missed.length) msg += '（未识别：' + missed.join('、') + '）';
             wbToast(msg, { type: 'ok', ms: 4200 });
         }
+        // 第六十九轮【高】的死按钮根因：wbMatOpen / wbMatClose / wbMatGo 都定义在本 IIFE 内，
+        // 而「从材料识别」按钮和弹层里的按钮走的是内联 onclick（外层作用域）→ ReferenceError，
+        // 点了完全没反应。这是本项目第 N 次踩同一个坑，所以这一簇必须显式挂出去。
+        // 校验方式：全仓库 grep 'window.wbMat' 必须命中 3 处，否则按钮必死。
+        window.wbMatOpen = wbMatOpen;
+        window.wbMatClose = wbMatClose;
+        window.wbMatGo = wbMatGo;
 
         /* ===== 等待期趣味增强（Codex P3）=====
            只动「生成等待期」的文案，正文 / 表单 / 导出 / 评分权重一律不碰。
