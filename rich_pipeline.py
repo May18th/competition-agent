@@ -243,6 +243,60 @@ def _fallback_deck(result, idea):
     return {"slides": slides}
 
 
+_PROMPT_LEAK_PREFIXES = (
+    "用表格", "用图表", "用一段", "用数据", "用一张", "请给", "请输", "请用",
+    "按如下", "按要求", "只输出", "不要任何", "不要写", "不要出现", "呈现三条",
+    "列出三条", "给出", "输出", "列出", "呈现", "每条",
+)
+
+
+def _strip_md_bold(t):
+    """剥掉「**关键词**：」这类 Markdown 加粗前缀，方便判断剩余文字是否是指令句。"""
+    return re.sub(r'^\*{1,2}[^*]+\*{1,2}\s*[:：]?\s*', '', (t or '').strip())
+
+
+def _looks_like_prompt_leak(t):
+    """判断一段文字是不是 LLM 把写作指令误写进页面正文（评委直接看到 AI 痕迹）。"""
+    s = _strip_md_bold(t)
+    if not s:
+        return False
+    return s.startswith(_PROMPT_LEAK_PREFIXES)
+
+
+def _clean_deck_slides(slides):
+    """剔除 deck 页面里残留的 prompt 指令句，只保留成品内容。"""
+    out = []
+    for s in slides:
+        if not isinstance(s, dict):
+            out.append(s)
+            continue
+        s = dict(s)
+        for _k in ("title", "kicker", "note", "subtitle"):
+            _v = s.get(_k)
+            if isinstance(_v, str) and _looks_like_prompt_leak(_v):
+                s[_k] = ""
+        for _k in ("bullets", "metrics"):
+            _v = s.get(_k)
+            if isinstance(_v, list):
+                s[_k] = [x for x in _v if not (isinstance(x, str) and _looks_like_prompt_leak(x))]
+        out.append(s)
+    return out
+
+
+def _project_name(idea, one_liner):
+    """从创意里提一个简短项目名（封面标题/页脚用），别把整句创意当标题。"""
+    idea = (idea or "").strip()
+    m = re.match(r'^([^：:，,\n]{2,18})[：:，,]', idea)
+    if m:
+        return m.group(1).strip()
+    if len(idea) <= 14:
+        return idea
+    ol = (one_liner or "").strip().rstrip('。！？!?')
+    if 2 <= len(ol) <= 18:
+        return ol
+    return idea[:12]
+
+
 VARIANT_FOR_THEME = {
     "tech": "v1", "cyber": "v1", "finance": "v2", "craft": "v1",
     "medical": "v2", "agri": "v1", "edu": "v1", "social": "v2",
@@ -355,9 +409,9 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             norm.append(s)
         if norm and norm[0].get("type") != "cover":
             norm.insert(0, {"type": "cover"})
-        deck["slides"] = norm
-        deck.setdefault("project", idea[:30])
+        deck["slides"] = _clean_deck_slides(norm)
         deck.setdefault("one_liner", result.get("one_liner", ""))
+        deck.setdefault("project", _project_name(idea, result.get("one_liner", "")))
         deck.setdefault("competition", competition)
         deck.setdefault("theme", out["theme"])
         # 不同赛道配不同版式：学术类要序号列表居中，水墨类要留白，医疗类偏极简
