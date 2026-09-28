@@ -19,7 +19,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="stylesheet" href="/static/style.css?v=20260928e">
 </head>
 <body>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
@@ -245,13 +245,16 @@
                         <!-- 「全部赛事」= 兜底入口：点它就展开上面的完整下拉（15 个）。
                              下拉和快捷 chip 共用同一个输入框，选中态由 wbSyncCompChips() 统一回写，
                              视觉上是一个控件而不是两个 -->
-                        <span id="wbCompAllBtn" onclick="wbCompAll()" title="展开全部赛事" style="flex: 0 0 auto; padding: 4px 10px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 12px; cursor: pointer; font-size: 12px;">全部赛事 ▾</span>
+                        <!-- 106-3：用户反馈「其他比赛呢」——兜底入口要一眼看出这里藏着 15 个赛事。
+                             文案从「全部赛事 ▾」改成「全部 15 赛 ▾」并加实底强调（原来是虚线幽灵按钮，
+                             和普通 chip 几乎没区别）；下面那行数量说明整行可点，点哪都能展开下拉 -->
+                        <span id="wbCompAllBtn" onclick="wbCompAll()" title="展开全部 15 个赛事" style="flex: 0 0 auto; padding: 4px 10px; background: var(--c-a-soft); color: var(--c-a); border: 1px solid var(--c-a); border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 600;">全部 15 赛 ▾</span>
                     </div>
                     <!-- 第八十四轮催办：快捷 chip 只放 5 个常用赛事（塞满会把 375px 撑出横向滚动），
                          但用户看不出「到底有几个赛事可选」，会以为只有这 5 个 → 补一行明示数量，
                          并指向「全部赛事」。用块级小字，宽度自适应，不会影响窄屏布局。 -->
-                    <div id="compCountHint" style="margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
-                        共 <b id="compCountNum" style="color: var(--c-a);">15</b> 个内置赛事：点右侧「全部赛事 ▾」展开完整清单；不在清单里也可以直接手输，按通用科创赛事标准生成。
+                    <div id="compCountHint" onclick="try{wbCompAll()}catch(e){}" title="点这里展开全部 15 个赛事" style="margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6; cursor: pointer;">
+                        共 <b id="compCountNum" style="color: var(--c-a);">15</b> 个内置赛事：点右侧「全部 15 赛 ▾」展开完整清单；不在清单里也可以直接手输，按通用科创赛事标准生成。
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
                     <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
@@ -363,8 +366,9 @@
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 团队成员<span class="wb-opt">（选填，强烈建议：有真人就填）</span></label>
                     <div style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
+                        <!-- 105-2：成员输入框全端默认展开（用户反馈「正常输入栏没有了」），文案不再写「展开填写」 -->
                         <span onclick="wbAdvToggle('teamBody')" style="color:var(--c-a); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px;">
-                            第 3 步 · 展开填写团队成员 / 分工（选填）<span id="teamBodyArrow">▾</span>
+                            第 3 步 · 团队成员 / 分工（选填，强烈建议填真人）<span id="teamBodyArrow">▾</span>
                         </span>
                         <button type="button" class="wb-textbtn" style="margin-left:auto; font-size:12px;"
                                 title="按赛事类型给一套能直接改的分工模板，填完请改成你队友的真实姓名与分工"
@@ -683,7 +687,9 @@
             </div>
             <!-- 创意评分五维雷达图：只看创意本身的强弱（创新/可行/市场/壁垒/社会），与「评分依据」的文档质量五维是两回事 -->
             <div id="ideaRadarBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
-                <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;">创意五维雷达 · 只看创意本身</div>
+                <!-- 106-1：窄屏实测标题被截成「维雷达·只看创意本身」。根因是标题一行超宽被容器裁掉，
+                     这里显式允许换行 + 保留词组不拆字，任何宽度下「创意五」三个字都必须完整 -->
+                <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; line-height: 1.5; padding-right: 2px;">创意五维雷达 · 只看创意本身</div>
                 <div id="ideaRadar" style="width: 100%; max-width: 420px; margin: 0 auto;"></div>
                 <div id="ideaRadarFoot" style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); text-align: center;">创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%<br>仅作维度分解，不另设总分</div>
             </div>
@@ -1492,7 +1498,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=12"></script>
+    <script src="/static/app.js?v=20260928e"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1577,7 +1583,9 @@ function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
     // kbAdvBody（规则区）已按 P0-2 首页精简降级为全端默认折叠，不在这个列表里——
     // 放进来的话桌面端 resize 时会被重新展开，首屏又冒出规则上传入口
-    ['draftAdvBody', 'teamBody', 'userDataBody'].forEach(function (id) {
+    // 105-2（阻塞级）：用户反馈「正常输入栏没有了」——团队成员是第 3 步关键输入栏，
+    // 从折叠列表移除，全端默认展开；折叠只留给低频选填项（草稿/实测数据）
+    ['draftAdvBody', 'userDataBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;

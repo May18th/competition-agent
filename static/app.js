@@ -2307,8 +2307,13 @@
             // 于是 wbCompAll 刚把下拉打开、这里立刻 wbCompClose 关掉，用户看到的就是
             // 「点了完全没反应」（第三十二轮刺的根因，不是没绑函数）。
             // 这个按钮是专门用来展开下拉的，必须放行。
-            var all = document.getElementById('wbCompAllBtn');
-            if (all && (all === e.target || all.contains(e.target))) return;
+            // 106-3：数量说明行（compCountHint）整行也可点展开，同属放行名单——
+            // 不放行的话点它就是「开了又被这里关掉」，等于没加。
+            var _trig = ['wbCompAllBtn', 'compCountHint'];
+            for (var _ti = 0; _ti < _trig.length; _ti++) {
+                var _t = document.getElementById(_trig[_ti]);
+                if (_t && (_t === e.target || _t.contains(e.target))) return;
+            }
             wbCompClose();
         });
 
@@ -6844,6 +6849,76 @@
                     wbBgApply(cfg);
                 }
             } catch (e) {}
+        })();
+
+        /* ===== 第一百零八轮·106-2：正文重点数字高亮 =====
+           用户反馈运营测算/商业模式里的关键数字（21.6万/72万/10%/1.5元…）不显眼。
+           只在展示层加亮：TreeWalker 找文本节点，把「数字+单位」包进 .wb-keynum。
+           铁律：绝不改 markdown 源文本 —— 导出件取的是原文，不会把高亮带进材料。
+           幂等：已在 .wb-keynum / 链接 / 代码里的文本跳过，不会越包越厚；
+           MutationObserver（350ms 防抖）覆盖流式打字机、历史回看、一键修正等所有重渲染路径。 */
+        var WB_HL_IDS = ['proposalText', 'judgeFeedback', 'proposalAnalysis', 'competitorAnalysis',
+            'businessModel', 'riskAnalysis', 'techSolution', 'implementationPlan',
+            'socialValue', 'projectSummary', 'defenseQuestions', 'pptOutline', 'speechScript'];
+        // 长单位放前面，避免「万元」被「万」截走；不收「年/月」裸单位，免得「2026年」「3月」全变重点
+        var WB_NUM_SRC = '\\d+(?:\\.\\d+)?\\s*(?:万元|亿元|万人次|个百分点|万人|万|亿|元|%|％|倍|台|套|家|份|件|天|个月|kg|公里)';
+
+        function wbHlNumbersIn(root) {
+            if (!root) return;
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode: function (n) {
+                    if (!n.nodeValue || n.nodeValue.length < 2) return NodeFilter.FILTER_REJECT;
+                    var p = n.parentElement;
+                    if (p && (p.closest('.wb-keynum') || p.closest('a,script,style,code,pre,textarea'))) return NodeFilter.FILTER_REJECT;
+                    var re = new RegExp(WB_NUM_SRC);
+                    return re.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                }
+            });
+            var nodes = [], n;
+            while ((n = walker.nextNode())) nodes.push(n);
+            nodes.forEach(function (node) {
+                var txt = node.nodeValue;
+                var re = new RegExp(WB_NUM_SRC, 'g');
+                var frag = document.createDocumentFragment(), last = 0, m, hit = false;
+                while ((m = re.exec(txt))) {
+                    if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+                    var span = document.createElement('span');
+                    span.className = 'wb-keynum';
+                    span.textContent = m[0].replace(/\s+$/, '');
+                    frag.appendChild(span);
+                    last = m.index + m[0].length;
+                    hit = true;
+                }
+                if (hit) {
+                    if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+                    node.parentNode.replaceChild(frag, node);
+                }
+            });
+        }
+
+        function wbHlAll() {
+            WB_HL_IDS.forEach(function (id) {
+                try { wbHlNumbersIn(document.getElementById(id)); } catch (e) {}
+            });
+        }
+        window.wbHlAll = wbHlAll;
+
+        (function wbHlObserve() {
+            var t = null;
+            function schedule() {
+                if (t) return;
+                t = setTimeout(function () { t = null; try { wbHlAll(); } catch (e) {} }, 350);
+            }
+            function bind() {
+                WB_HL_IDS.forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (!el || el.__wbHlObs) return;
+                    el.__wbHlObs = true;
+                    new MutationObserver(schedule).observe(el, { childList: true, subtree: true });
+                });
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+            else bind();
         })();
 
         })();
