@@ -4395,7 +4395,7 @@
                                     // 档位名原来写死「深度版」，选简洁版非优化时会把用户说成在跑深度版
                                     var _tierName = isOptimize ? '优化' : (mode === 'deep' ? '深度版' : '简洁版');
                                     var _etaFallback = isOptimize ? '预计 2-3 分钟'
-                                        : (mode === 'deep' ? '预计 4~5 分钟' : '预计 40 秒');
+                                        : (mode === 'deep' ? '预计 4~5 分钟' : '预计约 1 分钟');
                                     // 等待文案轮换：每 12 秒换一句，等几分钟不至于一直盯着同一句话
                                     var _waitLine = WB_WAIT_LINE[Math.floor(sec / 12) % WB_WAIT_LINE.length];
                                     _setBar(res2.pct || 0,
