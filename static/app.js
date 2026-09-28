@@ -5588,10 +5588,11 @@
                             scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
                                 'AI 质量 ' + sc + ' 分</span>';
                         }
-                        // 摘要优先，没有则回退正文前 60 字
+                        // 摘要优先，没有则回退正文前 120 字（原来 60 字太短，两行就看不出是什么材料）。
+                        // 这是「摘要降级」不是无声截断：下面渲染时固定带「…」明示还有后续内容。
                         var brief = (it.summary && String(it.summary).trim())
                             ? String(it.summary)
-                            : (it.content || '').slice(0, 60);
+                            : (it.content || '').slice(0, 120);
                         html += '<div style="padding:12px;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;">' +
                             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
                             '<div style="flex:1;min-width:0;">' +
