@@ -12,6 +12,7 @@ error.log
 data/vulns.json
 docs/后台审计.md
 口令备忘.md
+.admin_users.json
 
 # ---- 运行产物 / 本地调试垃圾（提交会污染仓库）----
 generated/
@@ -31,3 +32,6 @@ _cover_preview/
 
 # ---- 验收产物 ----
 _verify_out/
+
+# ---- 一次性调试产物归档（2026-09-29 整理，勿提交）----
+_archive_tmp/

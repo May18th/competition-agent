@@ -2170,3 +2170,26 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**：
 `git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·197): 管理员登录页(/admin/login表单+CSRF+跳转)修复401死锁" && git push origin main`
+
+
+---
+
+## Codex 回执 · 198轮 账号体系 + 登录页升级（2026-09-29）
+
+- **账号体系 ✅**：弃用单一 ADMIN_TOKEN，改「用户名+密码」账号体系。`ADMIN_USERS`（env 或 `.admin_users.json`）存 bcrypt 哈希 JSON；`_load_admin_users()` 读取，`_admin_login_verify(username,password)` 用 bcrypt 校验。无 ADMIN_USERS 时回退旧单一口令模式（兼容）。
+- **角色 ✅**：`_admin_session_role()` 返回 admin/readonly；`_admin_guard` 对 readonly 会话的写操作 403。
+- **登录页升级 ✅**：`/admin/login` 改用户名+密码双输入框，白底浅蓝渐变 + 渐变按钮 + 页脚版权。
+- **审计 ✅**：`_audit_admin_login()` 记录 用户名+IP+成功/失败+角色。
+- **配置文档 ✅**：`docs/如何自定义账密.md`（账号格式/服务器配置/生成 bcrypt/回退说明）。
+- **账号已定（用户确认）**：3498414260 / 125325452652zz（admin）、admin / 123456（admin）、kcwx123 / 123456（readonly）。bcrypt 哈希见 `口令备忘.md`（gitignored）。
+
+实测：管理员登录 200 role=admin、错密码 401「用户名或密码错误」、demo 登录 200 role=readonly、demo 写 403、demo GET 200；表单登录 302→/admin。
+
+**部署要求**：服务器 `.env` 加 `ADMIN_USERS`（JSON，哈希见口令备忘）+ `pip install bcrypt`（requirements.txt 已加 bcrypt>=4.0.0）。
+
+**⚠️ 仓库公开预警（198补充）**：May18th/competition-agent 是 PUBLIC，需立即设 Private；敏感信息（IP/路径/账密）一律不进 git。
+
+---
+
+## 长期记忆 · 用户偏好（追加）
+- **多任务默认并行**：有多项独立任务时，默认并行推进，不要串行等。

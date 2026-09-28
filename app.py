@@ -491,18 +491,41 @@ def _admin_session_valid():
     return False
 
 
-def _admin_session_demo():
-    """当前登录会话是否为「演示只读」态（195 轮补充7）。"""
+def _load_admin_users():
+    """读取账号体系（198 轮）：ADMIN_USERS 环境变量 JSON，或 .admin_users.json 文件。
+    返回 [{user, pass_hash, role}]；未配置返回 []（回退旧 ADMIN_TOKEN 单一口令模式）。"""
+    raw = os.getenv("ADMIN_USERS", "").strip()
+    if not raw:
+        p = os.path.join(os.path.dirname(__file__), '.admin_users.json')
+        if os.path.isfile(p):
+            try:
+                with open(p, encoding='utf-8') as f:
+                    raw = f.read().strip()
+            except Exception:
+                raw = ""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [u for u in data if isinstance(u, dict) and u.get('user') and u.get('pass_hash')]
+    except Exception:
+        pass
+    return []
+
+
+def _admin_session_role():
+    """当前登录会话角色：'admin' / 'readonly'；无效或未登录返回 None。"""
     raw = (request.cookies.get(_ADMIN_COOKIE_NAME) or '').strip()
     if not raw:
-        return False
+        return None
     try:
         val = _ADMIN_SESSION_SIGNER.loads(raw)
         if isinstance(val, dict) and float(val.get('exp', 0)) > time.time():
-            return bool(val.get('demo'))
+            return val.get('role') or ('readonly' if val.get('demo') else 'admin')
     except Exception:
         pass
-    return False
+    return None
 
 
 def _require_admin():
@@ -529,50 +552,67 @@ def _require_admin():
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
-    """后台登录（194/195 轮）：校验 ADMIN_TOKEN，成功写 HttpOnly 会话 cookie；连续失败锁定。"""
+    """后台登录（198 轮）：用户名+密码（bcrypt）校验，成功写 HttpOnly 会话 cookie；连续失败锁定。"""
     payload = request.get_json(silent=True) or request.form or {}
-    tok = (payload.get('token') or '').strip() or (request.headers.get('X-Admin-Token') or '').strip()
+    username = (payload.get('user') or payload.get('username') or '').strip()
+    password = (payload.get('password') or payload.get('token') or '').strip()
     ip = _client_ip()
-    now = time.time()
-    if _ADMIN_LOCK.get(ip, 0) > now:
-        return jsonify({"success": False, "error": "尝试次数过多，请 15 分钟后再试"}), 429
-    valid = {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}
-    demo_tokens = {t.strip() for t in DEMO_TOKEN.split(',') if t.strip()}
-    is_demo = bool(demo_tokens) and tok in demo_tokens
-    if tok not in valid and not is_demo:
-        _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
-        if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
-            _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
-        return jsonify({"success": False, "error": "口令错误"}), 401
-    _ADMIN_FAILS.pop(ip, None)
-    exp = now + 8 * 3600
-    resp = jsonify({"success": True, "expires_in": 8 * 3600, "demo": is_demo})
-    resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "demo": is_demo}),
+    role, err = _admin_login_verify(username, password, ip)
+    if err is not None:
+        msg, code = err
+        _audit_admin_login(username, ip, False, None)
+        return jsonify({"success": False, "error": msg}), code
+    exp = time.time() + 8 * 3600
+    resp = jsonify({"success": True, "expires_in": 8 * 3600, "role": role})
+    resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "role": role}),
                     max_age=8 * 3600, httponly=True, samesite='Strict', secure=request.is_secure)
-    # 审计日志（195 轮层6）：登录成功/失败都记时间+IP
-    try:
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
-            _f.write("%s | login | ip=%s | ok | demo=%s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip, is_demo))
-    except Exception:
-        pass
+    _audit_admin_login(username, ip, True, role)
     return resp
 
 
-def _admin_login_verify(tok, ip):
-    """校验管理口令；成功返回 (is_demo, None)，失败返回 (False, (错误信息, http状态码))。"""
+def _admin_login_verify(username, password, ip):
+    """校验账号密码（198 轮：用户名+密码 bcrypt）。
+    成功返回 (role, None)，失败返回 (None, (错误信息, http状态码))。"""
     now = time.time()
     if _ADMIN_LOCK.get(ip, 0) > now:
-        return False, ("尝试次数过多，请 15 分钟后再试", 429)
-    valid = {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}
-    demo_tokens = {t.strip() for t in DEMO_TOKEN.split(',') if t.strip()}
-    is_demo = bool(demo_tokens) and tok in demo_tokens
-    if tok not in valid and not is_demo:
+        return None, ("尝试次数过多，请 15 分钟后再试", 429)
+    users = _load_admin_users()
+    if users:
+        hit = next((u for u in users if u.get('user') == username), None)
+        if hit:
+            try:
+                import bcrypt
+                if bcrypt.checkpw(password.encode('utf-8'), hit['pass_hash'].encode('utf-8')):
+                    _ADMIN_FAILS.pop(ip, None)
+                    return (hit.get('role') or 'admin'), None
+            except Exception:
+                pass
         _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
         if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
             _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
-        return False, ("口令错误", 401)
-    _ADMIN_FAILS.pop(ip, None)
-    return is_demo, None
+        return None, ("用户名或密码错误", 401)
+    # 回退：无账号体系时，单一口令模式（兼容旧 ADMIN_TOKEN / DEMO_TOKEN 部署）
+    if ADMIN_TOKEN and password in {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}:
+        _ADMIN_FAILS.pop(ip, None)
+        return "admin", None
+    if DEMO_TOKEN and password in {t.strip() for t in DEMO_TOKEN.split(',') if t.strip()}:
+        _ADMIN_FAILS.pop(ip, None)
+        return "readonly", None
+    _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
+    if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
+        _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
+    return None, ("用户名或密码错误", 401)
+
+
+def _audit_admin_login(username, ip, ok, role):
+    """登录审计（195 层6 / 198 轮）：记录用户名+IP+成功/失败+角色。"""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+            _f.write("%s | login | user=%s | ip=%s | %s | role=%s\n" % (
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username or '-', ip,
+                'ok' if ok else 'fail', role or '-'))
+    except Exception:
+        pass
 
 
 _ADMIN_LOGIN_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -580,27 +620,32 @@ _ADMIN_LOGIN_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="u
 <title>科创赛事助手 · 管理后台</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-background:linear-gradient(135deg,#eef2ff,#f8fafc);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.box{background:#fff;border-radius:16px;padding:32px 30px;width:100%;max-width:380px;box-shadow:0 10px 30px rgba(30,41,59,.08)}
-h1{font-size:19px;margin:0 0 6px;color:#1a1a2e}
-.sub{font-size:13px;color:#6b7280;margin:0 0 20px}
+background:linear-gradient(160deg,#F0F4FF,#FFFFFF);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{background:#fff;border-radius:16px;padding:42px 36px;width:100%;max-width:400px;box-shadow:0 8px 26px rgba(30,41,59,.07);border:1px solid #E6EBF5}
+h1{font-size:20px;margin:10px 0 6px;color:#1a1a2e;text-align:center}
+.sub{font-size:13px;color:#6b7280;margin:0 0 24px;text-align:center}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:9px 12px;font-size:13px;margin-bottom:14px}
-label{font-size:13px;color:#374151;display:block;margin-bottom:6px}
-input[type=password]{width:100%;padding:11px 13px;border:1px solid #dbe3ee;border-radius:9px;font-size:15px;color:#1f2937;outline:none}
-input[type=password]:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
-button{margin-top:16px;width:100%;background:#2563eb;color:#fff;border:0;border-radius:9px;padding:11px;font-size:15px;font-weight:600;cursor:pointer}
-button:hover{background:#1d4ed8}
+label{font-size:13px;color:#374151;display:block;margin:0 0 6px}
+input[type=text],input[type=password]{width:100%;padding:11px 13px;border:1px solid #D8E0EC;border-radius:9px;font-size:15px;color:#1f2937;outline:none;background:#fff}
+input[type=text]:focus,input[type=password]:focus{border-color:#7B9BFA;box-shadow:0 0 0 3px rgba(123,155,250,.15)}
+.field{margin-bottom:14px}
+button{margin-top:8px;width:100%;background:linear-gradient(135deg,#5B7CFA,#8A6BFA);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(1.05)}
 .tip{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.7}
+.foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
 </style></head><body>
 <form class="box" method="post" action="/admin/login">
 <h1>科创赛事助手 · 管理后台</h1>
-<p class="sub">请输入管理口令进入后台</p>
+<p class="sub">请输入账号密码进入管理后台</p>
 __ERROR__
-<label for="pwd">口令</label>
-<input type="password" id="pwd" name="password" autocomplete="current-password" autofocus required>
+<div class="field"><label for="user">用户名</label>
+<input type="text" id="user" name="username" autocomplete="username" autofocus required></div>
+<div class="field"><label for="pwd">密码</label>
+<input type="password" id="pwd" name="password" autocomplete="current-password" required></div>
 <input type="hidden" name="csrf" value="__CSRF__">
 <button type="submit">登录</button>
-<div class="tip">评委请使用「演示口令」登录，进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次口令错误将锁定 15 分钟。</div>
+<div class="tip">评委请使用「演示账号」登录，进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
+<div class="foot">v2.0 · ©可创无限团队</div>
 </form></body></html>"""
 
 
@@ -611,9 +656,10 @@ def _admin_login_error_html(errmsg, csrf):
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login_page():
-    """管理员登录页（197 轮）：解决 fail-closed 后 /admin 401 死锁，提供口令登录入口。"""
+    """管理员登录页（198 轮）：用户名+密码登录入口。"""
     if request.method == 'POST':
-        tok = (request.form.get('password') or '').strip()
+        username = (request.form.get('username') or '').strip()
+        password = (request.form.get('password') or '').strip()
         csrf = (request.form.get('csrf') or '').strip()
         try:
             cv = _ADMIN_SESSION_SIGNER.loads(csrf)
@@ -622,20 +668,17 @@ def admin_login_page():
         except Exception:
             return _admin_login_error_html('登录已过期，请刷新后重试', _new_admin_csrf()), 400
         ip = _client_ip()
-        is_demo, err = _admin_login_verify(tok, ip)
+        role, err = _admin_login_verify(username, password, ip)
         if err is not None:
             msg, code = err
+            _audit_admin_login(username, ip, False, None)
             return _admin_login_error_html(msg, _new_admin_csrf()), code
         exp = time.time() + 8 * 3600
         from flask import redirect
         resp = redirect('/admin')
-        resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "demo": is_demo}),
+        resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "role": role}),
                         max_age=8 * 3600, httponly=True, samesite='Strict', secure=request.is_secure)
-        try:
-            with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
-                _f.write("%s | login | ip=%s | ok | demo=%s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip, is_demo))
-        except Exception:
-            pass
+        _audit_admin_login(username, ip, True, role)
         return resp
     return _admin_login_error_html('', _new_admin_csrf())
 
@@ -730,7 +773,7 @@ def _admin_guard():
     if auth is not None:
         return auth
     # 演示只读会话（195 补充7）：通过鉴权后，破坏性写操作一律 403
-    if _admin_session_demo() and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+    if _admin_session_role() == 'readonly' and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
         resp = jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"})
         resp.status_code = 403
         return resp
