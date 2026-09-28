@@ -345,13 +345,34 @@ def build_rich_assets(result, competition="", idea="", theme=None):
     out["theme"] = str(theme).lower()
     print(f"[rich] PPT 主题：{out['theme']}")
 
-    # ---- 1. 图表 + 表格 ----
-    assets = {}
+    # ---- 1. 图表/表格设计 与 PPT 结构设计 并行（第一百二十九轮） ----
+    # 两者只共享「可用图表/表格 id」，而 id 是确定性的（c1..c8 / t1..t4），
+    # 所以 PPT 结构可以用预测 id 先并行生成；后续链接时缺失的引用会自动降级为要点页。
+    from concurrent.futures import ThreadPoolExecutor
+    kb_data = ""
     try:
         kb_data = _load_kb_industry_data(competition)
-        assets = _gen_assets(result, competition, idea, kb_data) or {}
+    except Exception:
+        pass
+    _pred_assets = {"charts": [{"id": "c%d" % i} for i in range(1, 9)],
+                    "tables": [{"id": "t%d" % i} for i in range(1, 5)]}
+    assets, deck = {}, None
+    try:
+        with ThreadPoolExecutor(max_workers=2) as _ex:
+            _f_assets = _ex.submit(_gen_assets, result, competition, idea, kb_data)
+            _f_deck = _ex.submit(_gen_deck, result, competition, idea, _pred_assets)
+            assets = _f_assets.result() or {}
+            deck = _f_deck.result()
     except Exception as e:
-        print(f"[rich] 图表/表格设计失败，降级：{e}")
+        print(f"[rich] 并行设计失败，退回串行兜底：{e}")
+        try:
+            assets = _gen_assets(result, competition, idea, kb_data) or {}
+        except Exception as e2:
+            print(f"[rich] 图表/表格设计失败，降级：{e2}")
+        try:
+            deck = _gen_deck(result, competition, idea, assets)
+        except Exception as e3:
+            print(f"[rich] PPT 结构生成失败，降级：{e3}")
 
     charts, tables = [], []
     # 图表 PNG 用本次生成唯一后缀命名，避免每次生成都写 chart_c1.png 同名覆盖——
@@ -386,13 +407,8 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             "rows": [r[:6] for r in t["rows"][:7]],
         })
 
-    # ---- 2. PPT 结构 ----
-    try:
-        deck = _gen_deck(result, competition, idea, assets)
-        slides = deck.get("slides") or []
-    except Exception as e:
-        print(f"[rich] PPT 结构生成失败，使用大纲兜底：{e}")
-        slides = None
+    # ---- 2. PPT 结构（已在上面并行生成 deck）----
+    slides = (deck or {}).get("slides") or []
     if not slides:
         try:
             deck = _fallback_deck(result, idea)

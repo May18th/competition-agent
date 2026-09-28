@@ -4956,9 +4956,9 @@
                 if (err && err.cancelled) {
                     wbToast('已终止生成', { type: 'warn' });
                 } else if (err && err.code === 'quota_exceeded') {
-                    wbToast('今日生成额度已满，明日恢复', {
+                    wbToast('今日生成次数已达上限，请明天再试', {
                         type: 'warn',
-                        sub: '今天的免费生成额度用完了，明天自动恢复；已填内容都还在',
+                        sub: '已填内容都还在，明天再来就能继续生成',
                         ms: 8000
                     });
                 } else if (err && err.isCreateFail) {
