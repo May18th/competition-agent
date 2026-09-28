@@ -2153,9 +2153,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 
 
 def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
-    """✍️ 简洁版申报书 Agent：写约 1300 字的精简申报书（对应前端「简洁快速版」卡片）
+    """✍️ 简洁版申报书 Agent：写 2000~4000 字级的精简申报书（对应前端「简洁快速版」卡片）
 
-    与深度版刻意拉开差距：这里只求「短而准」，五章、约 1300 字，
+    与深度版刻意拉开差距：这里只求「短而准」，五章、2000~4000 字级，
     供快速判断创意是否站得住脚；完整详实的提交版由 deep_writer_agent 输出（按赛事章节逐章展开）。
     """
     _report_stage("writing")

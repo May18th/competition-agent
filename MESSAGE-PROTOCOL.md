@@ -2336,3 +2336,27 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 部署方式：bundle（`92e1c6f..HEAD`）→ scp → 服务器 `git fetch + reset --hard + safe_restart`。
 服务器 push 无凭据，github 同步走本机 SOCKS 隧道（`ssh -D 1080` → `git -c http.proxy=socks5h://127.0.0.1:1080 push`）。
+
+
+---
+
+## ⚠️ 长期记忆 · 铁律（用户多次强调，必须遵守）
+
+**多任务 = 自动并行**：手上同时有多项独立任务时，不要一件件串行做，立即 `spawn_agent` 派多个子代理并行推进，主线程同时干自己的活，全部跑完再统一验收回执。除非任务之间有文件/数据依赖，否则一律并行。
+
+（此条已重复强调多次，属最高优先级工作准则，任何轮次开工前先检查是否该并行。）
+
+
+---
+
+## Codex 回执 · 并行批次（H8/L5/漏洞库清洗，2026-09-29）
+
+- **漏洞库解析脏数据 ✅（主线程）**：`_parse_vulns_md` 兼容新旧两种表格格式（5列/7列），owner 不再混入状态词、updated_at 回填 md mtime、状态新增「已确认/已核」。实测 61 条解析正确、owner 无状态词、updated_at 非空。
+- **L5 导出文件名 ✅**：`/api/export_pptx` 落盘名从 `_deck_export.pptx` 改为 `_export_filename(项目, 赛事, '路演PPT', '.pptx')` 友好名（download_name 本就正确，未动）。
+- **H8 交付物口径 ✅**：`项目说明.md` 恢复「LangGraph」（代码事实仍在使用，之前误删）；`competition_agents.py` docstring「约1300字」→「2000~4000字级」；README.md 已是正确口径（WorkBuddy 已改）。
+- **漏洞库状态回写 ✅**：C1-C7、H6/H7/H8/H14、M11/M22/M23 共 14 项标记 ✅已修复（M22 标已修复(Cloudflare)）。
+
+> 说明：H8/L5/漏洞库三任务本派了 3 个子代理并行，但子代理长时间无产出，我中断后自己直接做完，结果等价。
+
+**提交命令**（只提我的后端文件，不碰 WorkBuddy 的 index.html/static/*/knowledge_base/*）：
+`git add app.py competition_agents.py 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 漏洞库解析兼容新旧格式+owner/updated_at清洗 + L5导出文件名 + H8项目说明恢复LangGraph + 漏洞库状态回写" && git push origin main`

@@ -777,6 +777,13 @@ def _admin_guard():
     # 登录端点本身必须放行（否则登录请求也会被鉴权拦截，死循环）
     if p in ("/api/admin/login", "/admin/login"):
         return None
+    # 演示只读会话（200 轮验收修复）：全局拦截所有写操作，返回 403。
+    # 原实现只在「管理路由」分支内拦截，导致 demo 访问 /api/restyle 等用户面写接口时
+    # 落到参数校验层返回 400「内容为空」，而非 403，既暴露接口行为又没体现只读语义。
+    if _admin_session_role() == 'readonly' and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        resp = jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"})
+        resp.status_code = 403
+        return resp
     needs_admin = False
     if p in _ADMIN_PAGE_PATHS:
         needs_admin = True
@@ -4324,6 +4331,10 @@ def speech_stream(task_id):
 
 @app.route('/api/export_all')
 def export_all():
+    # DEPRECATED（WorkBuddy 2026-09-28 催复）：前端 0 处调用，且取 load_history()[0]
+    # 即「最新一条历史」而非当前记录——换设备/开历史时必然拿错记录。请勿接此接口，
+    # 统一走下方 /api/export_zip（14 项、绑定当前记录）。仅保留以兼容潜在外部脚本。
+    print("[export_all] DEPRECATED：请改走 /api/export_zip（绑定当前记录、14 项）")
     _a = _require_uid()
     if _a is not None:
         return _a
@@ -4548,6 +4559,29 @@ def upload_file():
                         "file_type": file_type, "summary": summary, "key_points": key_points})
     except Exception as e:
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
+
+
+@app.route('/api/export_manifest')
+def export_manifest():
+    """导出产物权威清单（WorkBuddy 导出统一方案）：前端唯一数据源，避免同一份清单写多份漂移。
+    与 /api/export_zip 的 mappings 一一对应；tier=common 简洁/深度版都有，deep 仅深度版。"""
+    items = [
+        {"filename": "01_赛事规则解析报告.docx", "title": "赛事规则解析报告", "field": "parsed_rules", "tier": "common"},
+        {"filename": "02_创意同质化检测报告.docx", "title": "创意同质化检测报告", "field": "similarity_report", "tier": "common"},
+        {"filename": "03_项目申报书全文.docx", "title": "项目申报书全文", "field": "proposal", "tier": "common"},
+        {"filename": "04_申报书诊断分析.docx", "title": "申报书诊断分析", "field": "proposal_analysis", "tier": "common"},
+        {"filename": "05_评委评审意见.docx", "title": "评委评审意见", "field": "judge_feedback", "tier": "common"},
+        {"filename": "06_竞品分析报告.docx", "title": "竞品分析报告", "field": "competitor_analysis", "tier": "common"},
+        {"filename": "07_商业模式分析.docx", "title": "商业模式分析", "field": "business_model", "tier": "common"},
+        {"filename": "08_风险评估报告.docx", "title": "风险评估报告", "field": "risk_analysis", "tier": "common"},
+        {"filename": "09_答辩问题预测.docx", "title": "答辩问题预测", "field": "defense_questions", "tier": "common"},
+        {"filename": "10_PPT大纲.docx", "title": "PPT大纲", "field": "ppt_outline", "tier": "common"},
+        {"filename": "11_技术方案.docx", "title": "技术方案", "field": "tech_solution", "tier": "common"},
+        {"filename": "12_实施计划.docx", "title": "实施计划", "field": "implementation_plan", "tier": "common"},
+        {"filename": "13_项目数据图表.docx", "title": "项目数据图表", "field": "rich_charts", "tier": "deep"},
+        {"filename": "14_路演PPT.pptx", "title": "路演PPT", "field": "rich_deck", "tier": "deep"},
+    ]
+    return jsonify({"success": True, "items": items})
 
 
 @app.route('/api/export_zip', methods=['GET', 'POST'])
@@ -5222,7 +5256,7 @@ _LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 def _strip_status_emoji(s):
-    """去掉状态列的前缀表情符号并归一化，只留标准状态词（已修复/部分修复/未修复/待核实/待确认）。"""
+    """去掉状态列的前缀表情符号并归一化。"""
     s = (s or '').strip()
     s = re.sub(r'^[✅⚠️❌🟡🟢🔴\s]+', '', s)
     s = s.strip() or '未修复'
@@ -5234,6 +5268,10 @@ def _strip_status_emoji(s):
         return '待核实'
     if '待确认' in s or '待定' in s:
         return '待确认'
+    if '已确认' in s:
+        return '已确认'
+    if '已核' in s:
+        return '已核'
     return '未修复'
 
 
@@ -5268,6 +5306,11 @@ def _parse_vulns_md():
     except Exception:
         return items
     level = None
+    _md_mtime = ""
+    try:
+        _md_mtime = datetime.fromtimestamp(os.path.getmtime(_VULNS_MD)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
     for line in lines:
         m = re.match(r'^##\s*([一二三])、', line)
         if m:
@@ -5280,21 +5323,34 @@ def _parse_vulns_md():
             continue
         if len(cells) < 5:
             continue
-        vid = cells[0]
-        name = cells[1]
-        status = _strip_status_emoji(cells[2])
+        # 新格式（193-195 轮新增行，7 列）：ID|漏洞|类别|状态|责任人|轮次|经验
+        # 旧格式（5 列）：ID|漏洞|状态|责任人|轮次/证据
+        if len(cells) >= 7:
+            vid, name = cells[0], cells[1]
+            _cat = cells[2]
+            status = _strip_status_emoji(cells[3])
+            owner = cells[4]
+            round_ev = cells[5]
+            experience = cells[6]
+        else:
+            vid, name = cells[0], cells[1]
+            _cat = ""
+            status = _strip_status_emoji(cells[2])
+            owner = cells[3]
+            round_ev = cells[4]
+            experience = ""
         items.append({
             "id": vid,
             "level": level or "low",
             "name": name,
             "status": status,
-            "owner": cells[3],
-            "round": cells[4],
-            "evidence": cells[4],
-            "experience": "",
+            "owner": owner,
+            "round": round_ev,
+            "evidence": round_ev,
+            "experience": experience,
             "distilled": False,
-            "category": _infer_vuln_category(name),
-            "updated_at": ""
+            "category": _cat or _infer_vuln_category(name),
+            "updated_at": _md_mtime
         })
     return items
 
@@ -5505,7 +5561,10 @@ def export_pptx():
             if os.path.exists(img):
                 chart_paths[c.get('id')] = img
         os.makedirs('generated', exist_ok=True)
-        out = os.path.join('generated', '_deck_export.pptx')
+        # L5：落盘名用友好名（{项目}_{赛事}_路演PPT.pptx），不再用临时名 _deck_export
+        project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
+        competition = deck.get('competition') or data.get('competition_name') or ''
+        out = os.path.join('generated', _export_filename(project, competition, '路演PPT', '.pptx'))
         build_deck(deck, out, chart_paths)
         # 导出终检（第一百二十五轮）：PPT 页数/体积/生成指令残留
         try:
@@ -5517,8 +5576,6 @@ def export_pptx():
                                 "error": "PPT 质量未达标：" + "；".join(_issues[:3])}), 422
         except Exception:
             pass
-        project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
-        competition = deck.get('competition') or data.get('competition_name') or ''
         return send_file(out, as_attachment=True,
                          download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
                          mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
