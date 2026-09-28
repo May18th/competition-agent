@@ -2900,6 +2900,7 @@ def _run_generation(data):
             "scoring_weights": data.get("scoring_weights") or [],
             "humanize": data.get("humanize", "standard"),
             "length_pref": data.get("length_pref") or "balanced",
+            "review_style": data.get("review_style") or "严谨",
             # 档位标记：简洁版=fast / 深度版=deep。competition_agents 里的
             # _spec_for / _tier_hint 依赖它决定输出规格，漏掉会默认按 deep 处理，
             # 导致简洁版的评委/诊断/答辩也写得又长又慢，失去两档差异。

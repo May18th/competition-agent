@@ -825,9 +825,21 @@
 
         // 导出失败的统一文案：能拿到后端 error 就照实说，拿不到就是服务端抖动/重启窗口
         async function wbExportError(label, bad) {
-            var msg = '';
+            var msg = '', j = null;
             if (bad && bad.res) {
-                try { var j = await bad.res.clone().json(); msg = (j && (j.error || j.hint)) || ''; } catch (e) {}
+                // clone 一次拿 JSON：响应体只能读一次，后面还要用 res 判断状态码
+                try { j = await bad.res.clone().json(); msg = (j && (j.error || j.hint)) || ''; } catch (e) {}
+            }
+            // 122/123 轮：被「系统默认评委」打分门打回。后端把具体扣分项放在 reasons 里，
+            // 只弹「导出失败」的话，用户分不清是自己内容不行还是网站坏了，会一直重复点。
+            if (j && j.code === 'quality_fail') {
+                var rs = (j.reasons && j.reasons.length) ? j.reasons.slice(0, 3).join('；') : '';
+                wbToast(label + '未通过内容质检，暂时不导出', {
+                    type: 'warn', ms: 9000,
+                    sub: (rs ? '主要问题：' + rs + '。' : '')
+                        + '内容还在页面上，改完或重新生成后再点导出即可，不用重头再来'
+                });
+                return;
             }
             if (msg) { wbToast(label + '导出失败：' + msg, { type: 'error', ms: 6000 }); return; }
             wbToast(label + '没导出成功，服务正在重启或网络抖动', {
@@ -840,7 +852,15 @@
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
-            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            var _qcTimer = 0;
+            if (btn) {
+                btn.disabled = true; btn.dataset.old = btn.innerHTML;
+                // 122/127 轮：后端导出前先跑系统默认评委打分门（≤3 秒）再生成文件。
+                // 按钮如实分两段说：先「质检中」，1.5 秒还没好说明已进生成阶段。
+                // 一直写「生成中」的话，用户被质检打回时会以为是网站坏了
+                btn.innerHTML = '质检中…';
+                _qcTimer = setTimeout(function () { if (btn) btn.innerHTML = '生成文件…'; }, 1500);
+            }
             try {
                 var m = wbMeta();
                 var payload = {title: name, text: text,
@@ -864,6 +884,7 @@
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
+                if (_qcTimer) clearTimeout(_qcTimer);
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -923,7 +944,15 @@
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
-            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            var _qcTimer = 0;
+            if (btn) {
+                btn.disabled = true; btn.dataset.old = btn.innerHTML;
+                // 122/127 轮：后端导出前先跑系统默认评委打分门（≤3 秒）再生成文件。
+                // 按钮如实分两段说：先「质检中」，1.5 秒还没好说明已进生成阶段。
+                // 一直写「生成中」的话，用户被质检打回时会以为是网站坏了
+                btn.innerHTML = '质检中…';
+                _qcTimer = setTimeout(function () { if (btn) btn.innerHTML = '生成文件…'; }, 1500);
+            }
             try {
                 var r = await wbExportFetch('/api/export_pdf', {title: name, text: text,
                         competition_name: wbCompName(),
@@ -948,6 +977,7 @@
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
+                if (_qcTimer) clearTimeout(_qcTimer);
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -3788,7 +3818,15 @@
             if (wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
             deck = wbStripDeckTodo(deck);
             var btn = (window.event && window.event.target) || null;
-            if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '生成中...'; }
+            var _qcTimer = 0;
+            if (btn) {
+                btn.disabled = true; btn.dataset.old = btn.innerHTML;
+                // 122/127 轮：后端导出前先跑系统默认评委打分门（≤3 秒）再生成文件。
+                // 按钮如实分两段说：先「质检中」，1.5 秒还没好说明已进生成阶段。
+                // 一直写「生成中」的话，用户被质检打回时会以为是网站坏了
+                btn.innerHTML = '质检中…';
+                _qcTimer = setTimeout(function () { if (btn) btn.innerHTML = '生成文件…'; }, 1500);
+            }
             try {
                 var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
                                           theme: deck.theme, variant: deck.variant});
@@ -3800,6 +3838,7 @@
             } catch (e) {
                 wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
             } finally {
+                if (_qcTimer) clearTimeout(_qcTimer);
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -4039,8 +4078,26 @@
                 // 第一次有内容就把骨架屏换成真实结果区
                 if (!_streamShown) {
                     _streamShown = true;
-                    document.getElementById('skeletonArea').style.display = 'none';
-                    document.getElementById('resultArea').style.display = 'block';
+                    // 113 轮自查：骨架屏→结果区原来是 display 瞬间硬切，两块高度差一大
+                    // 就是「闪一下」。这里让骨架屏先淡出再撤，结果区同时淡入，平滑过渡。
+                    var _sk = document.getElementById('skeletonArea');
+                    if (_sk) {
+                        _sk.style.transition = 'opacity .26s ease';
+                        _sk.style.opacity = '0';
+                        setTimeout(function () { try { _sk.style.display = 'none'; } catch (e) {} }, 280);
+                    }
+                    var _ra = document.getElementById('resultArea');
+                    if (_ra) {
+                        _ra.style.display = 'block';
+                        _ra.style.transition = 'opacity .26s ease';
+                        _ra.style.opacity = '0';
+                        // 取一帧再置 1，否则起始值和目标值在同一帧里浏览器直接跳到终态
+                        requestAnimationFrame(function () {
+                            requestAnimationFrame(function () { _ra.style.opacity = '1'; });
+                        });
+                    } else {
+                        document.getElementById('resultArea').style.display = 'block';
+                    }
                     // 生成中先给局部提示条，下载条等 done 再出（历史打开时 _wbGenerating 为 false，不会误亮）
                     if (window._wbGenerating) {
                         var _pnS = document.getElementById('wbPartialNote');

@@ -19,7 +19,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260928f">
+    <link rel="stylesheet" href="/static/style.css?v=20260928h">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -567,6 +567,9 @@
                         </div>
                         <span id="lenBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">已生成 0 字</span>
                         <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">预计 --</span>
+                        <!-- 126 轮：用户提「不能让用户为此等待太长时间」——等待焦虑来自「不知道等了多久」，
+                             剩余时间已有 etaBadge，这里补已用时间，两头都有数就不焦虑 -->
+                        <span id="elapsedBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">已用 0 秒</span>
                     </div>
                 </div>
                 <!-- 等待期阶段副标题：人话版。中文阶段名仍以后端 stage_label 为准，这里只补一句有温度的话，不覆盖、不替换 -->
@@ -1510,7 +1513,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=20260928g"></script>
+    <script src="/static/app.js?v=20260928h"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1660,6 +1663,8 @@ window.addEventListener('resize', function () {
 
     function reset() {
         st = {};
+        // 126 轮：已用时间计时归零。不归零的话第二次生成会从上次的时间接着走
+        try { window._wbGenT0 = 0; } catch (e) {}
         AGENTS.forEach(function (a) { st[a.k] = { s: 'wait', label: '', t0: 0, ms: 0 }; });
         if (timer) { clearTimeout(timer); timer = 0; }
         var p = document.getElementById('agentPanel');
@@ -1692,6 +1697,8 @@ window.addEventListener('resize', function () {
 
     function finish(ok) {
         var now = Date.now();
+        // 生成结束：停掉已用时间计时（成功/失败都停，下次 reset 才归零）
+        try { window._wbGenT0 = 0; } catch (e) {}
         Object.keys(st).forEach(function (k) {
             var o = st[k];
             if (o.s === 'run') { o.s = ok === false ? 'err' : 'done'; o.ms = o.t0 ? (now - o.t0) : 0; }
