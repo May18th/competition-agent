@@ -5858,7 +5858,7 @@
         d.style.display = 'flex';
         /* _esc 在主 script 里，这里兜个底，拿不到就自己转义 */
         var safeUrl = (typeof _esc === 'function') ? _esc(url) : url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-        d.innerHTML = '<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">分享链接已生成</div>' +
             '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">链接有效期至 ' +
             (expires ? _esc(String(expires)) : '7 天后') + '，对方打开只能看，不能改。</div>' +
@@ -5907,6 +5907,50 @@
                 wbShareModal(location.origin + d.url, d.expires);
             })
             .catch(function (e) { back(); wbToast('生成分享链接失败：' + (e && e.message || e), { type: 'error' }); });
+    };
+
+    /* ============ 常驻反馈入口（105-1：独立于生成结果，任何状态都能提交） ============ */
+    window.wbFeedbackOpen = function () {
+        var old = document.getElementById('wbFeedbackModal');
+        if (old) old.remove();
+        var d = document.createElement('div');
+        d.id = 'wbFeedbackModal';
+        d.className = 'modal-overlay';
+        d.style.display = 'flex';
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
+            '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">反馈 / 建议</div>' +
+            '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">遇到问题或有好想法都可以说，会直接进后台、用于改进工具。</div>' +
+            '<textarea id="wbFeedbackTxt" placeholder="例如：XX 按钮点了没反应 / 希望支持 XX 赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
+            '<div style="display: flex; gap: 8px; margin-top: 12px;">' +
+            '<button onclick="wbFeedbackSubmit()" style="flex: 1; padding: 11px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;">提交</button>' +
+            '<button onclick="document.getElementById(\'wbFeedbackModal\').remove()" style="padding: 11px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;">关闭</button>' +
+            '</div></div>';
+        d.addEventListener('click', function (e) { if (e.target === d) d.remove(); });
+        document.body.appendChild(d);
+        var ta = document.getElementById('wbFeedbackTxt');
+        if (ta) ta.focus();
+    };
+    window.wbFeedbackSubmit = function () {
+        var ta = document.getElementById('wbFeedbackTxt');
+        var txt = (ta ? ta.value : '').trim();
+        if (!txt) { wbToast('反馈内容不能为空', { type: 'warn' }); return; }
+        var btn = document.querySelector('#wbFeedbackModal button[onclick="wbFeedbackSubmit()"]');
+        if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+        fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: txt })
+        }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+              if (j && j.success === false) throw new Error(j.error || '提交失败');
+              var m = document.getElementById('wbFeedbackModal');
+              if (m) m.remove();
+              wbToast('感谢你的反馈，我们会持续改进！', { type: 'ok' });
+          })
+          .catch(function (e) {
+              if (btn) { btn.disabled = false; btn.textContent = '提交'; }
+              wbToast('没提交成功：' + ((e && e.message) || '网络问题'), { type: 'error' });
+          });
     };
 
     /* ===================== 历史记录：按比赛类型分 tab ===================== */
