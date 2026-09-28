@@ -1235,6 +1235,9 @@
                     WB_COMP_PROFILES = d.competitions;
                     try { _wbStoreSet(WB_COMP_PROF_KEY, JSON.stringify(d.competitions)); } catch (e) {}
                     try { renderEventCard(); } catch (e) {}
+                    // M10：接口常常比结果晚到（结果先渲染、profiles 后到），这里补刷一次来源标注，
+                    // 否则「有官方来源」的赛事会一直停在「待核」
+                    try { wbRefreshRuleSrcNote(); } catch (e) {}
                 })
                 .catch(function () { /* 拉不到就用缓存 / 回落到内置规则 */ });
         }
@@ -1257,6 +1260,86 @@
             });
             return bs >= 80 ? best : null;
         }
+
+        /* ---------- M10：规则解析卡下方的「评分口径来源 + 核实日期」标注 ----------
+           来源只认后端 data/competition_profiles.json 里 track 的 source / checked_date。
+           实测：顶层 competition 根本没有这两个字段，且只有 iCAN / 互联网+ 等少数赛事的
+           track 带了 source，挑战杯、数学建模等多数赛事一条都没有 —— 一律诚实标「待核」。
+           红线：不编造来源。既不用「官网大概是 xxx.com」去猜，也不拿今天日期冒充核实日期，
+           编出来的来源比不标更坏：用户会拿着它去跟评委对口径。 */
+        function wbNormKey(s) {
+            return String(s == null ? '' : s).toLowerCase().replace(/[""'']/g, '').replace(/[\s()（）\[\]【】]+/g, '');
+        }
+        // 当前选中赛道（赛事卡里用户点的那个）；取不到就交给下面的默认赛道逻辑
+        function wbCurrentTrackLabel() {
+            try {
+                var c = evCurrent();
+                if (c && c._track) return c._track.name || c._track.key || '';
+            } catch (e) {}
+            return '';
+        }
+        // 在 profile.scoring_by_track.tracks 里挑一条：当前赛道 > is_default > 第一条
+        function wbPickProfileTrack(prof, want) {
+            var ts = (prof && prof.scoring_by_track && prof.scoring_by_track.tracks) || [];
+            if (!ts.length) return null;
+            var w = wbNormKey(want), i, t, a, b;
+            if (w) {
+                for (i = 0; i < ts.length; i++) {
+                    t = ts[i] || {};
+                    a = wbNormKey(t.name); b = wbNormKey(t.id);
+                    if (a && (a === w || w.indexOf(a) >= 0 || a.indexOf(w) >= 0)) return t;
+                    if (b && (b === w || w.indexOf(b) >= 0 || b.indexOf(w) >= 0)) return t;
+                }
+            }
+            for (i = 0; i < ts.length; i++) if (ts[i] && ts[i].is_default) return ts[i];
+            return ts[0] || null;
+        }
+        // 只认 http(s) 开头的真实地址；其余（含万一混进来的 javascript:）一律当「没有来源」
+        function wbSafeSrcUrl(u) {
+            var s = String(u == null ? '' : u).trim();
+            return /^https?:\/\//i.test(s) ? s : '';
+        }
+        function wbRuleSrcNoteHtml() {
+            // profiles 还没到（接口比结果晚到 / 本机缓存空）→ 先不显示，等 wbLoadProfiles 回来补一次，
+            // 不写「加载中…」这类会闪一下的占位文案
+            if (!WB_COMP_PROFILES || !WB_COMP_PROFILES.length) return '';
+            var name = String((document.getElementById('competition') || {}).value || '').trim();
+            var prof = wbMatchProfile(name);
+            var ico = function (n) {
+                return '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-' + n + '"/></svg> ';
+            };
+            var out = [];
+            if (!prof) {
+                out.push(ico('warn') + '评分口径来源：通用评审标准（本赛事官方口径待核）');
+                return out.join('<br>');
+            }
+            var tk = wbPickProfileTrack(prof, wbCurrentTrackLabel());
+            var url = wbSafeSrcUrl(tk && tk.source);
+            var ck = String((tk && tk.checked_date) || '').trim();
+            if (url) {
+                out.push(ico('globe') + '评分口径来源：官方规则（核实 ' + _esc(ck || '日期未标注') + '）' +
+                         ' · <a href="' + _esc(url) + '" target="_blank" rel="noopener" ' +
+                         'title="' + _esc(url) + '" ' +
+                         'style="color: var(--text-mute); text-decoration: underline;">' + _esc(url) + '</a>');
+            } else {
+                out.push(ico('warn') + '评分口径来源：内置评分库（官方来源待核）');
+            }
+            var note = String((tk && tk.note) || '');
+            if (/待核实|待官网核实|规则待核实/.test(note)) {
+                out.push(ico('warn') + '该赛道官方规则待核实，暂按通用标准评分');
+            }
+            return out.join('<br>');
+        }
+        function wbRefreshRuleSrcNote() {
+            var box = document.getElementById('ruleSrcNote');
+            if (!box) return;
+            var h = '';
+            try { h = wbRuleSrcNoteHtml(); } catch (e) { h = ''; }
+            if (!h) { box.innerHTML = ''; box.style.display = 'none'; return; }
+            box.innerHTML = h;
+            box.style.display = 'block';
+        }
+        window.wbRefreshRuleSrcNote = wbRefreshRuleSrcNote;
 
         // 从索引匹配赛事：keys 完全相等优先，其次互相包含；取最优命中，避免「挑战杯」串到小挑
         function wbMatchIndex(name) {
@@ -4841,7 +4924,10 @@
                             }
                         });
                         // ---- 1：当前 tab（默认「前期分析」）里的板块先画 ----
-                        _P(1, function () { document.getElementById('parsedRules').innerHTML = wbRenderMD(data.data.parsed_rules); });
+                        _P(1, function () {
+                            document.getElementById('parsedRules').innerHTML = wbRenderMD(data.data.parsed_rules);
+                            try { wbRefreshRuleSrcNote(); } catch (e) {}
+                        });
                         _P(1, function () { document.getElementById('similarityReport').innerHTML = wbRenderMD(data.data.similarity_report); });
                         // ---- 2~5：核心内容 ----
                         if (data.data.proposal_outline) _P(2, function () { document.getElementById('proposalOutline').innerHTML = wbRenderMD(data.data.proposal_outline); });
@@ -4928,6 +5014,8 @@
                              ['proposalText', data.data.proposal],
                              ['judgeFeedback', data.data.judge_feedback],
                              ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
+                            // M10：结果并重渲染时同步刷新「评分口径来源」标注
+                            try { wbRefreshRuleSrcNote(); } catch (e) {}
                             // 占位符 / 赛道禁忌扫描：扫的是渲染后的正文，必须等画完再扫，
                             // 否则扫到半截内容会漏报
                             wbRefreshPhBar();
@@ -6464,6 +6552,8 @@
                     if (el) el.innerHTML = txt ? md(txt) : '';
                 };
                 set('parsedRules', data.parsed_rules);
+                // M10：回看历史同样要标口径来源（按当前表单选中的赛事名匹配 profile）
+                try { wbRefreshRuleSrcNote(); } catch (e) {}
                 set('similarityReport', data.similarity_report);
                 try {
                     var si = document.getElementById('simInfo');

@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260929a">
+    <link rel="stylesheet" href="/static/style.css?v=20260929b">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -871,6 +871,10 @@
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 规则解析 <button onclick="copyText('parsedRules')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="parsedRules"></div>
+                    <!-- M10：评分口径来源 + 核实日期。数据只认 /api/competition_profiles 里 track 的
+                         source / checked_date，取不到就标「待核」——绝不编造来源 URL 或日期。
+                         长文本换行显示，不做任何省略号截断。 -->
+                    <div id="ruleSrcNote" style="display: none; margin-top: 6px; font-size: 12px; line-height: 1.7; color: var(--text-mute); word-break: break-word; overflow-wrap: break-word;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 同质化检测 <button onclick="copyText('similarityReport')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
@@ -1594,7 +1598,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=20260929a"></script>
+    <script src="/static/app.js?v=20260929b"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
