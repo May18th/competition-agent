@@ -1536,6 +1536,18 @@ def export_word():
                             "error": "导出质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
         pass
+    # 第一百七十六轮：Word 目录规范检测——长文档必须含可刷新 TOC 域（短文档按 docx_render 规则本就不出目录）
+    try:
+        from export_guard import check_word_toc
+        _toc = check_word_toc(filepath)
+        _doc_chars = len(text.replace('\n', '').replace(' ', ''))
+        if (not _toc.get("ok")) and _doc_chars >= 2500:
+            _safe_unlink(filepath)
+            return jsonify({"success": False, "code": "export_toc_fail",
+                            "error": "目录缺失（长文档需含可刷新目录）：" + "；".join(_toc.get("errors", []))}), 422
+        print(f"[export_word] 目录规范检测：{_toc}")
+    except Exception as _e:
+        print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
     return send_file(filepath, as_attachment=True,

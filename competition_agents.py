@@ -1,4 +1,4 @@
-﻿"""
+"""
 科创赛事多智能体协同创作助手
 核心工作流：规则解析 → 同质化检测 → 文稿生成 → 模拟评委 → 迭代
 """
@@ -410,6 +410,32 @@ PROPOSAL_REQUIRED_SECTIONS_FAST = [
 ]
 
 
+def _spot_check_numbers(text):
+    # 第162轮：数字抽查——确定性抽查 >=20% 数字，追不到来源标注的标「待核」
+    if not text:
+        return {"total": 0, "checked": 0, "pending": 0, "samples": []}
+    nums = re.findall(r"\d+(?:\.\d+)?\s*(?:%|％|万|亿|元|次|台|人|家|项|件|年|月|天|小时|km|m|kg|ms|s)?", text)
+    seen, uniq = set(), []
+    for n in nums:
+        n = n.strip()
+        if n and n not in seen:
+            seen.add(n)
+            uniq.append(n)
+    total = len(uniq)
+    if not total:
+        return {"total": 0, "checked": 0, "pending": 0, "samples": []}
+    stride = 5
+    samples = uniq[::stride] if total >= stride else uniq[: max(1, int(total * 0.2))]
+    src_markers = ("测算", "示例", "仿真", "实测", "来源", "公开", "官网", "报道", "估算", "待核", "数据")
+    pending = []
+    for n in samples:
+        idx = text.find(n)
+        ctx = text[max(0, idx - 40): idx + len(n) + 40]
+        if not any(m in ctx for m in src_markers):
+            pending.append(n)
+    return {"total": total, "checked": len(samples), "pending": len(pending),
+            "samples": samples, "pending_nums": pending}
+
 def check_proposal_completeness(proposal: str, mode: str = "deep", competition_name: str = "") -> dict:
     """检查申报书是否覆盖核心章节，返回缺失项（提示性质，不阻断）。
 
@@ -448,7 +474,7 @@ def check_proposal_completeness(proposal: str, mode: str = "deep", competition_n
         text))
     return {"ok": not missing, "missing": missing, "detail": detail,
             "chars": _cjk_len(text), "placeholders": placeholders,
-            "data_points": data_points}
+            "data_points": data_points, "number_spotcheck": _spot_check_numbers(text)}
 
 
 def parse_knowledge(content: str) -> dict:
@@ -2287,6 +2313,28 @@ def _official_scoring_dims(competition_name, track=None):
         return []
 
 
+def _dedup_text(text):
+    # 第170轮：去除连续重复块/行（评委意见/诊断分析偶发整段重复，渲染前只保留一次）
+    if not text:
+        return text
+
+    def _norm(x):
+        return " ".join(x.split())
+
+    blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+    uniq = []
+    for b in blocks:
+        if uniq and _norm(b) == _norm(uniq[-1]):
+            continue
+        lines = []
+        for ln in b.split("\n"):
+            n = _norm(ln)
+            if n and lines and n == _norm(lines[-1]):
+                continue
+            lines.append(ln)
+        uniq.append("\n".join(lines))
+    return "\n\n".join(uniq)
+
 def judge_agent(state: CompetitionState) -> CompetitionState:
     """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
     _report_stage("judging")
@@ -2335,7 +2383,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 )}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["judge_feedback"] = response.content
+    state["judge_feedback"] = _dedup_text(response.content)
 
     import re
     def _pick(label):
@@ -2596,7 +2644,7 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 )}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["proposal_analysis"] = response.content
+    state["proposal_analysis"] = _dedup_text(response.content)
     print("申报书快速诊断 Agent：完成")
     return {"proposal_analysis": state["proposal_analysis"]}
 
@@ -2780,3 +2828,5 @@ if __name__ == "__main__":
     print(f"\n最终得分：{result['score']}/100")
     print(f"修改次数：{result['revision_count']}")
     print("=" * 60)
+
+
