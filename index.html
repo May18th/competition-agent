@@ -13,10 +13,11 @@
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
     <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 13000 字级完整方案书，支持双盲赛事自动脱敏。">
-    <meta property="og:image" content="https://kcwx.online/static/og-image.png">
+    <!-- 旧域名国内多数网络打不开，微信/QQ 分享卡片图片一直加载失败；统一切现域名 -->
+    <meta property="og:image" content="https://kechuang2026.cn/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:url" content="https://kcwx.online/">
+    <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
@@ -648,8 +649,11 @@
                 <div class="score-label">AI 模拟自评（文档质量）/ 100<span style="display:block; font-size: 11.5px; color: var(--text-mute); font-weight: 400; margin-top: 2px;">本页唯一评分</span></div>
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
                 <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
+                <!-- 用户拍板必做（第七十一/七十二轮）：同一项目两次生成 74 vs 86，队友以为出 bug。
+                     波动说明必须常驻在评分大数字下方，不得省略 -->
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
-                    这个分数是模拟评委给的，帮你定位薄弱部分，<b>仅作评审参考，不写进正式材料</b>。
+                    这个分数是模拟评委给的，帮你定位薄弱部分，<b>仅作评审参考，不写进正式材料</b>。<br>
+                    同一项目重复生成，分数随内容浮动（约 ±10 分），<b>非 Bug</b>；多次生成取最高分版本提交即可。
                 </div>
             </div>
             <!-- 创意评分五维雷达图：只看创意本身的强弱（创新/可行/市场/壁垒/社会），与「评分依据」的文档质量五维是两回事 -->
@@ -752,32 +756,32 @@
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg> 竞品分析</h3>
                     <div class="content-block" id="competitorAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-coin"/></svg> 商业模式</h3>
                     <div class="content-block" id="businessModel"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 风险分析</h3>
                     <div class="content-block" id="riskAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-wrench"/></svg> 技术方案</h3>
                     <div class="content-block" id="techSolution"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 实施计划</h3>
                     <div class="content-block" id="implementationPlan"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
             </div>
 
@@ -936,7 +940,7 @@
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
                     <div class="content-block" id="projectSummary"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
@@ -946,18 +950,18 @@
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="proposalText"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                     <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
                     <div class="content-block" id="proposalAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
                     <div class="content-block" id="judgeFeedback"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> AI 辅助生成 · 提交前请核对关键数据与署名</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
                     <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多专家模拟评审</h3>
@@ -2221,7 +2225,7 @@ window.addEventListener('resize', function () {
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>
-    <div style="opacity: .75;">AI 辅助生成 · 提交前请核对关键数据与署名</div>
+    <div style="opacity: .75;">基于官方评审规则 · AI 多智能体辅助撰写 · 最终内容以你的真实项目与署名为准</div>
     <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
          避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
     <details style="max-width: 660px; margin: 6px auto 0;">
