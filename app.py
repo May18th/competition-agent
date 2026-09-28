@@ -3893,7 +3893,16 @@ def ppt_themes():
 def export_pptx():
     """导出自动生成的路演 PPT（.pptx）"""
     data = request.get_json(force=True, silent=True) or {}
-    deck = data.get('deck')
+    # 与 export_zip 一致：绑定当前记录，避免「下载路演PPT」拿到别的历史记录的 deck。
+    _rec = _fetch_record_from_source(data)
+    if _rec:
+        _rec = dict(_rec)
+        if data.get("theme"):
+            _rec["theme"] = data["theme"]
+        if data.get("variant"):
+            _rec["variant"] = data["variant"]
+        data = _rec
+    deck = data.get('deck') or data.get('rich_deck')
     if not deck or not deck.get('slides'):
         return jsonify({"error": "没有可导出的PPT数据，请先用深度版生成"}), 400
     try:
@@ -3912,12 +3921,12 @@ def export_pptx():
         deck.setdefault('theme', data.get('theme') or 'tech')
         deck.setdefault('variant', data.get('variant') or 'v1')
         # 解析表格 id 引用（"t1" -> 实体表格）
-        tmap = {t.get('id'): t for t in (data.get('tables') or [])}
+        tmap = {t.get('id'): t for t in (data.get('tables') or data.get('rich_tables') or [])}
         for s in deck.get('slides', []):
             if isinstance(s, dict) and isinstance(s.get('table'), str):
                 s['table'] = tmap.get(s['table'])
         chart_paths = {}
-        for c in (data.get('charts') or []):
+        for c in (data.get('charts') or data.get('rich_charts') or []):
             img = os.path.join('generated', os.path.basename(c.get('url', '')))
             if os.path.exists(img):
                 chart_paths[c.get('id')] = img

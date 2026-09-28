@@ -52,3 +52,8 @@
 
 - 症状：路演 PPT 页面正文混入「用表格呈现三条收入线…」这类写作指令；封面标题直接取整句创意 `idea[:30]`，评委翻 PPT 一眼看到 AI 痕迹。
 - 修复（`rich_pipeline.py`）：①新增 `_looks_like_prompt_leak` / `_clean_deck_slides`，deck 归一化后剔除 title/kicker/note/subtitle/bullets/metrics 里的指令句（剥 `**关键词**：` 前缀再判前缀动词）；②新增 `_project_name`，封面标题从创意里提炼简短项目名（「项目名：描述」取冒号前、短创意直接用、长创意退 one_liner），不再把整句创意当标题。实测「用表格呈现三条收入线」被判指令剔除、「**痛点**：排队 20 分钟」保留。
+
+## 8. 「下载路演PPT」也绑定当前记录（第十四轮四入口补齐）
+
+- 之前 `export_zip` 已回源，但 `export_pptx` 还直接读前端 POST 的 `deck`，历史打开后可能拿到别的记录的 PPT。
+- 修复（`app.py`）：`export_pptx` 同样先 `_fetch_record_from_source` 回源，`deck` 取记录里的 `rich_deck`，`tables/charts` 取 `rich_tables/rich_charts`（兼容前端旧字段 `deck/tables/charts`），前端仅覆盖 theme/variant。至此 Word/PDF（proposal 回源）、PPT（rich_deck 回源）、打包（全量回源）四入口内容都绑定当前记录。
