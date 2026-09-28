@@ -1889,6 +1889,40 @@ def _write_proposal_half(common, chapter_titles, continue_mode):
     return _stream_llm_guarded(common + "\n\n" + tail, field)
 
 
+def _fill_missing_chapters(state, proposal, chapters):
+    """检测并补齐 LLM 漏写的章节（如深度版漏掉最后一章「商业模式」）。
+
+    prompt 里强调过「每个标题必写」仍可能漏，这里做确定性兜底：逐章核对核心词，
+    漏了就一次性补写，保证章节数与官方结构对齐。失败不阻断。
+    """
+    if not proposal or not chapters:
+        return proposal
+    missing = []
+    for c in chapters:
+        core = re.sub(r'^[一二三四五六七八九十]+、', '', str(c).strip()).strip()
+        if core and core not in proposal:
+            missing.append(str(c).strip())
+    if not missing:
+        return proposal
+    miss_block = "\n".join("## " + c for c in missing)
+    prompt = (
+        "下面这份申报书漏了这几个章节，请补齐。\n\n"
+        "缺失章节（标题原样输出，每章都要有实质内容：数据 + 场景 + 技术名词 + 验证证据，"
+        "不允许一句话带过）：\n" + miss_block + "\n\n"
+        "申报书现有结尾（供衔接上下文，不要重复已有章节）：\n" + proposal[-2500:] + "\n\n"
+        "直接输出上面列出的缺失章节正文（从第一个「## 」标题开始），不要任何开场白。"
+    )
+    try:
+        extra = (llm.invoke([HumanMessage(content=prompt)]).content or '').strip()
+        if extra and len(extra) > 40:
+            proposal = proposal.rstrip() + "\n\n" + extra
+            set_partial_field("proposal", proposal)
+            print(f"[fill_missing] 已补写漏章 {len(missing)} 个：{missing}")
+    except Exception as e:
+        print(f"[fill_missing] 补写漏章失败：{e}")
+    return proposal
+
+
 def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     """✍️ 深度版申报书 Agent：三段链式——构思纲要 → 正文写作 → 自检修补"""
     _report_stage("writing")
@@ -1990,6 +2024,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
         set_partial_field("proposal", proposal)
     else:
         proposal = _write_proposal_half(common, chapters, continue_mode=False)
+
+    # Step 2.5 · 补写漏章：LLM 偶尔漏掉最后一章（如「商业模式」），这里确定性补齐
+    proposal = _fill_missing_chapters(state, proposal, chapters)
 
     # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
     proposal, patch_count = _selfcheck_proposal(state, proposal)
