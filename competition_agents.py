@@ -741,7 +741,7 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
    ②「行业公开数据」——写明机构+年份（只能来自知识库/官方资料，禁止编造）；
    ③「测算值」——你按合理假设推算的，写成「约 X（测算值，基于 XX 假设）」；
    ④「设计目标值」——产品要达到但还没实测的指标，写成「X（设计目标值，待实测）」。
-   严禁出现「裸数字」：凡是拿不准来源的估算数字，必须紧跟「测算值/设计目标值」标注，不能只写一个数字让评委误以为是实测。
+   标注要克制、不要满屏堆砌：估算数字统一用「（测算值）」这一种，不要在正文里混用「示例值/设计目标值/待实测」；全文只在首次出现估算数字时注明一次「示例数据，提交前请替换」，其余估算直接写「约 X（测算值）」，把「设计目标值」这类细分标注收敛掉。严禁「裸数字」（拿不准来源又不标注）。
 10. 数据替换清单：正文末尾单独加一节「## 待替换数据清单」，用列表列出所有「测算值」和「设计目标值」对应的数字与所在章节，提示用户提交前替换成真实实测数据（这是清单、不是占位符，不影响正文完整性）。例如：「- 单台柜子月收入 1785 元（商业模式 · 测算值）→ 替换为真实试点收入」。
 11. 禁止编造已发生的事实（硬性）：严禁出现「已合作/已沟通/已签约/已落地/已完成试点/已达成/已上线/已获得」这类断言「已经发生」的表述，除非用户创意/草稿里明确写了；用户没给的一律写「计划/拟/预计/拟于」这类未来时表述。例：「合作社区已经初步沟通」应写「计划与 2 个社区初步沟通」；「试点已排到第 6 个月」应写「试点拟安排在第 6 个月」。
 12. 市场测算口径（硬性）：做市场/用户规模测算时，严禁把「独居」「空巢」「独立居住」三个概念混用——「独立居住」含与配偶同住，远大于「一人独居」；每个测算数字必须写明统计口径、数据来源、年份（如「60 岁以上人口 2.97 亿，国家统计局 2024」），拿不准口径就写「（口径需核实）」，不得直接拿「空巢/独立居住占比」去套「独居老人规模」。
@@ -1889,7 +1889,7 @@ def _write_proposal_half(common, chapter_titles, continue_mode):
     return _stream_llm_guarded(common + "\n\n" + tail, field)
 
 
-def _fill_missing_chapters(state, proposal, chapters):
+def _fill_missing_chapters(proposal, chapters):
     """检测并补齐 LLM 漏写的章节（如深度版漏掉最后一章「商业模式」）。
 
     prompt 里强调过「每个标题必写」仍可能漏，这里做确定性兜底：逐章核对核心词，
@@ -2026,7 +2026,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
         proposal = _write_proposal_half(common, chapters, continue_mode=False)
 
     # Step 2.5 · 补写漏章：LLM 偶尔漏掉最后一章（如「商业模式」），这里确定性补齐
-    proposal = _fill_missing_chapters(state, proposal, chapters)
+    proposal = _fill_missing_chapters(proposal, chapters)
 
     # Step 3 · 自检修补（轻量：只输出补丁并本地 apply，不重输出全文）
     proposal, patch_count = _selfcheck_proposal(state, proposal)
@@ -2541,8 +2541,10 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 
 def should_iterate(state: CompetitionState):
     # 注意：writer 已经让 revision_count 从 0 变 1（初稿算第 1 版）。
-    # 这里 >= 2 等于「最多修订 1 轮」（提速用；若答辩发现低分稿质量不够，改回 >= 3 恢复 2 轮）。
-    if state["approved"] or (state.get("revision_count") or 0) >= 2:
+    # 低分稿（<65）允许补写 2 轮，其余 1 轮（提速用）。
+    _low = (state.get("score") or 0) < 65
+    _max_rev = 3 if _low else 2
+    if state["approved"] or (state.get("revision_count") or 0) >= _max_rev:
         return ["defense", "ppt"]
     return ["revise"]
 

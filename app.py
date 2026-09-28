@@ -2489,6 +2489,19 @@ def _run_generation(data):
             data.get("competition_name", ""))
     except Exception:
         completeness = {"ok": True, "missing": [], "detail": {}, "chars": 0}
+    # 补写漏章（最终兜底）：graph 里 writer 补过、但 revision 节点可能又覆盖掉，
+    # 这里在最终交付前再补一次，保证章节数与官方结构对齐，revision 无法再回滚。
+    try:
+        if completeness.get("missing"):
+            from competition_agents import _official_chapters, _fill_missing_chapters
+            chapters = _official_chapters({"competition_name": data.get("competition_name", "")})
+            if chapters:
+                result["proposal"] = _fill_missing_chapters(result.get("proposal", ""), chapters)
+                completeness = check_proposal_completeness(
+                    result.get("proposal", ""), data.get("mode", "fast"),
+                    data.get("competition_name", ""))
+    except Exception as _e:
+        print(f"[fill_missing] 最终补写漏章失败：{_e}")
     # 正文字数（去掉 Markdown 标记的有效字数，用户一眼看到写了多少字）
     try:
         from competition_agents import _cjk_len
