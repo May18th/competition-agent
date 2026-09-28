@@ -1492,7 +1492,8 @@ def view_share(token):
 def get_history_detail(history_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT result_data, rating FROM history WHERE id = ? AND user_id = ?",
+    # 与 load_history 保持一致：无名存量记录（user_id=''）视为公共可见，否则列表能看、点开却「记录不存在」。
+    c.execute("SELECT result_data, rating FROM history WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')",
               (history_id, _current_uid()))
     row = c.fetchone()
     conn.close()
@@ -1517,7 +1518,7 @@ def rate_history(history_id):
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
+    c.execute("UPDATE history SET rating = ? WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')",
               (rating, history_id, _current_uid()))
     conn.commit()
     updated = c.rowcount
@@ -2138,7 +2139,7 @@ def create_issue(kind, source, content):
 def delete_history(history_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
+    c.execute("DELETE FROM history WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')", (history_id, _current_uid()))
     conn.commit()
     deleted = c.rowcount
     conn.close()

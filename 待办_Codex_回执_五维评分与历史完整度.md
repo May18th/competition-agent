@@ -24,3 +24,9 @@
 
 - 评分波动（86/62/72/86）：要不要固定 seed 或 3 次采样取均值，属质量取舍，赛前建议先不动。
 - 全站计数口径（后台总览/health/历史面板三处不一致）：涉及 uid 过滤与 DB 语义，需要明确「公共可见 vs 当前用户」口径后再统一。
+
+## 3. 历史详情/评分/删除与列表 uid 口径不一致（第二轮补充）
+
+- `load_history`/`count_history` 对无名存量记录（`user_id=''`）做了「公共可见」兼容：`WHERE (user_id = ? OR IFNULL(user_id,'') = '')`。
+- 但 `get_history_detail` / `rate_history` / `delete_history` 还是老的 `AND user_id = ?`，导致**列表能看见、点开却「记录不存在」**（评分/删除同理）。
+- 修复：三处查询统一成与列表一致的 `(user_id = ? OR IFNULL(user_id, '') = '')`。
