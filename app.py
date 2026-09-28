@@ -1870,7 +1870,16 @@ def get_history_detail(history_id):
         data = json.loads(row[0])
     except Exception:
         data = {}
-    return jsonify({"success": True, "data": data, "rating": row[1] or 0})
+    # 富媒体随历史恢复（第一百一十八轮）：前端从历史打开结果页要能渲染图表/表格/PPT，
+    # 这里把 rich_deck/rich_charts/rich_tables 显式提到顶层，前端不用再从 data 里翻。
+    return jsonify({
+        "success": True,
+        "data": data,
+        "rating": row[1] or 0,
+        "rich_deck": data.get("rich_deck"),
+        "rich_charts": data.get("rich_charts") or [],
+        "rich_tables": data.get("rich_tables") or [],
+    })
 
 
 @app.route('/api/history/<int:history_id>/rate', methods=['POST'])
