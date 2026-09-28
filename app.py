@@ -1572,6 +1572,16 @@ def export_pdf():
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
+    # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
+    try:
+        from quality_gate import check_pdf
+        _ok, _issues = check_pdf(filepath)
+        if not _ok:
+            _safe_unlink(filepath)
+            return jsonify({"success": False, "code": "export_quality_fail",
+                            "error": "PDF 质量未达标：" + "；".join(_issues[:3])}), 422
+    except Exception:
+        pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
     return send_file(filepath, as_attachment=True,
@@ -4495,6 +4505,16 @@ def export_pptx():
         os.makedirs('generated', exist_ok=True)
         out = os.path.join('generated', '_deck_export.pptx')
         build_deck(deck, out, chart_paths)
+        # 导出终检（第一百二十五轮）：PPT 页数/体积/生成指令残留
+        try:
+            from quality_gate import check_pptx
+            _ok, _issues = check_pptx(out)
+            if not _ok:
+                _safe_unlink(out)
+                return jsonify({"success": False, "code": "export_quality_fail",
+                                "error": "PPT 质量未达标：" + "；".join(_issues[:3])}), 422
+        except Exception:
+            pass
         project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
         competition = deck.get('competition') or data.get('competition_name') or ''
         return send_file(out, as_attachment=True,

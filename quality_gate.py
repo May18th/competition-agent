@@ -49,6 +49,75 @@ def check_docx(docx_path, expect_type="report"):
     return (not issues), issues
 
 
+# ============ L2 扩展：pptx / pdf / zip（第一百二十五轮） ============
+def check_pptx(path):
+    issues = []
+    try:
+        import os as _os
+        sz = _os.path.getsize(path)
+        if sz > 2 * 1024 * 1024:
+            issues.append(f"PPT 体积超限（{sz // 1024}KB > 2MB）")
+        from pptx import Presentation
+        prs = Presentation(path)
+        n = len(prs.slides)
+        if n < 8:
+            issues.append(f"PPT 页数过少（{n} < 8）")
+        _prompt_marks = ("用表格呈现", "如下图所示", "请生成", "请用")
+        _hit = set()
+        for s in prs.slides:
+            for sh in s.shapes:
+                if sh.has_text_frame and sh.text_frame.text:
+                    for m in _prompt_marks:
+                        if m in sh.text_frame.text:
+                            _hit.add(m)
+        if _hit:
+            issues.append("PPT 残留生成指令：" + "、".join(sorted(_hit)[:3]))
+    except Exception as e:
+        issues.append(f"pptx 检查失败：{e}")
+    return (not issues), issues
+
+
+def check_pdf(path):
+    issues = []
+    try:
+        import os as _os
+        sz = _os.path.getsize(path)
+        if sz > 3 * 1024 * 1024:
+            issues.append(f"PDF 体积超限（{sz // 1024}KB > 3MB）")
+        from pypdf import PdfReader
+        r = PdfReader(path)
+        if len(r.pages) < 1:
+            issues.append("PDF 无页面")
+        _txt = ""
+        for p in r.pages[:3]:
+            try:
+                _txt += (p.extract_text() or "")
+            except Exception:
+                pass
+        if _txt and _txt.count("?") > max(3, len(_txt) * 0.3):
+            issues.append("PDF 中文乱码")
+    except Exception as e:
+        issues.append(f"pdf 检查失败：{e}")
+    return (not issues), issues
+
+
+def check_zip(path, expect_count=12):
+    issues = []
+    try:
+        import os as _os
+        import zipfile as _zf
+        sz = _os.path.getsize(path)
+        if sz > 10 * 1024 * 1024:
+            issues.append(f"zip 体积超限（{sz // 1024}KB > 10MB）")
+        with _zf.ZipFile(path) as z:
+            names = z.namelist()
+            if len(names) < expect_count:
+                issues.append(f"zip 文件数不足（{len(names)} < {expect_count}）")
+    except Exception as e:
+        issues.append(f"zip 检查失败：{e}")
+    return (not issues), issues
+
+
 # ============ L3 内容质量 ============
 _CLICHE = ("进一步提升", "不断完善", "积极探索", "高度重视", "显著提高",
            "赋能", "闭环", "抓手", "扎实推进", "深入贯彻")
