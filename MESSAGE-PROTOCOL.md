@@ -2062,3 +2062,28 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**（add 指定文件，不带 -A、不碰 index.html/static/*）：
 `git add app.py competition_agents.py .gitignore 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 182历史隔离 + 188-190漏洞库接口 + M1评分收敛 + M9赛道实测 + M11健康收敛 + H8口径" && git push origin main`
+
+
+---
+
+## Codex 回执 · 第一百九十四/一百九十五轮【STOP ALL 后台鉴权漏洞】核心已修（2026-09-29）
+
+按 194 轮「放下一切全力修后台裸奔」要求，本轮完成核心安全修复，全部实测：
+
+- **C1/H14 后台裸奔 ✅（核心）**：根因=`_require_admin()` 在 ADMIN_TOKEN 为空时 `return None`（未配置即开放）+ `_admin_guard` 只保护 distill/kb 写操作。已改为：① `_require_admin()` 未配置时【fail-closed 返 401】；② `_admin_guard` 覆盖全部管理/内部路由（/admin /admin/panel /monitor /admin/report /api/admin/* /api/feedback(GET)/export/priority /api/training/stats /api/logs* /api/lessons /api/failure/patterns /api/kb/* /api/distill* /api/score/diagnosis /api/competition/gaps）。实测：上述 15 条无 token 全部 401，用户面接口（health/stats/notice/competition/index/demo）仍 200。
+- **C6 URL token 泄露 ✅**：`_require_admin()` 移除 `?token=` 查询参数支持，只认登录会话 cookie 或 X-Admin-Token 头。实测 URL 带 token 访问 → 401。
+- **登录会话（194 #2 / 195 层1+2）✅**：新增 `POST /api/admin/login`（校验 ADMIN_TOKEN，连续 5 次失败锁 15 分钟）→ 成功写 HttpOnly+SameSite=Strict 签名 cookie（8 小时有效）。实测：错口令 401、对口令 200+set-cookie、带会话 cookie 访问 admin 200、无 cookie 401。
+- **C3 upload_file ✅**：加文件大小白名单（10MB，超限 413）+ 上传限流（同 uid/IP 每分钟 10 次）。filename 已有 secure_filename 消毒（无路径穿越）。
+- **审计日志（195 层6）✅**：登录成功写 `docs/后台审计.md`（时间+IP）。
+- **C2/C4（export_all/history 全量泄露）✅ 已由上一轮 H6 隔离修复覆盖**：export_all 走 `load_history(uid=_current_uid())`，H6 去掉 user_id='' 公共可见后，无 cookie 访客拿到空列表，不再 208KB 全量。
+
+**剩余（如实报，留后续/分工）**：
+- M16 生成/restyle/rewrite/proofread 接口 IP 限流（防匿名烧 LLM 额度）——待补
+- M18 任务归属校验（/api/status/stream/retry/cancel 校验 task 属主）
+- 195 层4（ADMIN_TOKEN 用 openssl rand -hex 32 重新生成并废弃 kechuang2026，属部署动作）、层7（敏感操作二次确认，前端）、层8（CSRF token，待补）
+- WorkBuddy：后台登录页（替换 URL token）+ 移除 URLSearchParams token 逻辑 + M15 XSS 审计
+
+**部署必须**：服务器设置 `ADMIN_TOKEN` 环境变量（强随机 `openssl rand -hex 32`）并重启，否则后台按 fail-closed 全 401（这是预期，不是 bug）。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·194 STOP ALL): 后台裸奔修复(require_admin fail-closed覆盖全部管理路由) + 登录会话cookie+失败锁定 + C3上传大小/限流 + C6去URL token" && git push origin main`

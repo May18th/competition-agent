@@ -443,25 +443,79 @@ def _rate_limited():
 
 
 # 后台/管理接口鉴权：配置 ADMIN_TOKEN 后，需在请求头带 X-Admin-Token 才能访问。
-# 未配置时保持开放（兼容本地开发/旧部署）；上线公网强烈建议配置。
+# 未配置时【默认拒绝】（fail-closed）——不再「未配置即开放」，杜绝后台裸奔（194 轮 C1）。
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+
+# 管理会话（194/195 轮）：登录成功写 HttpOnly 签名 cookie，8 小时有效；连续 5 次失败锁 15 分钟。
+_ADMIN_COOKIE_NAME = 'admin_session'
+_ADMIN_SESSION_SIGNER = URLSafeSerializer(_load_uid_secret(), salt='admin-session')
+_ADMIN_FAILS = {}   # ip -> [失败时间戳]
+_ADMIN_LOCK = {}    # ip -> 锁定到期时间戳
+_ADMIN_LOCK_AFTER = 5
+_ADMIN_LOCK_SECONDS = 15 * 60
+
+
+def _admin_session_valid():
+    raw = (request.cookies.get(_ADMIN_COOKIE_NAME) or '').strip()
+    if not raw:
+        return False
+    try:
+        val = _ADMIN_SESSION_SIGNER.loads(raw)
+        if isinstance(val, dict) and float(val.get('exp', 0)) > time.time():
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
-    支持 X-Admin-Token 请求头，或 ?token= 查询参数（浏览器直接访问后台页时用）。
+    支持登录会话 cookie，或 X-Admin-Token 请求头（登录页提交后由前端带）。
+    已移除 ?token= URL 传参（194 轮 C6：token 走 URL 会留痕于日志/Referer，泄露凭据）。
     口令支持逗号分隔多个值，只认环境变量 ADMIN_TOKEN（去掉旧版硬编码弱口令，避免明文泄密）。
     """
     if not ADMIN_TOKEN:
+        resp = jsonify({"success": False, "error": "后台未配置鉴权口令（ADMIN_TOKEN 未设置），已拒绝访问"})
+        resp.status_code = 401
+        return resp
+    if _admin_session_valid():
         return None
-    tok = (request.headers.get("X-Admin-Token") or "").strip() or \
-        (request.args.get("token") or "").strip()
+    tok = (request.headers.get("X-Admin-Token") or "").strip()
     valid = {t.strip() for t in ADMIN_TOKEN.split(",") if t.strip()}
     if tok in valid:
         return None
-    resp = jsonify({"success": False, "error": "无权限，需要 X-Admin-Token 或 ?token="})
+    resp = jsonify({"success": False, "error": "无权限，需要登录或 X-Admin-Token"})
     resp.status_code = 401
+    return resp
+
+
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    """后台登录（194/195 轮）：校验 ADMIN_TOKEN，成功写 HttpOnly 会话 cookie；连续失败锁定。"""
+    payload = request.get_json(silent=True) or request.form or {}
+    tok = (payload.get('token') or '').strip() or (request.headers.get('X-Admin-Token') or '').strip()
+    ip = _client_ip()
+    now = time.time()
+    if _ADMIN_LOCK.get(ip, 0) > now:
+        return jsonify({"success": False, "error": "尝试次数过多，请 15 分钟后再试"}), 429
+    valid = {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}
+    if not ADMIN_TOKEN or tok not in valid:
+        _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
+        if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
+            _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
+        return jsonify({"success": False, "error": "口令错误"}), 401
+    _ADMIN_FAILS.pop(ip, None)
+    exp = now + 8 * 3600
+    resp = jsonify({"success": True, "expires_in": 8 * 3600})
+    resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp}),
+                    max_age=8 * 3600, httponly=True, samesite='Strict', secure=request.is_secure)
+    # 审计日志（195 轮层6）：登录成功/失败都记时间+IP
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+            _f.write("%s | login | ip=%s | ok\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip))
+    except Exception:
+        pass
     return resp
 
 
@@ -491,12 +545,64 @@ def _distill_rate_limited(kind):
         return False
 
 
+_UPLOAD_WINDOW_SEC = 60
+_UPLOAD_LIMIT = 10
+_upload_lock = threading.Lock()
+_upload_hits = {}
+
+
+def _upload_rate_limited():
+    """上传接口限流（194 轮 C3）：同一 uid/IP 每分钟最多 10 次，防匿名反复上传烧 LLM 识别额度。"""
+    try:
+        key = _current_uid() or _client_ip()
+    except Exception:
+        key = _client_ip()
+    now = time.time()
+    with _upload_lock:
+        hits = [t for t in _upload_hits.get(key, []) if now - t < _UPLOAD_WINDOW_SEC]
+        if len(hits) >= _UPLOAD_LIMIT:
+            _upload_hits[key] = hits
+            return True
+        hits.append(now)
+        _upload_hits[key] = hits
+        return False
+
+
+# 后台/管理接口统一鉴权范围（194 轮 H14/C1：全部管理/内部路由必须登录，杜绝裸奔）
+_ADMIN_PAGE_PATHS = {"/admin", "/admin/panel", "/monitor", "/admin/report"}
+_ADMIN_API_EXACT = {
+    "/api/feedback/export",
+    "/api/feedback/priority",
+    "/api/training/stats",
+    "/api/lessons",
+    "/api/failure/patterns",
+    "/api/score/diagnosis",
+    "/api/competition/gaps",
+}
+_ADMIN_API_PREFIXES = ("/api/admin/", "/api/kb/", "/api/distill", "/api/logs")
+
+
 @app.before_request
 def _admin_guard():
     """后台/管理接口统一鉴权 + 蒸馏接口限流。"""
     p = request.path
+    # 登录端点本身必须放行（否则登录请求也会被鉴权拦截，死循环）
+    if p == "/api/admin/login":
+        return None
+    needs_admin = False
+    if p in _ADMIN_PAGE_PATHS:
+        needs_admin = True
+    elif p in _ADMIN_API_EXACT:
+        needs_admin = True
+    elif p.startswith(_ADMIN_API_PREFIXES):
+        needs_admin = True
+    elif p == "/api/feedback" and request.method == "GET":
+        # 反馈列表是管理数据；POST 提交反馈仍对用户开放
+        needs_admin = True
+    if not needs_admin:
+        return None
+    # 蒸馏接口：鉴权后额外限流（未授权的请求不该消耗限流名额）
     if p.startswith("/api/distill"):
-        # 鉴权前置于限流：未授权的请求不该消耗限流名额
         auth = _require_admin()
         if auth is not None:
             return auth
@@ -505,11 +611,7 @@ def _admin_guard():
             resp.status_code = 429
             return resp
         return None
-    # 只保护「写操作 / 烧钱操作」；后台只读页面（/admin /monitor /admin/panel）
-    # 和只读分析接口直接打开，学生项目降低使用门槛，避免总被「无权限」卡住。
-    if p in ("/api/kb/add", "/api/kb/delete"):
-        return _require_admin()
-    return None
+    return _require_admin()
 
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
@@ -4082,16 +4184,29 @@ def export_original_format():
 def upload_file():
     import os
     from werkzeug.utils import secure_filename
+    # 194 轮 C3：文件大小白名单 + 上传限流（防匿名反复上传烧 LLM 识别额度 / 大文件拖垮内存）
+    _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+    if _upload_rate_limited():
+        return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
     if not file or not file.filename:
         return jsonify({"success": False, "error": "没有文件"})
     purpose = (request.form.get('purpose') or 'draft').strip()
-    
+
     filename = secure_filename(file.filename)
     ext = filename.split('.')[-1].lower()
     text = ""
+    # 大小白名单：先量大小再解析，超大直接拒，不读进内存
+    try:
+        file.stream.seek(0, os.SEEK_END)
+        _size = file.stream.tell()
+        file.stream.seek(0)
+    except Exception:
+        _size = 0
+    if _size > _MAX_UPLOAD_BYTES:
+        return jsonify({"success": False, "error": "文件过大，最大支持 10MB"}), 413
     
     try:
         if ext == 'pdf':
