@@ -1101,6 +1101,11 @@ body.light .hero h1 { color: var(--text); }
 }
 body.light .card { border-color: var(--line); }
 
+/* 全局点击感：任何可点元素按下即有物理反馈（轻缩放），松手弹回。
+    只作用于有 cursor:pointer 的元素，纯文本/输入框不受影响；优先级低于各按钮自己的 :active 规则 */
+button:not(:disabled), .tab, .wb-anchor-btn, [onclick] { transition: transform .08s ease; }
+button:not(:disabled):active, .tab:active, .wb-anchor-btn:active, [onclick]:active { transform: scale(.97); }
+
 /* 4) 主按钮：悬停微放大（原来只有上浮）+ 按压下沉（原来缺 :active） */
 .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px) scale(1.012);
@@ -6652,7 +6657,7 @@ body.light .btn-primary:hover:not(:disabled) {
         var _streamAccum = {};        // 字段 -> 已累积全文（配合后端 cursor 增量，只拉新增后缀）
         var _streamShown = false;     // 结果区是否已因流式内容提前展开
         var _streamTotal = 0;         // 已产出总字数（给进度条显示，裸 length 口径）
-        var _streamCjk = 0;           // 已产出有效字数（剥 Markdown 符号，口径对齐后端 _cjk_len）
+        var _streamCjk = 0;           // 徽章专用：只累计 proposal 正文有效字数（剥 Markdown 符号，口径对齐后端 _cjk_len）。speech/deck 等其他字段不计入，避免「已生成 4.7 万字」和正文 1.2 万字对不上
         // 与后端 competition_agents._cjk_len 同一口径：# * ` - | > ( ) （ ） [ ] 和空白都不算字，
         // 否则进度条上写「已生成 3000 字」，实际正文只有 2400 字，用户按字数估算篇幅会被带偏
         function wbCjkLen(text) {
@@ -6769,7 +6774,9 @@ body.light .btn-primary:hover:not(:disabled) {
                 if (txt.length <= prev) return;      // 没有新增就别重渲染，省掉闪烁
                 _streamLen[key] = txt.length;
                 fresh += txt.length - prev;
-                _streamCjk += wbCjkLen(txt.slice(prev));   // 只算本次新增片段的有效字数
+                if (key === 'proposal') {
+                    _streamCjk += wbCjkLen(txt.slice(prev));   // 只算正文本次新增片段的有效字数
+                }
                 twSet(key, txt);          // 交给打字机逐字揭示，不再整块覆盖
                 el.classList.add('streaming');
                 // 该区块所属 Tab 打上脉冲点（提示用户在别的页签有内容流入）
