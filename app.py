@@ -4545,6 +4545,69 @@ def api_stats():
     })
 
 
+@app.route('/api/training/archive', methods=['POST'])
+def training_archive():
+    """第一百七十四轮：验证即沉淀——用户标记「可入库」且质检通过（评分≥85）的记录，脱敏后回流入范文库 kb_samples。
+    元数据：来源=AI生成·经人工确认、赛事、评分、脱敏标记。用户可关闭（consent=False 拒绝入库）。"""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("consent", True):
+        return jsonify({"success": False, "error": "用户未授权内容入库（已在设置中关闭）"}), 403
+    hid = data.get("history_id")
+    if not hid:
+        return jsonify({"success": False, "error": "缺少 history_id"}), 400
+    try:
+        import json as _json
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        row = c.execute(
+            "SELECT competition_name, idea, result_data, created_time FROM history WHERE id=?",
+            (int(hid),)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"success": False, "error": "记录不存在"}), 404
+        rd = _json.loads(row["result_data"] or "{}")
+        proposal = (rd.get("proposal") or "").strip()
+        if not proposal:
+            return jsonify({"success": False, "error": "该记录无正文，无法入库"}), 400
+        try:
+            score = int(float(rd.get("score") or 0))
+        except Exception:
+            score = 0
+        if score < 85:
+            return jsonify({"success": False, "code": "score_low", "score": score,
+                            "error": f"评分 {score} < 85，未达到入库门槛"}), 422
+        # 脱敏：姓名/院校/电话/邮箱/学号/组织名 → 占位符
+        try:
+            from training_store import desensitize_text
+            proposal = desensitize_text(proposal)
+        except Exception as _e:
+            print(f"[training] 脱敏失败（改用原文入库）：{_e}")
+        comp = (row["competition_name"] or "").strip()
+        import kb_samples
+        sid, is_new = kb_samples.add_sample(
+            proposal,
+            tags=[comp, "AI生成", "经人工确认"],
+            source="AI生成·经人工确认",
+            score=score,
+            type="申报书",
+            summary=f"赛事：{comp}｜评分：{score}｜生成日期：{row['created_time'] or ''}｜已脱敏",
+        )
+        return jsonify({"success": True, "id": sid, "is_new": is_new, "score": score})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/training/stats')
+def training_stats():
+    """第一百七十六轮：训练库统计（赛事×类型×份数），供训练进度可视化。"""
+    try:
+        from training_store import list_training_stats
+        return jsonify({"success": True, **list_training_stats()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/admin/report')
 def admin_report():
     """测试数据报告：一键出统计表 + 图，答辩直接打印 / 截图贴 PPT。"""
