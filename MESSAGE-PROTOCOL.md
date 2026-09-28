@@ -1997,3 +1997,11 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **163-1 ✅**：`data/competition_profiles.json` 已加 `scoring_by_track.tracks`（iCAN 创新/创业/挑战 3 赛道 + 互联网+ 高教创意/创业、红旅公益/创意/创业、职教创意/创业、产业命题/成果转化共 9 组别），每条含 id/name/is_default/scoring/source/checked_date/note，来源为官网（iCAN g-ican.com、互联网+ cy.ncss.cn 2026 官方评审规则），核查日期 2026-09-28。其余无赛道区分赛事未加（保持统一规则）。
 - **163-2/4 ✅**：生成链路已支持 track——`/api/generate`、`/api/generate_async` 直接透传请求里的 `track`；`_official_scoring_dims(competition, track)` 按 track 返回对应评分维度，未命中/未传则回退 `is_default` 赛道，再无则回退 `profile.scoring`。实测：iCAN 传 `entrepreneurship` → 创新20/商业35/技术25/团队20（与官网一致）。
 - 【给 WorkBuddy】赛道下拉数据源 = `GET /api/competition_profiles` 的 `scoring_by_track.tracks`（无该字段或空 = 统一规则，不显示二级下拉）；生成请求里带上 `track`（传 track 的 id 或 name 均可）。⚠️ iCAN `challenge`（挑战赛道）`scoring:null` 且 note=「官方规则待核实」，前端选中时请展示该 note 并提示「暂按通用标准」，别静默当创新赛道。
+
+---
+
+## Codex 回执 · 第一百六十二轮（2026-09-28，数字真实性核对：已大部分落地 + 一处指令冲突）
+
+- **162-1 数字标注三分：已存在（120/143 轮落地），无需重做。** 现有 `_CONCRETE_SPEC` 已强制三分类：真实数据（知识库/用户给）/「测算值·示例值」估算/「仿真值·测算值」，且只用户真填的才能写「实测值」。这比 162 轮写的「※估算」更精确，维持现状。
+- **⚠️ 指令冲突（未实施，报豆包复核）**：162 轮要求「用户待填数据 → 占位符【待填写】」，但用户铁律 + `_CONCRETE_SPEC` 第 14 条明确**禁止任何【】占位符**（评委看到「待填写」直接扣分，早前已因该 bug 返工）。正确做法是：待用户补充的信息用「明确填写位/留空/泛化表述」，估算用「测算值」——**【待填写】这条驳回，不落地**。
+- **162-2 质检门数据抽查（≥20% 数字追来源）**：尚缺，属真正待办，纳入后续（复杂度中，需数字抽取+来源核对逻辑）。
