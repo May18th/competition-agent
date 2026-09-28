@@ -865,6 +865,10 @@ def init_db():
         ("status", "TEXT DEFAULT 'open'"),
         ("resolved_time", "TEXT"),
         ("competition_name", "TEXT"),
+        ("stage", "TEXT DEFAULT ''"),
+        ("error_code", "TEXT DEFAULT ''"),
+        ("error_msg", "TEXT DEFAULT ''"),
+        ("resolution", "TEXT DEFAULT ''"),
     ):
         try:
             c.execute("ALTER TABLE gen_failures ADD COLUMN %s %s" % (_col, _ddl))
@@ -883,7 +887,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   kind TEXT, source TEXT, content TEXT, created_time TEXT,
-                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '')''')
+                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '',
+                  count INTEGER DEFAULT 1)''')
+    # 203 轮：给老 issues 表补 count 列（同类反馈/失败去重计数）
+    try:
+        c.execute("ALTER TABLE issues ADD COLUMN count INTEGER DEFAULT 1")
+    except Exception:
+        pass
     # 临时分享链接表：token -> 历史记录，7 天过期，无需登录即可看结果
     c.execute('''CREATE TABLE IF NOT EXISTS shares
                  (token TEXT PRIMARY KEY,
@@ -1084,21 +1094,33 @@ def _update_history_data(hid, extra):
         print(f"[history] 回写完整度字段失败：{e}")
 
 
-def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name=""):
-    """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。"""
+def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name="",
+                       stage="", error_code="", error_msg=""):
+    """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。
+
+    203 轮：额外落 stage（生成阶段）/ error_code（超时/额度/LLM/其他）/ error_msg（脱敏信息），
+    让后台「最近失败 / 工单面板」能展示具体失败原因，不再只显示「请稍后重试」。
+    """
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status, competition_name) "
-                  "VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?)",
+        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status, competition_name, stage, error_code, error_msg) "
+                  "VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?, ?, ?, ?)",
                   (str(task_id or "")[:32], str(type or "generate")[:20],
                    str(path or "")[:200], str(error or "")[:200], str(detail or "")[:500],
-                   datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60]))
+                   datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60],
+                   str(stage or "")[:40], str(error_code or "")[:40], str(error_msg or "")[:300]))
         conn.commit()
+        new_id = c.lastrowid
         conn.close()
-        create_issue("backend", "error", error)
+        # 工单内容带上结构化原因（203 轮），便于后台展示
+        _issue_content = str(error or "")[:120]
+        if error_code:
+            _issue_content = "[%s] %s" % (error_code, _issue_content)
+        create_issue("backend", "error", _issue_content)
+        return new_id
     except Exception:
-        pass
+        return None
 
 
 def _safe_unlink(path):
@@ -1155,20 +1177,28 @@ def log_error_event(type, path, message, detail=""):
 
 
 def auto_resolve_failures():
-    """自动处理判定（第八十八轮）：对 open 失败做自愈判定，幂等（只处理 open）。
+    """自动处理判定（第八十八轮 + 203 轮）：对 open 失败做自愈/分类判定，幂等（只处理 open）。
 
-    满足任一即标 auto-recovered 并写 resolved_time：
-    ① 失败时间早于最近一次成功生成时间（说明之后又成功生成过，已自愈）；
-    ② 失败时间超过 24 小时（瞬时错误早已过时）。
+    203 轮新增：
+    - 可分类错误（额度不足/配额耗尽/鉴权失败）→ 标 blocked + resolution 说明原因，不再无限重试；
+    - 瞬时错误（超时/限流/内部）→ 满足「已有成功生成」或「超 24 小时」即标 auto-recovered。
     服务能调到本函数即视为当前健康。
     """
     try:
         conn = get_db()
         c = conn.cursor()
         last_success = c.execute("SELECT MAX(created_time) FROM history").fetchone()[0]
-        rows = c.execute("SELECT id, created_time FROM gen_failures WHERE status='open'").fetchall()
+        rows = c.execute("SELECT id, created_time, COALESCE(error_code,'') FROM gen_failures WHERE status='open'").fetchall()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        for fid, ftime in rows:
+        _blocked_codes = ("insufficient_balance", "quota_exceeded", "auth_error")
+        for fid, ftime, ecode in rows:
+            # 203 轮：可分类错误直接 blocked，明确原因，不再等 24h 或靠「后来成功」自愈
+            if ecode in _blocked_codes:
+                _reason = {"insufficient_balance": "额度不足", "quota_exceeded": "配额耗尽",
+                           "auth_error": "鉴权/Key 配置错误"}.get(ecode, ecode)
+                c.execute("UPDATE gen_failures SET status='blocked', resolved_time=?, resolution=? WHERE id=?",
+                          (now_str, _reason, fid))
+                continue
             resolved = False
             if last_success and (ftime or "") < last_success:
                 resolved = True
@@ -1180,8 +1210,10 @@ def auto_resolve_failures():
                 except Exception:
                     pass
             if resolved:
-                c.execute("UPDATE gen_failures SET status='auto-recovered', resolved_time=? WHERE id=?",
+                c.execute("UPDATE gen_failures SET status='auto-recovered', resolved_time=?, resolution='auto_retry_success' WHERE id=?",
                           (now_str, fid))
+                # 203 轮：自动闭环有日志记录
+                print(f"[auto-resolve] 工单 #{fid} 自动闭环 auto_retry_success")
         conn.commit()
         conn.close()
     except Exception:
@@ -2303,7 +2335,12 @@ def add_feedback():
     conn.commit()
     new_id = c.lastrowid
     conn.close()
-    if category in ("问题反馈", "吐槽"):
+    # 203 轮：评分≤3星 或 命中问题关键词 → 自动生成问题工单（不再只归档）
+    _problem_kw = ("失败", "不行", "出错", "不能用", "bug", "错误", "崩溃", "卡住", "报错", "打不开")
+    _is_problem = (category in ("问题反馈", "吐槽")) or \
+                  (rating is not None and rating <= 3) or \
+                  any(k in content.lower() for k in _problem_kw)
+    if _is_problem:
         create_issue(_classify_issue(content), "feedback", content)
     return jsonify({"success": True, "id": new_id, "category": category})
 
@@ -3109,9 +3146,12 @@ def create_issue(kind, source, content):
         c = conn.cursor()
         row = c.execute("SELECT id FROM issues WHERE content=?", (content,)).fetchone()
         if row:
+            # 203 轮：同类工单去重合并，累计 count，不再重复建单
+            c.execute("UPDATE issues SET count = COALESCE(count, 0) + 1 WHERE id=?", (row[0],))
+            conn.commit()
             conn.close()
-            return None
-        c.execute("INSERT INTO issues (kind, source, content, created_time, status) VALUES (?, ?, ?, ?, 'open')",
+            return row[0]
+        c.execute("INSERT INTO issues (kind, source, content, created_time, status, count) VALUES (?, ?, ?, ?, 'open', 1)",
                   (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         new_id = c.lastrowid
@@ -3867,7 +3907,9 @@ def _launch_worker(task_id):
             traceback.print_exc()
             msg = _friendly_error(last_err)
             app_log.error("generate", f"task={task_id[:8]} {msg} | {traceback.format_exc(limit=2)}")
-            record_gen_failure(task_id, msg, str(last_err))
+            record_gen_failure(task_id, msg, str(last_err),
+                               stage=(tasks.get(task_id) or {}).get("stage", ""),
+                               error_code=last_code, error_msg=msg)
             progress.mark_error(task_id, error=msg, detail=str(last_err))
             tasks[task_id]["error_code"] = last_code
         finally:
@@ -5837,7 +5879,8 @@ def handle_unexpected_error(e):
     # 导出失败落库（第八十一轮）：导出接口真正抛异常时记 gen_failures，detail 为真实异常
     if request.path.startswith('/api/export'):
         record_gen_failure("", str(e), traceback.format_exc(limit=3)[-400:],
-                           type="export", path=request.path)
+                           type="export", path=request.path,
+                           error_code=_error_code(e), error_msg=_friendly_error(e))
     return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
 
 

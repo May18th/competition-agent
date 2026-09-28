@@ -2193,3 +2193,18 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 ## 长期记忆 · 用户偏好（追加）
 - **多任务默认并行**：有多项独立任务时，默认并行推进，不要串行等。
+
+
+---
+
+## Codex 回执 · 203轮 工单自动处理 + 失败原因落库（2026-09-29）
+
+- **失败原因结构化落库 ✅**：`gen_failures` 新增 `stage`/`error_code`/`error_msg`/`resolution` 列（含老库 ALTER 迁移）；`record_gen_failure` 记录生成阶段、错误码（超时/额度/LLM/其他）、脱敏错误信息；工单内容带 `[错误码] 原因`。实测落库 stage=writing/error_code=timeout/error_msg=生成超时。
+- **自动闭环 ✅**：`auto_resolve_failures` 增强——可分类错误（insufficient_balance/quota_exceeded/auth_error）→ 标 `blocked` + resolution 说明原因；瞬时错误（超时/限流/内部）满足「已有成功生成」或「超24h」→ `auto-recovered` + resolution=auto_retry_success + 日志。实测额度失败自动 blocked「配额耗尽」。
+- **同类去重合并 ✅**：`issues` 新增 `count` 列，`create_issue` 重复内容不再新建，改为 count+1。实测两次同内容返回同一 id、count=2。
+- **反馈触发工单 ✅**：`/api/feedback` 评分≤3星 或 命中问题关键词（失败/不行/出错/不能用/BUG等）→ 自动建工单（原只按「问题反馈/吐槽」分类）。
+
+验收点：后台无长期挂起且无原因工单（24h 自动闭环 + 额度/配额直接 blocked）；失败有具体原因；自动闭环有日志。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·203): 工单自动处理(失败原因落库stage/error_code/error_msg + 额度类blocked + 去重count + 反馈评分/关键词触发工单)" && git push origin main`
