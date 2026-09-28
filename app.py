@@ -694,6 +694,33 @@ def save_history_item(item):
     return new_id
 
 
+def _update_history_data(hid, extra):
+    """把生成后期才算出的字段（完整度/字数/查重/关键词等）回写到已保存的历史记录。
+
+    原因：save_history_item 在正文压缩闸门和完整度检测之前执行，导致历史里缺
+    completeness / proposal_chars / similarity / keywords，打开历史后这些栏显示「—」。
+    """
+    if not hid:
+        return
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        row = c.execute("SELECT result_data FROM history WHERE id=?", (hid,)).fetchone()
+        if row:
+            try:
+                cur = json.loads(row[0]) if row[0] else {}
+            except Exception:
+                cur = {}
+            if isinstance(cur, dict):
+                cur.update(extra)
+                c.execute("UPDATE history SET result_data=? WHERE id=?",
+                          (json.dumps(cur, ensure_ascii=False), hid))
+                conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[history] 回写完整度字段失败：{e}")
+
+
 def record_gen_failure(task_id, error, detail=""):
     """记录一次生成失败（用于成功率统计 + 动态监视）。"""
     try:
@@ -2352,6 +2379,7 @@ def _run_generation(data):
                 "one_liner": result.get("one_liner", ""),
                 "idea_score": result.get("idea_score", ""),
                 "idea_feedback": result.get("idea_feedback", ""),
+                "scores": result.get("scores", {}),
                 "score": result.get("score", ""),
                 "revision_count": result.get("revision_count", ""),
                 "rich_charts": rich_charts,
@@ -2442,6 +2470,7 @@ def _run_generation(data):
         "one_liner": result.get("one_liner", ""),
         "idea_score": result.get("idea_score", 0),
         "idea_feedback": result.get("idea_feedback", ""),
+        "scores": result.get("scores", {}),
         "score": result.get("score", 0),
         "revision_count": result.get("revision_count", 0),
         "rich_charts": rich_charts,
@@ -2468,6 +2497,17 @@ def _run_generation(data):
         pass
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
     payload["history_id"] = locals().get("_new_hid")
+    # 历史保存早于完整度/字数/查重/关键词计算，这里把后算字段回写进历史，
+    # 否则打开历史后「数据支撑论点/待补充/本地查重/字数」都显示「—」。
+    try:
+        _update_history_data(_new_hid, {
+            "completeness": completeness,
+            "proposal_chars": proposal_chars,
+            "similarity": similarity,
+            "keywords": keywords,
+        })
+    except Exception as _e:
+        print(f"[history] 回写完整度字段失败：{_e}")
     return payload
 
 
