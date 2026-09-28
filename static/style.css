@@ -162,6 +162,10 @@ body {
 .health-dot.err .hd-inner { background: #f87171; box-shadow: 0 0 8px #f87171; }
 
 /* 日间/夜间切换按钮 */
+/* 误触治理（负责人 + 队友实测反馈「月亮图标圆形控件区域容易误触」）：
+   原来 40×40 且热区就是图标本体，移动端低于 44×44 的可用标准；
+   这里视觉尺寸不变，用 ::before 把可点区域扩到 52×52（包围盒），
+   图标周围 6px 的空白也算点击区，手指不用对准小圆点。 */
 #themeToggle {
     position: fixed; top: 16px; left: 16px; z-index: 260;
     width: 40px; height: 40px; border-radius: 50%;
@@ -169,7 +173,19 @@ body {
     cursor: pointer; font-size: 19px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 6px 18px rgba(0,0,0,.28);
+    touch-action: manipulation;              /* 去掉双击缩放带来的 300ms 判定，减少误触感 */
+    -webkit-tap-highlight-color: transparent;
 }
+#themeToggle::before {
+    content: ''; position: absolute; inset: -6px; border-radius: 50%;
+}
+/* 移动端按 44×44 下限补足可视尺寸 */
+@media (max-width: 768px) {
+    #themeToggle { width: 44px; height: 44px; }
+    #themeToggle::before { inset: -5px; }
+}
+/* 键盘可达性：焦点环只在键盘操作时出现，不干扰鼠标用户 */
+#themeToggle:focus-visible { outline: 2px solid var(--c-a); outline-offset: 2px; }
 
 /* ---------- 骨架屏 ---------- */
 .skeleton {

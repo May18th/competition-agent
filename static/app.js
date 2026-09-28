@@ -2232,6 +2232,10 @@
         function wbCompClear() {
             var el = document.getElementById('competition');
             if (!el) return;
+            // 误触治理：#compClear 是赛事标签区里一个紧跟标签的小控件，手指滑动很容易带倒，
+            // 清掉的是「所选赛事 + 依赖它的规则/章节配置」，代价比看起来大 → 加一道确认。
+            var _cur = String(el.value || '').trim();
+            if (_cur && !window.confirm('确定清空已选赛事「' + _cur + '」？\n\n清空后需要重新选择赛事。')) return;
             el.value = '';
             wbCompClose();
             var clr = document.getElementById('compClear');
@@ -4007,6 +4011,9 @@
         var _currentTaskId = null;
         function cancelGeneration() {
             if (!_currentTaskId) return;
+            // 误触治理：终止是这一页代价最高的操作（深度版要重跑 4~5 分钟），
+            // 而它就挨在进度条旁边，手指一滑就点到 → 必须二次确认。
+            if (!window.confirm('确定终止本次生成？\n\n已写出的内容会保留，但要拿到完整材料需要重新生成一次（深度版约 4~5 分钟）。')) return;
             fetch('/api/cancel/' + _currentTaskId, { method: 'POST' })
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
