@@ -888,6 +888,16 @@
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> PPT大纲.docx</span>
                                 <button onclick="exportOne('pptOutline', 'PPT大纲')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
+                            <!-- 技术方案 / 实施计划：打包 zip 里早就有 11/12 两个 docx，
+                                 但导出中心一直没给单文件入口——能打包却不能单独下载，补上 -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
+                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 技术方案.docx</span>
+                                <button onclick="exportOne('techSolution', '技术方案')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
+                            </div>
+                            <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
+                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 实施计划.docx</span>
+                                <button onclick="exportOne('implementationPlan', '实施计划')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
+                            </div>
                         </div>
                         <!-- 封面信息：会印在导出 Word 的封面上，留空则自动省略该行 -->
                         <div style="background: var(--surface-solid); border: 1px solid var(--c-a-soft); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
@@ -1444,7 +1454,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=7"></script>
+    <script src="/static/app.js?v=8"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 

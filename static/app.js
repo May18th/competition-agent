@@ -418,7 +418,9 @@
             judgeFeedback: 'judge_feedback', competitorAnalysis: 'competitor_analysis',
             businessModel: 'business_model', riskAnalysis: 'risk_analysis',
             techSolution: 'tech_solution', defenseQuestions: 'defense_questions',
-            pptOutline: 'ppt_outline'
+            pptOutline: 'ppt_outline',
+            // 实施计划：zip 里早就有 12_实施计划.docx，但导出中心一直没有单文件入口
+            implementationPlan: 'implementation_plan'
         };
         // ===== 封面信息 / 原格式导出（WorkBuddy）=====
         // 各导出项对应的文档档位：default=申报书 report=报告 analysis=分析 outline=大纲
@@ -426,7 +428,8 @@
             parsedRules: 'report', similarityReport: 'report', proposalText: 'default',
             proposalAnalysis: 'analysis', judgeFeedback: 'analysis',
             competitorAnalysis: 'analysis', businessModel: 'analysis',
-            riskAnalysis: 'analysis', defenseQuestions: 'analysis', pptOutline: 'outline'
+            riskAnalysis: 'analysis', defenseQuestions: 'analysis', pptOutline: 'outline',
+            techSolution: 'analysis', implementationPlan: 'analysis'
         };
         function wbMeta() {
             return {
