@@ -16,7 +16,7 @@ import sqlite3
 import re
 import gzip as _gzip
 import secrets as _secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, send_file, make_response, g
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
@@ -47,6 +47,17 @@ def favicon():
             '<path d="M8 22 L14 11 L18 16 L21 12 L25 21" fill="none" stroke="#050816" '
             'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
     return _svg, 200, {'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400'}
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """简单 sitemap（第八十轮）：只收录首页，不收录分享/后台等动态页。"""
+    host = request.url_root.rstrip('/') or "https://kechuang2026.cn"
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           '<url><loc>' + host + '/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>'
+           '</urlset>')
+    return xml, 200, {'Content-Type': 'application/xml'}
 
 
 # ===== gzip 压缩 =====
@@ -523,7 +534,18 @@ def init_db():
     # 生成失败记录表（用于算成功率 + 动态监视）
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  task_id TEXT, error TEXT, detail TEXT, created_time TEXT)''')
+                  task_id TEXT, type TEXT DEFAULT 'generate', path TEXT,
+                  error TEXT, detail TEXT, created_time TEXT, count INTEGER DEFAULT 1)''')
+    # 老库迁移：给 gen_failures 补 type/path/count 列（若旧库没有则 ALTER，失败忽略）
+    for _col, _ddl in (
+        ("type", "TEXT DEFAULT 'generate'"),
+        ("path", "TEXT"),
+        ("count", "INTEGER DEFAULT 1"),
+    ):
+        try:
+            c.execute("ALTER TABLE gen_failures ADD COLUMN %s %s" % (_col, _ddl))
+        except Exception:
+            pass
     # 用户账号表（轻量登录：跨设备看同一份历史）
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -731,17 +753,43 @@ def _update_history_data(hid, extra):
         print(f"[history] 回写完整度字段失败：{e}")
 
 
-def record_gen_failure(task_id, error, detail=""):
-    """记录一次生成失败（用于成功率统计 + 动态监视）。"""
+def record_gen_failure(task_id, error, detail="", type="generate", path=""):
+    """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。"""
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO gen_failures (task_id, error, detail, created_time) VALUES (?, ?, ?, ?)",
-                  (str(task_id or "")[:32], str(error or "")[:200], str(detail or "")[:500],
+        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count) "
+                  "VALUES (?, ?, ?, ?, ?, ?, 1)",
+                  (str(task_id or "")[:32], str(type or "generate")[:20],
+                   str(path or "")[:200], str(error or "")[:200], str(detail or "")[:500],
                    datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         conn.close()
         create_issue("backend", "error", error)
+    except Exception:
+        pass
+
+
+def log_error_event(type, path, message, detail=""):
+    """前端/接口异常上报：同 type+message 5 分钟内去重合并计数，避免刷爆。"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        since = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M")
+        row = c.execute(
+            "SELECT id, count FROM gen_failures WHERE type=? AND error=? "
+            "AND created_time >= ? ORDER BY id DESC LIMIT 1",
+            (str(type or "")[:20], str(message or "")[:200], since)).fetchone()
+        if row:
+            c.execute("UPDATE gen_failures SET count = count + 1 WHERE id=?", (row[0],))
+        else:
+            c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count) "
+                      "VALUES (?, ?, ?, ?, ?, ?, 1)",
+                      ("", str(type or "")[:20], str(path or "")[:200],
+                       str(message or "")[:200], str(detail or "")[:500],
+                       datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        conn.close()
     except Exception:
         pass
 
@@ -985,6 +1033,21 @@ def _clean_legacy_record(obj):
     if isinstance(obj, list):
         return [_clean_legacy_record(x) for x in obj]
     return obj
+
+
+def _export_data_from_request():
+    """导出接口统一取参：POST 读 JSON，GET 读 ?history_id= / ?task_id= 直链，回源后端原文。
+
+    供分享页与前端 window.open 降级：fetch-blob 失败时用 ?history_id 直链下载。
+    """
+    if request.method == 'GET':
+        hid = request.args.get('history_id') or request.args.get('task_id')
+        if hid:
+            rec = _fetch_record_from_source({'history_id': hid})
+            if rec:
+                return dict(rec)
+        return {}
+    return request.get_json(force=True, silent=True) or {}
 
 
 def _reorder_markdown_by_chapters(text, ordered_titles):
@@ -1277,9 +1340,9 @@ def parse_material():
     return jsonify({"success": True, "profile": profile})
 
 
-@app.route('/api/export_word', methods=['POST'])
+@app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
-    data = request.get_json(force=True, silent=True) or {}
+    data = _export_data_from_request()
     text = data.get('text', '')
     # 后端原文覆盖：前端 DOM 文本可能被串台/断网污染，传 task_id / history_id 时优先取后端原文
     _backend_text = _fetch_proposal_from_source(data)
@@ -1324,10 +1387,10 @@ def export_word():
                      download_name=_export_filename(project, competition, title, '.docx'))
 
 
-@app.route('/api/export_pdf', methods=['POST'])
+@app.route('/api/export_pdf', methods=['GET', 'POST'])
 def export_pdf():
     """把申报书/说明书 Markdown 导出为 PDF（iCAN 提交用，A4 中文）"""
-    data = request.get_json(force=True, silent=True) or {}
+    data = _export_data_from_request()
     text = data.get('text', '')
     title = data.get('title', '申报书')
     # 与 export_word 同一兜底：iCAN 交的就是 PDF，DOM 文本被污染时一样会带进提交件
@@ -1453,7 +1516,7 @@ def _html_esc(s):
     return (str(s or '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def _share_page(title, comp, idea, body_html):
+def _share_page(title, comp, idea, body_html, token=None):
     t = _html_esc(title)
     c = _html_esc(comp)
     desc = _html_esc((idea or comp or "科创项目分享").strip()[:120])
@@ -1472,6 +1535,17 @@ def _share_page(title, comp, idea, body_html):
            "h3{font-size:15px;margin:16px 0 6px}"
            "p{margin:8px 0;white-space:pre-wrap}"
            "hr{border:none;border-top:1px solid #e2e7f2;margin:16px 0}")
+    dl_btns = ""
+    if token:
+        _t = _html_esc(token)
+        dl_btns = ("<div style='margin:22px 0 8px;display:flex;gap:10px;flex-wrap:wrap'>"
+                   "<a href='/api/share_export/" + _t + "?type=docx' "
+                   "style='background:#5b6ee1;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600'>下载 Word</a>"
+                   "<a href='/api/share_export/" + _t + "?type=pdf' "
+                   "style='background:#5b6ee1;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600'>下载 PDF</a>"
+                   "<a href='/api/share_export/" + _t + "?type=zip' "
+                   "style='background:#0e9aa7;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600'>一键打包</a>"
+                   "</div>")
     return ("<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<meta property='og:site_name' content='科创赛事助手'>"
@@ -1481,7 +1555,8 @@ def _share_page(title, comp, idea, body_html):
             "<meta property='og:type' content='website'>"
             "<meta property='og:url' content='" + og_url + "'>"
             "<title>" + t + "</title><style>" + css + "</style></head><body>"
-            "<h1>" + t + "</h1><div class='meta'>" + c + "</div>" + body_html + "</body></html>")
+            "<h1>" + t + "</h1><div class='meta'>" + c + "</div>" + dl_btns
+            + body_html + "</body></html>")
 
 
 def _md_to_html(t):
@@ -1569,7 +1644,111 @@ def view_share(token):
     title = data.get("one_liner") or idea or comp or "科创项目分享"
     proposal = data.get("proposal") or ""
     body = _md_to_html(proposal)
-    return _share_page(title, comp, idea, body)
+    return _share_page(title, comp, idea, body, token=token)
+
+
+@app.route('/api/share_export/<token>')
+def share_export(token):
+    """分享页直链下载：?type=docx|pdf|zip，从分享 token 还原历史原文生成导出。
+
+    供微信内生成 → 复制分享链接 → 浏览器打开 → 直接下载的跨端找回闭环。
+    """
+    from datetime import datetime as _dt
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute("SELECT history_id, expires_time FROM shares WHERE token=?", (token,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "error": "链接不存在或已失效"}), 404
+    history_id, expires_time = row
+    try:
+        if _dt.now() > _dt.strptime(expires_time, "%Y-%m-%d %H:%M"):
+            conn.close()
+            return jsonify({"success": False, "error": "链接已过期，请联系分享者重新生成"}), 410
+    except Exception:
+        pass
+    row2 = c.execute("SELECT competition_name, idea, result_data FROM history WHERE id=?", (history_id,)).fetchone()
+    conn.close()
+    if not row2:
+        return jsonify({"success": False, "error": "记录已删除"}), 404
+    comp, idea, result_data = row2
+    try:
+        data = json.loads(result_data) if isinstance(result_data, str) else (result_data or {})
+    except Exception:
+        data = {}
+    etype = (request.args.get("type") or "docx").strip().lower()
+    proposal = (data.get("proposal") or "").strip()
+    title = (data.get("one_liner") or idea or comp or "项目申报书").strip()
+    if not proposal:
+        return jsonify({"success": False, "error": "记录无正文"}), 400
+    text = _clean_export_text(_strip_identifying_text(proposal))
+    chapter_order = _official_chapter_titles(comp)
+    if chapter_order:
+        text = _reorder_markdown_by_chapters(text, chapter_order)
+    if _is_double_blind(comp):
+        text = _mask_double_blind(text)
+    text = _append_ai_notice(text)
+    project = _extract_project_name(text) or title
+
+    if etype == "docx":
+        header_title = re.sub(r'(全文|完整)$', '', title).strip() or '项目申报书'
+        doc = _build_docx(project, text, doc_type='report', subtitle=comp,
+                          competition_name=comp, header_title=header_title)
+        fp = 'tmp_share_export.docx'
+        doc.save(fp)
+        return send_file(fp, as_attachment=True,
+                         download_name=_export_filename(project, comp, '项目申报书', '.docx'))
+
+    if etype == "pdf":
+        try:
+            from pdf_render import render_markdown_to_pdf
+            fp = 'tmp_share_export.pdf'
+            render_markdown_to_pdf(text, fp, title=title)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"PDF 生成失败：{e}"}), 500
+        return send_file(fp, as_attachment=True,
+                         download_name=_export_filename(project, comp, '项目申报书', '.pdf'))
+
+    if etype == "zip":
+        import zipfile as _zf
+        from docx import Document as _Doc
+        os.makedirs('tmp_export', exist_ok=True)
+        zpath = 'tmp_export/分享材料包.zip'
+        mappings = [
+            ("01_项目申报书全文.docx", "项目申报书全文", data.get('proposal', '')),
+            ("02_申报书诊断分析.docx", "申报书诊断分析", data.get('proposal_analysis', '')),
+            ("03_评委评审意见.docx", "评委评审意见", data.get('judge_feedback', '')),
+            ("04_竞品分析报告.docx", "竞品分析报告", data.get('competitor_analysis', '')),
+            ("05_商业模式分析.docx", "商业模式分析", data.get('business_model', '')),
+            ("06_风险评估报告.docx", "风险评估报告", data.get('risk_analysis', '')),
+            ("07_答辩问题预测.docx", "答辩问题预测", data.get('defense_questions', '')),
+            ("08_PPT大纲.docx", "PPT大纲", data.get('ppt_outline', '')),
+            ("09_技术方案.docx", "技术方案", data.get('tech_solution', '')),
+            ("10_实施计划.docx", "实施计划", data.get('implementation_plan', '')),
+        ]
+        with _zf.ZipFile(zpath, 'w', _zf.ZIP_DEFLATED) as zf:
+            for fname, _lbl, content in mappings:
+                if not (content and str(content).strip()):
+                    continue
+                d = _Doc()
+                d.add_heading(_lbl, 0)
+                for seg in str(content).split('\n'):
+                    d.add_paragraph(seg)
+                tpath = os.path.join('tmp_export', fname)
+                d.save(tpath)
+                zf.write(tpath, fname)
+            # PDF 一起进包
+            try:
+                from pdf_render import render_markdown_to_pdf
+                pfp = 'tmp_export/项目申报书.pdf'
+                render_markdown_to_pdf(text, pfp, title=title)
+                zf.write(pfp, '项目申报书.pdf')
+            except Exception:
+                pass
+        return send_file(zpath, as_attachment=True,
+                         download_name=_export_filename(project, comp, '材料包', '.zip'))
+
+    return jsonify({"success": False, "error": "type 仅支持 docx / pdf / zip"}), 400
 
 
 @app.route('/api/history/<int:history_id>')
@@ -2399,6 +2578,7 @@ def _run_generation(data):
             "outline_requirement": data.get("outline_requirement") or [],
             "scoring_weights": data.get("scoring_weights") or [],
             "humanize": data.get("humanize", "standard"),
+            "length_pref": data.get("length_pref") or "balanced",
             # 档位标记：简洁版=fast / 深度版=deep。competition_agents 里的
             # _spec_for / _tier_hint 依赖它决定输出规格，漏掉会默认按 deep 处理，
             # 导致简洁版的评委/诊断/答辩也写得又长又慢，失去两档差异。
@@ -3505,14 +3685,14 @@ def upload_file():
         return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
 
 
-@app.route('/api/export_zip', methods=['POST'])
+@app.route('/api/export_zip', methods=['GET', 'POST'])
 def export_zip():
     import zipfile, os, re
     from docx import Document
     from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from flask import send_file, jsonify
-    data = request.get_json(force=True, silent=True) or {}
+    data = _export_data_from_request()
     # 导出严格绑定当前记录：前端若只发 DOM 状态，三个按钮可能各拿到一条不同历史记录。
     # 有 task_id / history_id 时，以后端完整 result_data 为内容权威，前端只覆盖主题/变体。
     _rec = _fetch_record_from_source(data)
@@ -3717,6 +3897,30 @@ def quota():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/api/log_error', methods=['POST'])
+def log_error():
+    """前端/接口异常上报（第八十一轮）：白屏/JS错误/下载失败/导出失败统一落库。
+
+    明确不记（防误记）：health 轮询失败、用户主动取消、静态资源 404。
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    etype = str(data.get("type") or "frontend")[:20]
+    path = str(data.get("path") or "")[:200]
+    message = str(data.get("message") or data.get("error") or "")[:200]
+    detail = str(data.get("detail") or "")[:500]
+    if not message:
+        return jsonify({"success": False, "error": "message 为空"}), 400
+    # 防误记：健康轮询 / 用户取消 / 静态资源 404 不入账
+    if "health" in path.lower():
+        return jsonify({"success": True, "skipped": "health"})
+    if ("取消" in message) or ("cancel" in message.lower()):
+        return jsonify({"success": True, "skipped": "cancelled"})
+    if path.endswith((".js", ".css", ".png", ".jpg", ".ico", ".svg", ".woff", ".woff2", ".map")):
+        return jsonify({"success": True, "skipped": "static"})
+    log_error_event(etype, path, message, detail)
+    return jsonify({"success": True})
+
+
 @app.route('/api/admin/stats')
 def admin_stats():
     """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
@@ -3727,6 +3931,9 @@ def admin_stats():
         trend = c.execute(
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
             "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
+        recent_failures = c.execute(
+            "SELECT task_id, type, path, error, detail, created_time, count FROM gen_failures "
+            "ORDER BY id DESC LIMIT 10").fetchall()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
         failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
@@ -3762,6 +3969,18 @@ def admin_stats():
         else:
             buckets["90-100"] += 1
 
+    # 生成趋势 14 天全序列补零（无数据日期补 0，含今日实时点）
+    trend_map = {r["d"]: r["n"] for r in trend}
+    trend_full = []
+    for i in range(13, -1, -1):
+        day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        trend_full.append({"date": day, "count": trend_map.get(day, 0)})
+    recent_failures_list = [{
+        "time": r["created_time"], "type": r["type"] or "generate",
+        "path": r["path"] or "", "error": r["error"], "detail": r["detail"],
+        "task_id": r["task_id"] or "", "count": r["count"] or 1,
+    } for r in recent_failures]
+
     denom = total + failed
     mode_breakdown = {r["mode"] or "unknown": r["n"] for r in mode_rows}
     success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
@@ -3774,9 +3993,10 @@ def admin_stats():
         "deep_count": mode_breakdown.get("deep", 0),
         "avg_duration": avg_duration,
         "success_rate": success_rate,
-        "trend": [{"date": r["d"], "count": r["n"]} for r in trend],
+        "trend": trend_full,
         "failure": {"total": denom, "failed": failed,
                     "rate": round(failed * 100.0 / denom, 1) if denom else 0},
+        "recent_failures": recent_failures_list,
         "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
@@ -4407,4 +4627,8 @@ def handle_unexpected_error(e):
     import traceback
     app_log.error("http", "%s %s: %s | %s"
                   % (request.path, type(e).__name__, e, traceback.format_exc(limit=2)))
+    # 导出失败落库（第八十一轮）：导出接口真正抛异常时记 gen_failures，detail 为真实异常
+    if request.path.startswith('/api/export'):
+        record_gen_failure("", str(e), traceback.format_exc(limit=3)[-400:],
+                           type="export", path=request.path)
     return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
