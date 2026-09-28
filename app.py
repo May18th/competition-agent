@@ -4510,38 +4510,38 @@ bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 
 _upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
 _mode_counts_cache = {"data": {}, "checked_at": 0.0}
+_probe_lock = threading.Lock()
+_health_cache = {"data": None, "checked_at": 0.0}
 
 
 def _probe_deepseek():
-    """轻量探测 DeepSeek 上游是否可用，60 秒缓存，避免每次 /api/health 都打外网。"""
+    """非阻塞探测 DeepSeek 上游：60 秒内缓存直接返回；否则后台探测，本次立即返回，
+    绝不阻塞 /api/health。避免首屏健康检查被 2~3 秒的 LLM 探测拖住（147 轮）。"""
     now = time.time()
     if now - _upstream_cache["checked_at"] < 60:
         return _upstream_cache["deepseek"]
-    result = "down"
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        box = {}
+    with _probe_lock:
+        # 双检：拿到锁后再确认一次，避免并发请求重复触发探测
+        if now - _upstream_cache["checked_at"] < 60:
+            return _upstream_cache["deepseek"]
+        _upstream_cache["checked_at"] = now
+        _upstream_cache["deepseek"] = "checking"
 
-        def _call():
+        def _bg_probe():
+            result = "down"
             try:
+                from competition_agents import llm
+                from langchain_core.messages import HumanMessage
                 r = llm.invoke([HumanMessage(content="回复两个字：OK")])
-                box["ok"] = bool(getattr(r, "content", "").strip())
+                if bool(getattr(r, "content", "").strip()):
+                    result = "ok"
             except Exception:
-                box["ok"] = False
+                result = "down"
+            _upstream_cache["deepseek"] = result
+            _upstream_cache["checked_at"] = time.time()
 
-        t = threading.Thread(target=_call, daemon=True)
-        t.start()
-        t.join(timeout=8)
-        if t.is_alive():
-            result = "timeout"
-        elif box.get("ok"):
-            result = "ok"
-    except Exception:
-        result = "down"
-    _upstream_cache["deepseek"] = result
-    _upstream_cache["checked_at"] = now
-    return result
+        threading.Thread(target=_bg_probe, daemon=True).start()
+        return "checking"
 
 
 @app.route('/api/docs')
@@ -4601,7 +4601,11 @@ def demo_data():
 
 @app.route('/api/health')
 def health():
-    """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间"""
+    """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间。
+    整体 10 秒缓存 + 上游非阻塞探测，保证 <500ms 快速返回（147 轮）。"""
+    now = time.time()
+    if _health_cache["data"] is not None and now - _health_cache["checked_at"] < 10:
+        return jsonify(_health_cache["data"])
     auto_resolve_failures()
     try:
         from competition_agents import competition_knowledge, get_quota_status
@@ -4611,7 +4615,7 @@ def health():
         knowledge_count = 0
         quota = {}
     latest = load_history(limit=1)
-    return jsonify({
+    data = {
         "success": True,
         "status": "ok",
         "uptime_seconds": int(time.time() - START_TIME),
@@ -4620,7 +4624,10 @@ def health():
         "history_count": count_history(),
         "last_generation_time": latest[0]["time"] if latest else None,
         "upstream": {"deepseek": _probe_deepseek()},
-    })
+    }
+    _health_cache["data"] = data
+    _health_cache["checked_at"] = now
+    return jsonify(data)
 
 
 @app.route('/api/ppt_themes')
