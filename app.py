@@ -2921,6 +2921,24 @@ _EDIT_HINTS = {
 }
 
 
+def _get_mode_counts():
+    """历史按档位计数（fast/deep），60 秒缓存，避免每次 /api/status 轮询都查库。"""
+    now = time.time()
+    if now - _mode_counts_cache["checked_at"] < 60:
+        return _mode_counts_cache["data"]
+    counts = {}
+    try:
+        _mc = get_db()
+        for _r in _mc.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall():
+            counts[_r[0] or "unknown"] = _r[1]
+        _mc.close()
+    except Exception:
+        pass
+    _mode_counts_cache["data"] = counts
+    _mode_counts_cache["checked_at"] = now
+    return counts
+
+
 @app.route('/api/status/<task_id>')
 def get_task_status(task_id):
     t = tasks.get(task_id)
@@ -2991,14 +3009,7 @@ def get_task_status(task_id):
         _eta = max(_linear, _min_eta.get(_stage, 8))
     # 增值字段：完整累积正文 / 历史模式计数 / 等待期冷知识 / 引导文案 / 诊断报告
     _partial_content = _partial.get("proposal", "") if isinstance(_partial, dict) else ""
-    _mode_counts = {}
-    try:
-        _mc = get_db()
-        for _r in _mc.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall():
-            _mode_counts[_r[0] or "unknown"] = _r[1]
-        _mc.close()
-    except Exception:
-        pass
+    _mode_counts = _get_mode_counts()
     _splash = _SPLASH_FACTS[int(time.time() // 6) % len(_SPLASH_FACTS)]
     _diag = _partial.get("proposal_analysis", "") if isinstance(_partial, dict) else ""
     resp = {
@@ -3653,6 +3664,7 @@ bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 
 
 _upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
+_mode_counts_cache = {"data": {}, "checked_at": 0.0}
 
 
 def _probe_deepseek():
@@ -3690,6 +3702,9 @@ def _probe_deepseek():
 @app.route('/api/docs')
 def list_docs():
     """列出共享目录 docs/ 下的文件（供多 agent 自动查看指令，只读）。"""
+    _a = _require_admin()
+    if _a is not None:
+        return _a
     docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
     try:
         files = []
@@ -3705,6 +3720,9 @@ def list_docs():
 @app.route('/api/docs/<path:filename>')
 def read_doc(filename):
     """读取共享目录里某个文件内容（只读，仅限 .md/.txt/.json，防路径穿越）。"""
+    _a = _require_admin()
+    if _a is not None:
+        return _a
     if '..' in filename or filename.startswith('/'):
         return jsonify({"success": False, "error": "非法路径"}), 400
     docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
