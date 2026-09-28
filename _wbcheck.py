@@ -140,8 +140,13 @@ res.append(chk('主色三元组变量已定义(:root+light)',
 # 但 tech 这一套必须仍与后端 chart_renderer_pro 的 tech 主题逐色一致，否则导出件会变脸。
 # 所以断言跟着升级：校验 tech 那 7 色一个都没动。
 _seg = ''
+# M7 前端瘦身：WB_CHART_THEMES 已逐字节外置到 static/wbconst.js，两个文件一起查
+_const_src = open('static/wbconst.js', encoding='utf-8').read() if os.path.exists('static/wbconst.js') else ''
+_seg = ''
 if 'var WB_CHART_THEMES = {' in js_src:
     _seg = js_src.split('var WB_CHART_THEMES = {', 1)[1].split('function wbChartThemeKey', 1)[0]
+elif 'window.WB_CHART_THEMES = {' in _const_src:
+    _seg = _const_src.split('window.WB_CHART_THEMES = {', 1)[1].split('window.WB_BG_PRESETS', 1)[0]
 _ca = re.search(r"tech:\s*\{.*?series:\s*\[([^\]]+)\]", _seg, re.S)
 _ca_ok = bool(_ca) and all(c in _ca.group(1) for c in
                            ("'#818CF8'", "'#22B8CF'", "'#C084FC'", "'#F59E0B'",
