@@ -1456,6 +1456,14 @@ def _html_esc(s):
 def _share_page(title, comp, idea, body_html):
     t = _html_esc(title)
     c = _html_esc(comp)
+    desc = _html_esc((idea or comp or "科创项目分享").strip()[:120])
+    # 分享卡片 og 标签：与前端 index.html 的 og:image 一致（现域名 kechuang2026.cn），
+    # 否则微信/QQ 抓取 /share/<token> 时没有标题/描述/图片，只显示一条裸链接。
+    og_image = "https://kechuang2026.cn/static/og-image.png"
+    try:
+        og_url = request.url_root.rstrip('/') + request.path
+    except Exception:
+        og_url = "https://kechuang2026.cn/"
     css = ("body{font-family:'Microsoft YaHei',sans-serif;max-width:860px;margin:0 auto;padding:24px;"
            "line-height:1.85;color:#1f2a4d;background:#fafbfe}"
            "h1{font-size:24px;margin-bottom:8px}"
@@ -1466,6 +1474,12 @@ def _share_page(title, comp, idea, body_html):
            "hr{border:none;border-top:1px solid #e2e7f2;margin:16px 0}")
     return ("<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<meta property='og:site_name' content='科创赛事助手'>"
+            "<meta property='og:title' content='" + t + "'>"
+            "<meta property='og:description' content='" + desc + "'>"
+            "<meta property='og:image' content='" + og_image + "'>"
+            "<meta property='og:type' content='website'>"
+            "<meta property='og:url' content='" + og_url + "'>"
             "<title>" + t + "</title><style>" + css + "</style></head><body>"
             "<h1>" + t + "</h1><div class='meta'>" + c + "</div>" + body_html + "</body></html>")
 
