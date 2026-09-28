@@ -1917,16 +1917,31 @@ def add_feedback():
 
 @app.route('/api/feedback')
 def list_feedback():
-    """后台查看全部反馈（最新的在前，封顶 500 条）。"""
+    """后台查看反馈（第一百一十二轮：支持 ?limit=&offset= 分页，默认 50，可全量）。"""
+    try:
+        limit = int(request.args.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+    if limit < 1:
+        limit = 50
+    if limit > 100000:
+        limit = 100000
+    offset = max(0, offset)
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     rows = c.execute(
         "SELECT id, history_id, content, created_time, category FROM feedback "
-        "ORDER BY id DESC LIMIT 500").fetchall()
+        "ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     conn.close()
     items = [dict(r) for r in rows]
-    return jsonify({"success": True, "feedback": items, "total": len(items)})
+    return jsonify({"success": True, "feedback": items, "total": total,
+                    "limit": limit, "offset": offset})
 
 
 @app.route('/api/feedback/export')
