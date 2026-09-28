@@ -22,7 +22,30 @@ def check_generation(result, mode="deep"):
     for k in ("defense_questions", "ppt_outline"):
         if not result.get(k):
             issues.append(f"模块缺失：{k}")
+    if mode == "deep":
+        _eok, _eissues = check_depth(proposal)
+        if not _eok:
+            issues.extend(_eissues)
     return (not issues), issues
+
+
+# ============ 深度版防凑数（第一百四十五轮） ============
+_INFO_MARK = re.compile(r'\d|%|％|元|万|亿|倍|算法|模型|架构|系统|平台|接口|模块|芯片|传感器|数据|网络|服务器|协议|基于|通过|采用|实现|验证|测算|估计|预测|方案')
+
+
+def check_depth(proposal):
+    """空话段落扫描：无数据/无技术词/无论证词的「铺垫性空段」占比 >30% 判定凑数。"""
+    paras = [p.strip() for p in (proposal or "").split("\n") if len(p.strip()) > 30]
+    if not paras:
+        return False, ["正文无有效段落"]
+    empty = 0
+    for p in paras:
+        if not _INFO_MARK.search(p):
+            empty += 1
+    ratio = empty / len(paras)
+    if ratio > 0.3:
+        return False, [f"空话段落占比过高（{empty}/{len(paras)} = {ratio:.0%} > 30%，疑似凑数）"]
+    return True, []
 
 
 # ============ L2 导出质量 ============
