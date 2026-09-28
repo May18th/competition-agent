@@ -6346,6 +6346,60 @@
                 try { wbAutoComp(); } catch (e) {}
             });
         })();
+        /* ===== 维护公告（第九十四轮【中】）=====
+           为什么要双源：后端 /api/notice 要等 Codex 发版，而「停机前先开公告」本身就是
+           应急预案——真到要停机那一刻，改一个 JSON 文件就能挂上去，才算可用。
+           所以优先读 /api/notice，拿不到就读静态 /static/notice.json；
+           两边都没有 → 整条不渲染（默认行为，不会平白多一条黄条）。
+           关闭记忆按「文案指纹」存本地：文案一改就重新弹，
+           避免用户关过一次之后再也看不到新公告。 */
+        (function () {
+            var bar = document.getElementById('wbNoticeBar');
+            if (!bar) return;
+            var elTitle = document.getElementById('wbNoticeTitle');
+            var elText = document.getElementById('wbNoticeText');
+
+            function fingerprint(s) {
+                var h = 0;
+                for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+                return String(h);
+            }
+
+            function render(d) {
+                if (!d || typeof d !== 'object') return;
+                var text = String(d.text || d.content || d.message || '').trim();
+                if (!text) return;
+                var title = String(d.title || '维护公告').trim() || '维护公告';
+                var fp = fingerprint(title + '|' + text);
+                if (_wbStoreGet('wbNoticeClosed') === fp) return;   // 这条已经关过了，不再打扰
+                if (elTitle) elTitle.textContent = title;
+                if (elText) elText.textContent = ' ' + text;
+                bar.setAttribute('data-fp', fp);
+                bar.style.display = 'flex';     // 注意：不能写 '' ——会被样式表里的 display:none 盖掉
+            }
+
+            window.wbNoticeClose = function () {
+                var fp = bar.getAttribute('data-fp') || '';
+                if (fp) { try { _wbStoreSet('wbNoticeClosed', fp); } catch (e) {} }
+                bar.style.display = 'none';
+            };
+
+            function fromStatic() {
+                return fetch('/static/notice.json?t=' + Date.now(), { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .catch(function () { return null; });
+            }
+
+            fetch('/api/notice', { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    var t = d && String(d.text || d.content || d.message || '').trim();
+                    if (t) { render(d); return null; }
+                    return fromStatic().then(render);      // 后端没这接口 / 没内容 → 静态兜底
+                })
+                .catch(function () { return fromStatic().then(render); });
+        })();
+
         checkHealth();
         setInterval(checkHealth, 30000);
 

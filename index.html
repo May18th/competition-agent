@@ -19,7 +19,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=4">
+    <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
@@ -83,6 +83,17 @@
     </button>
 
     <div class="container">
+        <!-- 维护公告条（第九十四轮【中】）：默认隐藏。
+             需要停机/大改时先开公告再操作，用户就不会以为「网站坏了」。
+             文案双源：优先 GET /api/notice，取不到则回落 /static/notice.json
+             —— 静态兜底是为了「改个文件就生效」，不必等后端发版。 -->
+        <div id="wbNoticeBar" style="display: none;" role="status" aria-live="polite">
+            <span class="nb-ico" aria-hidden="true">!</span>
+            <div class="nb-body">
+                <b id="wbNoticeTitle">维护公告</b><span id="wbNoticeText"></span>
+            </div>
+            <button type="button" class="nb-close" onclick="wbNoticeClose()" aria-label="关闭公告" title="关闭">&times;</button>
+        </div>
         <!-- 微信 / QQ 内置浏览器提示：微信的 file 选择器只给「图片 / 视频」，选不到 PDF/Word -->
         <div id="wxBanner" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--c-b); border-radius: 12px; font-size: 13px; color: var(--text); line-height: 1.75;">
             <div style="font-weight: 600; color: var(--c-b); margin-bottom: 4px;">当前在微信内置浏览器里，上传只能选到图片和视频</div>
@@ -604,7 +615,7 @@
                         <div style="padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">打包已含路演 PPT（.pptx，深度版专属）</div>
                     </div>
                 </div>
-                <button class="qe-secondary" onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">分享</button>
+                <button class="qe-secondary" onclick="wbShare()" title="生成一个链接，换设备也能打开这次的结果" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">分享链接</button>
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
 
@@ -1481,7 +1492,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=10"></script>
+    <script src="/static/app.js?v=11"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
