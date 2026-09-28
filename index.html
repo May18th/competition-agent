@@ -1101,6 +1101,18 @@ body.light .hero h1 { color: var(--text); }
 }
 body.light .card { border-color: var(--line); }
 
+/* 空创意提交时的输入框提示：红描边 + 左右抖两下，1.6s 后由 JS 移除 */
+.wb-shake-hl {
+    animation: wbShakeHL 1.6s ease;
+    border-color: var(--err, #e5484d) !important;
+    box-shadow: 0 0 0 2px rgba(229, 72, 77, .18);
+}
+@keyframes wbShakeHL {
+    0%, 100% { transform: translateX(0); }
+    15%, 45%, 75% { transform: translateX(-4px); }
+    30%, 60%, 90% { transform: translateX(4px); }
+}
+
 /* 全局点击感：任何可点元素按下即有物理反馈（轻缩放），松手弹回。
     只作用于有 cursor:pointer 的元素，纯文本/输入框不受影响；优先级低于各按钮自己的 :active 规则 */
 button:not(:disabled), .tab, .wb-anchor-btn, [onclick] { transition: transform .08s ease; }
@@ -2233,7 +2245,12 @@ body.light .btn-primary:hover:not(:disabled) {
         <div id="resultArea" class="card" style="display: none;">
             <!-- 导出前置条：放在结果区最顶部，生成完第一眼就看到。
                  之前它排在评分、自查卡、章节校验后面，用户要滚好几屏才找到「下载」 -->
-            <div id="quickExportBar">
+            <!-- 生成中的局部提示：结果一有内容 resultArea 就会显示，但此刻整轮还没跑完，
+                 下载条提前亮出来会让人以为"生成完了"。所以下载条藏到 done 才出，这里先顶上 -->
+            <div id="wbPartialNote" style="display:none; padding:12px 16px; margin-bottom:16px; border-radius:10px; background:var(--surface-2); border:1px dashed var(--line); font-size:13px; color:var(--text-dim);">
+                <span id="wbPartialNoteTxt">正在生成：下方是已完成章节的实时预览，全部完成后即可在此下载</span>
+            </div>
+            <div id="quickExportBar" style="display:none;">
                 <span class="qe-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 生成完了，直接拿走</span>
                 <button class="qe-primary" onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
                 <button class="qe-secondary" onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
@@ -4933,7 +4950,7 @@ body.light .btn-primary:hover:not(:disabled) {
             var sync = function () {
                 var ra = document.getElementById('resultArea');
                 var hasResult = !!ra && ra.style.display !== 'none';
-                if (!hasResult) { dock.style.display = 'none'; return; }
+                if (!hasResult || window._wbGenerating) { dock.style.display = 'none'; return; }
                 var out;
                 if (bar.offsetParent !== null) {          // 顶部那条正常显示时，看它有没有滚出去
                     out = bar.getBoundingClientRect().bottom < 8;
@@ -6803,6 +6820,11 @@ body.light .btn-primary:hover:not(:disabled) {
                     _streamShown = true;
                     document.getElementById('skeletonArea').style.display = 'none';
                     document.getElementById('resultArea').style.display = 'block';
+                    // 生成中先给局部提示条，下载条等 done 再出（历史打开时 _wbGenerating 为 false，不会误亮）
+                    if (window._wbGenerating) {
+                        var _pnS = document.getElementById('wbPartialNote');
+                        if (_pnS) _pnS.style.display = 'block';
+                    }
                 }
             }
             return fresh > 0;
@@ -7064,10 +7086,19 @@ body.light .btn-primary:hover:not(:disabled) {
             const competition = document.getElementById('competition').value;
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
+            window._wbGenerating = true;   // 下载条/吸附 dock 以此为准：done 前一律不出
             if (!idea && !proposal_draft) {
+                window._wbGenerating = false;
                 wbToast('请先填写项目创意，或粘贴一段申报书草稿', { type: 'warn' });
                 var _ie = document.getElementById('idea');
-                if (_ie && _ie.focus) _ie.focus();
+                if (_ie) {
+                    if (_ie.focus) _ie.focus();
+                    // 红框抖两下：光标聚焦在手机上不够显眼，加上视觉标记才能一眼定位
+                    _ie.classList.remove('wb-shake-hl');
+                    void _ie.offsetWidth;   // 重启动画
+                    _ie.classList.add('wb-shake-hl');
+                    setTimeout(function () { _ie.classList.remove('wb-shake-hl'); }, 1600);
+                }
                 return;
             }
 
@@ -7289,12 +7320,16 @@ body.light .btn-primary:hover:not(:disabled) {
                                 }
                                 clearInterval(tick);
                                 if (res2.status === 'error') {
+                                    window._wbGenerating = false;
+                                    var _pnE = document.getElementById('wbPartialNote'); if (_pnE) _pnE.style.display = 'none';
                                     // 后端 /api/status 会给 error + detail，detail 才是原始报错。
                                     // 只弹 error 的话用户看到的是「生成失败」四个字，等于没说，
                                     // 也没法判断是自己网络问题还是服务挂了
                                     reject(new Error((res2.error || '生成失败') +
                                         (res2.detail ? '（' + res2.detail + '）' : '')));
                                 } else if (res2.status === 'cancelled') {
+                                    window._wbGenerating = false;
+                                    var _pnC = document.getElementById('wbPartialNote'); if (_pnC) _pnC.style.display = 'none';
                                     reject({ cancelled: true });
                                 } else {
                                     resolve({ success: true, data: res2.data });
@@ -7307,6 +7342,18 @@ body.light .btn-primary:hover:not(:disabled) {
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
+                window._wbGenerating = false;
+                // 整轮跑完才亮出下载条；生成中的局部提示撤掉
+                try {
+                    var _qeb = document.getElementById('quickExportBar');
+                    var _pn = document.getElementById('wbPartialNote');
+                    if (data && data.success) {
+                        if (_pn) _pn.style.display = 'none';
+                        if (_qeb) _qeb.style.display = 'flex';
+                    } else {
+                        if (_pn) _pn.style.display = 'none';
+                    }
+                } catch (e) {}
                 window._lastMode = mode;   // 档位单一真相源：结果页徽章、历史打开都读它
                 // 里程碑 2/2：整轮只弹这一次收尾彩蛋
                 wbMileOnce('all', mode === 'deep' ? '\uD83C\uDF89 搞定，三件套已生成'
