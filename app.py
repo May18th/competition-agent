@@ -5055,7 +5055,7 @@ def demo_data():
 
 @app.route('/api/health')
 def health():
-    """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间。
+    """健康检查：仅返回服务状态/运行时长/知识库数量/今日配额/上游探测。
     整体 10 秒缓存 + 上游非阻塞探测，保证 <500ms 快速返回（147 轮）。"""
     now = time.time()
     if _health_cache["data"] is not None and now - _health_cache["checked_at"] < 10:
@@ -5068,15 +5068,15 @@ def health():
     except Exception:
         knowledge_count = 0
         quota = {}
-    latest = load_history(limit=1)
+    # 192 轮【新刺 M11 安全】：公网无鉴权的 /api/health 不再返回 history_count
+    # （全量记录数）与 last_generation_time（最近生成时间）——泄露运营数据且全量计数
+    # 会佐证数据隔离问题。运营统计仅走 admin 鉴权的 /api/admin/stats。
     data = {
         "success": True,
         "status": "ok",
         "uptime_seconds": int(time.time() - START_TIME),
         "knowledge_count": knowledge_count,
         "quota": quota,
-        "history_count": count_history(),
-        "last_generation_time": latest[0]["time"] if latest else None,
         "upstream": {"deepseek": _probe_deepseek()},
     }
     _health_cache["data"] = data

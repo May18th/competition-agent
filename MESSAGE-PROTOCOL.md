@@ -2052,11 +2052,13 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **H7 admin 弱口令 ✅（前轮 9b2740d 已修，本轮补记状态）**：`kechuang2026` 硬编码已清零，只认环境变量 ADMIN_TOKEN（X-Admin-Token 头或 ?token= 兼容）。grep 全库无明文凭据（仅剩站点域名 kechuang2026.cn）。
 - **H8 导出文档口径 ✅**：`项目说明.md` 的「30秒/1-2分钟/LangGraph+Flask/4个Agent串行/500字/2000字」过时写死值全部改为当前口径（简洁版约1-2分钟·2000~4000字级、深度版约3-5分钟·12000字级、多智能体并行协作、去 LangGraph）。
 - **M1 评分波动收敛 ✅（机制落地，待实测）**：`competition_agents.py` 新增评分专用 `_score_llm`（temperature 0.6→0.2、去 frequency/presence 惩罚），创意评分 `idea_evaluator` 与模拟评委 `judge_agent` 两处打分调用改走低温度实例，生成正文仍用原 llm。预期同材料重复打分波动收窄，实测待服务器跑两次对比。
+- **M11 /api/health 过度暴露 ✅（新刺，192 轮）**：health 不再返回 `history_count`（全量记录数）+ `last_generation_time`，只回 status/quota/uptime/knowledge_count/upstream 系统级字段；运营统计走 admin 鉴权 `/api/admin/stats`。实测 keys 已无两字段。
+- **M9 iCAN 赛道匹配 ✅（实测通过）**：`_official_scoring_dims` 实测 None/innovation→创新35实用25原创20技术20、entrepreneurship/创业赛道→创新20商业35技术25团队20、challenge 无官方分→回退默认。匹配规则（id+name 双命中 + is_default 兜底）不出错。
 - **L2 robots.txt ✅（9b2740d 已修，本轮补记）**：`/robots.txt` 路由已存在（屏蔽后台/管理/生成接口）。
 - **【新功能 188-190】漏洞库接口 ✅（新增）**：`GET /api/vulns`（级别/状态/责任人筛选+默认高危优先排序）、`POST /api/vulns/<id>/status`（标「已修复」必填经验否则 400，状态/经验/蒸馏标记/更新时间落盘）、`GET /api/vulns/stats`（级别分布/状态分布/根因归因/责任分布/修复进度）。数据源=解析 `docs/漏洞库.md` 首入 `data/vulns.json`（已 gitignore），之后以 JSON 为准。实测：31 条解析正确、stats 已修复12/进度38.7%、无经验标已修复被 400 拦截、非法状态 400。
 - **漏洞库.md 更新 ✅**：H6/H7/H8/L2 标记已修复并补「经验」字段（根因+防再犯），统计修正为准确值（已修复12/部分4/未修复12/待核实2/待确认1）。
 
-**剩余 Codex 项（未做，如实报）**：M9 iCAN 赛道匹配实测（中，167 轮已实测 dims 正确，仅剩匹配规则复核）、M7 app.py 巨石拆分（高，赛前求稳建议留赛后）、L4 TTFB<800ms（低）。H9 是前端写死数字，后端 `/api/stats` 已有，前端动态化归 WorkBuddy。
+**剩余 Codex 项（未做，如实报）**：M7 app.py 巨石拆分（高，赛前求稳建议留赛后）、L4 TTFB<800ms（低）、M12 quota 触顶监控（运维，已记漏洞库）。H9 是前端写死数字，后端 `/api/stats` 已有，前端动态化归 WorkBuddy。
 
 **提交命令**（add 指定文件，不带 -A、不碰 index.html/static/*）：
-`git add app.py competition_agents.py .gitignore 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 182历史隔离生效 + 188-190漏洞库接口 + M1评分低温度收敛 + H8项目说明口径" && git push origin main`
+`git add app.py competition_agents.py .gitignore 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 182历史隔离 + 188-190漏洞库接口 + M1评分收敛 + M9赛道实测 + M11健康收敛 + H8口径" && git push origin main`
