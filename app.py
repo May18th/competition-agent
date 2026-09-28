@@ -2274,8 +2274,37 @@ def admin_dashboard():
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
     rated_count = avg_row[1] if avg_row else 0
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    # 112 轮：取消「只能看 10 条」——改成可翻页查看全部反馈。
+    # 每页条数/页码走 query string，默认 50 条，上限 500（防止一次拉爆内存/页面）。
+    try:
+        _fb_limit = int(request.args.get("fblimit", 50))
+    except Exception:
+        _fb_limit = 50
+    _fb_limit = max(10, min(500, _fb_limit))
+    try:
+        _fb_page = int(request.args.get("fbpage", 1))
+    except Exception:
+        _fb_page = 1
+    _fb_pages = max(1, (feedback_total + _fb_limit - 1) // _fb_limit)
+    _fb_page = max(1, min(_fb_pages, _fb_page))
     feedbacks = c.execute(
-        "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 10").fetchall()
+        "SELECT id, history_id, content, created_time, category FROM feedback "
+        "ORDER BY id DESC LIMIT ? OFFSET ?",
+        (_fb_limit, (_fb_page - 1) * _fb_limit)).fetchall()
+    # 反馈本身不带评分；若它关联了某次生成，就把用户那次打的星一并显示（能看出好评/差评）
+    _fb_rating = {}
+    _fb_hids = [int(r["history_id"]) for r in feedbacks
+                if r["history_id"] and str(r["history_id"]).isdigit()]
+    if _fb_hids:
+        try:
+            _ph = ",".join("?" * len(_fb_hids))
+            for _hr in c.execute(
+                    "SELECT id, rating FROM history WHERE id IN (%s)" % _ph,
+                    tuple(_fb_hids)).fetchall():
+                if _hr["rating"]:
+                    _fb_rating[int(_hr["id"])] = int(_hr["rating"])
+        except Exception:
+            pass
     # 满意度分布（1-5 星）
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     for r, n in c.execute(
@@ -2320,11 +2349,52 @@ def admin_dashboard():
     quota_limit = 500
     quota_remaining = max(0, quota_limit - quota_calls)
 
+    # 111/112 轮：反馈区从「原生 li 平铺」升级为卡片化（分类色块 + 时间人话化 +
+    # 关联星级 + 超长截断悬停看全文 + hover 高亮）。内容一律 _html_escape 防注入。
     fb_items = []
     for r in feedbacks:
-        fb_items.append('<li><div class="t">%s</div><div>%s</div></li>'
-                        % (r["created_time"] or "", _html_escape(r["content"] or "")))
+        _cat = (r["category"] or "其他").strip() or "其他"
+        _stars = ""
+        _hid = r["history_id"]
+        if _hid and str(_hid).isdigit() and int(_hid) in _fb_rating:
+            _n = _fb_rating[int(_hid)]
+            _stars = ('<span class="fbstar" title="该次生成用户打了 %d 星">%s</span>'
+                      % (_n, "★" * _n + "☆" * (5 - _n)))
+        _txt = _html_escape(r["content"] or "")
+        fb_items.append(
+            '<li class="fbcard">'
+            '<div class="fbmeta">'
+            '<span class="fbid">#%s</span>'
+            '<span class="fbcat %s">%s</span>'
+            '<span class="fbtime">%s</span>%s'
+            '</div>'
+            '<div class="fbtext" title="%s">%s</div>'
+            '</li>'
+            % (r["id"], _fb_cat_cls(_cat), _html_escape(_cat),
+               _fb_time_fmt(r["created_time"]), _stars, _txt, _txt))
     fb_html = "".join(fb_items) or '<li class="empty">暂无反馈</li>'
+
+    # 翻页控件（页码越界已在上面 clamp，不会出现空白页）
+    if feedback_total:
+        _dis = lambda at_edge: " fbpg dis" if at_edge else " fbpg"
+        fb_pager = (
+            '<div class="fbpager">'
+            '<a class="%s" href="?fbpage=1&amp;fblimit=%d">首页</a>'
+            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">上一页</a>'
+            '<span class="fbnow">第 %d / %d 页 · 共 %d 条</span>'
+            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">下一页</a>'
+            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">末页</a>'
+            '</div>'
+            % (_dis(_fb_page <= 1).strip(), _fb_limit,
+               _dis(_fb_page <= 1).strip(), _fb_page - 1, _fb_limit,
+               _fb_page, _fb_pages, feedback_total,
+               _dis(_fb_page >= _fb_pages).strip(), _fb_page + 1, _fb_limit,
+               _dis(_fb_page >= _fb_pages).strip(), _fb_pages, _fb_limit))
+    else:
+        fb_pager = ""
+    # 标题里的条数先拼好再进模板：这个 HTML 整段用 % 格式化，直接在模板里写 %d
+    # 会跟后面的参数元组错位（静默错列，极难发现）
+    fb_title = "全部反馈（%d 条）" % feedback_total
 
     # 满意度分布条
     max_r = max(rating_dist.values()) or 1
@@ -2412,6 +2482,25 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
 .empty{color:#9ca3af;text-align:center;padding:16px}
+/* 111/112 轮：反馈卡片化。白卡+圆角+淡阴影+hover 高亮，分类色块拉齐视觉层级 */
+.fblist{list-style:none;padding:0;margin:0}
+.fbcard{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .15s,transform .15s}
+.fbcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
+.fbmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#6b7280;margin-bottom:6px}
+.fbid{color:#9ca3af;font-variant-numeric:tabular-nums}
+.fbcat{border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.fbcat-good{background:#dcfce7;color:#15803d}
+.fbcat-idea{background:#dbeafe;color:#1d4ed8}
+.fbcat-bug{background:#fee2e2;color:#b91c1c}
+.fbcat-warn{background:#fef3c7;color:#b45309}
+.fbcat-other{background:#f1f5f9;color:#475569}
+.fbstar{color:#f59e0b;letter-spacing:1px}
+/* 超长正文截到 4 行，完整内容走 title 悬停，避免单条反馈把整页撑长 */
+.fbtext{font-size:14px;color:#1f2937;word-break:break-word;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;line-height:1.6}
+.fbpager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.fbpager .fbpg{background:#fff;color:#374151;text-decoration:none;padding:6px 12px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.fbpager .fbpg.dis{opacity:.45;pointer-events:none}
+.fbpager .fbnow{color:#6b7280}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
@@ -2449,19 +2538,61 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <h2 style="margin-top:0">待处理问题工单（自动路由给前端 / 后端）</h2>
 <ul>%s</ul>
 </div>
-<h2>最近 10 条反馈</h2>
-<ul>%s</ul>
+<h2 style="margin-top:0">%s</h2>
+<ul class="fblist">%s</ul>
+%s
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
 </div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
                               rated_count, feedback_total, avg_dur, success_rate,
                               judge_avg, rating_bars_html, trend_html, comp_html,
-                              cat_html, issues_html, fb_html)
+                              cat_html, issues_html, fb_title, fb_html, fb_pager)
     return html
 
 
 def _html_escape(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+def _fb_cat_cls(cat):
+    """反馈分类 → 色块 class。好评绿 / 功能建议蓝 / 问题反馈红 / 吐槽橙 / 其他灰。
+
+    分类取值来自 _categorize_feedback（吐槽/问题反馈/功能建议/好评/其他），
+    新增分类只要在这里补一行即可，未知分类一律落到灰色 other，不会白板。
+    """
+    return {
+        "好评": "fbcat-good",
+        "功能建议": "fbcat-idea",
+        "问题反馈": "fbcat-bug",
+        "吐槽": "fbcat-warn",
+    }.get((cat or "").strip(), "fbcat-other")
+
+
+def _fb_time_fmt(t):
+    """反馈时间人话化：今天/昨天说相对日，今年省略年份，一律去掉秒。
+
+    兼容两种入库写法（"2026-09-28 21:05" 与 "2026-09-28 21:05:07"）。
+    解析不出来就原样截断返回，绝不返回空——时间列空着比格式丑更让人以为数据丢了。
+    """
+    s = (t or "").strip()
+    if not s:
+        return "—"
+    parts = s.split(" ")
+    date_s = parts[0]
+    time_s = parts[1][:5] if len(parts) > 1 else ""
+    today_s = datetime.now().strftime("%Y-%m-%d")
+    if date_s == today_s:
+        return ("今天 %s" % time_s).strip()
+    try:
+        d = datetime.strptime(date_s, "%Y-%m-%d")
+        delta = (datetime.strptime(today_s, "%Y-%m-%d") - d).days
+        if delta == 1:
+            return ("昨天 %s" % time_s).strip()
+        if d.year == datetime.now().year:
+            return ("%s %s" % (date_s[5:], time_s)).strip()
+    except Exception:
+        pass
+    return s[:16]
 
 
 @app.route('/monitor')
@@ -3039,6 +3170,22 @@ def _run_generation(data):
                 pass
     except Exception:
         pass
+    # 分层质检 L6（第一百三十三轮）：评价真实性（quote 存在/评分一致/优缺平衡/无套话）
+    try:
+        from quality_gate import check_review
+        _review = payload.get("expert_review") or ""
+        if _review:
+            _rok, _rissues = check_review(_review, payload.get("proposal") or "")
+            if not _rok:
+                print(f"[quality_gate] L6 评价质检未通过：{_rissues}")
+                try:
+                    with open('运行日志.md', 'a', encoding='utf-8') as _f:
+                        _f.write("[%s] L6 FAIL: %s\n" % (
+                            datetime.now().strftime("%Y-%m-%d %H:%M"), '；'.join(_rissues)))
+                except Exception:
+                    pass
+    except Exception:
+        pass
     return payload
 
 
@@ -3239,7 +3386,7 @@ def _start_generation(data):
         from competition_agents import get_quota_status
         if get_quota_status().get("exceeded"):
             return None, jsonify({"success": False, "code": "quota_exceeded",
-                                  "error": "今日生成额度已满，明日恢复"})
+                                  "error": "今日生成次数已达上限，请明天再试"})
     except Exception:
         pass
     if _rate_limited():
