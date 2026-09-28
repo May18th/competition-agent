@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟出 12000 字级完整方案书（56 次实测中位 12058 字），支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
          标签页也永远是空白图标。直接复用 logo.png，零风险 -->
     <link rel="icon" type="image/png" href="/static/logo.png">
@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟出 12000 字级完整方案书（56 次实测中位 12058 字），支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 旧域名国内多数网络打不开，微信/QQ 分享卡片图片一直加载失败；统一切现域名 -->
     <meta property="og:image" content="https://kechuang2026.cn/static/og-image.png">
     <meta property="og:image:width" content="1200">
@@ -338,7 +338,7 @@
                             <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                             <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                                 章节可直接改（改动只存在你这台设备）。<br>
-                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 2000~4000 字，128 次实测中位 2344 字），不套用这里的多章结构。
+                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（具体字数与用时见档位卡上的实测统计），不套用这里的多章结构。
                             </div>
                         </div>
                         <div onclick="evToggleMore()" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
@@ -523,6 +523,19 @@
                                 </label>
                             </div>
                         </div>
+                        <!-- 174 轮「验证即沉淀」的用户授权端：默认开、可关，状态随本机记忆。
+                             只写清两件事——什么情况下才入库（达标+你亲手点），以及脱敏到什么程度
+                             （不敢说"全自动脱敏"，后端对自由文本里的裸姓名有盲区，见 training_store）。 -->
+                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);">
+                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; line-height: 1.65;">
+                                <input type="checkbox" id="trainConsent" checked onchange="wbTrainToggle(this.checked)" style="margin-top: 3px; cursor: pointer; flex-shrink: 0;">
+                                <span>我的生成内容用于训练<span class="wb-opt">（默认开）</span>
+                                    <span style="display:block; color: var(--text-mute); font-size: 11.5px; margin-top: 2px;">
+                                        仅在评分达标且你亲手点「沉淀」时，才把内容脱敏后存入知识库；姓名/院校/电话/邮箱等会先替换成占位符。关掉后不再入库，随时可改。脱敏覆盖常见格式的个人信息，正文里的裸姓名可能识别不到，介意的话别点。
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -569,11 +582,12 @@
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁版 <span class="wb-tier-flag wb-tier-new">新手友好</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <!-- 第一百四十三轮 / 第一百五十七轮：字数与时长按数据库真实分布重写，
-                                 用「中位数」口径（不是个别极值），样本数可溯源。
-                                 旧文案「约 1 分钟出 4000 字级（近 40 次实测）」与库里 128 条样本不符
-                                 （中位仅 2344 字），属不实宣传，必须按真实口径改 -->
-                            <b style="color: var(--c-a);">约 1~2 分钟出 2000~4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（128 次实测：中位 2344 字 / 50~96 秒）</span><br>
+                            <!-- 186 轮【P1·数据真实性】：这里的数字原来是**写死的**（具体值见 git 历史，勿再写死），
+                                 时间一长就和 /api/stats 的真实分布脱节（实测已变成中位 2050 字 / 58.5 秒），
+                                 评委拿页面文案对照自己实测会当场打脸——这正是「数据真实」铁律的反面教材。
+                                 现在改为页面加载后从 /api/stats 动态取中位数/样本数渲染（见 app.js wbStatsFill）；
+                                 样本不足时只显示定性描述，绝不编数字。 -->
+                            <b style="color: var(--c-a);" id="statFastHead">出稿快，字数精</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statFastDetail">（正在读取实测数据…）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -581,7 +595,8 @@
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span class="wb-tier-flag wb-tier-hot">推荐</span><span class="wb-tier-flag wb-tier-pro">老手进阶</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 3~5 分钟出 12000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（56 次实测：中位 12058 字 / 最长约 4.7 分钟）</span><br>
+                            <!-- 同上 186 轮：数字一律动态取，不写死（写死值已与接口实测脱节） -->
+                            <b style="color: var(--c-b);" id="statDeepHead">内容全，含图表与路演稿</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statDeepDetail">（正在读取实测数据…）</span><br>
                             简洁版全部 + 多专家模拟评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -753,6 +768,9 @@
                 <div class="score-label">AI 模拟自评（文档质量）/ 100<span style="display:block; font-size: 11.5px; color: var(--text-mute); font-weight: 400; margin-top: 2px;">本页唯一评分</span></div>
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
                 <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
+                <!-- 174 轮「验证即沉淀」的用户侧入口：只在分数达标时露出来（不达标点了也是 422，
+                     与其让用户在错误里撞墙，不如压根不显示）。 -->
+                <div id="trainArchiveRow" style="display: none; margin-top: 10px;"></div>
                 <!-- 用户拍板必做（第七十一/七十二轮）：同一项目两次生成 74 vs 86，队友以为出 bug。
                      波动说明必须常驻在评分大数字下方，不得省略 -->
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
@@ -2414,6 +2432,9 @@ window.addEventListener('resize', function () {
             <div style="margin-bottom: 7px;"><b>5. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
             <!-- 第八十三轮【中】：评委/用户会关注数据去向，正面说清比含糊更可信（不写吓人条款） -->
             <div><b>6. 数据说明</b>：你输入的创意与生成记录用于生成材料、改进本工具，仅管理员可查看；主动创建的分享链接 7 天后自动失效；历史记录可在「历史」面板随时删除。</div>
+            <!-- 174 轮「验证即沉淀」条款：知情 + 可拒绝。写明「默认开但能关、只在你亲手点时才入库、
+                 脱敏有边界（不吹全自动）」——合规的底线是别把话说满，也别让用户不知道。 -->
+            <div style="margin-top: 7px;"><b>7. 内容使用授权</b>：评分达标（≥85）的生成内容，在你于「补充信息」里开启开关并亲手点击「沉淀」后，会被脱敏（姓名、院校、电话、邮箱、学号等替换为占位符）用于知识库沉淀，以改进后续生成质量。该开关默认开启，你可随时关闭；关闭后新内容不再入库，已入库内容可联系管理员删除。脱敏覆盖常见格式化的个人信息，自由文本中的裸姓名可能无法识别，建议沉淀前自行检查。</div>
         </div>
     </details>
 </footer>

@@ -746,7 +746,17 @@
             // 这里同步执行时 getElementById 拿到的是 null，wbUaCheck 走到 `if (!m) return true` 就裸退了，
             // 结果微信/QQ 用户进页面从来没自动收到过这个提示，只有点了上传按钮的那一次才弹。
             // 挪到 DOM 完整之后执行；已经就绪就直接跑（历史回看等二次调用场景）。
-            var _uaCheckSoon = function () { try { wbUaCheck(); } catch (e) {} };
+            var _uaCheckSoon = function () {
+                try { wbUaCheck(); } catch (e) {}
+                // 174 轮：开关状态从本机记忆回填（也与 #trainConsent 排在 app.js 之前与否无关，
+                // 统一等 DOM 就绪，避免重蹈 166 轮「元素还不存在就初始化」的覆辙）
+                try {
+                    var _tc = document.getElementById('trainConsent');
+                    if (_tc) _tc.checked = wbTrainConsent();
+                } catch (e) {}
+                // 186 轮：档位卡的实测数字从 /api/stats 现取（拿不到就只显示定性文案）
+                try { wbStatsFill(); } catch (e) {}
+            };
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', _uaCheckSoon);
             } else {
@@ -1718,7 +1728,7 @@
             // 用户分不清到底说的是哪一步。两套各用一套写法，一眼能分辨。
             { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
             { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟产出 12000 字级完整申报材料（56 次实测中位 12058 字）。' }
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版出稿快、字数精；深度版内容更全，含图表与路演 PPT。两档的实际字数与用时见档位卡上的实测统计。' }
         ];
         var _coachIdx = 0;
 
@@ -2719,7 +2729,11 @@
             });
             if (!any) { box.style.display = 'none'; return; }
 
-            var W = 400, H = 400, cx = 200, cy = 205, R = 132, N = 5;
+            // 184 轮【P1】：画布从 400 加宽到 470、圆心右移到 235。
+            // 原尺寸下「可行性 78」这类两位数标签从 x≈354 以 anchor=start 向右画，右端到 409，
+            // 超出 viewBox(400) 被 SVG 默认 overflow:hidden 切掉末位字符——用户看到的是
+            // 「可行性 7」，评委以为项目可行性只有 7 分。左右各留 35px 余量 + 下面再做边界收拢。
+            var W = 470, H = 400, cx = 235, cy = 205, R = 132, N = 5;
             function pt(i, r) {
                 var a = -Math.PI / 2 + i * 2 * Math.PI / N;
                 return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -2729,7 +2743,8 @@
                 for (var i = 0; i < N; i++) { var p = pt(i, radius); pts.push(p[0].toFixed(1) + ',' + p[1].toFixed(1)); }
                 return '<polygon points="' + pts.join(' ') + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"/>';
             }
-            var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">';
+            // overflow:visible 兜底：万一标签仍探出 viewBox，也不再被硬裁（数字完整性优先于留白）
+            var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;overflow:visible;" xmlns="http://www.w3.org/2000/svg">';
             // 网格（5 层） + 轴线
             for (var g = 5; g >= 1; g--) {
                 svg += poly(R * g / 5, 'rgba(148,163,184,.25)', (g === 5 ? 'rgba(148,163,184,.04)' : 'none'), 1);
@@ -2756,6 +2771,10 @@
                 var lp = pt(z, R + 30);
                 var anchor = 'middle';
                 var lx = lp[0];
+                // 184 轮：标签先收进安全区再判 anchor——原来只按未收拢的 lx 判断，
+                // 靠边的标签会一路画到画布外被切掉末位数字。
+                var PAD = 42;                       // 左右各留这么多，够放「可行性 78」
+                lx = Math.min(Math.max(lx, PAD), W - PAD);
                 if (Math.abs(lx - cx) < 30) anchor = 'middle';
                 else if (lx < cx) anchor = 'end';
                 else anchor = 'start';
@@ -4804,7 +4823,14 @@
                         function _P(prio, fn) { _Q.push([prio, fn]); }
 
                         // ---- 0：分数，第一眼要看到的 ----
-                        _P(0, function () { document.getElementById('scoreNum').innerText = data.data.score; });
+                        _P(0, function () {
+                            document.getElementById('scoreNum').innerText = data.data.score;
+                            // 174 轮：分数出来才知道够不够入库门槛（≥85），顺手同步「沉淀」入口
+                            try {
+                                window._wbLastScore = parseInt(data.data.score, 10) || 0;
+                                wbTrainArchiveSync(window._wbLastScore);
+                            } catch (e) {}
+                        });
                         _P(0, function () {
                             var si = document.getElementById('simInfo');
                             if (si) {
@@ -4873,7 +4899,7 @@
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12章</b>（56 次实测中位 12058 字），自动配数据图表'],
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
@@ -5307,7 +5333,7 @@
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
                     ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字）；深度版约 3~5 分钟（12000 字级 / 12 章 + 图表 + PPT + 多专家模拟评审）'],
+                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多专家模拟评审（实测字数与用时见档位卡）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -6406,6 +6432,18 @@
                 // 打开历史必须同步记下 history_id，否则 wbShare 和导出回源都会拿不到 id，
                 // 表现成「分享提示还没存进历史」「导出不回源当前记录」。
                 window._lastHistoryId = id;
+                // 174 轮：回看历史必须重算「沉淀」入口。原来只在生成完成那次同步过，
+                // 于是回看一条旧记录时，按钮上写的还是上一条的分数、点下去沉淀的却是当前这条
+                // ——「显示的分数」和「实际入库的记录」不是同一条，属于静默错沉淀。
+                try {
+                    var _hs = 0;
+                    try {
+                        var _rd = (data && data.result_data) ? JSON.parse(data.result_data) : {};
+                        _hs = parseInt((data && data.score) || (_rd && _rd.score) || 0, 10) || 0;
+                    } catch (e2) { _hs = parseInt((data && data.score) || 0, 10) || 0; }
+                    window._wbLastScore = _hs;
+                    wbTrainArchiveSync(_hs);
+                } catch (e) {}
                 wbFabShow(!!data.rich_deck);
                 var isDeep = !!(data.competitor_analysis || data.business_model || data.tech_solution);
                 window._lastMode = data.mode || (isDeep ? 'deep' : 'fast');
@@ -6640,6 +6678,136 @@
                 })
                 .catch(function () { return fromStatic().then(render); });
         })();
+
+        /* ---------- 174 轮：内容使用授权（训练开关 + 沉淀入库） ----------
+           合规要求「知情 + 可拒绝」，所以：开关默认开但一句话说清后果、状态随本机记忆
+           （走 _wbStoreSet，iOS/微信拦 localStorage 时自动降级到 sessionStorage/内存）、
+           入库必须用户亲手点（系统绝不自动替他决定他的内容去哪）。 */
+        var WB_TRAIN_KEY = 'wb_train_consent';
+        function wbTrainConsent() {
+            // 没显式关过就是「开」——默认参与，退出路径要显式、进入不必确认
+            return _wbStoreGet(WB_TRAIN_KEY) !== '0';
+        }
+        window.wbTrainConsent = wbTrainConsent;
+        function wbTrainToggle(on) {
+            _wbStoreSet(WB_TRAIN_KEY, on ? '1' : '0');
+            try {
+                wbToast(on ? '已开启：达标内容可沉淀入知识库' : '已关闭：你的内容不会再入库',
+                        { type: on ? 'ok' : 'warn', ms: 2600 });
+            } catch (e) {}
+            try { wbTrainArchiveSync(); } catch (e) {}
+        }
+        window.wbTrainToggle = wbTrainToggle;
+
+        // 仅在评分 ≥85 且已授权时露出「沉淀」按钮；不达标就整行藏掉，别让人撞 422 错误
+        function wbTrainArchiveSync(score) {
+            var row = document.getElementById('trainArchiveRow');
+            if (!row) return;
+            if (typeof score !== 'number') score = parseInt(window._wbLastScore || 0, 10);
+            var ok = wbTrainConsent() && score >= 85 && window._lastHistoryId;
+            if (!ok) { row.style.display = 'none'; row.innerHTML = ''; return; }
+            row.style.display = '';
+            row.innerHTML =
+                '<button class="wb-glass-btn wb-glass-btn-sm" onclick="wbTrainArchive()" '
+                + 'title="把这一版脱敏后存入知识库，用于改进后续生成质量">'
+                + '<span class="wb-dot"></span>沉淀为训练样本</button>'
+                + '<span style="margin-left:8px; font-size:11.5px; color:var(--text-mute);">'
+                + '评分 ' + score + ' ≥ 85 · 脱敏后入库</span>';
+        }
+        window.wbTrainArchiveSync = wbTrainArchiveSync;
+
+        function wbTrainArchive() {
+            var row = document.getElementById('trainArchiveRow');
+            var hid = window._lastHistoryId;
+            if (!hid) { wbToast('这条结果还没入库记录，刷新后再试', { type: 'ok', ms: 2600 }); return; }
+            var btn = row ? row.querySelector('button') : null;
+            if (btn) { btn.disabled = true; btn.innerHTML = '沉淀中…'; }
+            fetch('/api/training/archive', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ history_id: hid, consent: wbTrainConsent() })
+            }).then(function (r) { return r.json().then(function (d) { return { st: r.status, d: d }; }); })
+              .then(function (res) {
+                var d = res.d || {};
+                if (res.st === 200 && d.success) {
+                    if (row) {
+                        row.innerHTML = '<span style="font-size:12px; color:var(--c-b);">'
+                            + '✓ 已沉淀入知识库' + (d.is_new ? '' : '（库里已有相同内容，未重复写入）')
+                            + '</span>';
+                    }
+                    wbToast('已脱敏入库，感谢贡献', { type: 'ok', ms: 2600 });
+                } else if (res.st === 403) {
+                    wbToast('你已在设置里关闭授权，开启后才能沉淀', { type: 'error', ms: 3200 });
+                    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="wb-dot"></span>沉淀为训练样本'; }
+                } else if (res.st === 422 && d.code === 'score_low') {
+                    wbToast('评分 ' + d.score + ' < 85，未达入库门槛', { type: 'error', ms: 3200 });
+                    if (row) row.style.display = 'none';
+                } else {
+                    wbToast('沉淀失败：' + (d.error || '请稍后重试'), { type: 'error', ms: 3200 });
+                    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="wb-dot"></span>沉淀为训练样本'; }
+                }
+            }).catch(function () {
+                wbToast('网络异常，沉淀未成功', { type: 'error', ms: 2600 });
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="wb-dot"></span>沉淀为训练样本'; }
+            });
+        }
+        window.wbTrainArchive = wbTrainArchive;
+
+        /* ---------- 186 轮：档位文案的实测数据一律动态取，禁止写死 ----------
+           教训（本人 157 轮亲手埋的雷）：当时把「样本数 / 中位字数 / 用时区间」直接
+           写进 HTML。样本会增长、口径会变，写死的数字几个月后必然与 /api/stats 打架，
+           评委一对照就穿帮——「数据必须真实经得起推敲」这条铁律，最先要约束的是自己。
+           现在：页面加载后拉 /api/stats，用 **中位数 + 样本数** 单一口径渲染；
+           拿不到数据或样本不足时只显示定性描述，绝不编一个好看的数。 */
+        var WB_STATS = null;
+        function _wbDurTxt(sec) {
+            sec = Math.round(parseFloat(sec) || 0);
+            if (sec <= 0) return '';
+            if (sec < 60) return sec + ' 秒';
+            var m = sec / 60;
+            return (m < 10 ? (Math.round(m * 10) / 10) : Math.round(m)) + ' 分钟';
+        }
+        function _wbTierLine(mode, wantHead) {
+            var s = (WB_STATS && WB_STATS[mode]) || null;
+            var n = s ? (parseInt(s.sample_count, 10) || 0) : 0;
+            var med = s ? (parseInt(s.chars_median, 10) || 0) : 0;
+            var dur = s ? _wbDurTxt(s.duration_median_sec) : '';
+            if (!n || !med) {
+                // 样本不足：只讲定性，不报数字
+                return wantHead
+                    ? (mode === 'fast' ? '出稿快，字数精' : '内容全，含图表与路演稿')
+                    : '（样本积累中，暂不公布实测数据）';
+            }
+            if (wantHead) {
+                return mode === 'fast'
+                    ? ('约 ' + (dur || '1 分钟') + '出 ' + Math.round(med / 100) * 100 + ' 字级申报书')
+                    : ('约 ' + (dur || '4 分钟') + '出 ' + Math.round(med / 1000) * 1000 + ' 字级完整方案书');
+            }
+            return '（' + n + ' 次实测中位 ' + med + ' 字' + (dur ? ' / ' + dur : '') + '）';
+        }
+        function wbStatsFill() {
+            var set = function (id, txt) {
+                var el = document.getElementById(id);
+                if (el && txt) el.innerText = txt;
+            };
+            var fallback = function () {
+                set('statFastHead', '出稿快，字数精');
+                set('statFastDetail', '（样本积累中，暂不公布实测数据）');
+                set('statDeepHead', '内容全，含图表与路演稿');
+                set('statDeepDetail', '（样本积累中，暂不公布实测数据）');
+            };
+            try {
+                fetch('/api/stats').then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d || !d.success) { fallback(); return; }
+                        WB_STATS = d; window.WB_STATS = d;
+                        set('statFastHead', _wbTierLine('fast', true));
+                        set('statFastDetail', _wbTierLine('fast', false));
+                        set('statDeepHead', _wbTierLine('deep', true));
+                        set('statDeepDetail', _wbTierLine('deep', false));
+                    }).catch(fallback);
+            } catch (e) { fallback(); }
+        }
+        window.wbStatsFill = wbStatsFill;
 
         /* ---------- 171 轮：图表配色个性化 ----------
            用户需求：「图表颜色能不能像 ai 对话一样，根据使用对象的想法进行改变」。
