@@ -6144,6 +6144,14 @@
                 };
                 set('parsedRules', data.parsed_rules);
                 set('similarityReport', data.similarity_report);
+                try {
+                    var si = document.getElementById('simInfo');
+                    if (si) {
+                        var s = data.similarity || {};
+                        si.innerText = (typeof s.percent === 'number') ? (Math.round(s.percent * 10) / 10) + '%' : '暂无';
+                        si.title = (s.checked ? '与本地 ' + s.checked + ' 条范文对比（本地初检，非知网正式查重）' : '本地初检，非正式查重');
+                    }
+                } catch (e) {}
                 set('proposalText', data.proposal);
                 set('judgeFeedback', data.judge_feedback);
                 set('proposalAnalysis', data.proposal_analysis);

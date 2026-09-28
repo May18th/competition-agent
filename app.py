@@ -3516,6 +3516,10 @@ def export_zip():
         mappings.append(("09_答辩问题预测.docx", "答辩问题预测", data['defense_questions']))
     if data.get('ppt_outline'):
         mappings.append(("10_PPT大纲.docx", "PPT大纲", data['ppt_outline']))
+    if data.get('tech_solution'):
+        mappings.append(("11_技术方案.docx", "技术方案", data['tech_solution']))
+    if data.get('implementation_plan'):
+        mappings.append(("12_实施计划.docx", "实施计划", data['implementation_plan']))
     # 加固：内容全空时不能静默返回一个空 zip（22 字节）还告诉用户成功，
     # 否则用户下载到空包毫不知情。这里明确报错。
     valid = [m for m in mappings if m[2] and str(m[2]).strip()]
@@ -3596,9 +3600,9 @@ def export_zip():
                     if c.get('caption'):
                         cap = cdoc.add_paragraph(c['caption'])
                         cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                cpath = os.path.join(tmpdir, '11_项目数据图表.docx')
+                cpath = os.path.join(tmpdir, '13_项目数据图表.docx')
                 cdoc.save(cpath)
-                zf.write(cpath, '11_项目数据图表.docx')
+                zf.write(cpath, '13_项目数据图表.docx')
         except Exception as e:
             print(f"[export_zip] 图表docx失败: {e}")
         try:
@@ -3621,8 +3625,8 @@ def export_zip():
                     img = os.path.join('generated', os.path.basename(c.get('url', '')))
                     if os.path.exists(img):
                         chart_paths[c.get('id')] = img
-                build_deck(deck, os.path.join(tmpdir, '12_路演PPT.pptx'), chart_paths)
-                zf.write(os.path.join(tmpdir, '12_路演PPT.pptx'), '12_路演PPT.pptx')
+                build_deck(deck, os.path.join(tmpdir, '14_路演PPT.pptx'), chart_paths)
+                zf.write(os.path.join(tmpdir, '14_路演PPT.pptx'), '14_路演PPT.pptx')
         except Exception as e:
             print(f"[export_zip] PPT失败: {e}")
     project = data.get('idea') or data.get('project_name') or ''
