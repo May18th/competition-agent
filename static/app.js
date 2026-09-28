@@ -3829,6 +3829,10 @@
             ['ppt_outline',         'pptOutline',         'defense'],
             ['speech_script',       'speechScript',       'defense']
         ];
+        // 必须挂到 window：打字机 twSet 在 index.html 的另一个 script 块里，
+        // 它靠 _STREAM_MAP 找字段对应的 DOM id。不挂全局的话 fieldMeta() 永远拿到 undefined，
+        // twSet 每次直接 return —— 流式草稿从来没真正渲染过（生成中看不到内容，结束才整页蹦出来）。
+        window._STREAM_MAP = _STREAM_MAP;
         var _streamLen = {};          // 字段 -> 已渲染字数，用于判断是否有新增
         var _streamAccum = {};        // 字段 -> 已累积全文（配合后端 cursor 增量，只拉新增后缀）
         var _streamShown = false;     // 结果区是否已因流式内容提前展开

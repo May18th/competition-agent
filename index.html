@@ -1454,7 +1454,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=8"></script>
+    <script src="/static/app.js?v=9"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1706,7 +1706,40 @@ window.addEventListener('resize', function () {
         var el = document.getElementById(o.id);
         if (!el) return;
         if (!window.marked) { el.textContent = txt; return; }
-        el.innerHTML = marked.parse(txt);
+        // 闪屏根因（用户实测「不稳定要闪屏」）：原来每帧 el.innerHTML = marked.parse(全文)，
+        // 深度版 1.2 万字时每秒整段重排约 60 次 —— 高度反复跳动就是这么来的。
+        // 改成「稳定区 + 尾段」：以空行分界，已经写完的段落固化在 DOM 里不再重绘，
+        // 只有正在增长的最后一段放进独立子节点、每帧只更新这一小段。
+        var cut = txt.lastIndexOf('\n\n');
+        var stable = cut >= 0 ? txt.slice(0, cut) : '';
+        var tail = cut >= 0 ? txt.slice(cut) : txt;
+        var scroller = document.scrollingElement || document.documentElement;
+        var y0 = scroller ? scroller.scrollTop : 0;
+        try {
+        if (o.paintedStable !== stable) {
+            // 稳定区只在段落边界推进时重绘一次，不是每帧
+            var oldTail = document.getElementById(o.id + '__tail');
+            if (oldTail && oldTail.parentNode === el) el.removeChild(oldTail);
+            el.innerHTML = marked.parse(stable);
+            o.paintedStable = stable;
+        }
+        if (tail) {
+            var tEl = document.getElementById(o.id + '__tail');
+            if (!tEl) {
+                tEl = document.createElement('div');
+                tEl.id = o.id + '__tail';
+                el.appendChild(tEl);
+            }
+            tEl.innerHTML = marked.parse(tail);
+        }
+        // 内容变长会把用户正在看的位置顶走（跳动的观感来源），渲染后把滚动位置补回去
+        if (scroller && y0 > 0 && scroller.scrollTop !== y0) scroller.scrollTop = y0;
+        } catch (err) {
+            // 增量渲染是新写的路径，万一哪段 Markdown 切出异常结构，
+            // 回退到原来的全文渲染——宁可慢一点闪一点，也不能什么都不显示
+            el.innerHTML = marked.parse(txt);
+            o.paintedStable = null;
+        }
         el.classList.add('streaming');
         var tb = document.querySelector('.tab[onclick*="' + o.tab + '"]');
         if (tb) {
@@ -1738,7 +1771,9 @@ window.addEventListener('resize', function () {
                 if (o.shown !== o.painted) { twPaint(o, o.full); o.painted = o.shown; }
                 return;
             }
-            if (o.shown - o.painted >= 8) {
+            // 重绘门槛从 8 字提到 24 字：配合上面的增量渲染，重排次数降到原来的三分之一，
+            // 观感上仍是连续的打字机效果，但不再每帧动一次布局
+            if (o.shown - o.painted >= 24) {
                 twPaint(o, twSlice(o.full, o.shown));
                 o.painted = o.shown;
             }
