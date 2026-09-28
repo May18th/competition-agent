@@ -2156,7 +2156,7 @@ body.light .btn-primary:hover:not(:disabled) {
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-a);">约 40 秒出 1000 字</b><span style="color: var(--text-mute); font-size: 11.5px;">（比你泡碗面还快 🍜）</span><br>
+                            <b style="color: var(--c-a);">约 40 秒出 1000 字</b><span style="color: var(--text-mute); font-size: 11.5px;">（比你泡碗面还快）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -2164,7 +2164,7 @@ body.light .btn-primary:hover:not(:disabled) {
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 4~5 分钟出 8000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（刚好够你续杯咖啡 ☕）</span><br>
+                            <b style="color: var(--c-b);">约 4~5 分钟出 8000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（刚好够你续杯咖啡）</span><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -2202,7 +2202,7 @@ body.light .btn-primary:hover:not(:disabled) {
                             ⏳ 正在解析赛事规则... 0%
                         </div>
                         <span id="lenBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">已生成 0 字</span>
-                        <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">⏱ 预计 --</span>
+                        <span id="etaBadge" style="display: none; flex-shrink: 0; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">预计 --</span>
                     </div>
                 </div>
                 <!-- 等待期阶段副标题：人话版。中文阶段名仍以后端 stage_label 为准，这里只补一句有温度的话，不覆盖、不替换 -->
@@ -2289,7 +2289,7 @@ body.light .btn-primary:hover:not(:disabled) {
 
             <!-- 图表数据真实性提醒：正文里列了「待替换数据清单」才出现 -->
             <div id="dataTodoBar" style="display: none; margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(245,166,35,.12); border: 1px solid rgba(245,166,35,.4); font-size: 13px; color: var(--text); line-height: 1.75;">
-                <div style="font-weight: 600;">📊 有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
+                <div style="font-weight: 600;">有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
                 <div style="color: var(--text-dim); font-size: 12.5px; margin-top: 2px;">
                     图表里的预算、市场规模等目前是<b>测算值</b>，图上已标橙色「需替换为实测」。
                     提交前按清单换成你们自己测出来的数或公开数据（写明机构与年份）。
@@ -4149,8 +4149,8 @@ body.light .btn-primary:hover:not(:disabled) {
                 sections: ["一、项目背景与痛点", "二、需求分析与目标用户", "三、开发工具与技术选型",
                            "四、技术方案与系统架构", "五、功能说明与 AI 核心作用",
                            "六、使用说明", "七、应用前景与商业模式", "八、团队分工与知识产权"],
-                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/技术实现30/实用价值20/用户体验10/应用前景10
-                scoring: [["创新性", 30], ["技术实现", 30], ["实用价值", 20], ["用户体验", 10], ["应用前景", 10]],
+                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/商业性25/技术方案25/产品介绍20
+                scoring: [["创新性", 30], ["商业性", 25], ["技术方案", 25], ["产品介绍", 20]],
                 deduct: "扣分点：AI 只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
                 // 官方提交物（AI 应用创新挑战赛）：应用方案 PDF + 演示视频 + 可运行程序
                 submit: ["应用方案 PDF（≤20页、≤50MB）", "演示视频 MP4（≤5分钟）",
@@ -4161,7 +4161,7 @@ body.light .btn-primary:hover:not(:disabled) {
                 alias: ["挑战杯", "课外学术科技作品"],
                 sections: ["一、项目概述", "二、国内外研究现状", "三、研究内容与方法",
                            "四、创新点与成果", "五、应用前景与社会价值", "六、团队与进度安排"],
-                scoring: [["科学性", 30], ["先进性", 30], ["现实意义", 40]],
+                scoring: [["创新性", 30], ["可行性", 30], ["科学性与先进性", 20], ["综合答辩与展示", 20]],
                 deduct: "扣分点：缺少文献综述 / 创新点不清晰 / 无数据或实验支撑"
             },
             "中国国际互联网+大学生创新创业大赛": {
@@ -4169,7 +4169,7 @@ body.light .btn-primary:hover:not(:disabled) {
                 alias: ["互联网+", "互联网+大赛", "中国国际大学生创新大赛"],
                 sections: ["一、项目概述", "二、市场分析", "三、产品与技术方案", "四、商业模式",
                            "五、财务预测与融资计划", "六、团队与教育维度", "七、社会价值"],
-                scoring: [["商业性", 30], ["创新性", 25], ["团队", 20], ["就业与社会价值", 15], ["引领教育", 10]],
+                scoring: [["教育维度", 25], ["创新维度", 30], ["团队维度", 20], ["商业与社会价值维度", 25]],
                 deduct: "扣分点：商业模式不成立 / 财务数据拍脑袋 / 缺少教育维度"
             }
         };
@@ -5480,11 +5480,11 @@ body.light .btn-primary:hover:not(:disabled) {
             if (!box) return;
             // 可交付度指标（替代「正文字数」当卖点）：数据支撑点越多越好、待补占位越少越好
             var dp = document.getElementById('dpCount');
-            if (dp) dp.innerText = (comp && typeof comp.data_points === 'number') ? comp.data_points : '—';
+            if (dp) dp.innerText = (comp && typeof comp.data_points === 'number') ? comp.data_points : '暂无';
             var ph = document.getElementById('phCount');
             if (ph) {
                 var phn = (comp && typeof comp.placeholders === 'number') ? comp.placeholders : null;
-                ph.innerText = (phn === null) ? '—' : phn;
+                ph.innerText = (phn === null) ? '暂无' : phn;
                 ph.style.color = (phn > 0) ? 'var(--warn-text)' : 'var(--ok)';
                 ph.title = (phn > 0) ? '正文还有「待补充」占位，导出前必须换成真实数据' : '正文无待补占位';
             }
@@ -7204,7 +7204,7 @@ body.light .btn-primary:hover:not(:disabled) {
             document.getElementById('cancelWrap').style.display = 'block';
             try { wbHideRetry(); } catch (e) {}
             var _eb0 = document.getElementById('etaBadge');
-            if (_eb0) { _eb0.style.display = 'inline-block'; _eb0.innerText = '⏱ 预计 --'; }
+            if (_eb0) { _eb0.style.display = 'inline-block'; _eb0.innerText = '预计 --'; }
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
@@ -7393,7 +7393,7 @@ body.light .btn-primary:hover:not(:disabled) {
                                     if (_eb) {
                                         if (_eta > 0) {
                                             _eb.style.display = 'inline-block';
-                                            _eb.innerText = '⏱ 还需 ' + (_eta >= 60 ? (Math.ceil(_eta / 60) + ' 分钟') : (_eta + ' 秒'));
+                                            _eb.innerText = '还需 ' + (_eta >= 60 ? (Math.ceil(_eta / 60) + ' 分钟') : (_eta + ' 秒'));
                                         } else {
                                             _eb.style.display = 'none';
                                         }
@@ -10267,6 +10267,3 @@ window.addEventListener('resize', function () {
 </footer>
 </body>
 </html>
-
-
-
