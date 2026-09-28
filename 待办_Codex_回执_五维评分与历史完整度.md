@@ -62,3 +62,8 @@
 
 - `/api/status` 里 `partial_content` 在 cursor 增量处理**之后**才取 `_partial.get("proposal")`，前端传 cursor 时拿到的是「新增后缀」而非完整正文，与字段注释「完整累积正文」矛盾，也导致等待区草稿预览对不上。
 - 修复：`partial_content` 改从 `t["partial"]`（cursor 之前的全量）取 proposal 全文；`partial` 字段仍按 cursor 返回增量，两者职责分开。
+
+## 10. 图表 PNG 同名覆盖，历史图表 tab 空（第十八轮 [中]）
+
+- 根因：`build_rich_assets` 用 `render(chart, ...)` 按 chart id 落盘 `generated/chart_c1.png`、`chart_c2.png`…，而 `_gen_assets` 每次都从 c1 开始编号，导致每次深度版生成都**覆盖上一次的同名 PNG**。打开旧历史记录时，它的 `rich_charts[].url` 指向的文件要么被新记录覆盖成别人的图，要么被删后变空。
+- 修复（`rich_pipeline.py`）：每次 `build_rich_assets` 生成一个 `时间戳_uuid` 唯一后缀，渲染后把 PNG 改名成 `chart_c1_<后缀>.png`，`url` 用唯一文件名；`id`（c1）保留供 deck 的 chart 引用，不破坏表格/PPT 映射。改名失败退回原名，不阻断。

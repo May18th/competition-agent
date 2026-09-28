@@ -10,6 +10,8 @@
 import os
 import re
 import json
+import time
+import uuid
 
 from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
@@ -351,11 +353,19 @@ def build_rich_assets(result, competition="", idea="", theme=None):
         print(f"[rich] 图表/表格设计失败，降级：{e}")
 
     charts, tables = [], []
+    # 图表 PNG 用本次生成唯一后缀命名，避免每次生成都写 chart_c1.png 同名覆盖——
+    # 否则历史记录里的图表 url 会被后续生成覆盖成别人的图，或文件被删后变空。
+    _chart_suffix = "%d_%s" % (int(time.time()), uuid.uuid4().hex[:6])
     for c in (assets.get("charts") or [])[:8]:
         cid = str(c.get("id") or f"c{len(charts)+1}")
         path = render_chart(dict(c, id=cid), GEN_DIR, theme=theme)
         if path:
-            safe = os.path.basename(path)
+            _base, _ext = os.path.splitext(os.path.basename(path))
+            safe = f"{_base}_{_chart_suffix}{_ext}"
+            try:
+                os.replace(path, os.path.join(GEN_DIR, safe))
+            except Exception:
+                safe = os.path.basename(path)  # 改名失败退回原名，不阻断
             charts.append({
                 "id": cid, "title": c.get("title", ""),
                 "caption": c.get("caption", ""),
