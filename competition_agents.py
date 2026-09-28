@@ -951,6 +951,24 @@ def _downgrade_fabrication(text):
     return t
 
 
+def _strip_fabricated_times(text):
+    """把模型编造的具体时刻（17:40/18:10）清洗成无具体时刻的相对表述。
+
+    prompt 里禁止具体时刻（规则 16）仍可能漏，这里做确定性兜底：
+    时刻区间「17:40—18:10」→「高峰时段」，单个时刻「17:45」→「某时刻」。
+    不碰「3:1」「1:30」这类不是 HH:MM 的比值（用小时范围 0-23 约束）。
+    """
+    if not text:
+        return text
+    t = str(text)
+    _hhmm = r'(?:[01]?\d|2[0-3]):[0-5]\d'
+    # 时刻区间：17:40—18:10 / 17:40 至 18:10 / 17:40-18:10
+    t = re.sub(_hhmm + r'\s*[—\-~～至到]\s*' + _hhmm, '高峰时段', t)
+    # 单个具体时刻：17:45
+    t = re.sub(_hhmm, '某时刻', t)
+    return t
+
+
 def _compress_to_length(text, max_chars, topic, rounds=1):
     """简洁版篇幅兜底：正文超过 max_chars 时让模型就地压缩，最多 rounds 轮。
 
@@ -1102,6 +1120,11 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 3. 如何差异化突出，避免同质化？
 
 给出具体的改进建议。
+
+表达要求（建设性，不打击信心）：
+- 结论用分级表述（如「同质化风险：中高」），并给 2~3 个可执行的差异化方向；
+- 避免刺激性表述（如「换个学校名字就能套用的模板」「评委第一反应就是又来一个」这类）；
+- 报告结尾固定写一句「按上述建议调整，同质化可显著降低」。
 
 {_spec_for(state)}
 """
