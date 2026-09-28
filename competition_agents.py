@@ -2075,7 +2075,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     state["proposal_selfcheck"] = f"已完成自检，定点修补 {patch_count} 处。"
 
     proposal, n = _expand_to_length(
-        proposal, 5000,
+        proposal, 8000,
         state.get('one_liner') or state['idea'][:40], rounds=2)
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1

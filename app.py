@@ -602,6 +602,11 @@ def init_db():
                   history_id INTEGER,
                   created_time TEXT,
                   expires_time TEXT)''')
+    # 导出评委评分记录（第一百二十一轮）：透明可审计
+    c.execute('''CREATE TABLE IF NOT EXISTS export_reviews
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  history_id INTEGER, score INTEGER, dims TEXT,
+                  reasons TEXT, passed INTEGER, created_time TEXT)''')
     conn.commit()
     conn.close()
 
@@ -1151,6 +1156,35 @@ def _export_data_from_request():
     return request.get_json(force=True, silent=True) or {}
 
 
+def _export_review_gate(data, mode="deep"):
+    """系统默认评委打分门（第一百二十一轮）：导出前评分，<80 打回；记录入 export_reviews。
+
+    返回 (passed, score, reasons)。前台只看到「已达标/未达标」，不展示分数明细。
+    """
+    rec = _fetch_record_from_source(data)
+    if not rec:
+        # 没回源到完整记录（如只传了 text），跳过评分门，正常导出
+        return True, None, []
+    try:
+        from quality_gate import score_export
+        score, dims, reasons = score_export(rec, mode)
+        passed = score >= 85
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT INTO export_reviews (history_id, score, dims, reasons, passed, created_time) "
+                  "VALUES (?, ?, ?, ?, ?, ?)",
+                  (int(data.get("history_id") or 0) or None, score,
+                   json.dumps(dims, ensure_ascii=False),
+                   json.dumps(reasons, ensure_ascii=False),
+                   1 if passed else 0, datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        conn.close()
+        return passed, score, reasons
+    except Exception as e:
+        print(f"[export_review] 评分失败，放行导出：{e}")
+        return True, None, []
+
+
 def _reorder_markdown_by_chapters(text, ordered_titles):
     """按官方章节顺序重排 Markdown 正文，缺省部分保持原有先后追加到末尾。
 
@@ -1447,6 +1481,12 @@ def parse_material():
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
+    # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，<80 打回
+    _passed, _score, _reasons = _export_review_gate(data)
+    if _passed is False:
+        return jsonify({"success": False, "code": "quality_fail", "score": _score,
+                        "error": "内容质量未达标，请重新生成后再导出",
+                        "reasons": _reasons}), 422
     text = data.get('text', '')
     # 后端原文覆盖：前端 DOM 文本可能被串台/断网污染，传 task_id / history_id 时优先取后端原文
     _backend_text = _fetch_proposal_from_source(data)
@@ -1485,6 +1525,17 @@ def export_word():
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
+    # 三轮·导出终检（第一百二十二轮）：回读产物，中文乱码/标题层级异常则删产物打回。
+    # 暂不查 TOC（TOC 是另一处 docx_render 的活，先修乱码/标题，避免误伤现有导出）。
+    try:
+        from quality_gate import check_docx
+        _ok, _issues = check_docx(filepath, expect_type=None)
+        if not _ok:
+            _safe_unlink(filepath)
+            return jsonify({"success": False, "code": "export_quality_fail",
+                            "error": "导出质量未达标：" + "；".join(_issues[:3])}), 422
+    except Exception:
+        pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
     return send_file(filepath, as_attachment=True,
@@ -2964,6 +3015,20 @@ def _run_generation(data):
         _update_history_data(_new_hid, _hist_payload)
     except Exception as _e:
         print(f"[history] 回写完整结果失败：{_e}")
+    # 分层质检（第一百一十九轮）：生成完成后跑 L1 完整性，未通过记日志不阻断交付
+    try:
+        from quality_gate import check_generation
+        _gok, _gissues = check_generation(payload, data.get("mode") or "fast")
+        if not _gok:
+            print(f"[quality_gate] L1 生成质检未通过：{_gissues}")
+            try:
+                with open('运行日志.md', 'a', encoding='utf-8') as _f:
+                    _f.write("[%s] L1 FAIL: %s\n" % (
+                        datetime.now().strftime("%Y-%m-%d %H:%M"), '；'.join(_gissues)))
+            except Exception:
+                pass
+    except Exception:
+        pass
     return payload
 
 
