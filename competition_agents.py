@@ -1943,6 +1943,8 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     common = f"""你是资深科创赛事申报书写作专家。
 {task_line}
 
+赛事：{state['competition_name']}
+
 【写作纲要 —— 各章必须按此纲要的核心论点与素材展开，不得与之冲突】
 {outline}
 
@@ -1964,6 +1966,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 5. 前面分析的竞品、商业模式、风险、技术方案内容，必须全部融入到申报书对应章节里，补充用户草稿里不足的地方
 6. 每一章都要有实质内容（数据 + 场景 + 技术名词 + 验证证据），不允许任何一章被跳过或一句话带过；任何标题下面都必须有正文，不允许空小节
 7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
+8. 严禁编造具体人名和虚构经历（如「李然」「王雨桐」）；用户没提供真实案例时，用泛化表述（「参赛团队普遍反馈」「某高校学生」），真实案例只能来自用户输入。
 
 {_competition_focus(state)}
 {_SELF_TECH_HIGHLIGHTS}
