@@ -436,14 +436,13 @@ def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
     支持 X-Admin-Token 请求头，或 ?token= 查询参数（浏览器直接访问后台页时用）。
-    口令支持逗号分隔多个值；同时兼容中文「科创」与拼音「kechuang2026」，避免用户用中文进不去。
+    口令支持逗号分隔多个值，只认环境变量 ADMIN_TOKEN（去掉旧版硬编码弱口令，避免明文泄密）。
     """
     if not ADMIN_TOKEN:
         return None
     tok = (request.headers.get("X-Admin-Token") or "").strip() or \
         (request.args.get("token") or "").strip()
     valid = {t.strip() for t in ADMIN_TOKEN.split(",") if t.strip()}
-    valid |= {"科创", "kechuang2026"}
     if tok in valid:
         return None
     resp = jsonify({"success": False, "error": "无权限，需要 X-Admin-Token 或 ?token="})
@@ -2300,12 +2299,27 @@ def admin_dashboard():
         _fb_page = int(request.args.get("fbpage", 1))
     except Exception:
         _fb_page = 1
-    _fb_pages = max(1, (feedback_total + _fb_limit - 1) // _fb_limit)
+    # 173 轮：列表头补「类型筛选 / 排序 / 每页」三个下拉。
+    # 关键：筛选后的总数必须用筛选结果重算（fb_total），不能拿全局 feedback_total 算页数——
+    # 否则筛选到「只有 2 条」时仍按 27 条分 3 页，第 2 页起就是空白页（172 轮同一类毛病的另一半）。
+    _fb_cat = (request.args.get("fbcat") or "").strip()
+    _fb_sort = (request.args.get("fbsort") or "new").strip()
+    _fb_cat_opts = [r[0] for r in c.execute(
+        "SELECT DISTINCT category FROM feedback WHERE category IS NOT NULL "
+        "AND TRIM(category) != '' ORDER BY category").fetchall()]
+    if _fb_cat and _fb_cat not in _fb_cat_opts:
+        _fb_cat = ""                      # 非法/已不存在的分类一律回退到「全部」，不报错
+    _fb_where = " WHERE category = ?" if _fb_cat else ""
+    _fb_order = "id ASC" if _fb_sort == "old" else "id DESC"
+    _fb_params = (_fb_cat,) if _fb_cat else ()
+    fb_total = c.execute(
+        "SELECT COUNT(*) FROM feedback" + _fb_where, _fb_params).fetchone()[0]
+    _fb_pages = max(1, (fb_total + _fb_limit - 1) // _fb_limit)
     _fb_page = max(1, min(_fb_pages, _fb_page))
     feedbacks = c.execute(
-        "SELECT id, history_id, content, created_time, category FROM feedback "
-        "ORDER BY id DESC LIMIT ? OFFSET ?",
-        (_fb_limit, (_fb_page - 1) * _fb_limit)).fetchall()
+        "SELECT id, history_id, content, created_time, category FROM feedback"
+        + _fb_where + " ORDER BY " + _fb_order + " LIMIT ? OFFSET ?",
+        _fb_params + (_fb_limit, (_fb_page - 1) * _fb_limit)).fetchall()
     # 反馈本身不带评分；若它关联了某次生成，就把用户那次打的星一并显示（能看出好评/差评）
     _fb_rating = {}
     _fb_hids = [int(r["history_id"]) for r in feedbacks
@@ -2390,26 +2404,53 @@ def admin_dashboard():
     fb_html = "".join(fb_items) or '<li class="empty">暂无反馈</li>'
 
     # 翻页控件（页码越界已在上面 clamp，不会出现空白页）
-    if feedback_total:
+    if fb_total:
         _dis = lambda at_edge: " fbpg dis" if at_edge else " fbpg"
+        # 翻页必须带上当前筛选条件，否则点「下一页」就把筛选丢了
+        _qcat = _html_escape(_fb_cat)
+        _qs = "&amp;fblimit=%d&amp;fbsort=%s&amp;fbcat=%s" % (
+            _fb_limit, _html_escape(_fb_sort), _qcat)
         fb_pager = (
             '<div class="fbpager">'
-            '<a class="%s" href="?fbpage=1&amp;fblimit=%d">首页</a>'
-            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">上一页</a>'
+            '<a class="%s" href="?fbpage=1%s">首页</a>'
+            '<a class="%s" href="?fbpage=%d%s">上一页</a>'
             '<span class="fbnow">第 %d / %d 页 · 共 %d 条</span>'
-            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">下一页</a>'
-            '<a class="%s" href="?fbpage=%d&amp;fblimit=%d">末页</a>'
+            '<a class="%s" href="?fbpage=%d%s">下一页</a>'
+            '<a class="%s" href="?fbpage=%d%s">末页</a>'
             '</div>'
-            % (_dis(_fb_page <= 1).strip(), _fb_limit,
-               _dis(_fb_page <= 1).strip(), _fb_page - 1, _fb_limit,
-               _fb_page, _fb_pages, feedback_total,
-               _dis(_fb_page >= _fb_pages).strip(), _fb_page + 1, _fb_limit,
-               _dis(_fb_page >= _fb_pages).strip(), _fb_pages, _fb_limit))
+            % (_dis(_fb_page <= 1).strip(), _qs,
+               _dis(_fb_page <= 1).strip(), _fb_page - 1, _qs,
+               _fb_page, _fb_pages, fb_total,
+               _dis(_fb_page >= _fb_pages).strip(), _fb_page + 1, _qs,
+               _dis(_fb_page >= _fb_pages).strip(), _fb_pages, _qs))
     else:
         fb_pager = ""
     # 标题里的条数先拼好再进模板：这个 HTML 整段用 % 格式化，直接在模板里写 %d
     # 会跟后面的参数元组错位（静默错列，极难发现）
-    fb_title = "全部反馈（%d 条）" % feedback_total
+    # 173 轮：标题带计数徽标（已有）+ 右侧筛选表单；选完自动提交（onchange），一行搞定不用点按钮
+    fb_count_hint = ("<span class='fbcount'>%d</span>" % fb_total) if fb_total else ""
+    _cat_sel = "".join(
+        '<option value="%s"%s>%s</option>'
+        % (_html_escape(x), " selected" if x == _fb_cat else "", _html_escape(x))
+        for x in _fb_cat_opts)
+    _fb_filter = (
+        '<form class="fbfilter" method="get" action="/admin/panel">'
+        '<select name="fbcat" onchange="this.form.submit()">'
+        '<option value="">全部类型</option>%s</select>'
+        '<select name="fbsort" onchange="this.form.submit()">'
+        '<option value="new"%s>最新在前</option>'
+        '<option value="old"%s>最早在前</option></select>'
+        '<select name="fblimit" onchange="this.form.submit()">%s</select>'
+        '<noscript><button type="submit">应用</button></noscript>'
+        '</form>'
+        % (_cat_sel,
+           " selected" if _fb_sort != "old" else "",
+           " selected" if _fb_sort == "old" else "",
+           "".join('<option value="%d"%s>每页 %d 条</option>'
+                   % (n, " selected" if n == _fb_limit else "", n)
+                   for n in (10, 20, 50, 100))))
+    fb_title = ("<div class=\"fbtitle\">全部反馈%s%s</div>"
+                % (fb_count_hint, _fb_filter))
 
     # 满意度分布条
     max_r = max(rating_dist.values()) or 1
@@ -2510,6 +2551,24 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .fbcat-warn{background:#fef3c7;color:#b45309}
 .fbcat-other{background:#f1f5f9;color:#475569}
 .fbstar{color:#f59e0b;letter-spacing:1px}
+/* 173 轮：列表头 = 标题+计数徽标+筛选表单一行，窄屏自动换行不溢出 */
+.fbtitle{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.fbcount{display:inline-block;min-width:22px;padding:1px 8px;border-radius:999px;
+    background:#e0f2fe;color:#0369a1;font-size:12px;font-weight:700;text-align:center}
+.fbfilter{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.fbfilter select{font-size:12px;padding:4px 8px;border:1px solid #dbe3ee;border-radius:7px;
+    background:#fff;color:#374151;cursor:pointer;max-width:44vw}
+.fbfilter select:hover{border-color:#94a3b8}
+@media (max-width:640px){
+    .fbcard{padding:10px 11px}
+    .fbmeta{gap:5px;flex-wrap:wrap}
+    .fbtext{font-size:13px;line-height:1.6}
+    /* ⚠ 这段 CSS 处在「整页 HTML 用 % 格式化」的字符串里，任何 CSS 里的 % 都必须写成 %%，
+       否则 % 后面那个字符会被当格式符，页面直接 500（width:100%} → ValueError at index 34）。 */
+    .fbfilter{margin-left:0;width:100%%}
+    .fbfilter select{flex:1 1 30%%;max-width:none}
+    .fbpager a,.fbpager .fbnow{font-size:12px}
+}
 /* 超长正文截到 4 行，完整内容走 title 悬停，避免单条反馈把整页撑长 */
 .fbtext{font-size:14px;color:#1f2937;word-break:break-word;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;line-height:1.6}
 .fbpager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px}
