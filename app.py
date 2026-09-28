@@ -3084,6 +3084,14 @@ def _start_generation(data):
     global _active_gen_count
     # 在请求上下文里把匿名用户 id 固化进任务参数，供后台线程写历史记录时使用
     data["_user_id"] = _current_uid()
+    # 今日额度撞顶（第九十九轮）：提前拦下，前端据此 toast「今日生成额度已满，明日恢复」
+    try:
+        from competition_agents import get_quota_status
+        if get_quota_status().get("exceeded"):
+            return None, jsonify({"success": False, "code": "quota_exceeded",
+                                  "error": "今日生成额度已满，明日恢复"})
+    except Exception:
+        pass
     if _rate_limited():
         return None, jsonify({"success": False,
                               "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})

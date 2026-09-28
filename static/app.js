@@ -4451,6 +4451,7 @@
                 if (!res.ok || (j && j.success === false)) {
                     var e0 = new Error((j && (j.error || j.message)) || ('服务返回 ' + res.status));
                     e0.httpStatus = res.status;
+                    e0.code = (j && j.code) || null;
                     e0.isCreateFail = true;
                     throw e0;
                 }
@@ -4916,6 +4917,12 @@
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
                 if (err && err.cancelled) {
                     wbToast('已终止生成', { type: 'warn' });
+                } else if (err && err.code === 'quota_exceeded') {
+                    wbToast('今日生成额度已满，明日恢复', {
+                        type: 'warn',
+                        sub: '今天的免费生成额度用完了，明天自动恢复；已填内容都还在',
+                        ms: 8000
+                    });
                 } else if (err && err.isCreateFail) {
                     // 任务根本没建立起来：不是生成质量问题，别让人去改创意
                     wbToast('生成服务暂不可用：' + (err.message || '未知原因') + '，请重试', {
