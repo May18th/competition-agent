@@ -1092,6 +1092,9 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
         print(f"[kb] 向量检索跳过（退回结构化兜底）：{e}")
     # 结构化字段兜底（匹配比赛名；缺失字段明确标注，避免模型瞎编）
     kb = get_competition_knowledge_structured(state['competition_name'])
+    # 第一百五十二轮：生成开始即上报「已匹配赛事 + 官方评分维度」，前端第一时间展示知识库智能
+    set_stage_meta("matched_competition", kb.get('matched_name') or comp)
+    set_stage_meta("scoring_dims", _official_scoring_dims(comp))
     if hits:
         kb_block = f"【基于 RAG 向量检索命中的知识库片段（{kb.get('matched_name') or comp}）】\n{hits}\n"
     elif kb.get("matched"):
