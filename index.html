@@ -1952,9 +1952,13 @@ window.addEventListener('resize', function () {
         applyTheme(!document.body.classList.contains('light'));
     };
     (function initTheme() {
-        // 默认夜间，读取本地记忆；用户选过夜间则下次进来直接暗色
-        var light = false;
-        try { light = _wbStoreGet('wbLight') === '1'; } catch (e) {}
+        // 默认日间（白底柔和）：负责人实测反馈深色背景刺眼，白底 + 柔和点缀色为默认。
+        // 用户手动切过夜间仍按记忆走：wbLight='0' 才夜间；没记录过的老用户一律日间。
+        var light = true;
+        try {
+            var v = _wbStoreGet('wbLight');
+            if (v === '0') light = false; else if (v === '1') light = true;
+        } catch (e) {}
         applyTheme(light);
     })();
 })();
