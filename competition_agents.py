@@ -2241,6 +2241,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
     state["approved"] = state["score"] >= _threshold
     print(f"⚖️ 评委 Agent：文档加权总分 {state['score']} 分")
     return {"judge_feedback": state["judge_feedback"], "judge_scores": state["judge_scores"],
+            "dims": state["dims"],
             "score": state["score"], "approved": state["approved"]}
 
 
