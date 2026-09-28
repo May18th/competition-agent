@@ -4045,6 +4045,19 @@ body.light .btn-primary:hover:not(:disabled) {
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify(data)
                 });
+                // 以前直接 res.blob() 存盘：后端 400 返回的是 JSON 错误体，会被原样存成 .zip，
+                // 用户拿到「内容是错误信息的坏压缩包」，页面还提示「已打包，去下载吧」——
+                // 虚假成功比明确报错更糟，必须先把非 2xx 拦死
+                if (!res.ok) {
+                    var _zm = '打包失败';
+                    try {
+                        var _zj = await res.json();
+                        _zm = _zj.error || _zm;
+                        if (_zj.hint) _zm += '（' + _zj.hint + '）';
+                    } catch (e) {}
+                    wbToast(_zm, { type: 'error', ms: 6500 });
+                    return;
+                }
                 const blob = await res.blob();
                 wbSaveBlob(blob, "科创赛事项目材料包.zip");
                 wbToast('\uD83D\uDCE6 已打包，去下载吧', { type: 'ok', ms: 3000 });
