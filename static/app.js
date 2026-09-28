@@ -970,7 +970,11 @@
                 risk_analysis: _txt('risk_analysis', 'riskAnalysis'),
                 defense_questions: _txt('defense_questions', 'defenseQuestions'),
                 ppt_outline: _txt('ppt_outline', 'pptOutline'),
-                // 富媒体三件套：不带上就没有 11_项目数据图表.docx 和 12_路演PPT.pptx
+                // 后端 12:42 那版已支持打包这两个模块，但前端一直没传 → zip 里永远没有它们。
+                // 「后端有功能前端没传 = 等于没有」，这里补上。
+                tech_solution: _txt('tech_solution', 'techSolution'),
+                implementation_plan: _txt('implementation_plan', 'implementationPlan'),
+                // 富媒体三件套：不带上就没有 13_项目数据图表.docx 和 14_路演PPT.pptx
                 rich_charts: rd.rich_charts || [],
                 rich_tables: rd.rich_tables || [],
                 rich_deck: deck,
