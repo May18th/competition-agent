@@ -667,7 +667,8 @@ wbViewportHeight / res2.detail / 100dvh / .doc 提示）；`.doc` 上传返回�
   是与本地范文库（53 条）做字符 5-gram 重叠率，**不是知网/全网正式查重**，前端展示务必带上「本地初检」字样，别让学生误以为是正式查重结果。
 - **多风格切换**：新增 POST /api/restyle，入参 {"text": <申报书正文>, "style": "formal|academic|startup"}，
   返回 {"success": true, "text": <改写后全文>, "style": ...}。三种风格：
-  - ormal 正式公文风 / cademic 学术严谨风 / startup 创业融资风
+  - 
+ormal 正式公文风 / cademic 学术严谨风 / startup 创业融资风
 
 需 WorkBuddy 配合前端：
 1. 结果区显示相似度：window._lastData.similarity.percent，文案「本内容与公开材料相似度 X%（本地初检）」。
@@ -2181,7 +2182,7 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **登录页升级 ✅**：`/admin/login` 改用户名+密码双输入框，白底浅蓝渐变 + 渐变按钮 + 页脚版权。
 - **审计 ✅**：`_audit_admin_login()` 记录 用户名+IP+成功/失败+角色。
 - **配置文档 ✅**：`docs/如何自定义账密.md`（账号格式/服务器配置/生成 bcrypt/回退说明）。
-- **账号已定（用户确认）**：3498414260 / 125325452652zz（admin）、admin / 123456（admin）、kcwx123 / 123456（readonly）。bcrypt 哈希见 `口令备忘.md`（gitignored）。
+- **账号已定（用户确认）**：3498414260 / ******（admin）、admin / ******（admin）、kcwx123 / ******（readonly）。bcrypt 哈希见 `口令备忘.md`（gitignored）。
 
 实测：管理员登录 200 role=admin、错密码 401「用户名或密码错误」、demo 登录 200 role=readonly、demo 写 403、demo GET 200；表单登录 302→/admin。
 
