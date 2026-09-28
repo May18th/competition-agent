@@ -22,6 +22,15 @@
     <link rel="stylesheet" href="/static/style.css?v=20260928f">
 </head>
 <body>
+    <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
+         CSS 的 :root 默认是夜间变量（--bg-0:#0b1030 深蓝），body.light 才切成白色那一套；
+         而真正的 initTheme() 写在 body 末尾的内联块里，等它跑到，浏览器可能已经按夜间色
+         paint 过一遍了 —— 日间用户看到的是「先黑一下再变白」。
+         服务器曾经用过 <body class="light"> 硬编码来规避，但那会让夜间用户反过来闪白。
+         这里放在 <body> 开标签之后的第一行（同步阻塞、早于任何内容渲染），
+         按 localStorage 记忆给 body 打标记：日间不闪黑、夜间不闪白，两头都不用牺牲。
+         下面那个 initTheme 会再跑一次，纯属幂等重复，不冲突。 -->
+    <script>(function(){try{if(localStorage.getItem('wbLight')!=='0'){document.body.classList.add('light');}}catch(e){}})();</script>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
     <div id="pageSkeleton" aria-hidden="true">
         <div class="skeleton" style="height: 22px; width: 42%; margin: 0 auto 18px;"></div>
