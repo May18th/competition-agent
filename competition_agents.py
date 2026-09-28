@@ -151,10 +151,6 @@ def load_competition_knowledge():
 # 启动时加载所有比赛资料
 competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
-_missing_expect = [e for e in EXPECTED_COMPETITIONS
-                   if not any((e in n) or (n in e) for n in competition_knowledge.keys())]
-if _missing_expect:
-    print(f"⚠️ [WARN] 知识库缺少预期赛事：{', '.join(_missing_expect)}（下拉列表可能对不齐）")
 
 _PROFILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "data", "competition_profiles.json")
@@ -342,6 +338,12 @@ EXPECTED_COMPETITIONS = [
     "互联网+", "挑战杯", "iCAN", "国创", "小挑", "数学建模", "电子设计",
     "西门子杯", "计算机设计", "RoboMaster", "金砖", "信息安全",
 ]
+
+# 启动校验（第八十五轮）：KB 缺预期赛事时打 WARN，防止下拉列表与知识库再错位
+_missing_expect = [e for e in EXPECTED_COMPETITIONS
+                   if not any((e in n) or (n in e) for n in competition_knowledge.keys())]
+if _missing_expect:
+    print(f"⚠️ [WARN] 知识库缺少预期赛事：{', '.join(_missing_expect)}（下拉列表可能对不齐）")
 
 
 def check_knowledge_format(content: str) -> dict:
