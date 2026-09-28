@@ -45,6 +45,11 @@
             try { delete _wbSessMem[k]; } catch (e) {}
         }
 
+        // 1×1 透明 GIF：img 的 src 为空时浏览器会把它解析成当前页面 URL 再发一次请求，
+        // 白扔一个请求还附带一条资源错误（message 是 undefined、无 stack，极难定位）。
+        // 凡是有可能拿不到 url 的 img，一律用这个占位，不要写 src=""。
+        var WB_BLANK_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
         function wbStoreProbe() {
             try {
                 localStorage.setItem('__wb_probe__', '1');
@@ -2785,7 +2790,8 @@
             document.getElementById('richCharts').innerHTML = charts.map(function (c, i) {
                 return '<div style="background: var(--surface-2); border-radius: 10px; padding: 14px; border: 1px solid var(--line);">' +
                     '<div style="position:relative;">' +
-                    '<img src="' + _esc(c.url) + '" data-ci="' + i + '" onclick="openChartById(this.dataset.ci)" ' +
+                    // src 为空时浏览器会把它解析成当前页面 URL 再请求一次（白扔一个请求 + 一条资源错误）
+                    '<img src="' + (_esc(c.url) || WB_BLANK_IMG) + '" data-ci="' + i + '" onclick="openChartById(this.dataset.ci)" ' +
                     'title="点击放大查看" alt="' + _esc(c.title) + '" ' +
                     'style="width:100%; border-radius:6px; background:#fff; cursor:zoom-in; display:block;">' +
                     '<div style="position:absolute; right:8px; bottom:8px; padding:3px 8px; border-radius:6px; ' +

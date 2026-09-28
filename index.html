@@ -1203,7 +1203,9 @@
             </div>
             <div id="chartModalBody" style="display:flex; align-items:center; justify-content:center;
                                             background:#fff; border-radius:10px; padding:14px; overflow:auto;">
-                <img id="chartModalImg" src="" alt=""
+                <!-- src 不能留空：空 src 会被浏览器解析成当前页面 URL 再请求一次，
+                     多一个无用请求 + 一条资源错误。用 1×1 透明 GIF 占位 -->
+                <img id="chartModalImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt=""
                      style="max-width:100%; max-height:70vh; object-fit:contain; display:block;">
             </div>
             <div style="margin-top:10px; font-size:12px; color:var(--text-mute); text-align:center;">
@@ -1277,8 +1279,15 @@
     </script>
     <script>
     /* ---------- 图表放大查看 ---------- */
+    /* 1×1 透明 GIF：src 留空会被浏览器解析成当前页面 URL 再请求一次，多一个无用请求 +
+       一条 message 为 undefined、无 stack 的资源错误。占位一律用它，别写 src="" */
+    var WB_BLANK_IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
     function openChartModal(src, title, caption) {
-        if (!src) return;
+        if (!src) {
+            try { wbToast('这张图没生成出来，刷新结果或重新生成试试', { type: 'warn' }); } catch (e) {}
+            return;
+        }
         document.getElementById('chartModalImg').src = src;
         document.getElementById('chartModalTitle').textContent = title || '图表';
         document.getElementById('chartModalCaption').textContent = caption || '';
@@ -1289,7 +1298,8 @@
     /* 图太大在弹窗里看不全时用新窗口看（本项目预览不用 iframe，图片直接开原图） */
     function wbChartOpenFull() {
         var src = document.getElementById('chartModalImg').src;
-        if (!src) return;
+        // 占位图不算有效图，别拿它去开新窗口
+        if (!src || src === WB_BLANK_IMG) return;
         try { window.open(src, '_blank', 'noopener'); }
         catch (e) { try { wbToast('浏览器拦了新窗口，请允许弹窗后重试', { type: 'warn' }); } catch (e2) {} }
     }
@@ -1301,7 +1311,7 @@
         var m = document.getElementById('chartModal');
         if (!m) return;
         m.style.display = 'none';
-        document.getElementById('chartModalImg').src = '';
+        document.getElementById('chartModalImg').src = WB_BLANK_IMG;
         document.body.style.overflow = '';
     }
 
@@ -1434,7 +1444,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=5"></script>
+    <script src="/static/app.js?v=6"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
