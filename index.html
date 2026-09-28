@@ -6,7 +6,10 @@
     <title>可创无限 · 科创赛事助手</title>
     <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
-         标签页也永远是空白图标。直接复用 logo.png，零风险 -->
+         标签页也永远是空白图标。直接复用 logo.png，零风险。
+         193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
+         png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
+    <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="icon" type="image/png" href="/static/logo.png">
     <link rel="apple-touch-icon" href="/static/logo.png">
     <meta property="og:type" content="website">
@@ -19,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260928k">
+    <link rel="stylesheet" href="/static/style.css?v=20260929a">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -731,7 +734,7 @@
 
             <!-- 图表数据真实性提醒：正文里列了「待替换数据清单」才出现 -->
             <div id="dataTodoBar" style="display: none; margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(245,166,35,.12); border: 1px solid rgba(245,166,35,.4); font-size: 13px; color: var(--text); line-height: 1.75;">
-                <div style="font-weight: 600;">有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
+                <div id="dataTodoHead" style="font-weight: 600;">有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
                 <div style="color: var(--text-dim); font-size: 12.5px; margin-top: 2px;">
                     图表里的预算、市场规模等目前是<b>测算值</b>，图上已标橙色「需替换为实测」。
                     提交前按清单换成你们自己测出来的数或公开数据（写明机构与年份）。
@@ -1591,7 +1594,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=20260928k"></script>
+    <script src="/static/app.js?v=20260929a"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 

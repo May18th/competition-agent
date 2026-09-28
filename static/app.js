@@ -5994,7 +5994,16 @@
         var n = (seg.match(/(^|\n)\s*[-*·]\s*\S/g) || []).length;
         if (!n) { n = (seg.match(/(^|\n)\s*\d+[.、)]\s*\S/g) || []).length; }
         if (n > 40) n = 0;   // 明显是误判就干脆不显示数字
-        if (cnt) cnt.textContent = n || '若干';
+        /* 193 轮：数不出条数时原来填「若干」，页面就成了「有 若干 项数据需要替换」——
+           这是占位词残留（L7），评委会当成没做完。改为：数得出来就报数，数不出来就说定性结论。 */
+        var head = document.getElementById('dataTodoHead');
+        if (head) {
+            head.innerHTML = n
+                ? '有 <b id="dataTodoCount">' + n + '</b> 项数据需要替换成真实值'
+                : '清单里有数据需要替换成真实值（按正文里的标记逐条核对）';
+        } else if (cnt) {
+            cnt.textContent = n || '';
+        }
         bar.style.display = 'block';
         return n;
     };

@@ -873,7 +873,10 @@ table.rich-table caption {
 
 /* ===== AI 路演 PPT 预览卡 ===== */
 .deck-card {
-    aspect-ratio: 16/9; border-radius: 9px; padding: 14px 13px 12px;
+    /* 193 轮：原来是死板的 aspect-ratio:16/9 —— 卡片高度被比例钉死，正文一多就被 overflow:hidden
+       从底部硬裁半句（用户点名的截断刺）。改为「最小高度 + 内容撑高」：同一行卡片由 grid 的
+       stretch 拉齐，内容完整不裁，视觉上仍是横长卡片。 */
+    min-height: 150px; border-radius: 9px; padding: 14px 13px 12px;
     border: 1px solid var(--line); position: relative; overflow: hidden;
     display: flex; flex-direction: column;
 }
@@ -881,7 +884,7 @@ table.rich-table caption {
 .deck-card .dc-badge { position: absolute; top: 9px; right: 10px; font-size: 10px; letter-spacing: .3px; }
 .deck-card .dc-title { font-size: 12.5px; font-weight: 700; line-height: 1.35; margin: 8px 0 7px; padding-right: 46px; }
 .deck-card .dc-kicker { font-size: 10px; font-weight: 600; letter-spacing: .4px; }
-.deck-card .dc-body { flex: 1; overflow: hidden; }
+.deck-card .dc-body { flex: 1; overflow: visible; }
 .deck-card .dc-li {
     /* 188 轮：原来 -webkit-line-clamp:2 + overflow:hidden，第 3 行起被硬裁，用户看到半句话。
        这是预览卡片里唯一真正「吞内容」的截断（".dc-mini 表格 84px" 是另一个），
@@ -900,7 +903,9 @@ table.rich-table caption {
 .deck-card .dc-mini { width: 100%; border-collapse: collapse; font-size: 9.5px; }
 .deck-card .dc-mini th, .deck-card .dc-mini td {
     padding: 2px 5px; border: 1px solid var(--line); text-align: left;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 84px;
+    /* 193 轮：nowrap + overflow:hidden + ellipsis + max-width:84px 会把「市场规模 1.2 亿元」这类
+       单元格截成「市场规…」，是预览卡里唯一还在吞字的截断。改为换行 + 长词断行，不限宽。 */
+    white-space: normal; overflow: visible; word-break: break-word; overflow-wrap: anywhere;
 }
 .deck-card .dc-mini th { background: rgba(255,255,255,.10); font-weight: 600; }
 .deck-card .dc-img { width: 100%; height: 100%; object-fit: contain; background: #fff; border-radius: 4px; }
