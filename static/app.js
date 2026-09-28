@@ -1647,10 +1647,12 @@
 
         /* ---------- 分步引导：箭头指向按钮 + 一句话，点一下就走 ---------- */
         var COACH_STEPS = [
-            // 与表单标签保持一致：都是「第 N 步」，别一处写中文数字一处写阿拉伯数字
-            { id: 'competition', text: '第 1 步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
-            { id: 'idea', text: '第 2 步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第 3 步：选择生成档位并开始。简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟产出 13000 字级完整申报材料。' }
+            // 这里刻意用中文数字：表单区块已经占用了「第 1~6 步」这套阿拉伯数字编号，
+            // 引导气泡要是也写「第 3 步」，就会和表单的「第 3 步 · 补充规则」撞号，
+            // 用户分不清到底说的是哪一步。两套各用一套写法，一眼能分辨。
+            { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
+            { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟产出 13000 字级完整申报材料。' }
         ];
         var _coachIdx = 0;
 
@@ -2171,13 +2173,16 @@
                 // 下拉项显示赛事全名（用户要按全名确认），不再拼 emoji/简称前缀
                 + _esc(n) + '</div>';
         }
-        function wbCompOpen() {
+        // forceAll：忽略输入框当前内容，列出全部赛事。
+        // 「全部赛事 ▾」必须走这条路——否则输入框里已填了赛事时，点它只会列出匹配当前值的
+        // 那 1 条，用户想要"看看都有啥比赛"反而看不到（第三十二轮刺的另一半根因）。
+        function wbCompOpen(forceAll) {
             var el = document.getElementById('competition');
             var box = document.getElementById('compSuggest');
             if (!el || !box) return;
-            var hits = wbCompHits(el.value);
+            var hits = wbCompHits(forceAll ? '' : el.value);
             if (!hits.length) { box.style.display = 'none'; return; }
-            var q = String(el.value || '').trim();
+            var q = forceAll ? '' : String(el.value || '').trim();
             var gs = (q || !WB_COMP_PROFILES || !WB_COMP_PROFILES.length) ? null : wbCompGroups(hits);
             if (gs && gs.length >= 2) {
                 box.innerHTML = gs.map(function (g) {
@@ -2231,8 +2236,17 @@
             if (!el) return;
             try { el.focus(); } catch (e) {}
             try { el.select(); } catch (e) {}
-            wbCompOpen();
+            wbCompOpen(true);   // 传 true：列全部 15 项，而不是只列匹配当前输入的那些
         }
+        // 第三十二轮刺：按钮 onclick 调 wbCompAll，但函数只存在于 IIFE 里没挂 window
+        // → ReferenceError，点了完全没反应（和 switchScoreTab 同一个坑，已踩第三次）。
+        // 顺手把这一簇赛事交互函数全部显式挂出去，避免下一个又漏。
+        window.wbCompAll = wbCompAll;
+        window.wbCompOpen = wbCompOpen;
+        window.wbCompClose = wbCompClose;
+        window.wbCompInput = wbCompInput;
+        window.wbCompKey = wbCompKey;
+        window.wbPickComp = wbPickComp;
         function wbCompKey(e) {
             if (e.key === 'Escape') { wbCompClose(); return; }
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -2259,6 +2273,12 @@
             var el = document.getElementById('competition');
             if (!box || !el) return;
             if (box.contains(e.target) || el.contains(e.target)) return;
+            // 「全部赛事 ▾」就在输入框外面，它那一次 click 会冒泡到这里：
+            // 于是 wbCompAll 刚把下拉打开、这里立刻 wbCompClose 关掉，用户看到的就是
+            // 「点了完全没反应」（第三十二轮刺的根因，不是没绑函数）。
+            // 这个按钮是专门用来展开下拉的，必须放行。
+            var all = document.getElementById('wbCompAllBtn');
+            if (all && (all === e.target || all.contains(e.target))) return;
             wbCompClose();
         });
 
@@ -2393,8 +2413,17 @@
             }
         }
 
+        // 页脚赛事名跟着当前赛事走（原来写死 iCAN，切赛事不联动）
+        function wbSyncFooterComp() {
+            var el = document.getElementById('wbFooterComp');
+            if (!el) return;
+            var n = wbCompName();
+            var s = wbCompShort(n) || String(n || '').trim();
+            el.textContent = s ? (' · 当前赛事：' + s) : '';
+        }
         function onCompetitionChange() {
             wbSyncCompChips();
+            wbSyncFooterComp();
             renderKbStatus();
             try { renderEventCard(); } catch (e) {}   // 换赛事 → 要求卡自动换成该赛事的文档类型与章节
             // 换赛事 → 主题重新推荐 + 页序说明/状态条跟着变（数学建模会多两页）
@@ -2404,6 +2433,13 @@
                 try { renderRich(window._lastData, true); } catch (e) {}
             }
         }
+        window.wbSyncFooterComp = wbSyncFooterComp;
+        // 页脚在 app.js 之后才渲染（脚本位于 body 中部），首次同步必须等 DOM 就绪
+        (function () {
+            var run = function () { try { wbSyncFooterComp(); } catch (e) {} };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+            else run();
+        })();
 
         // ---- 申报书章节完整性提示（数据来源 generate 返回的 completeness）----
         function renderCompleteness(comp) {
@@ -2583,16 +2619,14 @@
             }
             svg += '</svg>';
             el.innerHTML = svg;
-            // 创意总分与「AI 模拟自评」（文档质量分）是两个口径，这里显式标出来避免混淆
             var ft = document.getElementById('ideaRadarFoot');
             if (ft) {
-                var isc = (ideaScore === null || ideaScore === undefined || ideaScore === '') ? null : Number(ideaScore);
-                ft.innerHTML = '创意结构分 <b>' + (isc === null || isNaN(isc) ? '—' : Math.round(isc)) +
-                    '</b> / 100 · 创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
-                    // 第二十三/二十四轮刺：页面上同时出现「AI 模拟自评 86」和「创意结构分 66」，
-                    // 评委不知道哪个算数。这里把两把尺子的口径一次说清，不再让人二选一
-                    + '<div style="margin-top: 5px;">这是<b>创意本身</b>的强弱分；'
-                    + '上方「AI 模拟自评」是<b>成稿文档</b>的质量分——两把尺子，不是两个总分。</div>';
+                // 第二十三/二十四/三十一轮反复刺：这里原来还挂一个「创意结构分 66 / 100」，
+                // 和上方「AI 模拟自评 86」形成两个总分，评委不知道信哪个。
+                // 现在只做维度分解——五个维度的分都在图上，不再汇总出第二个总分。
+                ft.innerHTML = '创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
+                    + '<div style="margin-top: 5px;">这五个维度看的是<b>创意本身</b>的强弱，仅作分解参考，'
+                    + '不另设总分；页面唯一评分是上方「AI 模拟自评（文档质量）」。</div>';
             }
             box.style.display = 'block';
         }
@@ -4142,6 +4176,25 @@
         function wbStageWord(code) {
             return (code && WB_STAGE_WORD[code]) || '';
         }
+        // 阶段短标签：进度按钮上那行「正在生成 2% · xxx」挂的是后端 stage code，
+        // queued/running 这类英文直出很出戏。这里给一份短中文，按钮上放得下。
+        // 后端偶尔会传回中文 stage_label（比如下面的'等待中'），那种原样返回即可。
+        var WB_STAGE_SHORT = {
+            start: '准备中', parsing_rules: '读评分标准', similarity: '查重比对',
+            idea_scoring: '定位创意', analysis: '赛题分析', rich_assets: '备图表素材',
+            writing: '写正文', judging: '自评打分', expert_review: '专家评审',
+            diagnosis: '找扣分点', revision: '改写润色', defense: '答辩预测',
+            ppt: '排 PPT', speech: '写演讲稿', queued: '排队中', running: '生成中',
+            pending: '准备中', done: '收尾', finished: '收尾', error: '收尾中', failed: '收尾中'
+        };
+        function wbStageShort(s) {
+            var k = String(s || '').trim();
+            if (!k) return '';
+            if (WB_STAGE_SHORT[k]) return WB_STAGE_SHORT[k];
+            // 未收录但仍是纯英文 code（后端新增阶段时前端还没同步）→ 兜底给「生成中」，
+            // 总比把 queued2 这种裸 code 甩给用户强；中文标签原样透传
+            return /^[a-z_]+$/.test(k) ? '生成中' : k;
+        }
         // 里程碑彩蛋：整个生成过程只弹 2 次（正文完成 / 全部完成），多了就是骚扰
         var _wbMile = {};
         function wbMileOnce(key, msg, type) {
@@ -4268,7 +4321,8 @@
                 if (_b && _b.disabled) {
                     _b.innerHTML = '<span class="spinner"></span> ' +
                         (isOptimize ? '正在优化 ' : '正在生成 ') + Math.max(_maxPct, 0) + '%' +
-                        ((stageText || _curStageLabel) ? ' · ' + (stageText || _curStageLabel) : '');
+                        // 第三十七轮刺：这里原来直接拼后端 stage code，于是出现「正在生成 2% · queued」
+                        (((stageText || _curStageLabel) ? ' · ' + wbStageShort(stageText || _curStageLabel) : ''));
                 }
                 // 等待期人话副标题：只补在进度条下面，不动上面那行准确文案。
                 // 用 textContent 而不是 innerHTML：文案是写死的常量，没必要开 HTML 口子
@@ -4446,7 +4500,8 @@
                                     var _waitLine = WB_WAIT_LINE[Math.floor(sec / 12) % WB_WAIT_LINE.length];
                                     _setBar(res2.pct || 0,
                                         _tierName + (_etaTxt || _etaFallback) + '，' + _waitLine
-                                        + (res2.stage_label ? '（当前：' + res2.stage_label + '）' : '')
+                                        // 同一轮刺：进度条副行也直出过英文 code；顺手加 _esc（后端字符串直接进 innerHTML 不安全）
+                                        + (res2.stage_label ? '（当前：' + _esc(wbStageShort(res2.stage_label)) + '）' : '')
                                         + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
                                         + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
                                     // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
@@ -4616,7 +4671,7 @@
                             const badge = document.getElementById('tierBadge');
                             if (badge) {
                                 badge.innerHTML = wbTierBadgeHtml(mode, competition,
-                                    '深度完整版 · 已生成 ' + deepN + ' 个模块', '简洁快速版');
+                                    '深度完整版 · 已生成 ' + deepN + ' 个模块', '简洁版');
                             }
                             // T3 共享产物标题旁标字数（去 Markdown 标记后统计，两档长短一眼可比）
                             [['parsedRules', data.data.parsed_rules],
@@ -5270,24 +5325,48 @@
         }
 
         /* ---------- 范文库 ---------- */
+        // 标签词表：后端 /api/kb/tags 本来就按 module/track/feature 分好维度，
+        // 但旧代码把三组摊平进一个 flex 容器，上百个标签全混在一起（第三十五轮刺）。
+        // 现在按维度分块渲染，并支持搜索过滤。
+        var _kbTagGroups = [];
+        function kbTagChipHtml(t) {
+            return '<span onclick="kbAddTag(\'' + String(t).replace(/'/g, "\\'") + '\')" ' +
+                'style="padding:4px 10px; background:var(--surface-2); color:var(--text); ' +
+                'border:1px solid var(--line); border-radius:12px; cursor:pointer; font-size:12px;">' +
+                _esc(t) + '</span>';
+        }
+        function kbRenderTags(filter) {
+            var wrap = document.getElementById('kbChipWrap');
+            if (!wrap) return;
+            var q = String(filter || '').trim().toLowerCase();
+            var html = '';
+            _kbTagGroups.forEach(function (g) {
+                var list = (g[1] || []).filter(function (t) {
+                    return !q || String(t).toLowerCase().indexOf(q) >= 0;
+                });
+                if (!list.length) return;
+                html += '<div style="margin-bottom: 9px;">'
+                    + '<div style="font-size: 11px; color: var(--text-mute); margin-bottom: 5px;">'
+                    + _esc(g[0]) + ' · ' + list.length + '</div>'
+                    + '<div style="display: flex; flex-wrap: wrap; gap: 6px;">'
+                    + list.map(kbTagChipHtml).join('') + '</div></div>';
+            });
+            wrap.innerHTML = html
+                || ('<span style="font-size:12px;color:var(--text-mute);">'
+                    + (q ? '没有匹配「' + _esc(q) + '」的标签，也可以直接手填' : '（标签词表未加载）') + '</span>');
+        }
+        function kbFilterTags() {
+            var el = document.getElementById('kbTagFilter');
+            kbRenderTags(el ? el.value : '');
+        }
+        window.kbFilterTags = kbFilterTags;
         function kbLoadTags() {
             fetch('/api/kb/tags')
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
                     if (!d || !d.success) return;
-                    var wrap = document.getElementById('kbChipWrap');
-                    if (!wrap) return;
-                    var html = '';
-                    var groups = [['模块', d.module || []], ['赛道', d.track || []], ['特征', d.feature || []]];
-                    groups.forEach(function (g) {
-                        (g[1] || []).forEach(function (t) {
-                            var color = g[0] === '模块' ? 'var(--c-a-soft)' : (g[0] === '赛道' ? 'var(--surface-2)' : 'var(--surface-2)');
-                            html += '<span onclick="kbAddTag(\'' + t + '\')" style="padding:4px 10px; background:' + color +
-                                '; color:var(--text); border:1px solid var(--line); border-radius:12px; cursor:pointer; font-size:12px;">' +
-                                t + '</span>';
-                        });
-                    });
-                    wrap.innerHTML = html || '<span style="font-size:12px;color:var(--text-mute);">（标签词表未加载）</span>';
+                    _kbTagGroups = [['文档模块', d.module || []], ['赛道方向', d.track || []], ['项目特征', d.feature || []]];
+                    kbRenderTags((document.getElementById('kbTagFilter') || {}).value || '');
                 })
                 .catch(function () {});
         }
@@ -5352,6 +5431,37 @@
             el.value = cur.join(', ');
         }
 
+        // 范文库上传：只把文件解析成文本填进输入框，存不存由用户点「添加」决定。
+        // 走 purpose=draft，后端不会把内容塞进共享知识库（别人的作品不该被动入库）
+        window.kbFileUpload = function (input) {
+            var f = input && input.files && input.files[0];
+            if (!f) return;
+            var fd = new FormData();
+            fd.append('file', f);
+            fd.append('purpose', 'draft');
+            try { wbToast('正在解析文件…', { type: 'ok', ms: 1800 }); } catch (e) {}
+            fetch('/api/upload_file', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.success) {
+                        wbToast('解析失败：' + ((d && d.error) || '未知错误'), { type: 'error' });
+                        return;
+                    }
+                    var t = String(d.text || '').trim();
+                    if (!t) {
+                        wbToast('这份文件没解析出文字（可能是扫描件图片），请手动粘贴', { type: 'warn', ms: 4200 });
+                        return;
+                    }
+                    // 范文讲究精炼，超长片段反而会占满生成时的参考额度
+                    if (t.length > 3000) t = t.slice(0, 3000);
+                    var el = document.getElementById('kbContent');
+                    if (el) el.value = (String(el.value || '').trim() ? el.value.trim() + '\n\n' : '') + t;
+                    kbContentHint();
+                    wbToast('已解析 ' + t.length + ' 字，确认后点「添加到范文库」', { type: 'success', ms: 3600 });
+                })
+                .catch(function () { wbToast('解析失败：连不上服务', { type: 'error' }); })
+                .then(function () { try { input.value = ''; } catch (e) {} });
+        };
         function kbAdd() {
             var content = (document.getElementById('kbContent') || {}).value || '';
             var tagsRaw = (document.getElementById('kbTags') || {}).value || '';
@@ -6510,7 +6620,13 @@
             } catch (e) {}
             var p = document.getElementById('wbBgPanel');
             if (!p) return;
-            p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+            if (p.style.display === 'block') { p.style.display = 'none'; return; }
+            // 打开前补一次渲染：启动那次若因任何原因没跑到（脚本报错/时序），
+            // 面板会展开成一块空的壳子，用户就以为「点了没反应」——这里兜住
+            try {
+                if (!document.getElementById('wbBgSwatches').children.length) wbBgRenderSwatches();
+            } catch (e) {}
+            p.style.display = 'block';
         }
         window.wbBgPick = wbBgPick;
         window.wbBgUpload = wbBgUpload;
