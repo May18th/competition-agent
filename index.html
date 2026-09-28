@@ -4,17 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 12000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 13000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 12000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 13000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:image" content="https://kcwx.online/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kcwx.online/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
@@ -474,7 +474,7 @@
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-a);">约 1 分钟出 4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 40 次实测 50~93 秒）</span><br>
+                            <b style="color: var(--c-a);">约 1 分钟出 4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 40 次实测 1600~8500 字 / 50~93 秒）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -482,7 +482,7 @@
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 4 分钟出 12000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 20 次实测 3.5~4 分钟）</span><br>
+                            <b style="color: var(--c-b);">约 4 分钟出 13000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 20 次实测 6500~13500 字 / 3.3~4 分钟）</span><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -594,7 +594,7 @@
                 <select id="styleQuickSel" onchange="wbStyleQuick()" aria-label="PPT 风格"></select>
                 <!-- 光有名字挑不出差别：这里直接画一张该风格的版式缩略图（页眉/色块/正文布局） -->
                 <span id="styleQuickPrev" style="display: none; align-items: center;"></span>
-                <button onclick="wbGoExport()">更多风格 →</button>
+                <button onclick="wbGoExport()">去导出中心下载 →</button>
                 <span class="sb-note">切换后下方 PPT 预览实时刷新，下载前随时可改</span>
             </div>
 
@@ -648,7 +648,7 @@
             </div>
             <!-- 创意评分五维雷达图：只看创意本身的强弱（创新/可行/市场/壁垒/社会），与「评分依据」的文档质量五维是两回事 -->
             <div id="ideaRadarBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
-                <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;">创意五维雷达</div>
+                <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;">创意五维雷达 · 只看创意本身</div>
                 <div id="ideaRadar" style="width: 100%; max-width: 420px; margin: 0 auto;"></div>
                 <div id="ideaRadarFoot" style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); text-align: center;">创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%</div>
             </div>
@@ -680,6 +680,12 @@
                 <div style="margin-top:4px;">① 查重：用「去 AI 味」重跑，补进自己的话</div>
                 <div style="margin-top:4px;">② 核数：正文数字逐条换成你真实的数据</div>
                 <div style="margin-top:4px;">③ 补场景：改成具体的人和具体时刻</div>
+                <!-- 第二十九轮：上面第③条让用户「写具体的人/时刻」，但生成端为双盲禁写具体人名，
+                     两条指令看着自相矛盾。补一句说明，讲清是「AI 让位、人来补」 -->
+                <div style="margin-top:6px; font-size: 12.5px; color: var(--text-mute);">
+                    生成的内容是<b>双盲脱敏版本</b>（不写具体人名、学校、时刻）——
+                    上面三条是让你在提交前<b>亲手补回自己的真实信息</b>，两者不冲突。
+                </div>
             </div>
             <div id="wbPhBar">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
@@ -962,7 +968,13 @@
             <div id="tab-defense" class="tab-content">
                 <!-- 答辩问题：简化版后台也产出（约600字），两档都展示 -->
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
-                    <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩问题预测</h3>
+                    <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩问题预测 <span style="font-size:12px; color:var(--warn-text); font-weight:400;">（内部演练用，请勿随作品提交）</span></h3>
+                    <!-- 第二十七轮：这一区会主动承认「问卷没发、原型没做、零实测」，
+                         是很好的内部准备，但若被当成提交材料递上去等于自曝短板，标题先标清楚 -->
+                    <div style="margin-bottom: 10px; padding: 9px 12px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 6px; font-size: 12.5px; color: var(--text-dim); line-height: 1.7;">
+                        下面是 AI 替评委挑的<b>尖锐问题</b>，用来内部演练；里面会直说你的短板（如"零实测"），
+                        <b>不要放进提交材料</b>。导出时这一项默认不勾选。
+                    </div>
                     <div class="content-block" id="defenseQuestions"></div>
                 </div>
                 <div>

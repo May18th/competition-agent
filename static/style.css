@@ -697,6 +697,10 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     font-size: 14px;
     color: var(--text-dim);
     border-radius: 11px;
+    /* 不收缩 + 不换行：flex 子项默认能收缩，窄屏下「导出中心」会被压成「出中心」，
+       用户以为 tab 坏了。不收缩后整排横向可滑，每个名字都完整（第二十五轮刺） */
+    flex: 0 0 auto;
+    white-space: nowrap;
     white-space: nowrap;
     flex: none;
     font-weight: 500;
