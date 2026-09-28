@@ -2549,17 +2549,15 @@ def _run_generation(data):
         pass
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
     payload["history_id"] = locals().get("_new_hid")
-    # 历史保存早于完整度/字数/查重/关键词计算，这里把后算字段回写进历史，
-    # 否则打开历史后「数据支撑论点/待补充/本地查重/字数」都显示「—」。
+    # 历史在正文压缩闸门、完整度检测、去重/脱敏后处理之前就存了，导致打开历史
+    # 与实时结果不一致（正文字数对不上、占位/复读/虚构表述没被清）。这里用最终
+    # payload 整体覆盖历史 result_data，保证「打开历史 == 刚生成」。
     try:
-        _update_history_data(_new_hid, {
-            "completeness": completeness,
-            "proposal_chars": proposal_chars,
-            "similarity": similarity,
-            "keywords": keywords,
-        })
+        _hist_payload = dict(payload)
+        _hist_payload.pop("history_id", None)  # 去掉自引用字段，避免历史里存循环 id
+        _update_history_data(_new_hid, _hist_payload)
     except Exception as _e:
-        print(f"[history] 回写完整度字段失败：{_e}")
+        print(f"[history] 回写完整结果失败：{_e}")
     return payload
 
 

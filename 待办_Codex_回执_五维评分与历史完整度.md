@@ -12,7 +12,7 @@
 ## 2. 历史记录缺「完整度/字数/查重/关键词」
 
 - `save_history_item` 在「正文压缩闸门 + 完整度检测」**之前**执行，导致历史里没有 `completeness / proposal_chars / similarity / keywords`，打开历史后「数据支撑论点/待补充/本地查重/字数」都显示「—」。
-- 修复：新增 `_update_history_data(hid, extra)`，在 `payload` 拼完、拿到 `_new_hid` 后，把后算的四个字段回写进该历史记录的 `result_data`（JSON 合并式 UPDATE，失败只打日志不影响主流程）。
+- 修复：新增 `_update_history_data(hid, extra)`，在 `payload` 拼完、拿到 `_new_hid` 后，用**最终 payload 整体覆盖**该历史记录的 `result_data`（去掉自引用 `history_id`，JSON 合并式 UPDATE，失败只打日志不影响主流程）。这样「打开历史 == 刚生成」，正文字数/去重/占位/虚构降级都与实时结果一致，而不只是补 4 个字段。
 
 ## 顺带核实（结论：无需改）
 
