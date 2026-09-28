@@ -118,6 +118,86 @@ def check_zip(path, expect_count=12):
     return (not issues), issues
 
 
+# ============ L6 评价真实性（第一百三十三轮） ============
+def check_review(review_str, proposal=""):
+    """校验专家评审 JSON：quote 必须真实存在于原文、评分与依据一致、优缺平衡、无套话。"""
+    issues = []
+    try:
+        import json as _json
+        s = (review_str or "").strip()
+        if s.startswith("```"):
+            s = s.strip("`")
+            if s.lower().startswith("json"):
+                s = s[4:]
+        data = _json.loads(s)
+    except Exception:
+        return False, ["评价不是合法 JSON"]
+    experts = data.get("experts") or []
+    if not experts:
+        return False, ["评价缺 experts"]
+    _cliche = ("很有潜力", "非常优秀", "前景广阔", "表现不错", "有待提升")
+    for i, ex in enumerate(experts):
+        score = ex.get("score") if isinstance(ex.get("score"), (int, float)) else 0
+        strengths = ex.get("strengths") or []
+        eissues = ex.get("issues") or []
+        if not strengths:
+            issues.append(f"专家{i+1} 无优点")
+        if not eissues:
+            issues.append(f"专家{i+1} 无缺点")
+        if score >= 85 and not strengths:
+            issues.append(f"专家{i+1} 高分 {score} 但无亮点依据")
+        if score < 60 and not eissues:
+            issues.append(f"专家{i+1} 低分 {score} 但无硬伤依据")
+        for ei in eissues:
+            q = (ei.get("quote") or "").strip() if isinstance(ei, dict) else ""
+            if q and proposal and q not in proposal:
+                issues.append(f"专家{i+1} quote 不存在于原文：{q[:20]}")
+        try:
+            txt = _json.dumps(ex, ensure_ascii=False)
+            for c in _cliche:
+                if c in txt:
+                    issues.append(f"专家{i+1} 套话：{c}")
+                    break
+        except Exception:
+            pass
+    return (not issues), issues
+
+
+# ============ 总审质检（第一百三十四轮，轻量规则，不引重模型） ============
+def check_total(result, mode="deep"):
+    """板块完整性 + 跨板块数字一致性检查。返回 (ok, issues)。"""
+    issues = []
+    _modules = ["parsed_rules", "similarity_report", "competitor_analysis", "business_model",
+                "risk_analysis", "tech_solution", "implementation_plan", "social_value",
+                "project_summary", "proposal", "judge_feedback", "defense_questions",
+                "ppt_outline", "speech_script"]
+    for m in _modules:
+        if not (result.get(m) or "").strip():
+            issues.append(f"缺板块：{m}")
+    # 跨板块一致性：同一关键词在不同板块出现不同数值 → 冲突
+    import re as _re
+    _kw = ("市场规模", "客单价", "月收入", "单价", "成本", "毛利率", "转化率", "用户数", "付费率", "日均")
+    def _extract(text):
+        found = {}
+        for k in _kw:
+            vals = set()
+            for mm in _re.finditer(re.escape(k) + r'[^。；\n]{0,12}?(\d+(?:\.\d+)?)', text or ""):
+                vals.add(mm.group(1))
+            if vals:
+                found[k] = vals
+        return found
+    _parts = {"tech_solution": result.get("tech_solution", ""),
+              "business_model": result.get("business_model", "")}
+    _agg = {}
+    for _src, _txt in _parts.items():
+        for k, vals in _extract(_txt).items():
+            _agg.setdefault(k, set()).update(vals)
+    for k, vals in _agg.items():
+        if len(vals) > 1:
+            issues.append(f"跨板块数字冲突：{k} 出现 {sorted(vals)} 多版本")
+    return (not issues), issues
+
+
 # ============ L3 内容质量 ============
 _CLICHE = ("进一步提升", "不断完善", "积极探索", "高度重视", "显著提高",
            "赋能", "闭环", "抓手", "扎实推进", "深入贯彻")
