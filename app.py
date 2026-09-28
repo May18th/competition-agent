@@ -535,12 +535,16 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   task_id TEXT, type TEXT DEFAULT 'generate', path TEXT,
-                  error TEXT, detail TEXT, created_time TEXT, count INTEGER DEFAULT 1)''')
-    # 老库迁移：给 gen_failures 补 type/path/count 列（若旧库没有则 ALTER，失败忽略）
+                  error TEXT, detail TEXT, created_time TEXT, count INTEGER DEFAULT 1,
+                  status TEXT DEFAULT 'open', resolved_time TEXT, competition_name TEXT)''')
+    # 老库迁移：给 gen_failures 补列（若旧库没有则 ALTER，失败忽略）
     for _col, _ddl in (
         ("type", "TEXT DEFAULT 'generate'"),
         ("path", "TEXT"),
         ("count", "INTEGER DEFAULT 1"),
+        ("status", "TEXT DEFAULT 'open'"),
+        ("resolved_time", "TEXT"),
+        ("competition_name", "TEXT"),
     ):
         try:
             c.execute("ALTER TABLE gen_failures ADD COLUMN %s %s" % (_col, _ddl))
@@ -633,6 +637,8 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 上传文件上限 50MB，防超大文件把服务压垮
+# 请求体全局上限 10MB（第八十九轮）：超出 Flask 自动返 413，防超大 body DoS
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 # 存储最新结果
 latest_result = None
@@ -753,16 +759,16 @@ def _update_history_data(hid, extra):
         print(f"[history] 回写完整度字段失败：{e}")
 
 
-def record_gen_failure(task_id, error, detail="", type="generate", path=""):
+def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name=""):
     """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。"""
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count) "
-                  "VALUES (?, ?, ?, ?, ?, ?, 1)",
+        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status, competition_name) "
+                  "VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?)",
                   (str(task_id or "")[:32], str(type or "generate")[:20],
                    str(path or "")[:200], str(error or "")[:200], str(detail or "")[:500],
-                   datetime.now().strftime("%Y-%m-%d %H:%M")))
+                   datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60]))
         conn.commit()
         conn.close()
         create_issue("backend", "error", error)
@@ -783,11 +789,45 @@ def log_error_event(type, path, message, detail=""):
         if row:
             c.execute("UPDATE gen_failures SET count = count + 1 WHERE id=?", (row[0],))
         else:
-            c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count) "
-                      "VALUES (?, ?, ?, ?, ?, ?, 1)",
+            c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status) "
+                      "VALUES (?, ?, ?, ?, ?, ?, 1, 'open')",
                       ("", str(type or "")[:20], str(path or "")[:200],
                        str(message or "")[:200], str(detail or "")[:500],
                        datetime.now().strftime("%Y-%m-%d %H:%M")))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def auto_resolve_failures():
+    """自动处理判定（第八十八轮）：对 open 失败做自愈判定，幂等（只处理 open）。
+
+    满足任一即标 auto-recovered 并写 resolved_time：
+    ① 失败时间早于最近一次成功生成时间（说明之后又成功生成过，已自愈）；
+    ② 失败时间超过 24 小时（瞬时错误早已过时）。
+    服务能调到本函数即视为当前健康。
+    """
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        last_success = c.execute("SELECT MAX(created_time) FROM history").fetchone()[0]
+        rows = c.execute("SELECT id, created_time FROM gen_failures WHERE status='open'").fetchall()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        for fid, ftime in rows:
+            resolved = False
+            if last_success and (ftime or "") < last_success:
+                resolved = True
+            else:
+                try:
+                    ft = datetime.strptime(str(ftime or ""), "%Y-%m-%d %H:%M")
+                    if (datetime.now() - ft) > timedelta(hours=24):
+                        resolved = True
+                except Exception:
+                    pass
+            if resolved:
+                c.execute("UPDATE gen_failures SET status='auto-recovered', resolved_time=? WHERE id=?",
+                          (now_str, fid))
         conn.commit()
         conn.close()
     except Exception:
@@ -1915,7 +1955,7 @@ def admin_home():
     avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
     rated_count = avg_row[1] if avg_row else 0
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     success_rate = round(total_gen * 100.0 / (total_gen + fail_total), 1) if (total_gen + fail_total) else 100.0
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
@@ -2107,7 +2147,7 @@ def admin_dashboard():
     avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
     succ_total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     success_rate = round(succ_total * 100.0 / (succ_total + fail_total), 1) if (succ_total + fail_total) else 100.0
     judge_avg = c.execute(
         "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
@@ -2287,7 +2327,7 @@ def monitor():
     recent_fail = c.execute(
         "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
     total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
 
     uptime = int(time.time() - START_TIME)
@@ -2409,7 +2449,8 @@ def create_issue(kind, source, content):
 def delete_history(history_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute("DELETE FROM history WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')", (history_id, _current_uid()))
+    # 安全对齐（第九十二轮）：仅允许删除本人记录，去掉「公共记录可被任何人删」的 OR 条件
+    c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
     conn.commit()
     deleted = c.rowcount
     conn.close()
@@ -3924,6 +3965,7 @@ def log_error():
 @app.route('/api/admin/stats')
 def admin_stats():
     """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
+    auto_resolve_failures()
     try:
         conn = get_db()
         conn.row_factory = sqlite3.Row
@@ -3935,7 +3977,7 @@ def admin_stats():
             "SELECT task_id, type, path, error, detail, created_time, count FROM gen_failures "
             "ORDER BY id DESC LIMIT 10").fetchall()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
         avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
         fb = c.execute(
@@ -4011,7 +4053,7 @@ def admin_report():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
         avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
         fb = c.execute("SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
@@ -4181,6 +4223,7 @@ def demo_data():
 @app.route('/api/health')
 def health():
     """健康检查：服务状态、运行时长、知识库数量、今日配额、最近生成时间"""
+    auto_resolve_failures()
     try:
         from competition_agents import competition_knowledge, get_quota_status
         knowledge_count = len(competition_knowledge)
@@ -4354,12 +4397,21 @@ def kb_add():
     if not content.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
 
+    # 恶意/广告关键词黑名单（第八十九轮）：命中直接拒绝，防污染 RAG 检索库
+    _black = ("加微信", "加QQ", "微信联系", "代写", "代做", "代跑", "包过", "包拿奖",
+              "联系我", "淘宝", "优惠券", "刷单", "兼职", "赚钱", "赌博", "博彩", "色情")
+    if any(k in content for k in _black):
+        return jsonify({"success": False, "error": "内容疑似广告/违规，未入库"}), 400
+
     # 版权整改：不再自动把上传内容归为「范文」，只允许「材料/模板」
     score = data.get('score')
     stype = data.get('type')
     auto_scored = score is None
     if auto_scored:
         score = _auto_score(content)
+    # 质量门槛：自动打分 <60 拒绝入库（人工显式给分则放行，尊重队友人工判断）
+    if auto_scored and (score is not None) and float(score) < 60:
+        return jsonify({"success": False, "error": "内容质量分过低，未入库", "score": score}), 400
     if not stype or stype == '范文':
         stype = '材料'
     elif stype not in ('材料', '模板'):

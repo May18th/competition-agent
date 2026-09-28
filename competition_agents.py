@@ -151,6 +151,10 @@ def load_competition_knowledge():
 # 启动时加载所有比赛资料
 competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
+_missing_expect = [e for e in EXPECTED_COMPETITIONS
+                   if not any((e in n) or (n in e) for n in competition_knowledge.keys())]
+if _missing_expect:
+    print(f"⚠️ [WARN] 知识库缺少预期赛事：{', '.join(_missing_expect)}（下拉列表可能对不齐）")
 
 _PROFILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "data", "competition_profiles.json")
