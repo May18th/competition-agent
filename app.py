@@ -60,6 +60,21 @@ def sitemap():
     return xml, 200, {'Content-Type': 'application/xml'}
 
 
+@app.route('/robots.txt')
+def robots_txt():
+    """robots.txt：允许首页爬取，屏蔽后台/管理/训练/生成接口，避免敏感路径被搜索引擎收录。"""
+    content = (
+        "User-agent: *\n"
+        "Disallow: /admin\n"
+        "Disallow: /api/admin\n"
+        "Disallow: /api/training\n"
+        "Disallow: /api/generate\n"
+        "Disallow: /api/generate_async\n"
+        "Allow: /\n"
+    )
+    return content, 200, {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400'}
+
+
 _NOTICE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notice.json")
 
 
