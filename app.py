@@ -183,18 +183,22 @@ def _unsign_uid(value):
 def _ensure_uid():
     raw = (request.cookies.get('comp_uid') or '').strip()
     legacy = False
+    authenticated = False
     if not raw:
         uid = uuid.uuid4().hex
     elif '.' in raw:
         _u = _unsign_uid(raw)
         uid = _u if _u else uuid.uuid4().hex
+        authenticated = _u is not None
     elif len(raw) <= 64 and raw.isalnum():
         # 旧版无签名 cookie：兼容接受，本次响应重签升级
         uid = raw
         legacy = True
+        authenticated = True
     else:
         uid = uuid.uuid4().hex
     g.uid = uid
+    g.uid_authenticated = authenticated
     g.uid_is_new = 'comp_uid' not in request.cookies
     g.uid_should_sign = g.uid_is_new or legacy
     g.uid_max_age = 60 * 60 * 24 * 365
@@ -389,6 +393,20 @@ def _current_uid():
     """取当前匿名用户 id；无 cookie 时退回 IP，保证旧前端也能落到一个稳定隔离键。"""
     return getattr(g, 'uid', None) or (request.cookies.get('comp_uid') or '').strip() or \
         (request.remote_addr or 'anon')
+
+
+def _require_uid():
+    """硬鉴权（196 轮 C2/C4/C5/C3）：无有效 comp_uid 签名 cookie 时返回 401。
+
+    与「软隔离」的区别：软隔离是无 cookie 时给个临时 uid 返回空数据（HTTP 仍 200）；
+    硬鉴权是直接 401，明确拒绝匿名访问用户归属类接口（历史/导出/上传）。
+    前端首次进页面时 HTML 响应已下发签名 cookie，后续请求带 cookie 通过，不受影响。
+    """
+    if not getattr(g, 'uid_authenticated', False):
+        resp = jsonify({"success": False, "error": "未登录（缺少有效的用户标识）"})
+        resp.status_code = 401
+        return resp
+    return None
 
 
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
@@ -1799,6 +1817,9 @@ def export_business():
 
 @app.route('/api/history')
 def get_history():
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     limit = max(1, min(int(request.args.get("limit", 20)), 100))
     offset = max(0, int(request.args.get("offset", 0)))
     q = request.args.get("q", "").strip()
@@ -2071,6 +2092,9 @@ def share_export(token):
 
 @app.route('/api/history/<int:history_id>')
 def get_history_detail(history_id):
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     conn = get_db()
     c = conn.cursor()
     # 历史隔离（182 轮 H6）：只允许本人查看，user_id='' 存量记录不再公共可见。
@@ -4109,6 +4133,9 @@ def speech_stream(task_id):
 
 @app.route('/api/export_all')
 def export_all():
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     import zipfile
     import io
     from docx_render import build_docx
@@ -4213,6 +4240,9 @@ def export_original_format():
 
 @app.route('/api/upload_file', methods=['POST'])
 def upload_file():
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     import os
     from werkzeug.utils import secure_filename
     # 194 轮 C3：文件大小白名单 + 上传限流（防匿名反复上传烧 LLM 识别额度 / 大文件拖垮内存）

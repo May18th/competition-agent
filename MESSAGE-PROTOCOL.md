@@ -2127,3 +2127,30 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**：
 `git add app.py .gitignore MESSAGE-PROTOCOL.md && git commit -m "fix(后端·195补充7): 评委演示只读模式(演示会话+写接口403+审计demo标记)" && git push origin main`
+
+
+---
+
+## 长期记忆 · 部署口令与关键状态（2026-09-29）
+
+- **后台口令**：存在本地 `口令备忘.md`（已 gitignore，不提交）+ 服务器 `/opt/comp-agent/.env`（gitignore）。管理员=完整权限，评委演示=只读（写操作 403）。
+- **最高优先待办**：194 后台裸奔修复已全部提交（fail-closed 统一鉴权 + 登录会话 + 演示只读 + HSTS + 编辑限流 + 上传限流），但**服务器尚未部署重启**，公网 C1-C7 仍裸奔。部署命令见 `口令备忘.md`，自检三要素：admin/stats 无凭证 401、health 200、演示登录返回 `demo:true`。
+- **部署后**：豆包公网复测 C1-C7（预期全 401）；通过后更新 `docs/漏洞库.md` 状态 + 制作「安全能力」答辩素材（195补充8）。
+- **遗留低优先（赛后再动）**：M18 任务归属（task_id 不可枚举）、M17 register 验证码、195 层8 CSRF、M7 app.py 拆分、L3 根目录脚本清理。
+
+
+---
+
+## Codex 回执 · 196轮 C2/C4/C5/C3 硬鉴权（2026-09-29）
+
+- **C2/C4/C5 硬鉴权 ✅**：`/api/history` `/api/history/<id>` `/api/export_all` 加 `_require_uid()`——无有效 comp_uid 签名 cookie 一律 401（不再软隔离返回 200 空）。实测：无 cookie / 伪造 cookie 全部 401，合法 cookie 200。
+- **C3 匿名上传硬鉴权 ✅**：`/api/upload_file` 加 `_require_uid()`，无凭证 401（叠加已有 10MB 白名单 + 限流）。
+- **实现**：`_ensure_uid` 新增 `g.uid_authenticated`（仅签名有效或旧版 32 位 hex cookie 为 True，无/伪造为 False）；新增 `_require_uid()` 返回 401。
+- **前端不受影响**：首页 HTML 响应已下发签名 cookie，后续 fetch 带 cookie 通过（实测带合法 cookie 200）。
+
+**M22（HTTP→HTTPS 301）**：属 nginx/cloudflared 配置，非 app.py 代码。需服务器改 nginx server 块加 `return 301 https://$host$request_uri;`（或 cloudflared 强制 HTTPS），我这边不碰 nginx。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md .gitignore 项目说明.md 口令备忘.md && git commit -m "fix(后端·196): C2/C4/C5硬鉴权(history/export_all无凭证401) + C3上传硬鉴权 + 安全架构文档" && git push origin main`
+
+> 注：`口令备忘.md` 已 gitignore，不会被 add；`项目说明.md` 是安全架构章节。
