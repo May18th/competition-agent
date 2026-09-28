@@ -1701,7 +1701,7 @@
             // 用户分不清到底说的是哪一步。两套各用一套写法，一眼能分辨。
             { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
             { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟产出 13000 字级完整申报材料。' }
+            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟产出 12000 字级完整申报材料（56 次实测中位 12058 字）。' }
         ];
         var _coachIdx = 0;
 
@@ -4804,7 +4804,7 @@
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书扩写至 <b>13000 字级 / 12章</b>，自动配数据图表'],
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12章</b>（56 次实测中位 12058 字），自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
@@ -5236,8 +5236,8 @@
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版约 1 分钟出 4000 字；深度版约 4 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版约 1 分钟出 4000 字级申报书；深度版约 4 分钟（13000 字级 / 12 章 + 图表 + PPT + 多专家评审）'],
+                    ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字）；深度版约 3~5 分钟（12000 字级 / 12 章 + 图表 + PPT + 多专家模拟评审）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -6427,38 +6427,53 @@
                 });
         }
 
-        // 健康轮询：单次失败不报警（网络抖动/瞬时 5xx 很常见），连续 3 次失败才判「服务异常」；
-        // 期间显示「检测中…」过渡态，恢复成功立刻切回「服务正常」（无需等任何定时器）。
+        // 健康轮询（第一百四十七轮 / 第一百五十七轮改造）：
+        // ① 3 秒超时兜底：/api/health 实测最慢 2.79s，超时一律按「没结果」处理，绝不无限转圈；
+        // ② 正常 = 完全不显示（把指示器藏起来），不再常驻「服务正常」——那是内部状态，
+        //    评委/用户不需要看见；只有连续 3 次失败（约 90 秒）才显示「服务异常」；
+        // ③ 单次失败静默重试，不弹「检测中…」过渡态（它正是「卡住」观感的来源）。
         var _healthFailStreak = 0;
+        var HEALTH_TIMEOUT_MS = 3000;
+        function _healthHide() {
+            var dot = document.getElementById('healthDot');
+            if (dot) dot.style.display = 'none';
+        }
+        function _healthShow(cls, text, tip) {
+            var dot = document.getElementById('healthDot');
+            var txt = document.getElementById('healthText');
+            if (!dot) return;
+            dot.style.display = '';
+            dot.className = 'health-dot' + (cls ? ' ' + cls : '');
+            if (txt) txt.innerText = text;
+            dot.title = tip || '';
+        }
         function checkHealth() {
-            fetch('/api/health')
+            var ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+            var timer = setTimeout(function () { if (ctl) { try { ctl.abort(); } catch (e) {} } }, HEALTH_TIMEOUT_MS);
+            var opt = ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' };
+            fetch('/api/health', opt)
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
-                    var dot = document.getElementById('healthDot');
-                    var txt = document.getElementById('healthText');
+                    clearTimeout(timer);
                     if (d && d.success && d.status === 'ok') {
                         _healthFailStreak = 0;
-                        dot.className = 'health-dot ok';
-                        txt.innerText = '服务正常';
-                        dot.title = '系统服务正常';
+                        _healthHide();          // 正常 = 不打扰
                     } else {
                         _healthFail();
                     }
                 })
-                .catch(function () { _healthFail(); });
+                .catch(function () {
+                    clearTimeout(timer);
+                    _healthFail();              // 网络失败 / 3 秒超时都走这里
+                });
         }
         function _healthFail() {
             _healthFailStreak++;
-            var dot = document.getElementById('healthDot');
-            var txt = document.getElementById('healthText');
             if (_healthFailStreak >= 3) {
-                dot.className = 'health-dot err';
-                txt.innerText = '服务异常';
-                dot.title = '服务异常：连续 ' + _healthFailStreak + ' 次健康检查失败';
+                _healthShow('err', '服务异常', '连续 ' + _healthFailStreak + ' 次健康检查未通过，服务可能暂时不可用');
             } else {
-                dot.className = 'health-dot';
-                txt.innerText = '检测中…';
-                dot.title = '第 ' + _healthFailStreak + ' 次检查未通过，连续 3 次才判定异常';
+                // 前两次失败静默重试：用户不需要为一次网络抖动买单
+                _healthHide();
             }
         }
     
@@ -6901,6 +6916,38 @@
         window.wbBgReset = wbBgReset;
         window.wbBgSetDim = wbBgSetDim;
         window.wbBgPanelToggle = wbBgPanelToggle;
+
+        /* ---- 顶部「更多 ▾」下拉（第一百四十二 / 第一百四十七轮催办）----
+           顶部原来并排四个按钮（使用说明 / 历史 / 背景 / 反馈），其中「背景」是低频装饰项，
+           和「使用说明、历史」这些真正常用的入口平级占一个位置，既冗杂又容易误点。
+           现在收进「更多」下拉，顶部主按钮由 4 个降到 3 个。
+           关闭策略：点菜单内任意项即关；点页面别处也关（这里单独监听，
+           不复用赛事下拉那个监听器，避免两条逻辑互相干扰）。 */
+        function wbMoreClose() {
+            var m = document.getElementById('wbMoreMenu');
+            var b = document.getElementById('wbMoreBtn');
+            if (m) m.style.display = 'none';
+            if (b) b.setAttribute('aria-expanded', 'false');
+        }
+        function wbMoreToggle(e) {
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            var m = document.getElementById('wbMoreMenu');
+            var b = document.getElementById('wbMoreBtn');
+            if (!m) return;
+            var open = (m.style.display === 'block');
+            if (open) { wbMoreClose(); return; }
+            m.style.display = 'block';
+            if (b) b.setAttribute('aria-expanded', 'true');
+        }
+        window.wbMoreToggle = wbMoreToggle;
+        window.wbMoreClose = wbMoreClose;
+        document.addEventListener('click', function (e) {
+            var m = document.getElementById('wbMoreMenu');
+            if (!m || m.style.display !== 'block') return;
+            var w = document.getElementById('wbMoreWrap');
+            if (w && w.contains(e.target)) return;   // 点按钮或菜单内部都不关（菜单项自己会关）
+            wbMoreClose();
+        });
         // 色卡预览用 background 简写（最后一层可以带 color），但应用时拆成两条
         function wbBgCss(p) {
             return (p.img || '') + (p.color ? ((p.img ? ', ' : '') + p.color) : '');

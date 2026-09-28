@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 13000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟出 12000 字级完整方案书（56 次实测中位 12058 字），支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
          标签页也永远是空白图标。直接复用 logo.png，零风险 -->
     <link rel="icon" type="image/png" href="/static/logo.png">
@@ -12,14 +12,14 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 13000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1~2 分钟出 2000~4000 字级申报书（128 次实测中位 2344 字），深度版约 3~5 分钟出 12000 字级完整方案书（56 次实测中位 12058 字），支持双盲赛事自动脱敏。">
     <!-- 旧域名国内多数网络打不开，微信/QQ 分享卡片图片一直加载失败；统一切现域名 -->
     <meta property="og:image" content="https://kechuang2026.cn/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260928h">
+    <link rel="stylesheet" href="/static/style.css?v=20260928i">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -83,7 +83,12 @@
         <canvas id="wbParticles"></canvas>
     </div>
 
-    <div id="healthDot" class="health-dot" title="正在检测系统服务…">
+    <!-- 服务状态指示器：默认隐藏（第一百四十七轮 / 第一百五十七轮催办）。
+         原来一进页面就显示「服务检测中…」，而 /api/health 实测要 2~3 秒才返回，
+         用户看到的就是右上角一个一直转的状态点——干等且不知道在等什么。
+         现在改成：正常 = 完全不出现；只有连续 3 次检测失败（约 90 秒后）才显示「服务异常」。
+         另：健康检查本身带 3 秒超时兜底，超时按「没结果」处理，不会无限转圈（见 app.js checkHealth） -->
+    <div id="healthDot" class="health-dot" style="display: none;" title="系统服务状态">
         <span class="hd-inner"></span>
         <span id="healthText">服务检测中…</span>
     </div>
@@ -127,15 +132,21 @@
         <!-- Hero：层级 = 图形标志 → 一句话价值主张 → 小字技术说明（不再三行平铺）。
              标志目前是内联 SVG 占位（申报书+对勾徽章，贴「生成申报材料」这件事本身）；
              logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
-             <img src="/static/logo.png" class="wb-hero-logo" alt="赛创助手"> 即可，样式已写好 -->
+             <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手"> 即可，样式已写好 -->
         <div class="hero">
-            <img src="/static/logo.png" class="wb-hero-logo" alt="赛创助手" width="54" height="54">
-            <h1>赛创助手</h1>
+            <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手" width="54" height="54">
+            <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 科创赛事助手」统一。
+                 之前页面内叫「赛创助手」、标签页叫「科创赛事助手」，同一产品两个名字，
+                 评委截图/口口相传时会以为是两家东西 -->
+            <h1>科创赛事助手</h1>
             <p>输入创意，生成符合评审规则的完整申报材料</p>
-            <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点 -->
+            <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点。
+                 第一百五十七轮（137/147/151 轮反复要求，实测仍残留）：删掉「LangGraph」
+                 这类技术栈名词——用户看不懂、也偏离「自主构建产品」的表述（151轮），
+                 只留价值导向的「多智能体协作引擎」+ 可溯源的「15 个赛事知识库」 -->
             <p class="wb-hero-tech">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>
-                基于 LangGraph 多智能体工作流 · 15 个赛事知识库自动匹配评审规则</p>
+                多智能体协作引擎 · 15 个赛事知识库自动匹配评审规则</p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
@@ -150,9 +161,26 @@
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
                 <span class="wb-dot"></span>历史
             </button>
-            <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbBgPanelToggle()">
-                <span class="wb-dot"></span>背景
-            </button>
+            <!-- 第一百四十二 / 第一百四十七轮催办：顶部主按钮收敛。
+                 「背景」是低频装饰项（换页面底图），不该与「使用说明 / 历史 / 反馈」平级占位，
+                 收进「更多 ▾」下拉；顶部常驻入口由 4 个降到 3 个，版面不再拥挤。
+                 菜单项点击后由 wbMoreClose() 关闭（见 app.js wbMoreToggle）。 -->
+            <div id="wbMoreWrap" style="position: relative;">
+                <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
+                        aria-haspopup="true" aria-expanded="false" title="更多功能">
+                    <span class="wb-dot"></span>更多 ▾
+                </button>
+                <div id="wbMoreMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px);
+                                            z-index: 1700; min-width: 148px; padding: 6px;
+                                            background: var(--surface-solid); border: 1px solid var(--line);
+                                            border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.18);">
+                    <button class="wb-glass-btn wb-glass-btn-sm"
+                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
+                            onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
+                        <span class="wb-dot"></span>页面背景
+                    </button>
+                </div>
+            </div>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbFeedbackOpen()" title="任何状态下都能反馈问题或建议">
                 <span class="wb-dot"></span>反馈
             </button>
@@ -305,7 +333,7 @@
                             <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                             <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                                 章节可直接改（改动只存在你这台设备）。<br>
-                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 4000 字），不套用这里的多章结构。
+                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 2000~4000 字，128 次实测中位 2344 字），不套用这里的多章结构。
                             </div>
                         </div>
                         <div onclick="evToggleMore()" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
@@ -520,7 +548,11 @@
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-a);">约 1 分钟出 4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 40 次实测 1600~8500 字 / 50~93 秒）</span><br>
+                            <!-- 第一百四十三轮 / 第一百五十七轮：字数与时长按数据库真实分布重写，
+                                 用「中位数」口径（不是个别极值），样本数可溯源。
+                                 旧文案「约 1 分钟出 4000 字级（近 40 次实测）」与库里 128 条样本不符
+                                 （中位仅 2344 字），属不实宣传，必须按真实口径改 -->
+                            <b style="color: var(--c-a);">约 1~2 分钟出 2000~4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（128 次实测：中位 2344 字 / 50~96 秒）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -528,8 +560,8 @@
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 4 分钟出 13000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 20 次实测 6500~13500 字 / 3.3~4 分钟）</span><br>
-                            简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
+                            <b style="color: var(--c-b);">约 3~5 分钟出 12000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（56 次实测：中位 12058 字 / 最长约 4.7 分钟）</span><br>
+                            简洁版全部 + 多专家模拟评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
                 </div>
@@ -1513,7 +1545,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=20260928h"></script>
+    <script src="/static/app.js?v=20260928i"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1655,7 +1687,7 @@ window.addEventListener('resize', function () {
     var STAGE_LABEL = {
         start: '正在启动', parsing_rules: '解析评分规则', similarity: '检索同质化项目',
         idea_scoring: '提炼一句话定位', analysis: '分析赛题与方案', rich_assets: '生成图表与 PPT 素材',
-        writing: '撰写申报书正文', judging: '模拟评委打分', expert_review: '多专家交叉评审',
+        writing: '撰写申报书正文', judging: '模拟评委打分', expert_review: '多专家模拟评审',
         diagnosis: '诊断短板', revision: '按意见定向改写', defense: '预测答辩问题',
         ppt: '生成 PPT 大纲', speech: '撰写路演稿', done: '收尾'
     };
