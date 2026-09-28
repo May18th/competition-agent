@@ -22,14 +22,15 @@ def check_generation(result, mode="deep"):
     for k in ("defense_questions", "ppt_outline"):
         if not result.get(k):
             issues.append(f"模块缺失：{k}")
-    if mode == "deep":
-        _eok, _eissues = check_depth(proposal)
-        if not _eok:
-            issues.extend(_eissues)
+    # 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版均适用）：
+    # 空话段落占比 >30% 判定凑数，两档一起打回。
+    _eok, _eissues = check_depth(proposal)
+    if not _eok:
+        issues.extend(_eissues)
     return (not issues), issues
 
 
-# ============ 深度版防凑数（第一百四十五轮） ============
+# ============ 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版） ============
 _INFO_MARK = re.compile(r'\d|%|％|元|万|亿|倍|算法|模型|架构|系统|平台|接口|模块|芯片|传感器|数据|网络|服务器|协议|基于|通过|采用|实现|验证|测算|估计|预测|方案')
 
 
@@ -320,6 +321,11 @@ def score_export(result, mode="deep"):
     _miss = (result.get("completeness") or {}).get("missing") or []
     if _miss:
         dims["内容完整性"] -= 5; reasons.append("缺章节：" + "、".join(_miss[:3]))
+    # 防凑数（145/146 轮）：空话段落占比 >30% 判定凑数，两档同样扣分打回
+    _dok, _diss = check_depth(proposal)
+    if not _dok:
+        dims["内容完整性"] -= 20
+        reasons.extend(_diss)
 
     # 结构规范性：Markdown 标题层级（>3 视为规范）
     _heads = [l for l in proposal.split("\n") if l.strip().startswith("#")]
