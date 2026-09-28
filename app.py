@@ -892,13 +892,23 @@ def _fetch_proposal_from_source(data):
     背景：前端 DOM 文本在并发生成/断网时可能被串台或半截渲染污染，
     后端 result_data / tasks 里存的才是干净原文。
     """
+    rec = _fetch_record_from_source(data)
+    return (rec.get('proposal') or '').strip() if rec else ''
+
+
+def _fetch_record_from_source(data):
+    """导出时若传 task_id / history_id，从后端取该记录的完整 data 原文。
+
+    修复「导出不绑定当前记录」：前端三个导出按钮若各自发 DOM 状态，可能拿到三条
+    不同记录的内容。这里统一以后端 tasks / history 里的完整 result_data 为准，
+    调用方用返回 dict 覆盖 POST body 里同名字段。
+    """
     try:
         tid = str(data.get('task_id') or '').strip()
         if tid and tid in tasks:
             d = tasks[tid].get('data') or {}
-            p = (d.get('proposal') or '').strip()
-            if p:
-                return p
+            if d:
+                return d
         hid = data.get('history_id')
         if hid:
             import json as _json
@@ -909,12 +919,11 @@ def _fetch_proposal_from_source(data):
             conn.close()
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
-                p = (rd.get('proposal') or '').strip()
-                if p:
-                    return p
+                if rd:
+                    return rd
     except Exception as e:
-        print(f"[export_word] 后端原文覆盖失败，退回前端文本：{e}")
-    return ''
+        print(f"[export] 后端记录原文覆盖失败，退回前端数据：{e}")
+    return None
 
 
 def _reorder_markdown_by_chapters(text, ordered_titles):
@@ -2199,11 +2208,49 @@ def _run_graph(app, state):
     return result
 
 
+_DEIDENT_PROTECT_CACHE = None
+
+
+def _deident_protect_terms():
+    """脱敏前需要保护的词表：官方赛事全名 + 「大学生/学校名称」等泛化词。
+
+    缓存一份，避免每次脱敏都重读 competition_profiles.json。
+    """
+    global _DEIDENT_PROTECT_CACHE
+    if _DEIDENT_PROTECT_CACHE is not None:
+        return _DEIDENT_PROTECT_CACHE
+    terms = set()
+    try:
+        from competition_agents import get_competition_profiles
+        for p in get_competition_profiles():
+            for n in ([p.get("name", "")] + (p.get("aliases") or [])):
+                n = str(n).strip()
+                if n and ('大学' in n or '学校' in n or '学生' in n):
+                    terms.add(n)
+    except Exception:
+        pass
+    # 泛化词兜底（不含「大学/学校」本身，只保护明确短语，避免把真正的院校名也放走）
+    for w in ("大学生", "学校名称", "学校地址", "学校简称", "学校全称", "高等院校", "高等学校"):
+        terms.add(w)
+    _DEIDENT_PROTECT_CACHE = sorted(terms, key=len, reverse=True)
+    return _DEIDENT_PROTECT_CACHE
+
+
 def _strip_identifying_text(t):
     """脱敏兜底：剔除院校、指导教师/负责人姓名、手机号、邮箱、身份证等身份信息。"""
     import re
     if not t:
         return t
+    # 官方赛事名 / 泛化词（大学生、学校名称…）不能被当成院校名脱敏，
+    # 否则「中国国际大学生创新大赛」会被删成「（隐去）生创新大赛」。
+    # 先把这些词换成哨兵，脱敏完再还原。
+    _protect = _deident_protect_terms()
+    _mapping = {}
+    for _i, _w in enumerate(_protect):
+        _token = "\x00DEID%d\x00" % _i
+        if _w in t:
+            t = t.replace(_w, _token)
+            _mapping[_token] = _w
     # 手机号 / 座机
     t = re.sub(r'1[3-9]\d{9}', '（手机号隐去）', t)
     t = re.sub(r'0\d{2,3}[- ]?\d{7,8}', '（电话隐去）', t)
@@ -2215,8 +2262,9 @@ def _strip_identifying_text(t):
     t = re.sub(
         r'(指导老师|指导教师|负责人|队长|联系人)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
         '指导教师（隐去）', t)
-    # 院校全称（高置信度，避免误伤「大学生」「商学院」等）
-    t = re.sub(r'[\u4e00-\u9fa5]{2,4}(?:大学|学校)', '（隐去）', t)
+    # 院校全称（高置信度）：加负向断言，避免「大学生」（college student）、
+    # 「学校名称/学校地址」这类泛化词被当院校名误删。
+    t = re.sub(r'[\u4e00-\u9fa5]{2,4}(?:大学|学校)(?!生|名称|地址|简称|全称|校名)', '（隐去）', t)
     # 学院：只认较长校名（如「职业技术学院」「文理学院」），避开「商学院」等院系
     t = re.sub(r'[\u4e00-\u9fa5]{4,8}学院', '（隐去）', t)
     # 「姓名：待填写」「电话：待补充」等无方括号占位 → （由团队补充），
@@ -2224,6 +2272,9 @@ def _strip_identifying_text(t):
     t = re.sub(r'([：:])\s*(待填写|待你填写|待补充|待填)', r'\1（由团队补充）', t)
     # 「（待填写）」「（待补充）」→ 直接删
     t = re.sub(r'[（(]\s*(待填写|待你填写|待补充|待填)\s*[)）]', '', t)
+    # 还原被保护的官方赛事名 / 泛化词
+    for _token, _w in _mapping.items():
+        t = t.replace(_token, _w)
     return t
 
 
@@ -3364,6 +3415,16 @@ def export_zip():
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from flask import send_file, jsonify
     data = request.get_json(force=True, silent=True) or {}
+    # 导出严格绑定当前记录：前端若只发 DOM 状态，三个按钮可能各拿到一条不同历史记录。
+    # 有 task_id / history_id 时，以后端完整 result_data 为内容权威，前端只覆盖主题/变体。
+    _rec = _fetch_record_from_source(data)
+    if _rec:
+        _rec = dict(_rec)
+        if data.get('theme'):
+            _rec['theme'] = data['theme']
+        if data.get('variant'):
+            _rec['variant'] = data['variant']
+        data = _rec
     mappings = [
         ("01_赛事规则解析报告.docx", "赛事规则解析报告", data.get('parsed_rules', '')),
         ("02_创意同质化检测报告.docx", "创意同质化检测报告", data.get('similarity_report', '')),
