@@ -2856,6 +2856,70 @@ body.light .btn-primary:hover:not(:disabled) {
         </div>
     </div>
     <script>
+    /* ===== HTTP 错误兜底拦截器（必须最先执行）=====
+       背景：全站 36 处 fetch，只有 6 处校验了 res.ok，其余一律 .then(r => r.json()) 直接往下走。
+       后果：后端 400/500 返回的错误体被当正常数据处理，页面表现为「按钮弹回、什么都没发生」，
+             用户判定为「网站挂了」。逐个去补 30 处既易漏又难维护，所以在这里统一兜底：
+
+       行为：对本站 /api/ 且非 2xx 的响应，读出错误体备用；若 2.5 秒内调用方没弹出任何 toast
+             （说明它把错误吞了），才由这里补一条提示。调用方自己正确处理了的不重复提示。
+       注意：用 res.clone() 读 body，不影响原 Response 的后续消费。 */
+    (function () {
+        try {
+            var _raw = window.fetch.bind(window);
+            window.fetch = function (url, opt) {
+                var t0 = Date.now();
+                return _raw(url, opt).then(function (res) {
+                    try {
+                        var u = String(url || '');
+                        if (!res.ok && u.indexOf('/api/') === 0) {
+                            // 健康检查是定时轮询，失败属预期噪音，不提示也不入账
+                            if (u.indexOf('/api/health') === 0) return res;
+                            try {
+                                res.clone().text().then(function (body) {
+                                    var msg = '', j = null;
+                                    try { j = JSON.parse(body); } catch (e) {}
+                                    if (j) msg = j.error || j.message || '';
+                                    if (!msg) msg = String(body || '').replace(/\s+/g, ' ').slice(0, 90);
+                                    window.__wbHttpErrors = window.__wbHttpErrors || [];
+                                    window.__wbHttpErrors.push({ url: u, status: res.status, error: msg, at: Date.now() });
+                                    if (window.__wbHttpErrors.length > 30) window.__wbHttpErrors.shift();
+                                    // 同 URL+状态码 60 秒内只补一次，避免轮询类请求刷屏
+                                    window.__wbFbShown = window.__wbFbShown || {};
+                                    var k = u + '|' + res.status;
+                                    if ((window.__wbFbShown[k] || 0) > Date.now() - 60000) return;
+                                    setTimeout(function () {
+                                        // 用 >= 而非 >：响应极快时调用方的 toast 可能与 t0 落在同一毫秒，
+                                        // 严格大于会判成「没提示过」，于是又补一条重复提示
+                                        if ((window.__wbLastToastAt || 0) >= t0) return;   // 调用方已提示
+                                        if ((window.__wbFbShown[k] || 0) > Date.now() - 60000) return;
+                                        window.__wbFbShown[k] = Date.now();
+                                        var box = document.getElementById('wbToast');
+                                        if (!box) return;
+                                        var el = document.createElement('div');
+                                        el.className = 'wb-toast t-error';
+                                        el.innerHTML =
+                                            '<svg class="wb-toast-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>' +
+                                            '<div class="wb-toast-main">' +
+                                                '<div class="wb-toast-title">请求失败（' + res.status + '）</div>' +
+                                                '<div class="wb-toast-sub">' + (u + '：' + msg).slice(0, 120) + '</div>' +
+                                            '</div>' +
+                                            '<svg class="wb-toast-x" viewBox="0 0 24 24" aria-hidden="true" onclick="this.parentNode.remove()"><use href="#wb-i-cross"/></svg>';
+                                        box.appendChild(el);
+                                        while (box.children.length > 4) box.removeChild(box.firstChild);
+                                        setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 8000);
+                                    }, 1800);
+                                }).catch(function () {});
+                            } catch (e) {}
+                        }
+                    } catch (e) {}
+                    return res;
+                });
+            };
+        } catch (e) {}
+    })();
+    </script>
+    <script>
     /* ---------- 图表放大查看 ---------- */
     function openChartModal(src, title, caption) {
         if (!src) return;
@@ -4039,6 +4103,7 @@ body.light .btn-primary:hover:not(:disabled) {
             var ms = (opt.ms == null) ? (type === 'error' ? 8000 : 4000) : opt.ms;
             var icon = (type === 'error' || type === 'warn') ? 'wb-i-warn'
                      : (type === 'ok') ? 'wb-i-check' : 'wb-i-bulb';
+            window.__wbLastToastAt = Date.now();   // 兜底拦截器据此判断调用方是否已提示，避免重复弹
             var id = 'wbtoast' + (++_toastSeq);
             var el = document.createElement('div');
             el.className = 'wb-toast t-' + type;
@@ -7087,6 +7152,22 @@ body.light .btn-primary:hover:not(:disabled) {
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
             window._wbGenerating = true;   // 下载条/吸附 dock 以此为准：done 前一律不出
+            // 赛事是必填项：后端会返回 400「请先选择赛事」，但等到那时候用户已经点了按钮、
+            // 看到进度条再弹回，体验上是「网站故障」。这里当场拦下并把赛事框标出来
+            var _ceEl = document.getElementById('competition');
+            var _ceVal = _ceEl ? String(_ceEl.value || '').trim() : '';
+            if (!_ceVal) {
+                window._wbGenerating = false;
+                wbToast('请先选择或填写赛事名称', { type: 'warn', sub: '不同赛事的评审侧重不同，选了才能对准评分点写' });
+                if (_ceEl) {
+                    if (_ceEl.focus) try { _ceEl.focus(); } catch (e) {}
+                    _ceEl.classList.remove('wb-shake-hl');
+                    void _ceEl.offsetWidth;
+                    _ceEl.classList.add('wb-shake-hl');
+                    setTimeout(function () { _ceEl.classList.remove('wb-shake-hl'); }, 1600);
+                }
+                return;
+            }
             if (!idea && !proposal_draft) {
                 window._wbGenerating = false;
                 wbToast('请先填写项目创意，或粘贴一段申报书草稿', { type: 'warn' });
@@ -7210,10 +7291,22 @@ body.light .btn-primary:hover:not(:disabled) {
                     scoring_weights: ((evCurrent() || {}).scoring || []).filter(function (x) { return _wbPctOf(x) !== null; })
                 })
             })
-            .then(res => res.json())
+            .then(res => res.json().catch(function () { return {}; }).then(function (j) {
+                // 原来直接 res.json()：后端 400/500 时被当正常响应往下走，错误体里真正的
+                // 原因（如「请先选择赛事」）被泛化文案盖掉。这里先把 HTTP 状态和后端 error 捞出来
+                if (!res.ok || (j && j.success === false)) {
+                    var e0 = new Error((j && (j.error || j.message)) || ('服务返回 ' + res.status));
+                    e0.httpStatus = res.status;
+                    e0.isCreateFail = true;
+                    throw e0;
+                }
+                return j;
+            }))
             .then(start => {
                 if (!start.success || !start.task_id) {
-                    throw new Error(start.error || '任务创建失败');
+                    var e1 = new Error(start.error || '任务创建失败');
+                    e1.isCreateFail = true;
+                    throw e1;
                 }
                 _currentTaskId = start.task_id;
                 // 暴露给导出用：导出申报书时连同 task_id 一起提交，后端可回库取干净原文
@@ -7660,10 +7753,17 @@ body.light .btn-primary:hover:not(:disabled) {
                     if (_ps) { _ps.style.display = 'block'; }
                 }
                 _currentTaskId = null;
+                window._wbGenerating = false;   // 必须复位：泄漏会让之后打开历史记录时下载 dock 永久被抑制
                 btn.disabled = false;
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
                 if (err && err.cancelled) {
                     wbToast('已终止生成', { type: 'warn' });
+                } else if (err && err.isCreateFail) {
+                    // 任务根本没建立起来：不是生成质量问题，别让人去改创意
+                    wbToast('生成服务暂不可用：' + (err.message || '未知原因') + '，请重试', {
+                        type: 'error',
+                        sub: (err.httpStatus ? ('HTTP ' + err.httpStatus + ' · ') : '') + '已填内容都还在，改好后点「开始生成」即可'
+                    });
                 } else {
                     var _net = String((err && err.message) || err || '');
                     var _isNet = _net.indexOf('Failed to fetch') >= 0 || _net.indexOf('NetworkError') >= 0;
