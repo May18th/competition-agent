@@ -6367,6 +6367,7 @@
 
             function render(d) {
                 if (!d || typeof d !== 'object') return;
+                if (d.active === false) return;   // 后端 /api/notice 的显式开关：关了就当没有
                 var text = String(d.text || d.content || d.message || '').trim();
                 if (!text) return;
                 var title = String(d.title || '维护公告').trim() || '维护公告';
