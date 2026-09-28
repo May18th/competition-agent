@@ -2101,11 +2101,22 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 """
 
     # 按当前赛事章节拆成两段写，避免单次输出撑爆 max_tokens 导致后半截被截断
+    # 第一百六十七轮提速：前半/后半互相独立（后半 prompt 不引用前半正文），并行写省一次串行等待；
+    # 并行失败自动退回串行，不牺牲正确性。
     chapters = _chapter_list(state)
     if len(chapters) >= 4:
         mid = (len(chapters) + 1) // 2
-        part1 = _write_proposal_half(common, chapters[:mid], continue_mode=False)
-        part2 = _write_proposal_half(common, chapters[mid:], continue_mode=True)
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=2) as _ex:
+                _f1 = _ex.submit(_write_proposal_half, common, chapters[:mid], False)
+                _f2 = _ex.submit(_write_proposal_half, common, chapters[mid:], True)
+                part1 = _f1.result()
+                part2 = _f2.result()
+        except Exception as _e:
+            print(f"[writer] 并行写失败，退回串行：{_e}")
+            part1 = _write_proposal_half(common, chapters[:mid], continue_mode=False)
+            part2 = _write_proposal_half(common, chapters[mid:], continue_mode=True)
         proposal = (part1 + "\n\n" + part2).strip()
         set_partial_field("proposal", proposal)
     else:
