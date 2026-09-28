@@ -462,6 +462,49 @@ THEMES = {
                    "light_cover": True, "light_closing": True},
         "chart": ["#3E5C6B", "#C87F4A", "#7C6A55", "#8C7BA6", "#5E7C6E", "#A88B5B", "#6B5B73"],
     },
+    "deepblue": {
+        # 蒸馏自「科技蓝色1.pptx」：深蓝 #0566CA + 青色 #35FCFF，阿里巴巴普惠体。
+        "label": "深蓝青（科技蓝 · 蓝底+青色高光）",
+        "chapter": ["0566CA", "35FCFF", "5B93F5", "104AA3", "22B8CF", "0E9AA7", "6B8DD6"],
+        "deep": "08223F", "deep2": "0566CA",
+        "ink": "FFFFFF", "body": "D9E6F7", "muted": "9FB6D6",
+        "primary": "0566CA", "accent": "35FCFF",
+        "card": "F5F9FE", "soft": "EAF2FD",
+        "cover_deco": ["35FCFF", "0566CA", "5B93F5"],
+        "section_rule": "35FCFF", "font": "微软雅黑",
+        "family": "科技风", "scene": "AI / 算法 / 硬件 / 电子设计",
+        "layout": {"variant": "v1", "body": "cards", "header": "topbar", "card": "solid", "deco": True},
+        "chart": ["#0566CA", "#35FCFF", "#5B93F5", "#104AA3", "#22B8CF", "#0E9AA7", "#6B8DD6"],
+    },
+    "steel": {
+        # 蒸馏自「商业风.pptx / 商业风3.pptx」：钢蓝 #438DB2 + 暖金，印品招牌体。
+        "label": "商务钢蓝（商业风 · 钢蓝+暖金）",
+        "chapter": ["438DB2", "2E5A6E", "E0A64B", "5B93F5", "34C78A", "8B7BE8", "F0637C"],
+        "deep": "1F3A4D", "deep2": "438DB2",
+        "ink": "1A2A35", "body": "3E4E5A", "muted": "8294A0",
+        "primary": "438DB2", "accent": "E0A64B",
+        "card": "F8FAFC", "soft": "EEF4F8",
+        "cover_deco": ["438DB2", "2E5A6E", "E0A64B"],
+        "section_rule": "E0A64B", "font": "微软雅黑",
+        "family": "商务风", "scene": "商业计划 / 金融 / 创业路演",
+        "layout": {"variant": "v2", "body": "minimal", "header": "rule", "card": "outline", "section": "light"},
+        "chart": ["#438DB2", "#2E5A6E", "#E0A64B", "#5B93F5", "#34C78A", "#8B7BE8", "#F0637C"],
+    },
+    "serif": {
+        # 蒸馏自「Deepseek.pptx / 人工智能模型2.pptx」：米白底 + 朱红，思源宋体。
+        "label": "学术宋体（论文/答辩 · 米白底+朱红）",
+        "chapter": ["8B1A1A", "3A4A5A", "B08D57", "5E7C6B", "7A3B2E", "4A5D4E", "8B5A2B"],
+        "deep": "F7F3EA", "deep2": "EAE2D2",
+        "ink": "26221B", "body": "4A443C", "muted": "8F8678",
+        "primary": "8B1A1A", "accent": "B08D57",
+        "card": "FDFBF6", "soft": "F3EEE3",
+        "cover_deco": ["8B1A1A", "3A4A5A", "B08D57"],
+        "section_rule": "B08D57", "font": "思源宋体 CN",
+        "family": "学术风", "scene": "论文答辩 / 结题 / 学术汇报",
+        "layout": {"variant": "v4", "body": "numbered", "header": "rule", "card": "outline", "section": "light",
+                   "light_cover": True, "light_closing": True},
+        "chart": ["#8B1A1A", "#3A4A5A", "#B08D57", "#5E7C6B", "#7A3B2E", "#4A5D4E", "#8B5A2B"],
+    },
 }
 
 # 精品 15 套：主推，前端默认展示（按风格族分组，族内版式互不相同）。
@@ -475,7 +518,8 @@ PREMIUM_ORDER = ["star", "cyber",                        # 科技星空风 2 套
                  "ink"]                                  # 中国风 1 套
 # 旧主题不删（历史结果里可能还引用着这些 key），折叠进"更多备选风格"
 EXTRA_ORDER = ["tech", "ican", "circuit", "svc", "studio", "poster", "sec",
-               "medical", "edu", "agri", "finance", "craft", "social"]
+               "medical", "edu", "agri", "finance", "craft", "social",
+               "deepblue", "steel", "serif"]
 THEME_ORDER = PREMIUM_ORDER + EXTRA_ORDER
 # ============ 版式模板库 ============
 # 版式有 6 个维度，主题通过 layout 字段挑一套组合（不指定则用 VARIANTS 的默认值）：
