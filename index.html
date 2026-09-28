@@ -576,7 +576,7 @@
                 <!-- 导出入口去重：打包接口 /api/export_zip 已含 12_路演PPT.pptx（app.py 3104 行确认），
                      独立的「PPT / 分项下载」按钮降级为打包旁边的小箭头菜单，功能保留、视觉不再重复 -->
                 <div style="position: relative; display: inline-block;">
-                    <button onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">更多 ▾</button>
+                    <button type="button" onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">更多 ▾</button>
                     <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportOnePDF('proposalText', '项目申报书全文')" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">下载 PDF</div>
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportAll()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">一键打包全部</div>
@@ -1402,7 +1402,7 @@
         };
     })();
     </script>
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=4"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
