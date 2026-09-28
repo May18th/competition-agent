@@ -3784,6 +3784,8 @@ def restyle():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     style = data.get('style', 'formal')
+    if _rate_limited():
+        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     if style not in _RESTYLE_STYLES:
@@ -3815,6 +3817,8 @@ def rewrite_paragraph():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     instruction = data.get('instruction', '改写这段，让它更具体、更有说服力')
+    if _rate_limited():
+        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
@@ -3842,6 +3846,8 @@ def proofread():
     """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
+    if _rate_limited():
+        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
@@ -5652,3 +5658,474 @@ def handle_unexpected_error(e):
         record_gen_failure("", str(e), traceback.format_exc(limit=3)[-400:],
                            type="export", path=request.path)
     return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
+
+
+# ============ 漏洞库后台页 /admin/vulns（第 190 轮新增，整体纯追加块） ============
+# 实现约定：
+# 1. 页面 HTML 是字符串常量，由路由直接 return，不走百分号格式化，
+#    因此 CSS 里的宽度百分比之类字面写法都不需要转义，从根上避开历史两次线上 500。
+# 2. 页面本身不加鉴权（没有写进 _ADMIN_PAGE_PATHS，避免动已有代码），
+#    所有数据都来自需要 X-Admin-Token 的接口；接口返回 401/403 时页面弹出 token 输入框。
+# 3. 原生 JS + CSS 条形图，不引入 echarts 等新依赖，也不引用任何外部 CDN。
+_VULNS_PAGE_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>科创赛事助手 · 漏洞库</title>
+<style>
+[hidden]{display:none !important}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:#f5f6f8;color:#1a1a2e;margin:0;padding:24px 16px 40px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:21px;margin:0 0 14px}
+.msg{font-size:13px;color:#6b7280;margin-bottom:10px}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:10px 12px;font-size:13.5px;margin:10px 0}
+.gate{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06);max-width:600px}
+.gate h2{font-size:16px;margin:0 0 8px}
+.gate input{width:100%;padding:10px 12px;border:1px solid #dbe3ee;border-radius:8px;font-size:14px;color:#1f2937;box-sizing:border-box}
+.gate button{margin-top:10px;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer}
+.tip{font-size:12.5px;color:#6b7280;margin-top:8px;line-height:1.7}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.card{background:#fff;border-radius:10px;padding:15px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card .num{font-size:26px;font-weight:700;color:#2563eb}
+.card .label{font-size:12px;color:#6b7280;margin-top:3px}
+.card.c-high .num{color:#dc2626}
+.card.c-mid .num{color:#d97706}
+.card.c-low .num{color:#0891b2}
+.card.c-fixed .num{color:#059669}
+.progbox{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+.progtitle{font-size:13px;color:#374151;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ptrack{background:#eef0f4;border-radius:999px;height:14px;overflow:hidden}
+.pfill{display:block;height:100%;background:linear-gradient(90deg,#059669,#34d399);border-radius:999px;width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px;margin-bottom:14px}
+.box{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.box h2{font-size:15px;margin:0 0 10px}
+.barrow{display:flex;align-items:center;gap:9px;margin:6px 0}
+.barrow .bl{width:120px;flex-shrink:0;font-size:12.5px;color:#374151;text-align:right;word-break:break-word;line-height:1.35}
+.barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:13px;overflow:hidden}
+.barrow .bfill{display:block;height:100%;border-radius:6px;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa)}
+.barrow .bn{width:104px;flex-shrink:0;font-size:12px;color:#6b7280;text-align:left;word-break:break-word;line-height:1.35}
+.empty{color:#9ca3af;text-align:center;padding:14px;font-size:13px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.filters select,.filters button{font-size:13px;padding:7px 10px;border:1px solid #dbe3ee;border-radius:8px;background:#fff;color:#374151;cursor:pointer}
+.filters label.f{font-size:12.5px;color:#6b7280}
+.filters button.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+.tblwrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
+th,td{border-bottom:1px solid #eef0f4;padding:9px 10px;text-align:left;vertical-align:top;word-break:break-word}
+th{background:#f8fafc;color:#374151;font-weight:600;white-space:nowrap}
+th.s{cursor:pointer;user-select:none}
+th.s:hover{color:#2563eb}
+tr.row{cursor:pointer}
+tr.row:hover{background:#f8fafc}
+tr.row.open{background:#eff6ff}
+td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-size:12px}
+.lv,.st{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.lv-high{background:#fee2e2;color:#b91c1c}
+.lv-medium{background:#fef3c7;color:#b45309}
+.lv-low{background:#e0f2fe;color:#0369a1}
+.st-fixed{background:#dcfce7;color:#15803d}
+.st-open{background:#fee2e2;color:#b91c1c}
+.st-other{background:#f1f5f9;color:#475569}
+.det{background:#f8fafc}
+.detbox{padding:10px 12px}
+.detbox h3{font-size:13px;margin:0 0 6px;color:#374151}
+.exptxt{white-space:pre-wrap;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:13px;color:#1f2937;margin-bottom:10px;line-height:1.75}
+.detrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.detrow select,.detrow textarea,.detrow label{font-size:13px;color:#1f2937}
+.detrow select{padding:6px 8px;border:1px solid #dbe3ee;border-radius:8px;background:#fff}
+.detrow .ta{flex:1 1 320px;min-width:240px;display:block}
+.detrow textarea{width:100%;min-height:84px;padding:9px 10px;border:1px solid #dbe3ee;border-radius:8px;font-family:inherit;font-size:13px;color:#1f2937;box-sizing:border-box;line-height:1.7}
+.detbtn{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer}
+.detbtn:disabled{opacity:.55;cursor:default}
+.detmsg{font-size:12.5px;margin-left:6px}
+.detmsg.bad{color:#b91c1c}
+.detmsg.good{color:#047857}
+.nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.nav a.active{background:#2563eb;color:#fff}
+@media (max-width:640px){
+  body{padding:16px 10px 30px}
+  .barrow .bl{width:84px}
+  .barrow .bn{width:76px}
+  .filters{width:100%}
+}
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
+<h1>🐞 漏洞库</h1>
+<div id="pageMsg" class="msg"></div>
+<div id="gate" class="gate" hidden>
+  <h2>需要 admin token</h2>
+  <div class="tip">漏洞库接口要求请求头 <b>X-Admin-Token</b>。token 取自服务端环境变量 ADMIN_TOKEN，页面里没有也不会硬编码。<br>输入后存在本机 localStorage，之后每次请求自动带上。本机若禁用了 localStorage，也会临时保留在当前页面内存里。</div>
+  <input id="tokenInput" type="password" placeholder="输入 admin token" autocomplete="off">
+  <button id="tokenBtn" type="button">验证并加载</button>
+  <div id="gateMsg" class="err" hidden></div>
+</div>
+<div id="main" hidden>
+  <div class="cards" id="cards"></div>
+  <div class="progbox">
+    <div class="progtitle"><span>修复进度</span><span id="progText">--</span></div>
+    <div class="ptrack"><span class="pfill" id="progFill"></span></div>
+  </div>
+  <div class="grid2">
+    <div class="box"><h2>级别分布</h2><div id="barLevel"></div></div>
+    <div class="box"><h2>根因归因（category）</h2><div id="barCat"></div></div>
+    <div class="box"><h2>责任分布（含修复率）</h2><div id="barOwner"></div></div>
+    <div class="box"><h2>状态分布</h2><div id="barStatus"></div></div>
+  </div>
+  <div class="filters">
+    <label class="f">级别 <select id="fLevel"><option value="">全部</option><option value="high">高危</option><option value="medium">中危</option><option value="low">低危</option></select></label>
+    <label class="f">状态 <select id="fStatus"><option value="">全部</option><option value="已修复">已修复</option><option value="部分修复">部分修复</option><option value="未修复">未修复</option><option value="待核实">待核实</option><option value="待确认">待确认</option></select></label>
+    <label class="f">责任人 <select id="fOwner"><option value="">全部</option></select></label>
+    <button class="primary" id="btnReload" type="button">重新加载</button>
+    <button id="btnClear" type="button">清除本机 token</button>
+  </div>
+  <div class="box">
+    <div class="tblwrap">
+      <table><thead><tr>
+        <th class="s" data-sort="id">ID <span data-ind="id">▸</span></th>
+        <th class="s" data-sort="level">级别 <span data-ind="level">▸</span></th>
+        <th>名称</th>
+        <th class="s" data-sort="status">状态 <span data-ind="status">▸</span></th>
+        <th>责任人</th>
+        <th>轮次</th>
+        <th>经验</th>
+        <th class="s" data-sort="updated_at">更新时间 <span data-ind="updated_at">▸</span></th>
+      </tr></thead><tbody id="tbody"></tbody></table>
+    </div>
+    <div class="empty" id="tblEmpty" hidden>没有匹配的漏洞</div>
+  </div>
+</div>
+</div>
+<script>
+(function(){
+  'use strict';
+  var KEY = 'wbAdminToken';
+  var STATUS_LIST = ['已修复', '部分修复', '未修复', '待核实', '待确认'];
+  var LEVEL_TEXT = {high:'高危', medium:'中危', low:'低危'};
+  var LEVEL_RANK = {high:0, medium:1, low:2};
+  var STATUS_CLS = {'已修复':'st-fixed', '未修复':'st-open'};
+  var BAR_BLUE = 'linear-gradient(90deg,#2563eb,#60a5fa)';
+  var BAR_GREEN = 'linear-gradient(90deg,#059669,#34d399)';
+  var memToken = null;
+  var ownerSeen = {};
+  var rows = [];
+  var expanded = {};
+  var sortKey = 'id';
+  var sortDir = 1;
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function txt(v){ return (v === null || v === undefined || v === '') ? '-' : String(v); }
+  function levelText(v){ return LEVEL_TEXT[v] || txt(v); }
+  function statusCls(v){ return STATUS_CLS[v] || 'st-other'; }
+  function rate(a, b){ return b ? (Math.round(a * 1000 / b) / 10) : 0; }
+  function getToken(){
+    try { var t = localStorage.getItem(KEY); if (t) { return t; } } catch (e) {}
+    return memToken || '';
+  }
+  function setToken(t){
+    memToken = t || '';
+    try {
+      if (t) { localStorage.setItem(KEY, t); } else { localStorage.removeItem(KEY); }
+    } catch (e) {}
+  }
+  function req(url, opts){
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    var t = getToken();
+    if (t) { opts.headers['X-Admin-Token'] = t; }
+    opts.credentials = 'same-origin';
+    return fetch(url, opts);
+  }
+  function pull(url, opts, label){
+    return req(url, opts).then(function(r){
+      if (r.status === 401 || r.status === 403) {
+        throw {auth: true, msg: '接口鉴权失败（HTTP ' + r.status + '），请重新输入 admin token'};
+      }
+      return r.json().catch(function(){
+        throw {msg: label + '：服务端返回的不是合法 JSON'};
+      }).then(function(j){
+        if (!r.ok || (j && j.success === false)) {
+          throw {msg: (j && j.error) ? j.error : (label + '：请求失败，HTTP ' + r.status)};
+        }
+        return j;
+      });
+    });
+  }
+  function showGate(msg){
+    $('main').hidden = true;
+    $('gate').hidden = false;
+    $('pageMsg').textContent = '';
+    if (msg) { $('gateMsg').textContent = msg; $('gateMsg').hidden = false; }
+    else { $('gateMsg').hidden = true; }
+  }
+  function showMain(){ $('gate').hidden = true; $('main').hidden = false; }
+  function setNote(el, text, cls){ el.textContent = text; el.className = 'detmsg' + (cls ? ' ' + cls : ''); }
+
+  function plainBars(obj){
+    var out = [];
+    Object.keys(obj || {}).forEach(function(k){
+      out.push({value: obj[k] || 0, label: k, extra: String(obj[k] || 0)});
+    });
+    return out.sort(function(a, b){ return b.value - a.value; });
+  }
+  function levelBars(obj){
+    var out = [];
+    Object.keys(obj || {}).forEach(function(k){
+      out.push({value: obj[k] || 0, label: LEVEL_TEXT[k] || k, extra: String(obj[k] || 0)});
+    });
+    return out.sort(function(a, b){ return b.value - a.value; });
+  }
+  function ownerBars(obj){
+    var out = [];
+    Object.keys(obj || {}).forEach(function(k){
+      var o = obj[k] || {total: 0, fixed: 0};
+      var t = o.total || 0, f = o.fixed || 0;
+      out.push({
+        value: t, label: k,
+        extra: f + '/' + t + '（' + rate(f, t) + '%）',
+        color: (t > 0 && f === t) ? BAR_GREEN : BAR_BLUE
+      });
+    });
+    return out.sort(function(a, b){ return b.value - a.value; });
+  }
+  function renderBars(hostId, items){
+    var host = $(hostId);
+    if (!items.length) { host.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+    var max = 0;
+    items.forEach(function(it){ if (it.value > max) { max = it.value; } });
+    host.innerHTML = items.map(function(it){
+      var w = max ? Math.round(it.value * 100 / max) : 0;
+      return '<div class="barrow">'
+        + '<span class="bl">' + esc(it.label) + '</span>'
+        + '<span class="btrack"><span class="bfill" style="width:' + w
+        + ';background:' + (it.color || BAR_BLUE) + '"></span></span>'
+        + '<span class="bn">' + esc(it.extra) + '</span></div>';
+    }).join('');
+  }
+  function renderStats(s){
+    s = s || {};
+    var ld = s.level_dist || {};
+    var cards = [
+      {cls: 'c-high', n: ld.high || 0, label: '高危'},
+      {cls: 'c-mid', n: ld.medium || 0, label: '中危'},
+      {cls: 'c-low', n: ld.low || 0, label: '低危'},
+      {cls: 'c-fixed', n: s.fixed || 0, label: '已修复'}
+    ];
+    $('cards').innerHTML = cards.map(function(c){
+      return '<div class="card ' + c.cls + '"><div class="num">' + c.n
+        + '</div><div class="label">' + c.label + '</div></div>';
+    }).join('');
+    var p = (typeof s.progress === 'number') ? s.progress : 0;
+    $('progFill').style.width = Math.max(0, Math.min(100, p)) + '%';
+    $('progText').textContent = p + '%（' + (s.fixed || 0) + ' / ' + (s.total || 0) + '）';
+    renderBars('barLevel', levelBars(ld));
+    renderBars('barCat', plainBars(s.category_dist));
+    renderBars('barOwner', ownerBars(s.owner_dist));
+    renderBars('barStatus', plainBars(s.status_dist));
+  }
+  function buildOwnerSelect(list){
+    list.forEach(function(v){
+      var o = (v.owner === null || v.owner === undefined || v.owner === '') ? '未分配' : String(v.owner);
+      ownerSeen[o] = true;
+    });
+    var sel = $('fOwner'), cur = sel.value;
+    var names = Object.keys(ownerSeen).sort();
+    sel.innerHTML = '<option value="">全部</option>' + names.map(function(n){
+      return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+    }).join('');
+    sel.value = names.indexOf(cur) >= 0 ? cur : '';
+  }
+  function sortRows(){
+    rows.sort(function(a, b){
+      var r = 0;
+      if (sortKey === 'level') {
+        var x = LEVEL_RANK[a.level] === undefined ? 9 : LEVEL_RANK[a.level];
+        var y = LEVEL_RANK[b.level] === undefined ? 9 : LEVEL_RANK[b.level];
+        r = x - y;
+      } else {
+        var av = (a[sortKey] === null || a[sortKey] === undefined) ? '' : String(a[sortKey]);
+        var bv = (b[sortKey] === null || b[sortKey] === undefined) ? '' : String(b[sortKey]);
+        r = av.localeCompare(bv, 'zh-Hans-CN');
+      }
+      if (sortKey === 'id' && r === 0) { return 0; }
+      return r * sortDir;
+    });
+  }
+  function statusOptions(cur){
+    var known = STATUS_LIST.indexOf(cur) >= 0;
+    var head = '<option value="">-- 请选择状态 --</option>';
+    return head + STATUS_LIST.map(function(o){
+      var sel = (known && o === cur) ? ' selected' : '';
+      return '<option value="' + esc(o) + '"' + sel + '>' + esc(o) + '</option>';
+    }).join('');
+  }
+  function detailRow(v){
+    var tr = document.createElement('tr');
+    tr.className = 'det';
+    tr.setAttribute('data-for', v.id || '');
+    tr.innerHTML = '<td colspan="8"><div class="detbox">'
+      + '<h3>经验全文</h3>'
+      + '<div class="exptxt">' + esc((v.experience && String(v.experience).trim()) ? v.experience : '（暂无经验记录，标「已修复」时必须补写）') + '</div>'
+      + '<h3>标记状态</h3>'
+      + '<div class="detrow">'
+      + '<select data-role="status">' + statusOptions(v.status) + '</select>'
+      + '<label><input type="checkbox" data-role="distilled"' + (v.distilled ? ' checked' : '') + '> 蒸馏标记</label>'
+      + '<button class="detbtn" type="button" data-act="submit">提交</button>'
+      + '<span class="detmsg" data-role="msg"></span>'
+      + '</div>'
+      + '<div class="detrow ta"><textarea data-role="exp" placeholder="经验沉淀：怎么复现、根因是什么、怎么修的（标「已修复」时必填）">'
+      + esc(v.experience || '') + '</textarea></div>'
+      + '</div></td>';
+    return tr;
+  }
+  function renderTable(){
+    var host = $('tbody');
+    host.innerHTML = '';
+    $('tblEmpty').hidden = rows.length > 0;
+    rows.forEach(function(v){
+      var tr = document.createElement('tr');
+      tr.className = 'row' + (expanded[v.id] ? ' open' : '');
+      tr.setAttribute('data-id', v.id || '');
+      tr.innerHTML = '<td class="mono">' + esc(txt(v.id)) + '</td>'
+        + '<td><span class="lv lv-' + esc(v.level || 'low') + '">' + esc(levelText(v.level)) + '</span></td>'
+        + '<td>' + esc(txt(v.name)) + '</td>'
+        + '<td><span class="st ' + statusCls(v.status) + '">' + esc(txt(v.status)) + '</span></td>'
+        + '<td>' + esc(txt(v.owner)) + '</td>'
+        + '<td>' + esc(txt(v.round)) + '</td>'
+        + '<td>' + esc(txt(v.experience)) + '</td>'
+        + '<td>' + esc(txt(v.updated_at)) + '</td>';
+      host.appendChild(tr);
+      if (expanded[v.id]) { host.appendChild(detailRow(v)); }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ind]'), function(sp){
+      var k = sp.getAttribute('data-ind');
+      sp.textContent = (k === sortKey) ? (sortDir > 0 ? '▲' : '▼') : '▸';
+    });
+  }
+  function findRow(id){
+    for (var i = 0; i < rows.length; i++) { if (rows[i].id === id) { return rows[i]; } }
+    return null;
+  }
+  function buildQuery(){
+    var p = [];
+    var lv = $('fLevel').value, st = $('fStatus').value, ow = $('fOwner').value;
+    if (lv) { p.push('level=' + encodeURIComponent(lv)); }
+    if (st) { p.push('status=' + encodeURIComponent(st)); }
+    if (ow) { p.push('owner=' + encodeURIComponent(ow)); }
+    return p.length ? ('?' + p.join('&')) : '';
+  }
+  function submitRow(btn){
+    var tr = btn.closest ? btn.closest('tr.det') : null;
+    if (!tr) { return; }
+    var id = tr.getAttribute('data-for');
+    var msgEl = tr.querySelector('[data-role="msg"]');
+    var sel = tr.querySelector('[data-role="status"]');
+    var ta = tr.querySelector('[data-role="exp"]');
+    var cb = tr.querySelector('[data-role="distilled"]');
+    var status = (sel.value || '').trim();
+    var exp = (ta.value || '').trim();
+    if (!status) { setNote(msgEl, '请先选择要标记的状态', 'bad'); return; }
+    if (status === '已修复' && !exp) {
+      setNote(msgEl, '标「已修复」必须填写经验字段，请先把复现/根因/修法写清楚再提交', 'bad');
+      return;
+    }
+    btn.disabled = true;
+    setNote(msgEl, '提交中…', '');
+    pull('/api/vulns/' + encodeURIComponent(id) + '/status', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: status, experience: exp, distilled: !!(cb && cb.checked)})
+    }, '更新漏洞状态').then(function(j){
+      var nv = (j && j.vuln) || {};
+      var old = findRow(id);
+      if (old) {
+        Object.keys(nv).forEach(function(k){ old[k] = nv[k]; });
+      }
+      setNote(msgEl, '已保存', 'good');
+      renderTable();
+    }).catch(function(err){
+      btn.disabled = false;
+      if (err && err.auth) { showGate(err.msg); return; }
+      setNote(msgEl, (err && err.msg) ? err.msg : '提交失败', 'bad');
+    });
+  }
+  function load(){
+    if (!getToken()) { showGate('本机还没有 admin token'); return; }
+    $('pageMsg').textContent = '加载中…';
+    var q = buildQuery();
+    return Promise.all([
+      pull('/api/vulns' + q, null, '获取漏洞列表'),
+      pull('/api/vulns/stats', null, '获取漏洞统计')
+    ]).then(function(rs){
+      rows = ((rs[0] && rs[0].vulns) || []).slice();
+      expanded = {};
+      buildOwnerSelect(rows);
+      renderStats(rs[1]);
+      sortRows();
+      renderTable();
+      showMain();
+      $('pageMsg').textContent = '当前列表 ' + rows.length + ' 条' + (q ? '（已按筛选条件从服务端重新拉取）' : '');
+    }).catch(function(err){
+      if (err && err.auth) { showGate(err.msg); return; }
+      $('pageMsg').textContent = '';
+      showGate((err && err.msg) || '加载失败');
+    });
+  }
+
+  $('tokenBtn').addEventListener('click', function(){
+    var t = ($('tokenInput').value || '').trim();
+    if (!t) { setNote($('gateMsg'), 'token 不能为空', ''); $('gateMsg').className = 'err'; $('gateMsg').hidden = false; return; }
+    setToken(t);
+    load();
+  });
+  $('tokenInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') { $('tokenBtn').click(); }
+  });
+  $('btnReload').addEventListener('click', function(){ load(); });
+  $('btnClear').addEventListener('click', function(){
+    setToken('');
+    rows = [];
+    expanded = {};
+    renderTable();
+    showGate('已清除本机 token');
+  });
+  ['fLevel', 'fStatus', 'fOwner'].forEach(function(id){
+    $(id).addEventListener('change', function(){ load(); });
+  });
+  $('tbody').addEventListener('click', function(e){
+    var t = e.target || e.srcElement;
+    if (!t || t.nodeType !== 1) { return; }
+    var btn = t.closest ? t.closest('[data-act="submit"]') : null;
+    if (btn) { submitRow(btn); return; }
+    var tr = t.closest ? t.closest('tr.row') : null;
+    if (!tr) { return; }
+    var id = tr.getAttribute('data-id');
+    if (expanded[id]) { delete expanded[id]; } else { expanded[id] = true; }
+    renderTable();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('th.s'), function(th){
+    th.addEventListener('click', function(){
+      var key = th.getAttribute('data-sort');
+      if (sortKey === key) { sortDir = -sortDir; } else { sortKey = key; sortDir = 1; }
+      sortRows();
+      renderTable();
+    });
+  });
+
+  if (getToken()) { load(); } else { showGate(''); }
+})();
+</script>
+</body></html>"""
+
+
+@app.route('/admin/vulns')
+def admin_vulns_page():
+    """漏洞库后台页：统计卡片 + 修复进度 + 归因/责任分布条形图 + 可展开改状态的表格。
+
+    页面自身不带 token（所有数据来自 admin 鉴权的 /api/vulns* 接口），
+    接口返 401/403 时由页面弹出 token 输入框，token 只存浏览器本机。
+    """
+    return _VULNS_PAGE_HTML

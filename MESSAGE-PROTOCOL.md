@@ -2087,3 +2087,26 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**：
 `git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·194 STOP ALL): 后台裸奔修复(require_admin fail-closed覆盖全部管理路由) + 登录会话cookie+失败锁定 + C3上传大小/限流 + C6去URL token" && git push origin main`
+
+
+---
+
+## Codex 回执 · 195轮补充6/补充2 追加项（2026-09-29 续）
+
+- **M23 HSTS ✅**：`_security_headers` 新增 `Strict-Transport-Security: max-age=31536000; includeSubDomains`。实测 /api/health 响应头已带。
+- **M16 编辑类接口限流 ✅**：`/api/restyle` `/api/rewrite` `/api/proofread` 三个 LLM 消耗接口加 `_rate_limited()`（同 generate 口径 5 次/分钟/uid）。实测第 6 次调用 429。
+- **C7 kb/tags 鉴权 ✅（已被上轮覆盖）**：`_admin_guard` 的 `/api/kb/` 前缀已含 `/api/kb/tags`、`/api/kb/search`、`/api/kb/list`。
+- **C4/C5 history/groups 隔离 ✅（已被上轮 H6 覆盖）**：`load_history(uid=)` 已只认本人，`history/groups` 走同一函数。
+
+**核实后暂不处理（如实报，避免误伤用户功能）**：
+- `upload_pdf`/`parse_material`：已是用户上传入口，已有 20MB 大小白名单 + 扩展名白名单 + 文件头魔数校验 + secure_filename 消毒，比 upload_file 更严；仅缺限流，风险低。
+- `export_ppt/export_defense/export_competitor/export_business/export_original_format`：是用户「导出自己的结果」，非全量导出，走 `_fetch_record_from_source` 归属绑定；做成 admin-only 会破坏核心导出功能。
+
+**仍剩（按优先级，需后续轮）**：
+- M18 任务归属校验（/api/status/stream/retry/cancel）：task_id 是 uuid4 不可枚举，风险「待核实」，但实现会打断无 cookie 的服务端 curl 测试，需谨慎——留待确认。
+- M17 register 验证码（登录失败锁定已有 `_LOGIN_FAILS`，仅缺验证码）。
+- 195 层4（ADMIN_TOKEN 强随机+哈希存储，部署动作）、层7（二次确认，前端）、层8（CSRF token）。
+- **195补充7 评委演示只读模式（9/30 交作品前置，优先级高，建议 WorkBuddy 主做 + Codex 后端加 demo 会话写接口 403）**。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·195): M23 HSTS头 + M16编辑类接口限流(restyle/rewrite/proofread)" && git push origin main`
