@@ -39,6 +39,20 @@ llm = ChatDeepSeek(
     presence_penalty=0.3,
 )
 
+# 评分专用低温度实例（第一百九十二轮 M1 评分波动收敛）：
+# 创意评分 / 评委打分对稳定性要求高，温度从 0.6 降到 0.2、去掉 frequency/presence 惩罚，
+# 让同一材料重复打分的波动从 ±10 分收窄；生成正文仍用上面的 llm（需要多样性）。
+_score_llm = ChatDeepSeek(
+    model="deepseek-chat",
+    api_key=DEEPSEEK_API_KEY,
+    temperature=0.2,
+    max_tokens=4096,
+    request_timeout=120,
+    max_retries=3,
+    frequency_penalty=0.0,
+    presence_penalty=0.0,
+)
+
 # ============ API 配额保护（防止 DeepSeek 超支） ============
 import json as _json
 from datetime import datetime as _datetime
@@ -2252,7 +2266,7 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
 "【完整档】创意亮点、主要风险各写 3～4 点，每点写成 100～150 字的完整段落，有具体依据。上面的打分字段保持原格式，不要改动。"
 )}
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = _score_llm.invoke([HumanMessage(content=prompt)])
 
     import re
     def _pick(label):
@@ -2393,7 +2407,7 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 "【点评文字要求（完整档）】「主要优点」「需要改进的地方」各写 4～5 点，每点写成 120～200 字的完整段落，有具体依据、有展开。上面的打分字段保持原格式，不要改动。"
 )}
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = _score_llm.invoke([HumanMessage(content=prompt)])
     state["judge_feedback"] = _dedup_text(response.content)
 
     import re

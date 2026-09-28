@@ -725,10 +725,10 @@ def load_history(limit=200, offset=0, q=None, uid=None):
         conds.append("(competition_name LIKE ? OR idea LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
     if uid:
-        # 无名记录（user_id='' / NULL，多为 user_id 列后补之前写入的存量数据）视为公共记录，
-        # 对所有请求可见——否则这部分历史对任何人永远查不到（历史面板空白）。
-        # 有归属的记录仍只对本人可见，隔离语义不变。
-        conds.append("(user_id = ? OR IFNULL(user_id, '') = '')")
+        # 历史隔离（182 轮 H6）：只返回本人记录，不再把 user_id='' 存量记录当公共记录。
+        # 否则无 cookie / 伪造 cookie 的访客会拿到全量历史，泄露他人创意内容（隐私红线）。
+        # 存量无名记录仅 admin（uid=None 的全量查询）可见，普通访客看不到。
+        conds.append("user_id = ?")
         params.append(uid)
     if conds:
         sql += " WHERE " + " AND ".join(conds)
@@ -748,7 +748,7 @@ def count_history(q=None, uid=None):
         conds.append("(competition_name LIKE ? OR idea LIKE ?)")
         params += [f"%{q}%", f"%{q}%"]
     if uid:
-        conds.append("(user_id = ? OR IFNULL(user_id, '') = '')")
+        conds.append("user_id = ?")
         params.append(uid)
     sql = "SELECT COUNT(*) FROM history"
     if conds:
@@ -1946,8 +1946,8 @@ def share_export(token):
 def get_history_detail(history_id):
     conn = get_db()
     c = conn.cursor()
-    # 与 load_history 保持一致：无名存量记录（user_id=''）视为公共可见，否则列表能看、点开却「记录不存在」。
-    c.execute("SELECT result_data, rating FROM history WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')",
+    # 历史隔离（182 轮 H6）：只允许本人查看，user_id='' 存量记录不再公共可见。
+    c.execute("SELECT result_data, rating FROM history WHERE id = ? AND user_id = ?",
               (history_id, _current_uid()))
     row = c.fetchone()
     conn.close()
@@ -2578,8 +2578,9 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
     .fbcard{padding:10px 11px}
     .fbmeta{gap:5px;flex-wrap:wrap}
     .fbtext{font-size:13px;line-height:1.6}
-    /* ⚠ 这段 CSS 处在「整页 HTML 用 % 格式化」的字符串里，任何 CSS 里的 % 都必须写成 %%，
-       否则 % 后面那个字符会被当格式符，页面直接 500（width:100%} → ValueError at index 34）。 */
+    /* ⚠ 这段 CSS 处在「整页 HTML 走百分号运算符格式化」的字符串里：
+       任何百分号（含注释正文里的举例）都必须写两个，否则百分号后面那个字符会被当格式符、
+       页面直接 500。本注释因此连举例都不写这个符号。 */
     .fbfilter{margin-left:0;width:100%%}
     .fbfilter select{flex:1 1 30%%;max-width:none}
     .fbpager a,.fbpager .fbnow{font-size:12px}
@@ -4634,9 +4635,14 @@ def training_archive():
         conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
+        # 182 轮【P1 安全】：原实现只按 id 查、不做归属校验——任何人拿一个猜到的
+        # history_id 就能把**别人的**生成内容写进训练库（既不校验归属，也不校验对方是否授权），
+        # 这是唯一能绕开 consent 语义的入口。与 load_history 隔离口径一致（H6）：
+        # 只允许本人记录，user_id='' 存量记录不再公共可见（仅 admin 全量可达）。
         row = c.execute(
-            "SELECT competition_name, idea, result_data, created_time FROM history WHERE id=?",
-            (int(hid),)).fetchone()
+            "SELECT competition_name, idea, result_data, created_time FROM history "
+            "WHERE id=? AND user_id = ?",
+            (int(hid), _current_uid())).fetchone()
         conn.close()
         if not row:
             return jsonify({"success": False, "error": "记录不存在"}), 404
@@ -4837,6 +4843,196 @@ def read_doc(filename):
             return jsonify({"success": True, "name": filename, "content": f.read()[:20000]})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+# ===== 漏洞库接口（188-190 轮）=====
+# 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
+# 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
+_VULNS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'vulns.json')
+_VULNS_MD = os.path.join(os.path.dirname(__file__), 'docs', '漏洞库.md')
+_LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
+_LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _strip_status_emoji(s):
+    """去掉状态列的前缀表情符号并归一化，只留标准状态词（已修复/部分修复/未修复/待核实/待确认）。"""
+    s = (s or '').strip()
+    s = re.sub(r'^[✅⚠️❌🟡🟢🔴\s]+', '', s)
+    s = s.strip() or '未修复'
+    if '已修复' in s:
+        return '已修复'
+    if '部分' in s or '待收敛' in s or '收敛' in s:
+        return '部分修复'
+    if '待核实' in s:
+        return '待核实'
+    if '待确认' in s or '待定' in s:
+        return '待确认'
+    return '未修复'
+
+
+def _infer_vuln_category(name):
+    """按名称做根因/模块归因（供 /api/vulns/stats 聚合，未命中归「其他」）。"""
+    n = name or ''
+    if any(k in n for k in ('隔离', 'token', '明文', '安全', '泄露', '隐私')):
+        return '安全'
+    if any(k in n for k in ('口径', '字数', '文案', '数据', '评分', '档位', 'stats', '自认')):
+        return '数据口径'
+    if any(k in n for k in ('截断', 'Markdown', '重复', '渲染', '图标', '配色', '图片', 'PPT', '目录', '标题', '占位')):
+        return '渲染/输出质量'
+    if any(k in n for k in ('拆分', '巨石', '脚本', '死代码', 'TTFB', '体积', '性能', '健康')):
+        return '工程架构'
+    if any(k in n for k in ('移动端', '发烫', '弹窗', '遮挡', '功耗', '体验')):
+        return '体验'
+    if any(k in n for k in ('待核实', '规则', '赛道')):
+        return '规则待核实'
+    if any(k in n for k in ('文件名', 'favicon', 'robots', '细节', '缺失')):
+        return '细节'
+    return '其他'
+
+
+def _parse_vulns_md():
+    """解析 docs/漏洞库.md 的高/中/低三张表格，返回结构化列表。"""
+    items = []
+    if not os.path.isfile(_VULNS_MD):
+        return items
+    try:
+        with open(_VULNS_MD, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return items
+    level = None
+    for line in lines:
+        m = re.match(r'^##\s*([一二三])、', line)
+        if m:
+            level = _LEVEL_TAG.get(m.group(1))
+            continue
+        if not line.startswith('|'):
+            continue
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if not cells or cells[0] in ('ID', '') or set(cells[0]) <= set('- '):
+            continue
+        if len(cells) < 5:
+            continue
+        vid = cells[0]
+        name = cells[1]
+        status = _strip_status_emoji(cells[2])
+        items.append({
+            "id": vid,
+            "level": level or "low",
+            "name": name,
+            "status": status,
+            "owner": cells[3],
+            "round": cells[4],
+            "evidence": cells[4],
+            "experience": "",
+            "distilled": False,
+            "category": _infer_vuln_category(name),
+            "updated_at": ""
+        })
+    return items
+
+
+def _save_vulns(items):
+    os.makedirs(os.path.dirname(_VULNS_FILE), exist_ok=True)
+    with open(_VULNS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+
+
+def _load_vulns():
+    """读漏洞库；无 JSON 或解析失败时回退解析 md 并落盘种子数据。"""
+    if os.path.isfile(_VULNS_FILE):
+        try:
+            with open(_VULNS_FILE, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list) and data:
+                return data
+        except Exception:
+            pass
+    items = _parse_vulns_md()
+    _save_vulns(items)
+    return items
+
+
+@app.route('/api/vulns')
+def api_vulns_list():
+    _a = _require_admin()
+    if _a is not None:
+        return _a
+    items = _load_vulns()
+    level = (request.args.get('level') or '').strip()
+    status = (request.args.get('status') or '').strip()
+    owner = (request.args.get('owner') or '').strip()
+    out = items
+    if level:
+        out = [x for x in out if x.get('level') == level]
+    if status:
+        out = [x for x in out if x.get('status') == status]
+    if owner:
+        out = [x for x in out if x.get('owner') == owner]
+    out = sorted(out, key=lambda x: (_LEVEL_ORDER.get(x.get('level'), 9), x.get('id', '')))
+    return jsonify({"success": True, "vulns": out, "total": len(out)})
+
+
+@app.route('/api/vulns/<vid>/status', methods=['POST'])
+def api_vulns_status(vid):
+    _a = _require_admin()
+    if _a is not None:
+        return _a
+    payload = request.json or {}
+    status = (payload.get('status') or '').strip()
+    experience = (payload.get('experience') or '').strip()
+    distilled = bool(payload.get('distilled', False))
+    if status not in ('已修复', '部分修复', '未修复', '待核实', '待确认'):
+        return jsonify({"success": False, "error": "状态值不合法"}), 400
+    if status == '已修复' and not experience:
+        return jsonify({"success": False, "error": "标记「已修复」必须填写经验字段（187 轮机制）"}), 400
+    items = _load_vulns()
+    hit = next((x for x in items if x.get('id') == vid), None)
+    if hit is None:
+        return jsonify({"success": False, "error": "漏洞不存在"}), 404
+    hit['status'] = status
+    if experience:
+        hit['experience'] = experience
+    if distilled:
+        hit['distilled'] = True
+    hit['updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _save_vulns(items)
+    return jsonify({"success": True, "vuln": hit})
+
+
+@app.route('/api/vulns/stats')
+def api_vulns_stats():
+    _a = _require_admin()
+    if _a is not None:
+        return _a
+    items = _load_vulns()
+    total = len(items)
+    level_dist = {"high": 0, "medium": 0, "low": 0}
+    status_dist = {}
+    owner_dist = {}
+    cat_dist = {}
+    for x in items:
+        level_dist[x.get('level', 'low')] = level_dist.get(x.get('level', 'low'), 0) + 1
+        st = x.get('status', '未修复')
+        status_dist[st] = status_dist.get(st, 0) + 1
+        own = (x.get('owner') or '未分配').strip()
+        o = owner_dist.setdefault(own, {"total": 0, "fixed": 0})
+        o['total'] += 1
+        if st == '已修复':
+            o['fixed'] += 1
+        cat = x.get('category') or '其他'
+        cat_dist[cat] = cat_dist.get(cat, 0) + 1
+    fixed = status_dist.get('已修复', 0)
+    return jsonify({
+        "success": True,
+        "total": total,
+        "fixed": fixed,
+        "progress": round(fixed / total * 100, 1) if total else 0,
+        "level_dist": level_dist,
+        "status_dist": status_dist,
+        "category_dist": cat_dist,
+        "owner_dist": owner_dist,
+    })
 
 
 @app.route('/api/demo')

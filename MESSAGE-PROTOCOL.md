@@ -2040,3 +2040,23 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **167 写手两段并行实测（iCAN deep，服务器）**：总耗时 214s → **182s（-15%）**，12 章完整无漏章/断尾，正文 12715 字，dims = 创新35/实用25/原创20/技术20（163/170-3 同时生效）。
 - **结论**：167 安全有效、正确性零损失；15% 提速 = 写手两段并行能省的一次串行 LLM 调用（约 32s）。**<150s 目标未达**，再压需「双通道冗余」（快模型跑分析 + 满血跑写手），属高风险项，按「赛前求稳」留赛后。
 - **给豆包对账**：167 验收口径按「正确性（章节完整/无重复/无断尾）+ 提速（214→182s）」判定通过；「<150s」非硬门槛（收益/风险比不划算），建议验收时按 15% 提速达标即可。
+
+
+---
+
+## Codex 回执 · 第一百九十二轮（2026-09-29，高危清零 + 漏洞库接口落地）
+
+按 192 轮派发的 Codex 线后端项，本轮完成 4 项高危/新功能，全部实测：
+
+- **H6 数据隔离 ✅（隐私红线，最高优先）**：根因=`load_history`/`count_history`/`get_history_detail`/`training_archive` 用 `(user_id = ? OR IFNULL(user_id,'')='')` 把 user_id='' 存量记录当公共记录，导致无 cookie/伪造 cookie 访客拿到全量历史。已全部改为只认本人 `user_id = ?`，存量无名记录仅 admin（uid=None 全量查询）可见。实测：无 cookie→total=0、伪造 test_visitor_001→0、伪造 another_visitor_002→0（原 41/56 条）。经验已写入漏洞库。
+- **H7 admin 弱口令 ✅（前轮 9b2740d 已修，本轮补记状态）**：`kechuang2026` 硬编码已清零，只认环境变量 ADMIN_TOKEN（X-Admin-Token 头或 ?token= 兼容）。grep 全库无明文凭据（仅剩站点域名 kechuang2026.cn）。
+- **H8 导出文档口径 ✅**：`项目说明.md` 的「30秒/1-2分钟/LangGraph+Flask/4个Agent串行/500字/2000字」过时写死值全部改为当前口径（简洁版约1-2分钟·2000~4000字级、深度版约3-5分钟·12000字级、多智能体并行协作、去 LangGraph）。
+- **M1 评分波动收敛 ✅（机制落地，待实测）**：`competition_agents.py` 新增评分专用 `_score_llm`（temperature 0.6→0.2、去 frequency/presence 惩罚），创意评分 `idea_evaluator` 与模拟评委 `judge_agent` 两处打分调用改走低温度实例，生成正文仍用原 llm。预期同材料重复打分波动收窄，实测待服务器跑两次对比。
+- **L2 robots.txt ✅（9b2740d 已修，本轮补记）**：`/robots.txt` 路由已存在（屏蔽后台/管理/生成接口）。
+- **【新功能 188-190】漏洞库接口 ✅（新增）**：`GET /api/vulns`（级别/状态/责任人筛选+默认高危优先排序）、`POST /api/vulns/<id>/status`（标「已修复」必填经验否则 400，状态/经验/蒸馏标记/更新时间落盘）、`GET /api/vulns/stats`（级别分布/状态分布/根因归因/责任分布/修复进度）。数据源=解析 `docs/漏洞库.md` 首入 `data/vulns.json`（已 gitignore），之后以 JSON 为准。实测：31 条解析正确、stats 已修复12/进度38.7%、无经验标已修复被 400 拦截、非法状态 400。
+- **漏洞库.md 更新 ✅**：H6/H7/H8/L2 标记已修复并补「经验」字段（根因+防再犯），统计修正为准确值（已修复12/部分4/未修复12/待核实2/待确认1）。
+
+**剩余 Codex 项（未做，如实报）**：M9 iCAN 赛道匹配实测（中，167 轮已实测 dims 正确，仅剩匹配规则复核）、M7 app.py 巨石拆分（高，赛前求稳建议留赛后）、L4 TTFB<800ms（低）。H9 是前端写死数字，后端 `/api/stats` 已有，前端动态化归 WorkBuddy。
+
+**提交命令**（add 指定文件，不带 -A、不碰 index.html/static/*）：
+`git add app.py competition_agents.py .gitignore 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 182历史隔离生效 + 188-190漏洞库接口 + M1评分低温度收敛 + H8项目说明口径" && git push origin main`
