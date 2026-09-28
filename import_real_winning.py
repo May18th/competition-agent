@@ -4,8 +4,8 @@
 用法：
     python import_real_winning.py
 
-来源：knowledge_base/real_winning_samples.json，全部为公开获奖报道归纳，
-非完整申报书原文；type 显式写「范文」、score=90，绕过启发式打分。
+来源：knowledge_base/real_winning_samples.json，全部为自建原创「获奖项目共性结构分析」
+（从公开获奖报道/官方评审规则归纳写法规律，非获奖原文）；type 取条目自带 type（默认「结构分析」）。
 幂等：按内容哈希去重，可重复执行。
 """
 import json
@@ -35,7 +35,7 @@ def main():
             content, tags,
             source=it.get("source", ""),
             score=int(it.get("score", 90)),
-            type="范文",
+            type=it.get("type", "结构分析"),
             summary="",
         )
         if is_new:
