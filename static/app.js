@@ -4409,6 +4409,17 @@
                         // 第三十七轮刺：这里原来直接拼后端 stage code，于是出现「正在生成 2% · queued」
                         (((stageText || _curStageLabel) ? ' · ' + wbStageShort(stageText || _curStageLabel) : ''));
                 }
+                // 126 轮：已用时间。惰性初始化而不是读外层 t0——_setBar 定义在 t0 之前，
+                // 直接引用会踩 let 的 TDZ（首次调用时 t0 还没初始化，直接 ReferenceError）。
+                var _eb = document.getElementById('elapsedBadge');
+                if (_eb) {
+                    if (!window._wbGenT0) window._wbGenT0 = Date.now();
+                    var _es = Math.round((Date.now() - window._wbGenT0) / 1000);
+                    _eb.style.display = 'inline-block';
+                    _eb.innerText = _es >= 60
+                        ? ('已用 ' + Math.floor(_es / 60) + ' 分 ' + (_es % 60) + ' 秒')
+                        : ('已用 ' + _es + ' 秒');
+                }
                 // 等待期人话副标题：只补在进度条下面，不动上面那行准确文案。
                 // 用 textContent 而不是 innerHTML：文案是写死的常量，没必要开 HTML 口子
                 var _sw = document.getElementById('wbStageWord');
