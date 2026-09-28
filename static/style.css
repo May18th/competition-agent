@@ -1412,6 +1412,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     /* 5) 开始生成按钮悬浮底栏（sticky 规则在全局区，这里只收紧内边距） */
     #startBar { margin-top: 14px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
     #startBtn { display: block; width: 100%; }
+    /* 165 轮：程序化滚动（scrollIntoView / 锚点）给底部悬浮 CTA 让出 100px，
+       免得滚过去的内容正好被压在按钮下面。手动滚轮的遮挡由 wbEnsureVisible 兜底 */
+    html { scroll-padding-bottom: 100px; }
 
     /* 5) 微信/QQ 内置浏览器顶部导航遮挡：给 body 加顶部留白 */
     body.in-app { padding-top: 44px; }
@@ -1578,7 +1581,26 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
 }
 .wb-ua-box h3 { font-size: 18px; color: var(--text); }
-.wb-ua-box ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.95; color: var(--text-dim); }
+/* 164 轮：首屏新手引导句——比副标题弱一级，但比正文强调，一眼能看到又不抢主标题 */
+.wb-hero-newbie {
+    margin-top: 8px; font-size: 13px; line-height: 1.7; color: var(--text-dim);
+}
+.wb-hero-newbie b { color: var(--c-a); font-weight: 600; }
+/* 164 轮：档位徽标统一规格（原来「推荐」是内联样式，两版风格不一致） */
+.wb-tier-flag {
+    display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 4px;
+    font-size: 11px; font-weight: 500; line-height: 1.5; vertical-align: 2px;
+}
+.wb-tier-hot { background: var(--c-a); color: #fff; }
+.wb-tier-new { background: var(--c-a-soft); color: var(--c-a); border: 1px solid var(--c-a-line, var(--line)); }
+.wb-tier-pro { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); }
+.wb-ua-core { font-size: 13.5px; line-height: 1.6; color: var(--text-dim); margin-top: 6px; }
+.wb-ua-more { margin-top: 12px; font-size: 12.5px; color: var(--text-mute); }
+.wb-ua-more > summary { cursor: pointer; user-select: none; padding: 4px 0; }
+.wb-ua-more[open] > summary { margin-bottom: 6px; }
+.wb-ua-more ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.85; color: var(--text-dim); }
+.wb-ua-close { margin: 10px 0 0; }
+.wb-ua-close button { width: 100%; padding: 10px; font-size: 13px; font-weight: 400; border: 1px solid var(--line); border-radius: 10px; background: var(--btn-ghost); color: var(--text-dim); cursor: pointer; }
 .wb-ua-do {
     margin-top: 12px; padding: 10px 12px; border-radius: 8px;
     background: var(--c-a-soft); font-size: 13.5px; line-height: 1.75; color: var(--text);

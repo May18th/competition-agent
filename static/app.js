@@ -689,8 +689,11 @@
             ids.forEach(function (id) {
                 var el = document.getElementById(id);
                 if (!el) return;
-                el.addEventListener('input', function () { clearTimeout(t); t = setTimeout(wbSaveForm, 400); });
+                // 167 轮：400ms 防抖意味着连打一个长句要序列化二三十次（每次都要遍历全表单 + 写 localStorage），
+                // 手机上这是实打实的耗电项。改 1s；失焦时再补存一次，内容不会丢。
+                el.addEventListener('input', function () { clearTimeout(t); t = setTimeout(wbSaveForm, 1000); });
                 el.addEventListener('change', wbSaveForm);
+                el.addEventListener('blur', wbSaveForm);
             });
             var radios = document.querySelectorAll('input[name=mode]');
             for (var i = 0; i < radios.length; i++) {
@@ -739,7 +742,16 @@
         })();
         // 三步引导卡片的打勾状态与折叠（做过的步骤自动打勾，全做完收成一行）
         (function () {
-            try { wbUaCheck(); } catch (e) {}
+            // 166 轮排查挖出来的真 bug：#wbUaMask 在 index.html 里排在 app.js 之后（1561 → 1576 行之后），
+            // 这里同步执行时 getElementById 拿到的是 null，wbUaCheck 走到 `if (!m) return true` 就裸退了，
+            // 结果微信/QQ 用户进页面从来没自动收到过这个提示，只有点了上传按钮的那一次才弹。
+            // 挪到 DOM 完整之后执行；已经就绪就直接跑（历史回看等二次调用场景）。
+            var _uaCheckSoon = function () { try { wbUaCheck(); } catch (e) {} };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', _uaCheckSoon);
+            } else {
+                _uaCheckSoon();
+            }
             try { wbGuideInit(); } catch (e) {}
         })();
         // 顶部固定导出条（滚动时才出现）
@@ -874,6 +886,9 @@
                         history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null,
                         // 只有申报书/分析这类主文档配图表，规则解析等不适合插图
                         charts: (id === 'proposalText' || _DOC_TYPE[id] === 'analysis') ? wbCharts() : [],
+                        // 171 轮：把用户在「高级参数」里选的图表配色带过去，
+                        // 后端接上后导出的图表 PNG 与前台同色（未接上也不影响，后端忽略未知字段）
+                        chart_theme: wbChartThemeKey(),
                         school: m.school, team: m.team, advisor: m.advisor};
                 var r = await wbExportFetch('/api/export_word', payload);
                 if (!r.ok) { await wbExportError('Word', r); return; }
@@ -958,7 +973,8 @@
                         competition_name: wbCompName(),
                         // 与 Word 导出同理：只对申报书传，让后端用库里原文覆盖被污染的 DOM 文本
                         task_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._currentTaskId || null) : null,
-                        history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null});
+                        history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null,
+                        chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('PDF', r); return; }
                 const res = r.res;
                 const blob = await res.blob();
@@ -1024,6 +1040,7 @@
                 // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
                 theme: tk || (deck && deck.theme) || null,
                 variant: vk || (deck && deck.variant) || null,
+                chart_theme: wbChartThemeKey(),
                 school: _m.school, team: _m.team, advisor: _m.advisor
             };
             var btn = (window.event && window.event.target) || null;
@@ -1883,12 +1900,40 @@
             try { if (sessionStorage.getItem('wbUaTip') === '1') return true; } catch (e) {}
             var m = document.getElementById('wbUaMask');
             if (!m) return true;
-            var who = {wechat: '当前是 微信 内置浏览器', qq: '当前是 QQ 内置浏览器',
-                       weibo: '当前是 微博 内置浏览器', dingtalk: '当前是 钉钉 内置浏览器'}[k] || '';
+            var who = {wechat: '微信', qq: 'QQ', weibo: '微博', dingtalk: '钉钉'}[k] || '内置浏览器';
             var el = document.getElementById('wbUaWho');
-            if (el) el.textContent = who + '，这三件事做不了：';
+            // 166 轮：这里原来列「这三件事做不了：」再配三条清单，弹窗一屏塞不下。
+            // 现在只留一行说清后果，细节折进「查看详细说明」
+            if (el) el.textContent = who + '里上传只能选图片/视频，Word、PDF、PPT 也下载不下来';
+            var t = document.getElementById('wbUaMaskTitle');
+            if (t) t.textContent = who + '里用不了上传和下载';
             m.className = 'on';
             return true;
+        }
+        // 166 轮：三个行动之一。微信里 JS 跳不出去（scheme 会被拦），所以只做「指引 + 兜底复制」：
+        // 把右上角箭头晃一下让人知道点哪，同时把网址复制好，切换浏览器后可直接粘贴
+        function wbUaOpenBrowser() {
+            var ar = document.querySelector('#wbUaMask .wb-ua-arrow');
+            if (ar) {
+                ar.style.transition = 'transform .18s';
+                var n = 0;
+                var iv = setInterval(function () {
+                    n++;
+                    ar.style.transform = n % 2 ? 'scale(1.25)' : 'scale(1)';
+                    if (n >= 6) { clearInterval(iv); ar.style.transform = 'scale(1)'; }
+                }, 180);
+            }
+            wbUaCopy();
+            wbToast('请点右上角 ··· → 在浏览器打开；网址已复制好', { type: 'warn', ms: 4200 });
+        }
+        // 166 轮：不换浏览器也能继续——直接把已有材料文字贴进来，绕开上传限制
+        function wbUaPaste() {
+            wbUaClose();
+            try { wbMatOpen(); } catch (e) {}
+            setTimeout(function () {
+                var ta = document.getElementById('wbMatText');
+                if (ta) { ta.focus(); try { ta.scrollIntoView({ block: 'center' }); } catch (e2) {} }
+            }, 260);
         }
         function wbUaClose() {
             var m = document.getElementById('wbUaMask');
@@ -3829,7 +3874,7 @@
             }
             try {
                 var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
-                                          theme: deck.theme, variant: deck.variant});
+                                          theme: deck.theme, variant: deck.variant, chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('路演 PPT', r); return; }
                 const res = r.res;
                 var blob = await res.blob();
@@ -4461,10 +4506,11 @@
                 document.getElementById('fastProgressText').innerText = label;
                 var _b = document.getElementById('startBtn');
                 if (_b && _b.disabled) {
-                    _b.innerHTML = '<span class="spinner"></span> ' +
-                        (isOptimize ? '正在优化 ' : '正在生成 ') + Math.max(_maxPct, 0) + '%' +
-                        // 第三十七轮刺：这里原来直接拼后端 stage code，于是出现「正在生成 2% · queued」
-                        (((stageText || _curStageLabel) ? ' · ' + wbStageShort(stageText || _curStageLabel) : ''));
+                // 169 轮：sticky 按钮上的百分比必须写明是「整体进度」，
+                // 否则它会和下方智能体面板的「环节 2/9」被当成同一个指标前后打架。
+                // 阶段名不再挂按钮后面（太挤），统一给 fastProgressText 那行显示
+                _b.innerHTML = '<span class="spinner"></span> ' +
+                    (isOptimize ? '正在优化' : '正在生成') + ' · 整体 ' + Math.max(_maxPct, 0) + '%';
                 }
                 // 126 轮：已用时间。惰性初始化而不是读外层 t0——_setBar 定义在 t0 之前，
                 // 直接引用会踩 let 的 TDZ（首次调用时 t0 还没初始化，直接 ReferenceError）。
@@ -4544,6 +4590,9 @@
                         return [up, tr].filter(function (x) { return x; }).join('\n\n');
                     })(),
                     theme: (document.getElementById('deckTheme') || {}).value || null,
+                    // 171 轮：图表配色主题。后端 rich_pipeline 已有 pick_theme/render_chart(theme=)，
+                    // 接上这个字段后，深度版生成的图表 PNG 就与前台所选配色一致（后端未接则忽略）
+                    chart_theme: wbChartThemeKey(),
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
                     // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
@@ -4584,7 +4633,13 @@
                 const WATCHDOG_MS = (mode === 'deep' ? 12 : 5) * 60 * 1000;
                 let _queuedSeen = false;
                 return new Promise((resolve, reject) => {
-                    const tick = setInterval(() => {
+                    // 167 轮：原来是每 800ms 打一次 /api/status（还外加 speech_stream），
+                    // 手机上连续几分钟的高频请求 + 重渲染是发烫主因之一。改为：
+                    //   ① 前台 2s 一次（流式预览仍然连贯）；② 页面切到后台完全不请求；
+                    //   ③ 回到前台立刻补拉一次，不用等下一个 tick。
+                    const _poll = () => {
+                        // 切后台/锁屏时彻底停手：省电、省流量，也不给后端添无意义负载
+                        if (document.hidden) return;
                         if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
                             clearInterval(tick);
                             reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
@@ -4633,31 +4688,39 @@
                                         wbMileOnce('body', '正文完成，AI 评委开始挑刺…');
                                     }
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
-                                    var _etaTxt = _eta > 0
-                                        ? '预计还需 ' + (_eta >= 60 ? ('约 ' + Math.round(_eta / 60) + ' 分钟') : ('约 ' + _eta + ' 秒'))
-                                        : '';
-                                    // 剩余时间单独挂进度条右侧，混在长句里没人看得见
+                                    // 剩余时间单独挂徽章，混在长句里没人看得见
                                     var _eb = document.getElementById('etaBadge');
                                     if (_eb) {
                                         if (_eta > 0) {
                                             _eb.style.display = 'inline-block';
                                             _eb.innerText = '还需 ' + (_eta >= 60 ? (Math.ceil(_eta / 60) + ' 分钟') : (_eta + ' 秒'));
                                         } else {
-                                            _eb.style.display = 'none';
+                                            // 前几个节点并行跑时后端还没算出 eta，此时给档位经验值，别让徽章消失造成"没反馈"
+                                            _eb.style.display = 'inline-block';
+                                            _eb.innerText = isOptimize ? '预计 2-3 分钟'
+                                                : (mode === 'deep' ? '预计 4~5 分钟' : '预计约 1 分钟');
                                         }
                                     }
                                     // 档位名原来写死「深度版」，选简洁版非优化时会把用户说成在跑深度版
                                     var _tierName = isOptimize ? '优化' : (mode === 'deep' ? '深度版' : '简洁版');
-                                    var _etaFallback = isOptimize ? '预计 2-3 分钟'
-                                        : (mode === 'deep' ? '预计 4~5 分钟' : '预计约 1 分钟');
-                                    // 等待文案轮换：每 12 秒换一句，等几分钟不至于一直盯着同一句话
-                                    var _waitLine = WB_WAIT_LINE[Math.floor(sec / 12) % WB_WAIT_LINE.length];
-                                    _setBar(res2.pct || 0,
-                                        _tierName + (_etaTxt || _etaFallback) + '，' + _waitLine
-                                        // 同一轮刺：进度条副行也直出过英文 code；顺手加 _esc（后端字符串直接进 innerHTML 不安全）
-                                        + (res2.stage_label ? '（当前：' + _esc(wbStageShort(res2.stage_label)) + '）' : '')
-                                        + (_streamTotal > 0 ? '，已产出 ' + _streamTotal + ' 字' : '')
-                                        + (sec >= 240 ? '，慢的话可点「终止生成」重来' : ''));
+                    // 等待文案轮换：每 12 秒换一句，等几分钟不至于一直盯着同一句话
+                    var _waitLine = WB_WAIT_LINE[Math.floor(sec / 12) % WB_WAIT_LINE.length];
+                    // 169 轮：这行原来把「预计还需 / 当前阶段 / 已产出字数 / 终止提示」全拼成一句长句，
+                    // 窄屏下被右侧徽章挤成 160px 竖条。现在按「谁已经有专门位置」拆分：
+                    //   剩余时间 → etaBadge；已用时间 → elapsedBadge；字数 → lenBadge（唯一口径）
+                    // 本行只留「档位 · 阶段 · 一句温度话」，短句 + 居中 + 自动换行，不再溢出
+                    var _stageShort = wbStageShort(res2.stage_label || _curStageLabel);
+                    var _barLine = _tierName + (_stageShort ? ' · ' + _esc(_stageShort) : '') +
+                        ' · ' + _waitLine;
+                    _setBar(res2.pct || 0, _barLine, res2.stage_label || _curStageLabel);
+                    // 超时安抚塞副标题行（12.5px 小字），不占主行宽度
+                    if (sec >= 240) {
+                        var _swT = document.getElementById('wbStageWord');
+                        if (_swT) {
+                            _swT.textContent = '等得久了可以点下方「终止生成」重来，已跑的不浪费，可再用同样的内容重跑';
+                            _swT.style.display = 'block';
+                        }
+                    }
                                     // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
                                     if (res2.stage === 'speech') {
                                         fetch('/api/speech_stream/' + start.task_id)
@@ -4665,7 +4728,9 @@
                                             .then(function (ss) {
                                                 if (ss && ss.success && ss.text) {
                                                     _setBar(res2.pct || 0,
-                                                        '正在撰写演讲稿：已生成 ' + ss.text.length +
+                                                        // 169 轮：带上「演讲稿」前缀——同屏还有 lenBadge 的「正文 N 字」，
+                                                        // 不标明的话又变成两个无标注字数
+                                                        '正在撰写演讲稿 · 演讲稿 ' + ss.text.length +
                                                         ' 字（预计 2-3 分钟，无需等待，可以先去做别的事）');
                                                 }
                                             })
@@ -4691,7 +4756,11 @@
                                 }
                             })
                             .catch(e => { clearInterval(tick); reject(e); });
-                    }, 800);
+                    };
+                    const tick = setInterval(_poll, 2000);
+                    document.addEventListener('visibilitychange', function () {
+                        if (!document.hidden) { try { _poll(); } catch (e) {} }
+                    });
                 });
             })
             .then(data => {
@@ -4746,10 +4815,10 @@
                             }
                         });
                         // ---- 1：当前 tab（默认「前期分析」）里的板块先画 ----
-                        _P(1, function () { document.getElementById('parsedRules').innerHTML = marked.parse(data.data.parsed_rules); });
-                        _P(1, function () { document.getElementById('similarityReport').innerHTML = marked.parse(data.data.similarity_report); });
+                        _P(1, function () { document.getElementById('parsedRules').innerHTML = wbRenderMD(data.data.parsed_rules); });
+                        _P(1, function () { document.getElementById('similarityReport').innerHTML = wbRenderMD(data.data.similarity_report); });
                         // ---- 2~5：核心内容 ----
-                        if (data.data.proposal_outline) _P(2, function () { document.getElementById('proposalOutline').innerHTML = marked.parse(data.data.proposal_outline); });
+                        if (data.data.proposal_outline) _P(2, function () { document.getElementById('proposalOutline').innerHTML = wbRenderMD(data.data.proposal_outline); });
                         _P(2, function () {
                             var sc = document.getElementById('proposalSelfcheck');
                             if (sc && data.data.proposal_selfcheck) {
@@ -4757,24 +4826,24 @@
                                 sc.style.display = 'block';
                             }
                         });
-                        _P(3, function () { document.getElementById('proposalText').innerHTML = marked.parse(data.data.proposal); });
-                        _P(3, function () { document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback); });
+                        _P(3, function () { document.getElementById('proposalText').innerHTML = wbRenderMD(data.data.proposal); });
+                        _P(3, function () { document.getElementById('judgeFeedback').innerHTML = wbRenderMD(data.data.judge_feedback); });
                         _P(4, function () { renderExpertReview(data.data.expert_review); });
                         _P(4, function () { renderJudgeScores(data.data.judge_scores); });
                         _P(4, function () { renderIdeaRadar(data.data.scores, data.data.idea_score); });
-                        _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis); });
+                        _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = wbRenderMD(data.data.proposal_analysis); });
                         // ---- 6~8：深度版专属板块 ----
-                        if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis); });
-                        if (data.data.business_model) _P(6, function () { document.getElementById('businessModel').innerHTML = marked.parse(data.data.business_model); });
-                        if (data.data.risk_analysis) _P(6, function () { document.getElementById('riskAnalysis').innerHTML = marked.parse(data.data.risk_analysis); });
-                        if (data.data.tech_solution) _P(7, function () { document.getElementById('techSolution').innerHTML = marked.parse(data.data.tech_solution); });
+                        if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = wbRenderMD(data.data.competitor_analysis); });
+                        if (data.data.business_model) _P(6, function () { document.getElementById('businessModel').innerHTML = wbRenderMD(data.data.business_model); });
+                        if (data.data.risk_analysis) _P(6, function () { document.getElementById('riskAnalysis').innerHTML = wbRenderMD(data.data.risk_analysis); });
+                        if (data.data.tech_solution) _P(7, function () { document.getElementById('techSolution').innerHTML = wbRenderMD(data.data.tech_solution); });
                         // 实施计划：深度版独立产出，之前前端缺展示块，内容白白浪费
-                        if (data.data.implementation_plan) _P(7, function () { document.getElementById('implementationPlan').innerHTML = marked.parse(data.data.implementation_plan); });
+                        if (data.data.implementation_plan) _P(7, function () { document.getElementById('implementationPlan').innerHTML = wbRenderMD(data.data.implementation_plan); });
                         // 社会价值 / 项目简介：后端已返回，之前漏了往这两个 div 写内容，导致一直空白
-                        if (data.data.social_value) _P(7, function () { document.getElementById('socialValue').innerHTML = marked.parse(data.data.social_value); });
-                        if (data.data.project_summary) _P(7, function () { document.getElementById('projectSummary').innerHTML = marked.parse(data.data.project_summary); });
-                        if (data.data.defense_questions) _P(8, function () { document.getElementById('defenseQuestions').innerHTML = marked.parse(data.data.defense_questions); });
-                        if (data.data.ppt_outline) _P(8, function () { document.getElementById('pptOutline').innerHTML = marked.parse(data.data.ppt_outline); });
+                        if (data.data.social_value) _P(7, function () { document.getElementById('socialValue').innerHTML = wbRenderMD(data.data.social_value); });
+                        if (data.data.project_summary) _P(7, function () { document.getElementById('projectSummary').innerHTML = wbRenderMD(data.data.project_summary); });
+                        if (data.data.defense_questions) _P(8, function () { document.getElementById('defenseQuestions').innerHTML = wbRenderMD(data.data.defense_questions); });
+                        if (data.data.ppt_outline) _P(8, function () { document.getElementById('pptOutline').innerHTML = wbRenderMD(data.data.ppt_outline); });
                         // ---- 9：富媒体（图表 / 表格 / deck），DOM 最重，放最后 ----
                         _P(9, function () { renderRich(data.data, isDeep); });
 
@@ -4885,17 +4954,22 @@
                                 await wbLoadEcharts();
                                 // 两条路都没拉到 → 摆错误态，别让三个空白框挂在那儿
                                 if (window.echarts.__noop) { wbEchartsDown(); return; }
-                                // 图表A 规范：深蓝底 + 固定 7 色系列，与 PNG 渲染器 chart_renderer_pro 保持一致。
-                                // 网页侧把底改成半透明玻璃渐变（更贴页面主视觉）；系列色 CA 不动，
-                                // 否则会和后端导出的 PNG 配色对不上（导出件走 chart_renderer_pro）。
-                                const CA_BG = {
-                                    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                                    colorStops: [
-                                        { offset: 0, color: 'rgba(22,28,62,.62)' },
-                                        { offset: 1, color: 'rgba(8,12,32,.78)' }
-                                    ]
-                                };
-                                const CA = ['#818CF8', '#22B8CF', '#C084FC', '#F59E0B', '#34D399', '#FB7185', '#A3E635'];
+                                await window.__wbDemoChartDraw();
+                            }, 100);
+                                // 171 轮：整套配色从所选主题取；CA 的跨端约束已收进 WB_CHART_THEMES.tech，
+                                // 选中「科技蓝紫」时仍与后端 chart_renderer_pro 的 tech 主题完全同色。
+                                // 整段抽成闭包挂 window：切主题时直接重绘，不必重新生成内容。
+                                window.__wbDemoChartDraw = async function () {
+                                var _T = WB_CHART_THEMES[wbChartThemeKey()] || WB_CHART_THEMES.soft;
+                                var _dark = !(document.body && document.body.classList.contains('light'));
+                                var _bgPair = _dark ? _T.bgD : _T.bgL;
+                                const CA_BG = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                                    colorStops: [{ offset: 0, color: _bgPair[0] }, { offset: 1, color: _bgPair[1] }] };
+                                const CA = _T.series.slice();
+                                const CBAR = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+                                    colorStops: [{ offset: 0, color: _T.bar[0] }, { offset: 1, color: _T.bar[1] }] };
+                                const CTX = _T.text, CAX = _T.axis, CSPLIT = _T.split;
+                                const CTIP = { backgroundColor: _T.tip[0], borderColor: _T.tip[1], textStyle: { color: _T.tip[2] } };
                                 // 预算构成饼图（重复生成时先销毁旧实例，避免叠加）
                                 const budgetEl = document.getElementById('budgetChart');
                                 const oldBudget = echarts.getInstanceByDom(budgetEl);
@@ -4904,9 +4978,9 @@
                                 budgetChart.setOption({
                                     backgroundColor: CA_BG,
                                     color: CA,
-                                    textStyle: { color: '#93a0c4' },
-                                    tooltip: { trigger: 'item', backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
-                                    legend: { bottom: 0, textStyle: { color: '#93a0c4' } },
+                                    textStyle: { color: CTX },
+                                    tooltip: Object.assign({ trigger: 'item' }, CTIP),
+                                    legend: { bottom: 0, textStyle: { color: CTX } },
                                     series: [{
                                         type: 'pie',
                                         radius: ['40%', '70%'],
@@ -4926,17 +5000,13 @@
                                 marketChart.setOption({
                                     backgroundColor: CA_BG,
                                     color: CA,
-                                    textStyle: { color: '#93a0c4' },
-                                    tooltip: { backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
-                                    xAxis: { data: ['2024', '2025', '2026', '2027', '2028'], axisLine: { lineStyle: { color: 'rgba(148,163,255,.35)' } }, axisLabel: { color: '#93a0c4' } },
-                                    yAxis: { splitLine: { lineStyle: { color: 'rgba(148,163,255,.12)' } }, axisLabel: { color: '#93a0c4' } },
+                                    textStyle: { color: CTX },
+                                    tooltip: Object.assign({}, CTIP),
+                                    xAxis: { data: ['2024', '2025', '2026', '2027', '2028'], axisLine: { lineStyle: { color: CAX } }, axisLabel: { color: CTX } },
+                                    yAxis: { splitLine: { lineStyle: { color: CSPLIT } }, axisLabel: { color: CTX } },
                                     series: [{
                                         type: 'bar', data: [120, 280, 560, 980, 1500],
-                                        itemStyle: {
-                                            borderRadius: [6, 6, 0, 0],
-                                            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                                                colorStops: [{ offset: 0, color: '#67e8f9' }, { offset: 1, color: '#4f46e5' }] }
-                                        }
+                                        itemStyle: { borderRadius: [6, 6, 0, 0], color: CBAR }
                                     }]
                                 });
                                 // 时间线
@@ -4947,11 +5017,11 @@
                                 timelineChart.setOption({
                                     backgroundColor: CA_BG,
                                     color: CA,
-                                    textStyle: { color: '#93a0c4' },
-                                    tooltip: { backgroundColor: 'rgba(10,15,43,.92)', borderColor: 'rgba(148,163,255,.3)', textStyle: { color: '#e9eefc' } },
-                                    xAxis: { type: 'category', data: ['需求调研', '原型开发', '测试迭代', '上线运营', '推广拓展'], axisLine: { lineStyle: { color: 'rgba(148,163,255,.35)' } }, axisLabel: { color: '#93a0c4' } },
-                                    yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(148,163,255,.12)' } }, axisLabel: { color: '#93a0c4' } },
-                                    series: [{ type: 'line', data: [10, 30, 55, 80, 100], smooth: true, areaStyle: { color: 'rgba(192,132,252,.22)' }, itemStyle: {color: '#c084fc'} }]
+                                    textStyle: { color: CTX },
+                                    tooltip: Object.assign({}, CTIP),
+                                    xAxis: { type: 'category', data: ['需求调研', '原型开发', '测试迭代', '上线运营', '推广拓展'], axisLine: { lineStyle: { color: CAX } }, axisLabel: { color: CTX } },
+                                    yAxis: { type: 'value', splitLine: { lineStyle: { color: CSPLIT } }, axisLabel: { color: CTX } },
+                                    series: [{ type: 'line', data: [10, 30, 55, 80, 100], smooth: true, areaStyle: { color: _T.area }, itemStyle: { color: _T.line } }]
                                 });
                                 // 窗口变化时自动重绘（只注册一次，避免每次生成都叠加监听器）
                                 if (!window.__chartsResizeBound) {
@@ -4984,7 +5054,7 @@
                                         }
                                     });
                                 });
-                            }, 100);
+                            };
                         }
                         document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
                     } else {
@@ -6340,7 +6410,7 @@
                 var isDeep = !!(data.competitor_analysis || data.business_model || data.tech_solution);
                 window._lastMode = data.mode || (isDeep ? 'deep' : 'fast');
                 var md = function (s) {
-                    try { return marked.parse(s || ''); } catch (e) { return String(s || '').replace(/\n/g, '<br>'); }
+                    try { return wbRenderMD(s || ''); } catch (e) { return String(s || '').replace(/\n/g, '<br>'); }
                 };
                 var set = function (domId, txt) {
                     var el = document.getElementById(domId);
@@ -6457,13 +6527,17 @@
                     clearTimeout(timer);
                     if (d && d.success && d.status === 'ok') {
                         _healthFailStreak = 0;
+                        window._wbHealthOk = true;      // 167 轮：心跳退避计数器复位
+                        if (typeof _hbMul !== 'undefined') _hbMul = 1;
                         _healthHide();          // 正常 = 不打扰
                     } else {
+                        window._wbHealthOk = false;
                         _healthFail();
                     }
                 })
                 .catch(function () {
                     clearTimeout(timer);
+                    window._wbHealthOk = false;
                     _healthFail();              // 网络失败 / 3 秒超时都走这里
                 });
         }
@@ -6567,8 +6641,142 @@
                 .catch(function () { return fromStatic().then(render); });
         })();
 
+        /* ---------- 171 轮：图表配色个性化 ----------
+           用户需求：「图表颜色能不能像 ai 对话一样，根据使用对象的想法进行改变」。
+           落地原则：①前端 ECharts 配色随所选主题动态走；②按创意关键词轻量词表推荐（不调 LLM，
+           167 轮正在治慢，不能再加耗时）；③默认「柔和默认」= 白底 + 低饱和点缀（157 轮视觉铁律）。
+           跨端一致性：tech 那套就是原来的 CA，与后端 chart_renderer_pro 的 tech 主题 7 色一一对应，
+           选它时导出 PNG 与前台完全一致；其它主题的导出一致性要靠后端接 chart_theme 参数
+           （前端已把该字段放进导出 payload，后端接线即可生效）。 */
+        var WB_CHART_THEME_KEY = 'wbChartThemeV1';
+        var WB_CHART_THEMES = {
+            soft: {
+                label: '柔和默认',
+                series: ['#6B9BC3', '#7BB6A6', '#9C8BC4', '#D9A05B', '#8CBF86', '#C98C94', '#A8C47A'],
+                bar: ['#8FB8D9', '#5E87B0'], line: '#6B9BC3', area: 'rgba(107,155,195,.18)',
+                text: '#5B6B82', axis: 'rgba(91,107,130,.35)', split: 'rgba(91,107,130,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(91,107,130,.22)', '#1F2A3A'],
+                bgL: ['rgba(255,255,255,.55)', 'rgba(244,247,252,.72)'],
+                bgD: ['rgba(28,34,52,.45)', 'rgba(18,22,38,.58)']
+            },
+            tech: {
+                label: '科技蓝紫',
+                // 与后端 chart_renderer_pro 的 tech 主题一致，改这里要同步后端
+                series: ['#818CF8', '#22B8CF', '#C084FC', '#F59E0B', '#34D399', '#FB7185', '#A3E635'],
+                bar: ['#67e8f9', '#4f46e5'], line: '#c084fc', area: 'rgba(192,132,252,.22)',
+                text: '#93a0c4', axis: 'rgba(148,163,255,.35)', split: 'rgba(148,163,255,.12)',
+                tip: ['rgba(10,15,43,.92)', 'rgba(148,163,255,.3)', '#e9eefc'],
+                bgL: ['rgba(22,28,62,.62)', 'rgba(8,12,32,.78)'],
+                bgD: ['rgba(22,28,62,.62)', 'rgba(8,12,32,.78)']
+            },
+            green: {
+                label: '环保绿',
+                series: ['#4F9D7C', '#6FAE86', '#8FBF95', '#B0C97F', '#7FB49E', '#9BCE8E', '#C3D59B'],
+                bar: ['#7FBBA0', '#3F8C6E'], line: '#4F9D7C', area: 'rgba(79,157,124,.18)',
+                text: '#4A6559', axis: 'rgba(74,101,89,.35)', split: 'rgba(74,101,89,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(74,101,89,.22)', '#1E2F28'],
+                bgL: ['rgba(247,252,249,.6)', 'rgba(237,245,240,.74)'],
+                bgD: ['rgba(22,40,33,.45)', 'rgba(14,26,22,.58)']
+            },
+            warm: {
+                label: '温暖橙',
+                series: ['#C2854E', '#D3A15E', '#BF7F63', '#E0B473', '#A9774F', '#CBA97E', '#D98F5B'],
+                bar: ['#E0B473', '#C2854E'], line: '#C2854E', area: 'rgba(194,133,78,.18)',
+                text: '#6B563F', axis: 'rgba(107,86,63,.35)', split: 'rgba(107,86,63,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(107,86,63,.22)', '#31251A'],
+                bgL: ['rgba(255,251,245,.6)', 'rgba(250,242,232,.74)'],
+                bgD: ['rgba(42,32,22,.45)', 'rgba(26,20,14,.58)']
+            },
+            biz: {
+                label: '经典商务',
+                series: ['#3F6A94', '#5C7E96', '#7A8FA0', '#94776B', '#5E7B6B', '#836C86', '#6C7A8C'],
+                bar: ['#5C7E96', '#33526F'], line: '#3F6A94', area: 'rgba(63,106,148,.18)',
+                text: '#42505F', axis: 'rgba(66,80,95,.35)', split: 'rgba(66,80,95,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(66,80,95,.22)', '#1C2530'],
+                bgL: ['rgba(248,250,252,.6)', 'rgba(240,243,247,.74)'],
+                bgD: ['rgba(24,30,42,.45)', 'rgba(16,20,30,.58)']
+            }
+        };
+        function wbChartThemeKey() {
+            var v = '';
+            try { v = _wbStoreGet(WB_CHART_THEME_KEY) || ''; } catch (e) {}
+            return WB_CHART_THEMES[v] ? v : 'soft';
+        }
+        // 导出 Beijing 也给后端用：打包 zip / PPT 时把主题带过去
+        function wbChartTheme() {
+            var k = wbChartThemeKey();
+            return WB_CHART_THEMES[k] || WB_CHART_THEMES.soft;
+        }
+        function wbChartIsLight() {
+            return !(document.body && document.body.classList.contains('light') === false) ||
+                   (document.body && document.body.classList.contains('light'));
+        }
+        function wbChartPickSet(v) {
+            try { _wbStoreSet(WB_CHART_THEME_KEY, WB_CHART_THEMES[v] ? v : 'soft'); } catch (e) {}
+        }
+        window.wbChartThemeKey = wbChartThemeKey;
+        window.wbChartTheme = wbChartTheme;
+        window.wbChartThemePick = function (v) {
+            wbChartPickSet(v);
+            var sel = document.getElementById('chartTheme'); if (sel) sel.value = wbChartThemeKey();
+            wbChartThemeHint(v);
+            // 已经画出来的图立即换色（不重新生成，只是重绘）
+            if (window.__wbDemoChartDraw) { try { window.__wbDemoChartDraw(); } catch (e) {} }
+        };
+        window.wbChartThemeHint = function (v) {
+            var el = document.getElementById('chartThemeHint');
+            if (!el) return;
+            var t = WB_CHART_THEMES[v] || WB_CHART_THEMES.soft;
+            el.textContent = v === 'tech'
+                ? '科技蓝紫：深色玻璃底，与导出的图表 PNG 完全同色。'
+                : ('已选「' + t.label + '」：白底低饱和，打印/投屏都不刺眼。');
+        };
+        // 按创意推荐：纯词表匹配，开销可忽略（167 轮正在压耗时，这里不能再加 LLM 调用）
+        window.wbChartThemeGuess = function () {
+            var txt = '';
+            ['idea', 'keywords', 'wbSchool'].forEach(function (id) {
+                var e = document.getElementById(id);
+                if (e && e.value) txt += ' ' + e.value;
+            });
+            var comp = document.getElementById('compInput');
+            if (comp && comp.value) txt += ' ' + comp.value;
+            var RULES = [
+                [/(环保|回收|低碳|碳中和|新能源|光伏|储能|节能|农业|种[植养]|养[殖殖]|生态|绿化|垃圾分类|水处理|林业|海洋|可持续)/, 'green'],
+                [/(ai|人工智能|算法|大模型|芯片|机器人|智能化|大数据|物联网|算力|视觉识别|自动驾驶|区块链|软件|算法推荐)/i, 'tech'],
+                [/(餐饮|文创|文旅|非遗|手作|烘焙|咖啡|茶饮|校园|养老|助农|乡村振兴|公益|志愿|宠物|服饰|非遗传承)/, 'warm'],
+                [/(金融|融资|商业|营销|电商|供应链|物流|制造|工业|企业服务|人力|财税|法律|跨境|物流仓储)/, 'biz']
+            ];
+            var hit = '';
+            for (var i = 0; i < RULES.length; i++) { if (RULES[i][0].test(txt)) { hit = RULES[i][1]; break; } }
+            if (!hit) hit = 'soft';
+            window.wbChartThemePick(hit);
+            var t = WB_CHART_THEMES[hit];
+            wbToast(hit === 'soft'
+                ? '没识别出明显领域，先用柔和默认，你也可以自己换'
+                : '按你的创意推荐了「' + t.label + '」配色', { type: 'ok', ms: 2600 });
+        };
+        (function () {
+            var sel = document.getElementById('chartTheme');
+            if (sel) sel.value = wbChartThemeKey();
+            wbChartThemeHint(wbChartThemeKey());
+        })();
+
         checkHealth();
-        setInterval(checkHealth, 30000);
+        // 167 轮：心跳原来是无脑 30s 一次，切后台也在打，白耗移动端电量。
+        // 改为「仅页面可见才请求」+ 失败退避（30s→60s→120s，上限 5 分钟），回到前台立刻补一次。
+        var _hbBase = 30000, _hbMul = 1;
+        setInterval(function () {
+            if (document.hidden) return;
+            if (!window._wbHealthOk && _hbMul < 10) _hbMul *= 2;   // 连续失败就拉长间隔
+            if (Date.now() - (_hbLast || 0) < _hbBase * _hbMul) return;
+            _hbLast = Date.now();
+            checkHealth();
+        }, 15000);
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) return;
+            _hbLast = Date.now();
+            try { checkHealth(); } catch (e) {}
+        });
 
 /* ===== WB UI 增强：粒子背景 + 滚动进场 ===== */
         (function () {
@@ -7079,5 +7287,33 @@
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
             else bind();
         })();
+
+        /* ---------- 170 轮（WorkBuddy 半边）：结果区相邻重复段落去重兜底 ----------
+           豆包实测：评委意见「需要改进的地方」重复显示 2 次、作品说明书「四、评审建议」重复 2 次。
+           根因在后端重复拼接，但前端不能只指望对方修——这里是第二道防线：
+           渲染成 HTML 后，凡是与上一段文本完全相同的相邻块，只保留第一份。 */
+        function wbDedupeHtml(html) {
+            var box = document.createElement('div');
+            box.innerHTML = html;
+            var kids = Array.prototype.slice.call(box.children);
+            if (kids.length < 2) return html;
+            var prevKey = '', kill = [];
+            kids.forEach(function (el) {
+                var key = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+                if (!key) return;
+                if (key === prevKey) { kill.push(el); return; }
+                prevKey = key;
+            });
+            kill.forEach(function (el) { if (el.parentNode) el.parentNode.removeChild(el); });
+            return kill.length ? box.innerHTML : html;
+        }
+        // 全站 Markdown 渲染统一入口（原来散落 16 处 marked.parse，现已全部收编到这里）
+        function wbRenderMD(s) {
+            var html;
+            try { html = marked.parse(s == null ? '' : String(s)); }
+            catch (e) { html = String(s == null ? '' : s).replace(/\n/g, '<br>'); }
+            return wbDedupeHtml(html);
+        }
+        window.wbRenderMD = wbRenderMD;
 
         })();

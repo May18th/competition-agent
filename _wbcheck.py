@@ -135,12 +135,24 @@ res.append(chk('style.css 无靛紫/紫硬编码(主色不漂移)', not _drift,
 res.append(chk('主色三元组变量已定义(:root+light)',
                '--c-a-rgb:' in _css_code and '--c-b-rgb:' in _css_code
                and len(re.findall(r'--c-a-rgb:', _css_code)) >= 2))
-# app.js 的图表配色 CA 是「跨端一致性」硬约束（注释写明：改了就和后端导出 PNG 对不上），
-# 所以这里要断言它没被误改，防止后来人（包括我）顺手把它也换掉。
-_ca = re.search(r"const CA = \[([^\]]+)\]", js_src)
-res.append(chk('图表系列色 CA 未被误改(与导出PNG一致)',
-               bool(_ca) and "'#818CF8'" in _ca.group(1) and "'#C084FC'" in _ca.group(1),
-               '(CA=%s)' % (_ca.group(1)[:40] if _ca else 'NOT FOUND')))
+# 图表配色是「跨端一致性」硬约束（注释写明：改了就和后端导出 PNG 对不上）。
+# 171 轮把原来的 const CA 收进了 WB_CHART_THEMES.tech.series（支持用户换配色主题），
+# 但 tech 这一套必须仍与后端 chart_renderer_pro 的 tech 主题逐色一致，否则导出件会变脸。
+# 所以断言跟着升级：校验 tech 那 7 色一个都没动。
+_seg = ''
+if 'var WB_CHART_THEMES = {' in js_src:
+    _seg = js_src.split('var WB_CHART_THEMES = {', 1)[1].split('function wbChartThemeKey', 1)[0]
+_ca = re.search(r"tech:\s*\{.*?series:\s*\[([^\]]+)\]", _seg, re.S)
+_ca_ok = bool(_ca) and all(c in _ca.group(1) for c in
+                           ("'#818CF8'", "'#22B8CF'", "'#C084FC'", "'#F59E0B'",
+                            "'#34D399'", "'#FB7185'", "'#A3E635'"))
+res.append(chk('图表配色·tech 系列未漂移(与导出PNG一致)',
+               _ca_ok, '(tech.series=%s)' % (''.join(_ca.group(1).split())[:60] if _ca else 'NOT FOUND')))
+# 171 轮：五套主题齐全 + 默认必须是柔和（白底低饱和是视觉铁律，不能默认深色高饱和）
+_tn = re.findall(r"label: '", _seg)
+res.append(chk('171轮 配色主题数量=5且默认soft',
+               len(_tn) == 5 and "WB_CHART_THEMES[v] ? v : 'soft'" in js_src,
+               '(主题数=%d)' % len(_tn)))
 
 print('--- 汇总 ---')
 allok = dom_ok and js_ok and ok == len(blocks) and all(res)
