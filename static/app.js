@@ -2510,7 +2510,7 @@
 
         // 创意五维雷达图（纯 SVG，不依赖 ECharts）：只看创意本身的强弱。
         // scores = {innovation:{name,score,weight}, feasibility:..., market:..., barrier:..., social:...}
-        function renderIdeaRadar(scores) {
+        function renderIdeaRadar(scores, ideaScore) {
             var box = document.getElementById('ideaRadarBox');
             var el = document.getElementById('ideaRadar');
             if (!box || !el) return;
@@ -2572,6 +2572,13 @@
             }
             svg += '</svg>';
             el.innerHTML = svg;
+            // 创意总分与「AI 模拟自评」（文档质量分）是两个口径，这里显式标出来避免混淆
+            var ft = document.getElementById('ideaRadarFoot');
+            if (ft) {
+                var isc = (ideaScore === null || ideaScore === undefined || ideaScore === '') ? null : Number(ideaScore);
+                ft.innerHTML = '创意总分 <b>' + (isc === null || isNaN(isc) ? '—' : Math.round(isc)) +
+                    '</b> 分 · 创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%';
+            }
             box.style.display = 'block';
         }
 
@@ -4498,7 +4505,7 @@
                         _P(3, function () { document.getElementById('judgeFeedback').innerHTML = marked.parse(data.data.judge_feedback); });
                         _P(4, function () { renderExpertReview(data.data.expert_review); });
                         _P(4, function () { renderJudgeScores(data.data.judge_scores); });
-                        _P(4, function () { renderIdeaRadar(data.data.scores); });
+                        _P(4, function () { renderIdeaRadar(data.data.scores, data.data.idea_score); });
                         _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = marked.parse(data.data.proposal_analysis); });
                         // ---- 6~8：深度版专属板块 ----
                         if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = marked.parse(data.data.competitor_analysis); });
@@ -5992,7 +5999,7 @@
                 set('pptOutline', data.ppt_outline);
                 try { renderExpertReview(data.expert_review); } catch (e) {}
                 try { renderJudgeScores(data.judge_scores); } catch (e) {}
-                try { renderIdeaRadar(data.scores); } catch (e) {}
+                try { renderIdeaRadar(data.scores, data.idea_score); } catch (e) {}
                 try { wbRefreshPhBar(); } catch (e) {}
                 try { renderCompleteness(data.completeness); } catch (e) {}
                 try { renderRich(data, isDeep); } catch (e) {}

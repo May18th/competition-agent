@@ -650,7 +650,7 @@
             <div id="ideaRadarBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
                 <div style="font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;">创意五维雷达</div>
                 <div id="ideaRadar" style="width: 100%; max-width: 420px; margin: 0 auto;"></div>
-                <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); text-align: center;">创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%</div>
+                <div id="ideaRadarFoot" style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); text-align: center;">创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%</div>
             </div>
                 <!-- 一句话定位 -->
                 <div style="background: linear-gradient(135deg, var(--info-bg-1) 0%, var(--info-bg-2) 100%); border-left: 4px solid var(--info); padding: 16px; border-radius: 8px; margin-bottom: 16px; margin-top: 16px;">
@@ -1102,9 +1102,6 @@
     </div>
     <!-- 回到顶部：长文档滑下去后，右下角出现小箭头一键回顶 -->
     <button id="wbTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="回到顶部">↑</button>
-    <!-- 选中段落改写：在正文里选中文字后浮现，点一下让 AI 局部改写 -->
-    <button id="wbRewriteBtn" onclick="wbRewriteSelection()" aria-label="改写选中文字">✏️ 改写选中</button>
-
     <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
         <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
             <button class="wb-modal-x" onclick="event.stopPropagation(); closeIntro()" title="关闭" aria-label="关闭">&times;</button>
