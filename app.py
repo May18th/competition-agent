@@ -4052,6 +4052,16 @@ def export_zip():
             print(f"[export_zip] PPT失败: {e}")
     project = data.get('idea') or data.get('project_name') or ''
     competition = data.get('competition_name') or ''
+    # 导出终检（第一百二十五轮）：zip 文件数/体积
+    try:
+        from quality_gate import check_zip
+        _ok, _issues = check_zip(zippath, expect_count=12)
+        if not _ok:
+            _safe_unlink(zippath)
+            return jsonify({"success": False, "code": "export_quality_fail",
+                            "error": "打包质量未达标：" + "；".join(_issues[:3])}), 422
+    except Exception:
+        pass
     return send_file(zippath, as_attachment=True,
                      download_name=_export_filename(project, competition, '材料包', '.zip'),
                      mimetype='application/zip')
