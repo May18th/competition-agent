@@ -286,10 +286,28 @@ def bind_uid():
 
 _LOGIN_FAILS = {}   # username -> [时间戳]，15 分钟窗口
 _LOGIN_LOCK = {}    # username -> 锁定到期时间戳
+_REG_HITS = {}      # ip -> [注册时间戳]，防批量注册（M17）
+_REG_LOCK = threading.Lock()
+
+
+def _register_rate_limited():
+    """注册限流（M17）：同一 IP 每小时最多 5 次，防批量注册/爆破。"""
+    ip = _client_ip()
+    now = time.time()
+    with _REG_LOCK:
+        hits = [t for t in _REG_HITS.get(ip, []) if now - t < 3600]
+        if len(hits) >= 5:
+            _REG_HITS[ip] = hits
+            return True
+        hits.append(now)
+        _REG_HITS[ip] = hits
+        return False
 
 
 @app.route('/api/register', methods=['POST'])
 def register():
+    if _register_rate_limited():
+        return jsonify({"success": False, "error": "注册太频繁，请稍后再试"}), 429
     data = request.get_json(silent=True) or request.form or {}
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
@@ -407,6 +425,19 @@ def _require_uid():
         resp.status_code = 401
         return resp
     return None
+
+
+def _task_owned(task_id):
+    """M18 任务归属校验：只对「有有效 cookie 的已认证请求」强制归属；
+    匿名请求（无 cookie）跳过——task_id 是 uuid4 不可枚举，且无 cookie 的 curl 每次
+    会换新随机 uid，强校验会误杀服务端自身轮询。"""
+    if not getattr(g, 'uid_authenticated', False):
+        return True
+    t = tasks.get(task_id)
+    if not t:
+        return True
+    owner = (t.get("data") or {}).get("_user_id", "")
+    return (not owner) or (owner == _current_uid())
 
 
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
@@ -4002,6 +4033,8 @@ def generate_async():
 @app.route('/api/retry/<task_id>', methods=['POST'])
 def retry_generation(task_id):
     """用上次的参数直接重跑一遍，用户不用重新输入创意。"""
+    if not _task_owned(task_id):
+        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     t = tasks.get(task_id)
     if not t or not t.get("data"):
         # 任务字典里没有参数（可能服务重启或任务被清理），退回历史记录兜底
@@ -4122,6 +4155,8 @@ def proofread():
 
 @app.route('/api/cancel/<task_id>', methods=['POST'])
 def cancel_generation(task_id):
+    if not _task_owned(task_id):
+        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     progress.cancel(task_id)
     return jsonify({"success": True, "cancelled": True, "eta_note": "最迟约 1 分钟内停止"})
 
@@ -4161,6 +4196,8 @@ def _get_mode_counts():
 
 @app.route('/api/status/<task_id>')
 def get_task_status(task_id):
+    if not _task_owned(task_id):
+        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     t = tasks.get(task_id)
     if not t:
         return jsonify({"success": False, "error": "任务已失效（多为服务重启中断了在跑的生成，请重新生成一次）"})
@@ -4270,8 +4307,10 @@ def stream_generation(task_id):
       event: stage    data: {"stage": <阶段代号>, "status": <状态>}
       event: partial  data: {"field": <字段名>, "delta": <本段新增文本>}
       event: done     data: {"status": "done|error|cancelled", ...}
-    轮询 /api/status 仍保留，作为 SSE 断开时的兜底。
+     轮询 /api/status 仍保留，作为 SSE 断开时的兜底。
     """
+    if not _task_owned(task_id):
+        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     from flask import Response, stream_with_context
     import json as _json
 
@@ -4323,6 +4362,8 @@ def stream_generation(task_id):
 @app.route('/api/speech_stream/<task_id>')
 def speech_stream(task_id):
     """演讲稿流式预览：返回当前已生成的演讲稿片段。"""
+    if not _task_owned(task_id):
+        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     return jsonify({"success": True, "text": get_speech_stream(task_id)})
 
 

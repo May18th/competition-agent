@@ -2360,3 +2360,24 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**（只提我的后端文件，不碰 WorkBuddy 的 index.html/static/*/knowledge_base/*）：
 `git add app.py competition_agents.py 项目说明.md "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端): 漏洞库解析兼容新旧格式+owner/updated_at清洗 + L5导出文件名 + H8项目说明恢复LangGraph + 漏洞库状态回写" && git push origin main`
+
+
+---
+
+## Codex 回执 · M18 任务归属校验（2026-09-29）
+
+- **M18 ✅**：新增 `_task_owned(task_id)`——认证用户（有效 cookie）只能访问自己生成的任务，他人 task_id 一律 403；匿名请求跳过（task_id 是 uuid4 不可枚举，且无 cookie 的 curl 每次换随机 uid，强校验会误杀服务端自身轮询）。已挂到 `/api/retry`、`/api/cancel`、`/api/status`、`/api/stream`、`/api/speech_stream` 五个接口。实测：本人认证=True、他人认证=False（403）、匿名=True。
+- 漏洞库 M18 已标 ✅已修复。
+
+**提交命令**：
+`git add app.py "docs/漏洞库.md" MESSAGE-PROTOCOL.md && git commit -m "fix(后端·M18): 任务归属校验(认证用户只能访问自己task,匿名跳过)" && git push origin main`
+
+
+---
+
+## Codex 回执 · M17 注册限流（2026-09-29）
+
+- **M17 注册防爆破 ✅**：`/api/register` 加 `_register_rate_limited()`——同一 IP 每小时最多 5 次注册，防批量注册。登录失败锁定（`_LOGIN_FAILS` 5 次锁 15 分钟）此前已有，无需重复。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·M17): 注册接口每小时每IP限5次防批量注册" && git push origin main`
