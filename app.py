@@ -150,6 +150,16 @@ def _set_uid_cookie(resp):
     return resp
 
 
+@app.after_request
+def _security_headers(resp):
+    """补齐基础安全头（第四十二轮刺：安全头缺失）。"""
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("X-XSS-Protection", "1; mode=block")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
+
+
 def _account_uid(user_id):
     return 'acc' + str(user_id)
 

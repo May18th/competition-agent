@@ -5534,7 +5534,7 @@
                         var scoreTxt = '';
                         if (sc !== null && !isNaN(sc)) {
                             scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
-                                sc + ' 分' + (sc >= 75 ? ' ★' : '') + '</span>';
+                                'AI 质量 ' + sc + ' 分</span>';
                         }
                         // 摘要优先，没有则回退正文前 60 字
                         var brief = (it.summary && String(it.summary).trim())
