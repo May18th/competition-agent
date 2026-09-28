@@ -528,6 +528,26 @@ def _admin_session_role():
     return None
 
 
+def _admin_role_badge_html():
+    """206 轮：后台常驻角色徽章。readonly→黄「演示只读模式」，admin→绿「管理员」。"""
+    role = _admin_session_role()
+    if role == 'readonly':
+        return '<span class="rolebadge" style="background:#fef3c7;color:#92400e;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="只读，写操作已被禁止">🔒 演示只读模式</span>'
+    if role == 'admin':
+        return '<span class="rolebadge" style="background:#d1fae5;color:#065f46;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="管理员全权限">✅ 管理员</span>'
+    return ''
+
+
+def _inject_role_badge(html):
+    """把角色徽章注入后台页面：有 nav 就插在 nav 末尾，无 nav（如漏洞库）插到标题后。"""
+    badge = _admin_role_badge_html()
+    if not badge:
+        return html
+    if '</nav>' in html:
+        return html.replace('</nav>', badge + '</nav>', 1)
+    return html.replace('</h1>', '</h1>' + badge, 1)
+
+
 def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
@@ -2469,7 +2489,7 @@ def admin_home():
         % (r["created_time"] or "", _html_escape(r["error"] or ""))
         for r in recent_fail) or '<li class="e">暂无失败</li>'
 
-    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 管理后台</title>
 <style>
@@ -2602,7 +2622,7 @@ loadViz();
         "good" if success_rate >= 95 else ("bad" if success_rate < 80 else ""),
         success_rate,
         "bad" if open_issue else "good", open_issue,
-        feedback_total, fb_rows, fail_rows)
+        feedback_total, fb_rows, fail_rows))
 
 
 @app.route('/admin/panel')
@@ -2953,7 +2973,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
                               rated_count, feedback_total, avg_dur, success_rate,
                               judge_avg, rating_bars_html, trend_html, comp_html,
                               cat_html, issues_html, fb_title, fb_html, fb_pager)
-    return html
+    return _inject_role_badge(html)
 
 
 def _html_escape(s):
@@ -3036,7 +3056,7 @@ def monitor():
         % (r["created_time"] or "", _html_escape(r["error"] or ""))
         for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
 
-    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 动态监视</title>
@@ -3073,7 +3093,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 </div></body></html>""" % (up_h, up_m, total_gen,
                               "red" if fail_total else "green", fail_total,
                               quota.get("remaining", 0), quota.get("limit", 500),
-                              gen_rows, fail_rows)
+                              gen_rows, fail_rows))
 
 
 # 内容安全关键词（第一百四十九轮）：用户提交内容（反馈/知识库入库）拦截涉黄/违法/广告。
@@ -5116,7 +5136,7 @@ bar('scoreChart','AI 模拟评分分布',SCORE,'#22d3ee');
 bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 </script>
 </body></html>"""
-    return html
+    return _inject_role_badge(html)
 
 
 _upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
@@ -5977,9 +5997,9 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
 <h1>🐞 漏洞库</h1>
 <div id="pageMsg" class="msg"></div>
 <div id="gate" class="gate" hidden>
-  <h2>需要 admin token</h2>
-  <div class="tip">漏洞库接口要求请求头 <b>X-Admin-Token</b>。token 取自服务端环境变量 ADMIN_TOKEN，页面里没有也不会硬编码。<br>输入后存在本机 localStorage，之后每次请求自动带上。本机若禁用了 localStorage，也会临时保留在当前页面内存里。</div>
-  <input id="tokenInput" type="password" placeholder="输入 admin token" autocomplete="off">
+  <h2>需要管理员口令</h2>
+  <div class="tip">漏洞库接口要求请求头 <b>X-Admin-Token</b>。口令由服务端保存，页面不存储、不硬编码。<br>输入后保存在本机浏览器，之后每次请求自动带上；本机若禁用了本地存储，也会临时保留在页面内存里。</div>
+  <input id="tokenInput" type="password" placeholder="输入管理员口令" autocomplete="off">
   <button id="tokenBtn" type="button">验证并加载</button>
   <div id="gateMsg" class="err" hidden></div>
 </div>
@@ -6066,7 +6086,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   function pull(url, opts, label){
     return req(url, opts).then(function(r){
       if (r.status === 401 || r.status === 403) {
-        throw {auth: true, msg: '接口鉴权失败（HTTP ' + r.status + '），请重新输入 admin token'};
+        throw {auth: true, msg: '接口鉴权失败（HTTP ' + r.status + '），请重新输入管理员口令'};
       }
       return r.json().catch(function(){
         throw {msg: label + '：服务端返回的不是合法 JSON'};
@@ -6277,7 +6297,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
     });
   }
   function load(){
-    if (!getToken()) { showGate('本机还没有 admin token'); return; }
+    if (!getToken()) { showGate('本机还没有管理员口令'); return; }
     $('pageMsg').textContent = '加载中…';
     var q = buildQuery();
     return Promise.all([
@@ -6352,4 +6372,4 @@ def admin_vulns_page():
     页面自身不带 token（所有数据来自 admin 鉴权的 /api/vulns* 接口），
     接口返 401/403 时由页面弹出 token 输入框，token 只存浏览器本机。
     """
-    return _VULNS_PAGE_HTML
+    return _inject_role_badge(_VULNS_PAGE_HTML)

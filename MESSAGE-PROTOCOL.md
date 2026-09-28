@@ -2208,3 +2208,14 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**：
 `git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·203): 工单自动处理(失败原因落库stage/error_code/error_msg + 额度类blocked + 去重count + 反馈评分/关键词触发工单)" && git push origin main`
+
+
+---
+
+## Codex 回执 · 206/207轮 角色徽章 + 汉化（2026-09-29）
+
+- **206 后台角色徽章 ✅**：新增 `_admin_role_badge_html()` + `_inject_role_badge()`，后台 5 页（/admin、/admin/panel、/monitor、/admin/report、/admin/vulns）导航注入常驻徽章——readonly 黄「🔒 演示只读模式」、admin 绿「✅ 管理员」。实测 admin 页含绿徽章、demo 页含黄徽章、未登录无徽章。
+- **207 用户可见英文汉化 ✅**：漏洞库页「需要 admin token」→「需要管理员口令」、placeholder「输入 admin token」→「输入管理员口令」、tip 文案汉化、JS 提示「请重新输入管理员口令」「本机还没有管理员口令」。实测漏洞库页无英文 admin token。未动 HTML 属性/API 字段/URL/变量名。
+
+**提交命令**（只提后端 app.py，不碰 WorkBuddy 的 knowledge_base/writing_paradigm.json）：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·206/207): 后台角色徽章(管理员/演示只读) + 漏洞库页英文汉化" && git push origin main`
