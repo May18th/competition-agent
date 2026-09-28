@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 12000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 1000 字，深度版约 4~5 分钟出 8000 字级完整方案书，支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出 4000 字级申报书，深度版约 4 分钟出 12000 字级完整方案书，支持双盲赛事自动脱敏。">
     <meta property="og:image" content="https://kcwx.online/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -166,7 +166,7 @@
             </div>
             <div class="wb-formgrid" style="display: grid; gap: 20px;">
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 赛事名称</label>
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 第 1 步 · 赛事名称</label>
                     <!-- 既能下拉选，也能自己填（手机上没法从下拉里挑未收录的赛事） -->
                     <div style="position: relative;">
                         <input type="text" id="competition" list="competitionList" autocomplete="off"
@@ -260,7 +260,7 @@
                             <div id="evPref" style="display: none; margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.7;"></div>
                             <div style="margin-top: 8px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
                                 章节可直接改（改动只存在你这台设备）。<br>
-                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 1000 字），不套用这里的多章结构。
+                                <b>章节定制对深度版生效</b>；简洁版是「短而准」的精简五章（约 4000 字），不套用这里的多章结构。
                             </div>
                         </div>
                         <div onclick="evToggleMore()" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
@@ -274,7 +274,7 @@
                      首屏主打流程：选比赛 → 输创意 →（选填）实测数据 → 点生成 -->
                 <div class="form-group">
                     <div onclick="wbAdvToggle('kbAdvBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        第 3 步 · 补充规则 / 官方文件（可选，评分标准已内置，一般不用传）<span id="kbAdvBodyArrow">▸</span>
+                        补充规则 / 官方文件（选填，评分标准已内置，一般不用传）<span id="kbAdvBodyArrow">▸</span>
                     </div>
                     <div id="kbAdvBody" style="display: none;">                    <div class="wb-note">
                         <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 已内置 15 个比赛评分标准
@@ -317,7 +317,7 @@
                 </div>
                     </div>
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 项目创意
+                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 第 2 步 · 项目创意
                         <!-- 「从材料识别」：已有申报书/材料的用户不用手抄五遍。
                              入口放在创意标题右侧（手就在这里），点开是弹层，不占首屏高度 -->
                         <button type="button" class="wb-textbtn" style="margin-left: auto;"
@@ -334,7 +334,7 @@
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 团队成员<span class="wb-opt">（选填，强烈建议：有真人就填）</span></label>
                     <div style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
                         <span onclick="wbAdvToggle('teamBody')" style="color:var(--c-a); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px;">
-                            第 2 步 · 填写团队成员 / 分工（可选）<span id="teamBodyArrow">▾</span>
+                            展开填写团队成员 / 分工（选填）<span id="teamBodyArrow">▾</span>
                         </span>
                         <button type="button" class="wb-textbtn" style="margin-left:auto; font-size:12px;"
                                 title="按赛事类型给一套能直接改的分工模板，填完请改成你队友的真实姓名与分工"
@@ -408,7 +408,7 @@
                 <!-- 高级参数（关键词 / 文风）：要用的人才找得到就行，常态收成一行，不占首屏 -->
                 <div class="form-group">
                     <div onclick="wbAdvToggle('advParamBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        第 3 步：补充信息（可选）<span id="advParamBodyArrow">▸</span>
+                        补充信息：关键词 / 文风（选填）<span id="advParamBodyArrow">▸</span>
                     </div>
                     <div id="advParamBody" style="display: none;">
                         <div style="margin: 2px 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
@@ -434,7 +434,7 @@
                 <div class="form-group">
                     <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
                     <div onclick="wbAdvToggle('draftAdvBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        第 3 步 · 粘贴已有草稿 / 上传文件（可选）<span id="draftAdvBodyArrow">▾</span>
+                        粘贴已有草稿 / 上传文件（选填）<span id="draftAdvBodyArrow">▾</span>
                     </div>
                     <div id="draftAdvBody">
                     <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
@@ -474,7 +474,7 @@
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁快速版</div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-a);">约 1 分钟出 1000 字</b><span style="color: var(--text-mute); font-size: 11.5px;">（比你泡碗面还快）</span><br>
+                            <b style="color: var(--c-a);">约 1 分钟出 4000 字级申报书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 40 次实测 50~93 秒）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
@@ -482,7 +482,7 @@
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span style="font-size: 11px; background: var(--c-a); color: white; padding: 2px 6px; border-radius: 4px;">推荐</span></div>
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
-                            <b style="color: var(--c-b);">约 4~5 分钟出 8000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（刚好够你续杯咖啡）</span><br>
+                            <b style="color: var(--c-b);">约 4 分钟出 12000 字级完整方案书</b><span style="color: var(--text-mute); font-size: 11.5px;">（近 20 次实测 3.5~4 分钟）</span><br>
                             简洁版全部 + 多专家评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -528,12 +528,12 @@
                 <!-- 等待期冷知识轮播：生成要等 47 秒~2 分钟，进度条下面放点有趣的，打发时间用 -->
                 <div id="wbTipCard" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
                     <div style="display: flex; align-items: flex-start;">
-                        <span style="flex-shrink: 0; margin-right: 8px; font-size: 15px; line-height: 1.5;">💡</span>
+                        <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink: 0; margin-right: 8px;"><use href="#wb-i-bulb"/></svg>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 3px;">等待时看一条备赛提示<span id="wbTipNext" style="cursor: pointer; color: var(--c-a); margin-left: 8px; user-select: none;" title="换下一条">↻ 换一条</span></div>
                             <div id="wbTipText" style="font-size: 13px; color: var(--text); line-height: 1.55;"></div>
                         </div>
-                        <span id="wbSparkCount" style="display: none; flex-shrink: 0; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">💡 0</span>
+                        <span id="wbSparkCount" style="display: none; flex-shrink: 0; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-dim); font-size: 12px;">灵感 0</span>
                     </div>
                 </div>
                 <!-- 深度版步骤 -->
@@ -544,7 +544,7 @@
                 </div>
                 <!-- 生成失败 / 超时后露出，一点就重跑（不用重新填表单） -->
                 <div id="retryWrap" style="display: none; text-align: center; margin-top: 12px;">
-                    <button onclick="wbRetry()" style="padding: 9px 20px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600;">🔄 重新生成</button>
+                    <button onclick="wbRetry()" style="padding: 9px 20px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600;">重新生成</button>
                     <div style="margin-top: 6px; font-size: 12px; color: var(--text-mute);">会用刚才填的内容再跑一次</div>
                 </div>
             </div>
@@ -580,12 +580,12 @@
                     <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportOnePDF('proposalText', '项目申报书全文')" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">下载 PDF</div>
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportAll()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">一键打包全部</div>
-                        <div onclick="document.getElementById('wbExpMenu').style.display='none';wbShare()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">🔗 分享链接</div>
+                        <div onclick="document.getElementById('wbExpMenu').style.display='none';wbShare()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">分享链接</div>
                         <div onclick="wbGoExport()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">分项下载 / PPT 主题 →</div>
                         <div style="padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">打包已含 PPT（12_路演PPT.pptx）</div>
                     </div>
                 </div>
-                <button class="qe-secondary" onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">🔗 分享</button>
+                <button class="qe-secondary" onclick="wbShare()" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">分享</button>
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
 
@@ -639,9 +639,9 @@
             <div id="tierBadge" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;"></div>
             <div class="result-hero">
                 <div class="score-number" id="scoreNum">86</div>
-                <div class="score-label">AI 模拟自评 / 100</div>
+                <div class="score-label">AI 模拟自评（文档质量）/ 100</div>
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
-                <div class="score-meta">数据支撑论点：<span id="dpCount">—</span> 处 · 待补充：<span id="phCount">—</span> 项 · 本地查重 <span id="simInfo">—</span></div>
+                <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
                     这个分数是模拟评委给的，帮你定位薄弱部分，<b>不用写进正式材料</b>。
                 </div>
@@ -810,7 +810,7 @@
                 <div style="padding: 20px;">
                     <h3 style="color: var(--c-a); margin-bottom: 20px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出中心</h3>
                     <div style="background: var(--surface-2); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
-                        <div style="font-size: 14px; color: var(--text-dim); margin-bottom: 16px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 所有材料均为Word(.docx)格式，一键打包下载压缩包：</div>
+                        <div style="font-size: 14px; color: var(--text-dim); margin-bottom: 16px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 分项材料为 Word(.docx)，申报书另有 PDF，路演 PPT 为 .pptx（深度版）；可单独下载，也可一键打包成压缩包：</div>
                         <div id="exportList" style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 20px; font-size: 14px; color: var(--text-soft);">
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 赛事规则解析报告.docx</span>
@@ -851,9 +851,12 @@
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 答辩问题预测.docx</span>
                                 <button onclick="exportOne('defenseQuestions', '答辩问题预测')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
-                            <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px; border:1px solid var(--c-a-soft);">
-                                <span style="color:var(--c-a); font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 路演 PPT（含图表，.pptx）</span>
-                                <button onclick="exportPptx()" style="padding:4px 12px; background:var(--c-a); color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600;">下载 PPT</button>
+                            <!-- 路演 PPT：原先挂 deep-only，简洁版整行隐藏，用户只在 zip 里见过 PPT，
+                                 以为导出中心没有单文件入口（第二十轮 #3）。改为常驻显示，
+                                 简洁版点按钮时由 wbPptDownload() 给出「深度版专属」引导 -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px; border:1px solid var(--c-a-soft);">
+                                <span style="color:var(--c-a); font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 路演 PPT（含图表，.pptx）<span id="wbPptModeHint" style="font-weight:400; color:var(--text-mute); font-size:11.5px;"></span></span>
+                                <button id="wbPptBtn" onclick="wbPptDownload()" style="padding:4px 12px; background:var(--c-a); color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600;">下载 PPT</button>
                             </div>
                             <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> PPT大纲.docx</span>
@@ -889,7 +892,7 @@
                             </div>
                             <button onclick="exportOptimized()" style="width: 100%; padding: 11px; background: var(--c-a-soft); color: var(--c-a); border: 1px solid var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出优化后的申报书</button>
                         </div>
-                        <button onclick="exportAll()" style="width: 100%; padding: 16px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包下载全部 Word 材料 (.zip)</button>
+                        <button onclick="exportAll()" style="width: 100%; padding: 16px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包下载全部材料 (.zip)</button>
                     </div>
                 </div>
             </div>
@@ -2013,7 +2016,8 @@ window.addEventListener('resize', function () {
         if (!layer || layer.childNodes.length > 5) return;   // 同屏最多 5 个，别糊满屏幕
         var s = document.createElement('div');
         s.className = 'wb-spark';
-        s.innerText = '💡';
+        // 去 emoji（第十七轮 #1）：老内核里 emoji 是豆腐块，改用页面已有的灯泡 SVG
+        s.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" style="width:20px;height:20px;"><use href="#wb-i-bulb"/></svg>';
         s.style.left = (6 + Math.random() * 84) + '%';
         s.style.bottom = (6 + Math.random() * 10) + '%';
         s.style.animationDuration = (6 + Math.random() * 2.5) + 's';
@@ -2024,7 +2028,7 @@ window.addEventListener('resize', function () {
             score++;
             if (sparkCount) {
                 sparkCount.style.display = 'inline-block';
-                sparkCount.innerText = '💡 ' + score;
+                sparkCount.innerText = '灵感 ' + score;
             }
             s.className = 'wb-spark wb-spark-hit';
             setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 280);
@@ -2048,7 +2052,7 @@ window.addEventListener('resize', function () {
                 'pointer-events:none;z-index:9998;overflow:hidden;';
             document.body.appendChild(layer);
         }
-        if (sparkCount) { sparkCount.style.display = 'inline-block'; sparkCount.innerText = '💡 0'; }
+        if (sparkCount) { sparkCount.style.display = 'inline-block'; sparkCount.innerText = '灵感 0'; }
         sparkTimer = clear(sparkTimer);
         sparkTimer = setInterval(spawnSpark, 1100);
         setTimeout(spawnSpark, 400);
