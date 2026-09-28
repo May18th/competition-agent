@@ -285,7 +285,7 @@ body {
 .history-item:last-child { border-bottom: none; }
 .history-info { flex: 1; min-width: 0; }
 .history-title { color: var(--text); font-weight: 600; font-size: 14px; }
-.history-idea { color: var(--text-dim); font-size: 12.5px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-idea { color: var(--text-dim); font-size: 12.5px; margin-top: 3px; white-space: normal; word-break: break-word; line-height: 1.55; }
 .history-meta { color: var(--text-mute); font-size: 11.5px; margin-top: 4px; }
 .history-del {
     padding: 6px 10px;
@@ -812,6 +812,18 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
    横向滚动下沉到宽表格自身；正文盒彻底 visible，纵向无限延伸。 */
 .content-block { overflow: visible; }
 .content-block table { overflow-x: auto; max-width: 100%; }
+/* 205 轮：展开内容不溢出——补上 185 轮漏掉的角落
+   ① pre/代码块：默认 white-space:pre 且没有滚动容器，一行长代码会把整页撑出横向滚动
+      （实测 375px 下 documentElement.scrollWidth 被撑大）。横向滚动下沉到 pre 自己，
+      与宽表格同一套做法，不用省略号、不截断代码。 */
+.content-block pre { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.content-block pre code { display: block; white-space: pre; background: transparent; padding: 0; }
+/* ② 超长英文串 / URL：换行 + 断词（不用 ellipsis、不 line-clamp），
+      避免正文里一段长 token 把页面顶出横向滚动 */
+.content-block p, .content-block li, .content-block td, .content-block th {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 /* 桌面端唯一纵向裁剪源：.card 的 overflow:hidden（1397 行只在 ≤768px 豁免过，
    所以 180 轮修完手机上好了、桌面还在切）。结果区单独豁免，不影响其它卡片裁圆角/装饰。 */
 #resultArea { overflow: visible; }
@@ -1071,7 +1083,9 @@ mark.wb-ph {
     font-size: 13px;
     line-height: 1.7;
     color: var(--text);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+    /* 205 轮·组件语言统一：浮层（气泡/下拉/Tip）阴影统一为 0 10px 30px rgba(0,0,0,.45)，
+       原来 0 12px 32px 与 wbTipBox / 导出下拉菜单三个值各不相同 */
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
 }
 #coachTip::before {
     content: "";
@@ -1401,15 +1415,22 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 }
 
 @media (max-width: 768px) {
-    /* 1) 底部赛事快捷 chip：横向可滑 + 藏滚动条，右边不再被裁掉 */
+    /* 1) 赛事快捷 chip：整排换行显示，一个都不许被裁
+       【205 轮改】原来是「横向可滑 + flex-wrap:nowrap」——手机上最后那个「全部 15 赛 ▾」
+       被推到容器右边界外，用户根本不知道右边还有东西（§6 的坑）。
+       注意：行内 style 里的 flex-wrap:wrap 比这条样式表规则优先级高，所以这里必须
+       带 !important 才压得住；同时 overflow-x 收成 visible，横滑容器取消后
+       文字只能靠换行完整显示（不许 ellipsis 截断）。 */
     #compQuickRow {
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        flex-wrap: nowrap;
+        flex-wrap: wrap !important;
+        overflow-x: visible !important;
+        row-gap: 6px;
     }
-    #compQuickRow::-webkit-scrollbar { display: none; }
-    #compQuickRow > span { flex: 0 0 auto; }
+    /* 375px 下 6 个 chip 一行塞不下（实测总宽 382px > 容器 343px）：
+       字号/内边距收一档，两行内全部露出来，且每个 chip 仍是 30px 以上高的可点区域。
+       注意别再加 column-gap：chip 行内 style 自带 margin-right:6px（非 !important，
+       样式表压不掉），再叠 gap 会把 414px 下本来一行放得下的排挤成两行（实测 29px→63px） */
+    #compQuickRow > span { flex: 0 0 auto; font-size: 11.5px !important; padding: 5px 9px !important; }
 
     /* 2) 折叠板块展开后别被 .card 的 overflow:hidden 裁掉内容 */
     .card { overflow: visible; }
@@ -1593,10 +1614,12 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     background: rgba(6, 8, 14, .93);
 }
 #wbUaMask.on { display: flex; }
+/* 205 轮·组件语言统一：弹窗一律走 .modal 那套（半径 var(--radius)、阴影 0 26px 70px），
+   原来这里是 16px / 0 24px 60px，和 intro / 历史 / 图表三个弹窗不是一个圆角档 */
 .wb-ua-box {
-    width: 100%; max-width: 420px; padding: 20px; border-radius: 16px;
+    width: 100%; max-width: 420px; padding: 20px; border-radius: var(--radius);
     background: var(--surface-solid); border: 1px solid var(--line);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+    box-shadow: 0 26px 70px rgba(0,0,0,.6);
 }
 .wb-ua-box h3 { font-size: 18px; color: var(--text); }
 /* 164 轮：首屏新手引导句——比副标题弱一级，但比正文强调，一眼能看到又不抢主标题 */
@@ -1942,4 +1965,23 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
     /* #wbClearBtn 在 1380 行有 ID 级规则，必须连带写 ID 否则被它压住（本轮实测 8px/38px） */
     .wb-textbtn, #wbClearBtn { padding: 12px 14px; font-size: 12.5px; }
     label .wb-textbtn { margin-left: 12px; }
+}
+
+/* ===== 205 轮：移动端首屏重排——项目创意输入框提到第一屏 =====
+   手机上原来要划过整块「赛事信息」（输入框 + 6 个 chip + 赛事说明，实测 286px）
+   才摸到创意输入框：375×812 下 #idea 的 top=721（贴着屏幕底沿），
+   667 高的小屏机型直接掉出首屏。
+   这里**只改 CSS order，不动 DOM 顺序**：桌面端（≥1025px）排布完全不变，
+   JS 按 DOM 取值（wbAdvInit / 表单序列化 / 引导跳转）也不受影响。
+   .wb-formgrid 是单列 grid（display:grid 写在行内 style 上），grid 子项同样吃 order。 */
+@media (max-width: 768px) {
+    .wb-formgrid > .form-group:nth-child(1) { order: 2; }   /* 第 1 步 · 赛事名称（创意之后） */
+    .wb-formgrid > .form-group:nth-child(2) { order: 5; }   /* 补充规则 / 官方文件（默认折叠） */
+    .wb-formgrid > .form-group:nth-child(3) { order: 1; }   /* 第 2 步 · 项目创意 —— 提到首屏 */
+    .wb-formgrid > .form-group:nth-child(4) { order: 3; }   /* 团队成员 */
+    .wb-formgrid > .form-group:nth-child(5) { order: 4; }   /* 实测数据 */
+    .wb-formgrid > .form-group:nth-child(6) { order: 6; }   /* 高级参数 */
+    .wb-formgrid > .form-group:nth-child(7) { order: 7; }   /* 申报书草稿 */
+    /* 排到第一位后标题行距卡片顶更近，去掉多余的上间距，第一屏多露一行 */
+    .wb-formgrid > .form-group:nth-child(3) { margin-top: 2px; }
 }

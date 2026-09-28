@@ -5827,7 +5827,8 @@
         d.style.display = 'flex';
         /* _esc 在主 script 里，这里兜个底，拿不到就自己转义 */
         var safeUrl = (typeof _esc === 'function') ? _esc(url) : url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
+        /* 205 轮·组件语言统一：弹窗半径/阴影跟 .modal 对齐（原 14px 且无阴影，与 intro/历史/图表弹窗不同档） */
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; width: 92%; max-width: 460px; box-shadow: 0 26px 70px rgba(0,0,0,.6);">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">分享链接已生成</div>' +
             '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">链接有效期至 ' +
             (expires ? _esc(String(expires)) : '7 天后') + '，对方打开只能看，不能改。</div>' +
@@ -5886,7 +5887,8 @@
         d.id = 'wbFeedbackModal';
         d.className = 'modal-overlay';
         d.style.display = 'flex';
-        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
+        /* 205 轮·组件语言统一：弹窗半径/阴影跟 .modal 对齐（原 14px 且无阴影，与 intro/历史/图表弹窗不同档） */
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; width: 92%; max-width: 460px; box-shadow: 0 26px 70px rgba(0,0,0,.6);">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">反馈 / 建议</div>' +
             '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">遇到问题或有好想法都可以说，会直接进后台、用于改进工具。</div>' +
             '<textarea id="wbFeedbackTxt" placeholder="例如：XX 按钮点了没反应 / 希望支持 XX 赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
@@ -6168,7 +6170,10 @@
                             return '<div class="history-item" style="cursor: pointer;" onclick="openHistory(' + h.id + ')">' +
                                 '<div class="history-info">' +
                                     '<div class="history-title">' + _esc(h.competition_name || '') + '</div>' +
-                                    '<div class="history-idea">' + _esc((h.idea || '').slice(0, 60)) + '</div>' +
+                                    // 原来 slice(0,60) 会把长创意砍掉只剩半句，用户认不出自己写过什么。
+                                    // .history-idea 已改成换行不截断（style.css:288），父容器 #historyList
+                                    // 自带 max-height + 纵向滚动，整条放进去也不会撑爆列表。
+                                    '<div class="history-idea">' + _esc(h.idea || '') + '</div>' +
                                     '<div class="history-meta">' + _esc(h.time || '') + ' · 得分 ' +
                                         _esc(h.score == null ? '-' : h.score) +
                                         ' · <span style="color: var(--c-a);">本机记录</span></div>' +

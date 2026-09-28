@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260929c">
+    <link rel="stylesheet" href="/static/style.css?v=20260929e">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -181,7 +181,7 @@
                 <div id="wbMoreMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px);
                                             z-index: 1700; min-width: 148px; padding: 6px;
                                             background: var(--surface-solid); border: 1px solid var(--line);
-                                            border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.18);">
+                                            border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45);">
                     <button class="wb-glass-btn wb-glass-btn-sm"
                             style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
                             onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
@@ -310,7 +310,7 @@
                     </div>
 
                     <!-- 赛事要求卡：跟着赛事名自动切换文档类型与章节结构，可直接改 -->
-                    <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);">
+                    <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
                             <div onclick="evToggleBody()" style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px;">
                                 本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span><span id="evSummary" style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span><span id="evBodyArrow" style="color: var(--c-a); font-weight: 400;">▾</span>
@@ -704,7 +704,7 @@
                      独立的「PPT / 分项下载」按钮降级为打包旁边的小箭头菜单，功能保留、视觉不再重复 -->
                 <div style="position: relative; display: inline-block;">
                     <button type="button" onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">更多 ▾</button>
-                    <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
+                    <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45); text-align: left;">
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportOnePDF('proposalText', '项目申报书全文')" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">下载 PDF</div>
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportAll()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">一键打包全部</div>
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';wbShare()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">分享链接</div>
@@ -798,7 +798,7 @@
 
                     <!-- ② 评分依据：这个分数是怎么算出来的 -->
                     <div id="wbSubPanel-judge" style="display: none;">
-            <div id="judgeScoresBox" style="display: none; margin-bottom: 18px; padding: 14px 16px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);">
+            <div id="judgeScoresBox" style="display: none; margin-bottom: 18px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line);">
                 <div style="font-size: 13px; font-weight: 700; color: var(--text-dim); margin-bottom: 10px;">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
                     这个分数是怎么来的
@@ -1598,8 +1598,8 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260929c"></script>
-    <script src="/static/app.js?v=20260929c"></script>
+    <script src="/static/wbconst.js?v=20260929e"></script>
+    <script src="/static/app.js?v=20260929e"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -2090,6 +2090,7 @@ window.addEventListener('resize', function () {
         var d = document.getElementById('deckTheme');
         if (!sel || !d) return;
         d.value = sel.value;
+        try { if (typeof wbSyncThemeCards === 'function') wbSyncThemeCards(sel.value); } catch (e) {}
         try { _themeManual = true; } catch (e) {}
         if (typeof onThemeChange === 'function') onThemeChange();
         try { stylePrevFill(); } catch (e) {}
@@ -2425,6 +2426,14 @@ window.addEventListener('resize', function () {
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>
     <div style="opacity: .75;">基于官方评审规则 · AI 多智能体辅助撰写 · 最终内容以你的真实项目与署名为准</div>
+    <!-- 第二百零四轮：后台入口原来只能靠手敲 /admin/login，评委/管理员自己都找不到。
+         拍板结论是「不改路径、不撤入口，安全靠登录门不靠路径保密」，所以这里放一个
+         不起眼的小字链接——访客几乎不会注意，但知道的人点一下就到登录页。
+         链接本身不带任何凭证，无 token/账密入前端，点了仍是登录门（401）。 -->
+    <div style="opacity: .45; margin-top: 4px;">
+        <a href="/admin/login" style="color: inherit; text-decoration: none;"
+           title="管理后台（需登录）">管理入口</a>
+    </div>
     <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
          避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
     <details style="max-width: 660px; margin: 6px auto 0;">
