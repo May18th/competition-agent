@@ -751,6 +751,7 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
 15. 数据口径标注（硬性）：正文涉及统计数据必须标注口径来源（如「公开报道」「官网数据」）；拿不准来源的数字标「待核实」，并把「待核实」项并入文末「## 待替换数据清单」，提示用户提交前逐项核对。
 16. 禁编造具体时刻/日期/倒计时（硬性）：正文严禁出现「18:10」「2025 年 10 月 15 日」「还有 72 小时」这类具体时刻、具体日期、精确倒计时——这些用户没给就是编的，评委一问就穿帮。一律用相对表述：「晚高峰」「临近截止」「还剩不到一周」；只有用户创意/草稿里明确给出的真实时间节点才能写原样。
 17. 原创重写（硬性·版权红线）：禁止直接复制任何范文/获奖项目原文句子、标题、金句；禁止复刻往届项目的独特创意、商业模式、案例故事。全文必须用自己的话原创表达，结构可以借鉴范文规律，但句子、数据和故事必须原创——查重一抓到照搬原文就取消资格。
+18. 符号半角（硬性）：正文里的数学运算、逻辑比较、单位与百分比符号统一用半角（+ - * / = > < >= <= % ~），禁止写全角（＋ － × ÷ ＝ ＞ ＜ ≥ ≤ ％ ～）；但中文标点（逗号、句号、冒号、括号、书名号）仍用全角，二者不混。
 """
 
 
@@ -831,10 +832,18 @@ _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
 
 _SPEC_BY_TIER = {"fast": _BRIEF_SPEC, "deep": _FULL_SPEC}
 
+_LENGTH_ADJ = {
+    "brief": "【篇幅偏好：精炼】在档位要求基础上整体压到约 60% 篇幅，只留结论与关键依据，删掉铺垫与次要展开。",
+    "detailed": "【篇幅偏好：详尽】在档位要求基础上整体扩到约 140% 篇幅，把推演过程、数据依据、落地细节写足。",
+}
+
 
 def _spec_for(state):
     """按档位取输出规格。state 里没有 tier 时按 deep 处理（宁详勿略）。"""
-    return _SPEC_BY_TIER.get((state or {}).get("tier"), _FULL_SPEC)
+    _s = _SPEC_BY_TIER.get((state or {}).get("tier"), _FULL_SPEC)
+    _pref = (state or {}).get("length_pref")
+    _adj = _LENGTH_ADJ.get(str(_pref or "").strip().lower())
+    return (_s + "\n" + _adj) if _adj else _s
 
 
 def _tier_hint(state, brief, full):
@@ -2315,9 +2324,14 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 def expert_review_agent(state: CompetitionState) -> CompetitionState:
     """🧑‍⚖️ MedPeer 式多专家模拟评审：技术/商业/落地三视角，分维度打分 + 逐条批注"""
     _report_stage("expert_review")
+    _dims = state.get("dims") or []
+    _dims_line = "、".join(
+        (str(d.get("name") or "") + " " + str(d.get("weight") or "") + "%")
+        for d in _dims if isinstance(d, dict)) or "赛事官方评审维度"
     prompt = f"""你是国家级科创赛事的评审委员会。请以「多专家视角」对下面这份申报书做一次模拟评审，就像专业同行评议（MedPeer 式）那样：不是只给一个总分，而是让不同专家从各自视角独立评审，给出分维度打分和能落地的逐条批注。
 
 赛事：{state['competition_name']}
+官方评审维度：{_dims_line}
 项目创意：{state.get('idea', '')}
 一句话定位：{state.get('one_liner', '')}
 单评委快评得分：{state.get('score', 0)}（仅供你参考，不是你的结论）
@@ -2330,15 +2344,15 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
   "overall_score": 86,
   "verdict": "修改后晋级",
   "experts": [
-    {{"role":"技术视角","focus":"技术可行性、创新性、实现难度","score":88,
+    {{"role":"技术视角","judge_role":"技术评审专家","focus":"技术可行性、创新性、实现难度","score":88,
       "dimensions":[{{"name":"创新性","score":90,"comment":"一句话点评"}},{{"name":"技术可行性","score":86,"comment":"一句话点评"}},{{"name":"实现难度","score":88,"comment":"一句话点评"}}],
       "strengths":["具体优点1","具体优点2"],
       "issues":[{{"quote":"申报书中的相关原文（10-30字）","problem":"这里的问题是什么","suggestion":"怎么改"}}]}},
-    {{"role":"商业视角","focus":"商业模式、市场空间、落地可行性","score":82,
+    {{"role":"商业视角","judge_role":"商业化评审专家","focus":"商业模式、市场空间、落地可行性","score":82,
       "dimensions":[{{"name":"商业模式","score":80,"comment":"一句话点评"}},{{"name":"市场空间","score":84,"comment":"一句话点评"}},{{"name":"落地可行性","score":82,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}},
-    {{"role":"落地视角","focus":"落地可行性、实施路径、团队执行力","score":87,
+    {{"role":"落地视角","judge_role":"落地实施评审专家","focus":"落地可行性、实施路径、团队执行力","score":87,
       "dimensions":[{{"name":"落地可行性","score":86,"comment":"一句话点评"}},{{"name":"实施路径","score":88,"comment":"一句话点评"}},{{"name":"团队执行力","score":87,"comment":"一句话点评"}}],
       "strengths":["具体优点1"],
       "issues":[{{"quote":"原文","problem":"问题","suggestion":"改法"}}]}}
@@ -2346,7 +2360,7 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
   "consensus":["三位专家一致认可的结论，至少1条"],
   "divergence":["专家之间存在分歧的点，至少1条；没有分歧就写\"无明显分歧\""],
   "priority_actions":[{{"priority":1,"action":"最优先改的动作","reason":"为什么"}},{{"priority":2,"action":"次优先动作","reason":"为什么"}},{{"priority":3,"action":"第三优先动作","reason":"为什么"}}],
-  "disclaimer":"本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。"
+  "disclaimer":"三位为按 {state['competition_name']} 官方评审维度模拟的评委视角（技术/商业/落地），非真人评审，仅供备赛定位薄弱与改进，不代表真人评审意见。"
 }}
 
 {_judge_paradigm_ref()}
