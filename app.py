@@ -558,6 +558,92 @@ def admin_login():
     return resp
 
 
+def _admin_login_verify(tok, ip):
+    """校验管理口令；成功返回 (is_demo, None)，失败返回 (False, (错误信息, http状态码))。"""
+    now = time.time()
+    if _ADMIN_LOCK.get(ip, 0) > now:
+        return False, ("尝试次数过多，请 15 分钟后再试", 429)
+    valid = {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}
+    demo_tokens = {t.strip() for t in DEMO_TOKEN.split(',') if t.strip()}
+    is_demo = bool(demo_tokens) and tok in demo_tokens
+    if tok not in valid and not is_demo:
+        _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
+        if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
+            _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
+        return False, ("口令错误", 401)
+    _ADMIN_FAILS.pop(ip, None)
+    return is_demo, None
+
+
+_ADMIN_LOGIN_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>科创赛事助手 · 管理后台</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+background:linear-gradient(135deg,#eef2ff,#f8fafc);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{background:#fff;border-radius:16px;padding:32px 30px;width:100%;max-width:380px;box-shadow:0 10px 30px rgba(30,41,59,.08)}
+h1{font-size:19px;margin:0 0 6px;color:#1a1a2e}
+.sub{font-size:13px;color:#6b7280;margin:0 0 20px}
+.err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:9px 12px;font-size:13px;margin-bottom:14px}
+label{font-size:13px;color:#374151;display:block;margin-bottom:6px}
+input[type=password]{width:100%;padding:11px 13px;border:1px solid #dbe3ee;border-radius:9px;font-size:15px;color:#1f2937;outline:none}
+input[type=password]:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+button{margin-top:16px;width:100%;background:#2563eb;color:#fff;border:0;border-radius:9px;padding:11px;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:#1d4ed8}
+.tip{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.7}
+</style></head><body>
+<form class="box" method="post" action="/admin/login">
+<h1>科创赛事助手 · 管理后台</h1>
+<p class="sub">请输入管理口令进入后台</p>
+__ERROR__
+<label for="pwd">口令</label>
+<input type="password" id="pwd" name="password" autocomplete="current-password" autofocus required>
+<input type="hidden" name="csrf" value="__CSRF__">
+<button type="submit">登录</button>
+<div class="tip">评委请使用「演示口令」登录，进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次口令错误将锁定 15 分钟。</div>
+</form></body></html>"""
+
+
+def _admin_login_error_html(errmsg, csrf):
+    err = '<div class="err">%s</div>' % errmsg if errmsg else ''
+    return _ADMIN_LOGIN_HTML.replace('__ERROR__', err).replace('__CSRF__', csrf)
+
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login_page():
+    """管理员登录页（197 轮）：解决 fail-closed 后 /admin 401 死锁，提供口令登录入口。"""
+    if request.method == 'POST':
+        tok = (request.form.get('password') or '').strip()
+        csrf = (request.form.get('csrf') or '').strip()
+        try:
+            cv = _ADMIN_SESSION_SIGNER.loads(csrf)
+            if not (isinstance(cv, dict) and float(cv.get('exp', 0)) > time.time()):
+                return _admin_login_error_html('登录已过期，请刷新后重试', _new_admin_csrf()), 400
+        except Exception:
+            return _admin_login_error_html('登录已过期，请刷新后重试', _new_admin_csrf()), 400
+        ip = _client_ip()
+        is_demo, err = _admin_login_verify(tok, ip)
+        if err is not None:
+            msg, code = err
+            return _admin_login_error_html(msg, _new_admin_csrf()), code
+        exp = time.time() + 8 * 3600
+        from flask import redirect
+        resp = redirect('/admin')
+        resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "demo": is_demo}),
+                        max_age=8 * 3600, httponly=True, samesite='Strict', secure=request.is_secure)
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+                _f.write("%s | login | ip=%s | ok | demo=%s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip, is_demo))
+        except Exception:
+            pass
+        return resp
+    return _admin_login_error_html('', _new_admin_csrf())
+
+
+def _new_admin_csrf():
+    return _ADMIN_SESSION_SIGNER.dumps({"csrf": True, "exp": time.time() + 600})
+
+
 # 蒸馏接口限流：蒸馏每次烧 1 次 LLM 调用，比生成更贵，单独收紧到 3 次 / 10 分钟 / IP。
 _DISTILL_WINDOW_SEC = 600
 _DISTILL_LIMIT = 3
@@ -626,7 +712,7 @@ def _admin_guard():
     """后台/管理接口统一鉴权 + 蒸馏接口限流。"""
     p = request.path
     # 登录端点本身必须放行（否则登录请求也会被鉴权拦截，死循环）
-    if p == "/api/admin/login":
+    if p in ("/api/admin/login", "/admin/login"):
         return None
     needs_admin = False
     if p in _ADMIN_PAGE_PATHS:

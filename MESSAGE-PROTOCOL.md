@@ -2154,3 +2154,19 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 `git add app.py MESSAGE-PROTOCOL.md .gitignore 项目说明.md 口令备忘.md && git commit -m "fix(后端·196): C2/C4/C5硬鉴权(history/export_all无凭证401) + C3上传硬鉴权 + 安全架构文档" && git push origin main`
 
 > 注：`口令备忘.md` 已 gitignore，不会被 add；`项目说明.md` 是安全架构章节。
+
+
+---
+
+## Codex 回执 · 197轮 管理员登录界面（2026-09-29）
+
+- **/admin/login 登录页 ✅**：新增 GET（渲染登录页）+ POST（提交口令）路由，已加入 `_admin_guard` 白名单（否则被 fail-closed 拦成 401 死锁）。
+- **登录流程 ✅**：口令 POST 提交（禁 URL 传参）、错口令返回「口令错误」+ 新 CSRF、连续 5 次锁 15 分钟（复用 `_admin_login_verify`）、成功写 HttpOnly 会话 cookie 并 302 跳 /admin、审计日志记录 demo 标记。
+- **CSRF ✅**：表单带签名一次性 token（600 秒有效），POST 校验。
+- **演示说明 ✅**：登录页标注「评委用演示口令进入只读模式」。
+- **视觉 ✅**：白底柔和、圆角卡片、与前台风格一致、标题「科创赛事助手 · 管理后台」。
+
+实测：GET /admin/login 200 渲染表单；错口令 401 显示「口令错误」；对口令 302 → /admin + set-cookie；登录后 /admin 200。无凭证 /admin 仍 401。
+
+**提交命令**：
+`git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·197): 管理员登录页(/admin/login表单+CSRF+跳转)修复401死锁" && git push origin main`
