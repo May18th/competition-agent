@@ -1,8 +1,9 @@
 
 /* ===== WB-TECH-THEME v2 ===== */
 :root{
-    --bg-0:#050816;
-    --bg-1:#0a0f2b;
+    /* 夜间底色提亮（第一百零三轮「太闷」）：#050816 近黑 → 深蓝紫，配下面的光晕才有层次 */
+    --bg-0:#0b1030;
+    --bg-1:#101840;
     --c-a:#6672d8;
     --c-b:#a878d8;
     --c-a-soft:rgba(102,114,216,.14);
@@ -311,13 +312,14 @@ body {
         radial-gradient(1200px 700px at 12% -8%, rgba(34,211,238,.14), transparent 60%),
         radial-gradient(900px 600px at 92% 4%, rgba(168,85,247,.13), transparent 62%),
         radial-gradient(1000px 800px at 50% 108%, rgba(59,130,246,.12), transparent 60%),
-        linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 55%, #070b1e 100%);
+        linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 55%, #131a4a 100%);
 }
-/* 四周压暗：中心亮、边缘暗，避免背景抢内容 */
+/* 四周压暗：中心亮、边缘暗，避免背景抢内容。
+   夜间反馈「太闷」后由 .55 减到 .30——压暗是聚焦手段，压过头就是一片死黑 */
 .wb-bg::after{
     content: '';
     position: absolute; inset: 0;
-    background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 40%, rgba(3,5,14,.55) 100%);
+    background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 40%, rgba(3,5,14,.30) 100%);
     pointer-events: none;
 }
 .wb-grid{
@@ -1079,8 +1081,8 @@ body.light #startBar {
    问题出在参数太保守（网格线 4.5% 不透明、光球 .42、四周压暗 .55 把背景压没了），
    所以这里是调参而不是重写。凡涉及深底专属的颜色，都用 body.light 回落到原变量。 */
 
-/* 1) 背景：光球加大提亮、网格线提亮、四周压暗减轻 */
-.wb-orb { opacity: .58; }
+/* 1) 背景：光球加大提亮、网格线提亮、四周压暗减轻（夜间「太闷」的另一个来源） */
+.wb-orb { opacity: .72; }
 .wb-orb-1 { width: 700px; height: 700px; left: -180px; top: -170px; }
 .wb-orb-2 { width: 780px; height: 780px; right: -220px; top: 4%; }
 .wb-orb-3 { width: 640px; height: 640px; left: 32%; bottom: -280px; }
@@ -1089,7 +1091,7 @@ body.light #startBar {
         linear-gradient(rgba(148,163,255,.10) 1px, transparent 1px),
         linear-gradient(90deg, rgba(148,163,255,.10) 1px, transparent 1px);
 }
-.wb-bg::after { background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 42%, rgba(3,5,14,.40) 100%); }
+.wb-bg::after { background: radial-gradient(ellipse 78% 62% at 50% 30%, transparent 42%, rgba(3,5,14,.28) 100%); }
 
 /* 1.5) 浅色主题下的背景层：**必须整层重写**。
    第六十七轮【高】的根因就在这里——.wb-bg 的渐变末端写死了深色 #070b1e，
@@ -1838,3 +1840,13 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
 }
 #wbNoticeBar .nb-close:hover{ color: #6b4a05; }
 @media print { #wbNoticeBar { display: none !important; } }
+
+/* ===== 移动端次级操作触达（第一百零四轮）=====
+   「从材料识别」这类挂在标题行右侧的小按钮，桌面看着是文字链接，
+   手机上就是 4px 上下内边距的小薄片——既难点中又容易被「开始生成」抢走注意力。
+   视觉弱化靠配色已成立（--text-dim + 细描边），这里只补触达面积与和标题的间距。 */
+@media (max-width: 768px) {
+    /* #wbClearBtn 在 1380 行有 ID 级规则，必须连带写 ID 否则被它压住（本轮实测 8px/38px） */
+    .wb-textbtn, #wbClearBtn { padding: 12px 14px; font-size: 12.5px; }
+    label .wb-textbtn { margin-left: 12px; }
+}

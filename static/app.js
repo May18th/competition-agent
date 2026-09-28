@@ -2313,10 +2313,43 @@
         });
 
         // 点热门赛事 chip 填入，并触发一次知识库状态刷新
+        /* ---- 常用赛事置顶（第一百零二/一百零四轮）----
+           用户用得最多的赛事应该排在快捷标签最前面，而不是写死 iCAN 第一。
+           次数记 localStorage（本机记忆，不上传），无记录时保持页面原有顺序。
+           「全部赛事 ▾」是兜底入口，永远排最后，不参与排序。 */
+        function wbCompUsage() {
+            try { return JSON.parse(_wbStoreGet('wbCompUsage') || '{}') || {}; } catch (e) { return {}; }
+        }
+        function wbCompUse(name) {
+            if (!name) return;
+            var u = wbCompUsage();
+            u[name] = (u[name] || 0) + 1;
+            try { _wbStoreSet('wbCompUsage', JSON.stringify(u)); } catch (e) {}
+        }
+        function wbCompReorderChips() {
+            var row = document.getElementById('compQuickRow');
+            if (!row) return;
+            var chips = Array.prototype.slice.call(row.children);
+            var pinned = null, pickable = [], others = [];
+            chips.forEach(function (c) {
+                if (c.id === 'wbCompAllBtn') { pinned = c; return; }   // 兜底入口永远殿后
+                if (c.getAttribute('data-comp')) pickable.push(c); else others.push(c);
+            });
+            if (!pinned || pickable.length < 2) return;
+            var u = wbCompUsage();
+            var base = pickable.map(function (c, i) { return { el: c, i: i, n: u[c.getAttribute('data-comp')] || 0 }; });
+            base.sort(function (a, b) { return (b.n - a.n) || (a.i - b.i); });   // 次数降序，同次数保持原序
+            base.forEach(function (o) { row.appendChild(o.el); });
+            others.forEach(function (c) { row.appendChild(c); });
+            row.appendChild(pinned);
+        }
+
         function wbPickComp(name) {
             var el = document.getElementById('competition');
             if (!el) return;
             el.value = name;
+            wbCompUse(name);            // 记一次使用，下次这个标签自动排到最前
+            wbCompReorderChips();
             try { el.dispatchEvent(new Event('change')); } catch (e) {}
             onCompetitionChange();
             wbSaveForm();
@@ -6318,6 +6351,7 @@
         loadKnowledgeStatus();
         // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
         wbLoadCompIndex();
+        wbCompReorderChips();   // 老用户回来：常用赛事标签按本机使用频次排好（第一百零二轮）
         // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
