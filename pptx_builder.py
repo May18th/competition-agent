@@ -571,12 +571,20 @@ def list_themes():
     新增主题后前端自动就能画出来。tier=premium 的 15 套是主推精品，
     其余旧主题折叠进"更多风格"，避免一屏 20 多张卡反而挑不出来。
     """
+    # 版权台账（第一百零二轮）：蒸馏主题标注来源与授权，程序化主题标自绘原创
+    _distilled_src = {
+        "deepblue": "蒸馏自「科技蓝色1.pptx」（仅样式/配色规律，非原文）",
+        "steel": "蒸馏自「商业风.pptx / 商业风3.pptx」（仅样式/配色规律，非原文）",
+        "serif": "蒸馏自「Deepseek.pptx / 人工智能模型2.pptx」（仅样式/配色规律，非原文）",
+    }
     return {
         "themes": [
             {"key": k, "label": THEMES[k]["label"],
              "tier": ("premium" if k in PREMIUM_ORDER else "extra"),
              "family": THEMES[k].get("family", "通用风格"),
              "scene": THEMES[k].get("scene", ""),
+             "license": ("蒸馏参考（非原文）" if k in _distilled_src else "程序化自绘原创"),
+             "source": _distilled_src.get(k, ""),
              "colors": {
                  "deep": THEMES[k]["deep"], "deep2": THEMES[k]["deep2"],
                  "primary": THEMES[k]["primary"], "accent": THEMES[k]["accent"],

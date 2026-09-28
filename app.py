@@ -60,6 +60,38 @@ def sitemap():
     return xml, 200, {'Content-Type': 'application/xml'}
 
 
+_NOTICE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notice.json")
+
+
+def _load_notice():
+    try:
+        with open(_NOTICE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"active": False, "content": ""}
+
+
+@app.route('/api/notice')
+def notice():
+    """维护公告（第一百零二轮）：首页顶部公告条数据源，后台可开关。"""
+    n = _load_notice()
+    return jsonify({"success": True, "active": bool(n.get("active")),
+                    "content": (n.get("content") or "").strip()})
+
+
+@app.route('/api/admin/notice', methods=['POST'])
+def admin_notice():
+    """后台设置公告开关与内容。"""
+    data = request.get_json(force=True, silent=True) or {}
+    n = {"active": bool(data.get("active")), "content": str(data.get("content") or "")[:200]}
+    try:
+        with open(_NOTICE_FILE, "w", encoding="utf-8") as f:
+            json.dump(n, f, ensure_ascii=False)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True, **n})
+
+
 # ===== gzip 压缩 =====
 # 首页 index.html 约 400KB，gzip 后约 100KB，加载快一倍。
 # 只压缩文本类响应且 >500 字节；流式预览接口不压缩（避免影响实时性）。
