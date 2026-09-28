@@ -2140,7 +2140,7 @@ def admin_home():
 
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>赛创助手 · 管理后台</title>
+<title>科创赛事助手 · 管理后台</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#eef2ff,#f8fafc);color:#111827;margin:0;padding:32px 18px;line-height:1.6}
 .wrap{max-width:880px;margin:0 auto}
@@ -2167,7 +2167,7 @@ h1{font-size:24px;margin:0 0 4px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
-<h1>赛创助手 · 管理后台</h1>
+<h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
 <div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
@@ -2468,7 +2468,7 @@ def admin_dashboard():
 
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>赛创助手 · 后台数据</title>
+<title>科创赛事助手 · 后台数据</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f8;color:#1a1a2e;margin:0;padding:30px 18px;line-height:1.6}
 .wrap{max-width:760px;margin:0 auto}
@@ -2521,7 +2521,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .nav a.active{background:#2563eb;color:#fff}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
-<h1>赛创助手 · 后台数据</h1>
+<h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 <div class="cards">
 <div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
@@ -2647,7 +2647,7 @@ def monitor():
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>赛创助手 · 动态监视</title>
+<title>科创赛事助手 · 动态监视</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0f1535;color:#e9eefc;margin:0;padding:26px 18px;line-height:1.6}
 .wrap{max-width:860px;margin:0 auto}
@@ -2667,7 +2667,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav a.active{background:#22d3ee;color:#0b1026}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
-<h1>🔴 赛创助手 · 动态监视</h1>
+<h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
 <div>
 <div class="stat"><b>%d</b><span>总生成</span></div>
