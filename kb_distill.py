@@ -66,7 +66,7 @@ def _build_distill_prompt(corpus):
 硬性要求：
 1. global 数组给 6 条全局规律，每条一句话，聚焦「怎么写才对」，不要空洞口号；
 2. modules 对象覆盖这 6 个模块：项目简介 / 创新点 / 商业模式 / 社会价值 / 实践过程 / 风险分析，每模块给一句具体写作要点；
-3. 只提炼共性规律，不要复述某个具体项目；严禁出现院校名称、指导老师姓名、作者姓名；
+3. 只提炼共性「结构 / 评分点 / 写作套路」，**禁止复制任何原文句子、标题、金句**；不要复述某个具体项目；严禁出现院校名称、指导老师姓名、作者姓名；
 4. 不编造数据，不引用样本里没有的数字；
 5. 只输出 JSON 本身，不要任何解释，不要 markdown 代码块围栏。
 
@@ -227,7 +227,7 @@ def distill_defense(max_questions=40, max_chars=16000):
 硬性要求：
 1. question_patterns 数组给 8 条「评委必问套路」，每条一句，聚焦「评委最爱从哪个角度戳穿项目的真伪/数据/落地」；
 2. answer_framework 给一段回答框架（先摆结论 → 再给证据 → 最后堵质疑），200 字内；
-3. 不出现院校名称、指导老师姓名、作者姓名，不编造数据；
+3. 只提炼共性「套路/结构」，**禁止复制任何原文句子、标题**；不出现院校名称、指导老师姓名、作者姓名，不编造数据；
 4. 只输出 JSON 本身，不要解释、不要 markdown 围栏。
 
 输出格式（严格）：
@@ -303,7 +303,7 @@ def distill_judge(limit=60):
 硬性要求：
 1. common_criticisms 数组给 8 条「高频扣分点」，每条一句，具体到问题，禁止空话；
 2. by_perspective 对象给「技术/商业/落地」三个视角各自最常挑的毛病（各一句话）；
-3. 不出现院校名称、指导老师姓名、作者姓名，不编造数据；
+3. 只提炼共性「扣分规律」，**禁止复制任何原文批注/句子**；不出现院校名称、指导老师姓名、作者姓名，不编造数据；
 4. 只输出 JSON 本身，不要解释、不要 markdown 围栏。
 
 输出格式（严格）：
@@ -399,7 +399,7 @@ def distill_analysis(limit=60):
     if not corpus:
         raise ValueError("历史里没有分析类内容，请先生成几轮再蒸馏")
     prompt = f"""你是科创赛事申报书的分析模块教练。下面是历史生成中的竞品分析/商业模式/风险分析/技术方案（已脱敏）。请提炼这四个模块各自的写法要点，输出 JSON。
-硬性要求：competitor/business/risk/tech 各给一句话具体要点；不出现院校/指导老师/作者；只输出 JSON。
+硬性要求：competitor/business/risk/tech 各给一句话具体要点；只提炼共性写法，**禁止复制原文句子**；不出现院校/指导老师/作者；只输出 JSON。
 输出格式：{{"competitor":"...","business":"...","risk":"...","tech":"..."}}
 历史分析样本：
 {corpus}
@@ -417,7 +417,7 @@ def distill_deck_speech(limit=60):
     if not corpus:
         raise ValueError("历史里没有 PPT 大纲/演讲稿，请先生成几轮再蒸馏")
     prompt = f"""你是科创赛事路演教练。下面是历史生成中的 PPT 大纲和路演演讲稿（已脱敏）。请提炼 PPT 结构与演讲稿的开场/收尾套路，输出 JSON。
-硬性要求：ppt_structure 给 PPT 章节顺序；speech_opening 给开场套路；speech_closing 给收尾套路；不出现院校/指导老师/作者；只输出 JSON。
+硬性要求：ppt_structure 给 PPT 章节顺序；speech_opening 给开场套路；speech_closing 给收尾套路；只提炼共性套路，**禁止复制原文句子**；不出现院校/指导老师/作者；只输出 JSON。
 输出格式：{{"ppt_structure":"...","speech_opening":"...","speech_closing":"..."}}
 历史样本：
 {corpus}
@@ -435,7 +435,7 @@ def distill_similarity(limit=60):
     if not corpus:
         raise ValueError("历史里没有同质化检测报告，请先生成几轮再蒸馏")
     prompt = f"""你是科创赛事同质化检测教练。下面是历史生成中的同质化检测报告（已脱敏）。请提炼「项目之间最容易撞车的角度」和「差异化检查要点」，输出 JSON。
-硬性要求：common_angles 给 6~10 个常见撞车角度；differentiation_check 给一句检查要点；不出现院校/指导老师/作者；只输出 JSON。
+硬性要求：common_angles 给 6~10 个常见撞车角度；differentiation_check 给一句检查要点；只提炼共性角度，**禁止复制原文句子**；不出现院校/指导老师/作者；只输出 JSON。
 输出格式：{{"common_angles":["角度1","角度2","角度3","角度4","角度5","角度6"],"differentiation_check":"..."}}
 历史报告样本：
 {corpus}
