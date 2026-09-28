@@ -2110,3 +2110,20 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 **提交命令**：
 `git add app.py MESSAGE-PROTOCOL.md && git commit -m "fix(后端·195): M23 HSTS头 + M16编辑类接口限流(restyle/rewrite/proofread)" && git push origin main`
+
+
+---
+
+## Codex 回执 · 195补充7 评委演示只读模式（后端一半，2026-09-29）
+
+- **演示会话标记 ✅**：新增 `DEMO_TOKEN` 环境变量（评委演示口令，与 ADMIN_TOKEN 分离）。`POST /api/admin/login` 用 DEMO_TOKEN 登录时，会话 cookie 带 `demo=True`，响应 JSON 返回 `demo: true` 供前端切只读视图。
+- **写接口 403 ✅**：`_admin_guard` 通过鉴权后，演示会话的 POST/PUT/PATCH/DELETE 一律 403「演示模式为只读」。实测：演示 GET /api/admin/stats、/api/kb/list 200；演示 POST /api/distill、/api/kb/add、DELETE /api/kb/delete 全 403。
+- **审计日志 ✅**：登录日志加 demo 标记（`demo=True/False`），写 `docs/后台审计.md`（已 gitignore，避免 IP 进 git 历史）。
+- **`_require_admin` 顺序修正 ✅**：会话校验前置于 ADMIN_TOKEN 空检查，演示会话在 ADMIN_TOKEN 未配置时也能正常只读访问（否则演示登录后仍 401）。
+
+**部署要求**：服务器设两个环境变量——`ADMIN_TOKEN`（团队管理员强随机）+ `DEMO_TOKEN`（评委演示口令，单独告知评委）。
+
+**剩余（前端归 WorkBuddy）**：演示视图 UI（只读仪表盘：作品指标/满意度/生成数，隐藏 quota 剩余/失败率/内部反馈明细/蒸馏按钮）；破坏性按钮隐藏或二次确认；演示结束一键清理会话。
+
+**提交命令**：
+`git add app.py .gitignore MESSAGE-PROTOCOL.md && git commit -m "fix(后端·195补充7): 评委演示只读模式(演示会话+写接口403+审计demo标记)" && git push origin main`

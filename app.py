@@ -448,6 +448,8 @@ def _rate_limited():
 # 后台/管理接口鉴权：配置 ADMIN_TOKEN 后，需在请求头带 X-Admin-Token 才能访问。
 # 未配置时【默认拒绝】（fail-closed）——不再「未配置即开放」，杜绝后台裸奔（194 轮 C1）。
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+# 评委演示口令（195 轮补充7）：登录后只读，破坏性写接口一律 403。
+DEMO_TOKEN = os.getenv("DEMO_TOKEN", "").strip()
 
 # 管理会话（194/195 轮）：登录成功写 HttpOnly 签名 cookie，8 小时有效；连续 5 次失败锁 15 分钟。
 _ADMIN_COOKIE_NAME = 'admin_session'
@@ -471,6 +473,20 @@ def _admin_session_valid():
     return False
 
 
+def _admin_session_demo():
+    """当前登录会话是否为「演示只读」态（195 轮补充7）。"""
+    raw = (request.cookies.get(_ADMIN_COOKIE_NAME) or '').strip()
+    if not raw:
+        return False
+    try:
+        val = _ADMIN_SESSION_SIGNER.loads(raw)
+        if isinstance(val, dict) and float(val.get('exp', 0)) > time.time():
+            return bool(val.get('demo'))
+    except Exception:
+        pass
+    return False
+
+
 def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
@@ -478,12 +494,12 @@ def _require_admin():
     已移除 ?token= URL 传参（194 轮 C6：token 走 URL 会留痕于日志/Referer，泄露凭据）。
     口令支持逗号分隔多个值，只认环境变量 ADMIN_TOKEN（去掉旧版硬编码弱口令，避免明文泄密）。
     """
+    if _admin_session_valid():
+        return None
     if not ADMIN_TOKEN:
         resp = jsonify({"success": False, "error": "后台未配置鉴权口令（ADMIN_TOKEN 未设置），已拒绝访问"})
         resp.status_code = 401
         return resp
-    if _admin_session_valid():
-        return None
     tok = (request.headers.get("X-Admin-Token") or "").strip()
     valid = {t.strip() for t in ADMIN_TOKEN.split(",") if t.strip()}
     if tok in valid:
@@ -503,20 +519,22 @@ def admin_login():
     if _ADMIN_LOCK.get(ip, 0) > now:
         return jsonify({"success": False, "error": "尝试次数过多，请 15 分钟后再试"}), 429
     valid = {t.strip() for t in ADMIN_TOKEN.split(',') if t.strip()}
-    if not ADMIN_TOKEN or tok not in valid:
+    demo_tokens = {t.strip() for t in DEMO_TOKEN.split(',') if t.strip()}
+    is_demo = bool(demo_tokens) and tok in demo_tokens
+    if tok not in valid and not is_demo:
         _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
         if len(_ADMIN_FAILS[ip]) >= _ADMIN_LOCK_AFTER:
             _ADMIN_LOCK[ip] = now + _ADMIN_LOCK_SECONDS
         return jsonify({"success": False, "error": "口令错误"}), 401
     _ADMIN_FAILS.pop(ip, None)
     exp = now + 8 * 3600
-    resp = jsonify({"success": True, "expires_in": 8 * 3600})
-    resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp}),
+    resp = jsonify({"success": True, "expires_in": 8 * 3600, "demo": is_demo})
+    resp.set_cookie(_ADMIN_COOKIE_NAME, _ADMIN_SESSION_SIGNER.dumps({"exp": exp, "demo": is_demo}),
                     max_age=8 * 3600, httponly=True, samesite='Strict', secure=request.is_secure)
     # 审计日志（195 轮层6）：登录成功/失败都记时间+IP
     try:
         with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
-            _f.write("%s | login | ip=%s | ok\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip))
+            _f.write("%s | login | ip=%s | ok | demo=%s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ip, is_demo))
     except Exception:
         pass
     return resp
@@ -604,17 +622,21 @@ def _admin_guard():
         needs_admin = True
     if not needs_admin:
         return None
-    # 蒸馏接口：鉴权后额外限流（未授权的请求不该消耗限流名额）
+    auth = _require_admin()
+    if auth is not None:
+        return auth
+    # 演示只读会话（195 补充7）：通过鉴权后，破坏性写操作一律 403
+    if _admin_session_demo() and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        resp = jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"})
+        resp.status_code = 403
+        return resp
+    # 蒸馏接口：额外限流（未授权的请求不该消耗限流名额）
     if p.startswith("/api/distill"):
-        auth = _require_admin()
-        if auth is not None:
-            return auth
         if _distill_rate_limited(p):
             resp = jsonify({"success": False, "error": "该类型蒸馏太频繁，请 10 分钟后再试"})
             resp.status_code = 429
             return resp
-        return None
-    return _require_admin()
+    return None
 
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
