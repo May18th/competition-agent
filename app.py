@@ -2584,11 +2584,11 @@ def admin_dashboard():
     rated_count = avg_row[1] if avg_row else 0
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     # 112 轮：取消「只能看 10 条」——改成可翻页查看全部反馈。
-    # 每页条数/页码走 query string，默认 50 条，上限 500（防止一次拉爆内存/页面）。
+    # 204 轮：默认每页 10 条（原 50 条太多，27 条挤一页）；页码走 query string，上限 500。
     try:
-        _fb_limit = int(request.args.get("fblimit", 50))
+        _fb_limit = int(request.args.get("fblimit", 10))
     except Exception:
-        _fb_limit = 50
+        _fb_limit = 10
     _fb_limit = max(10, min(500, _fb_limit))
     try:
         _fb_page = int(request.args.get("fbpage", 1))
