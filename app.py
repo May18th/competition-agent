@@ -215,6 +215,9 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("X-XSS-Protection", "1; mode=block")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
+    # M23（195 轮补充6）：全站 HSTS，强制浏览器走 HTTPS；站点经 cloudflared 边缘 TLS 终结，
+    # 应用内层是 HTTP，但仍对外 HTTPS，故无条件下发。
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
