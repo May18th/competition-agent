@@ -1974,6 +1974,9 @@ def add_feedback():
         return jsonify({"success": False, "error": "反馈内容不能为空"}), 400
     if len(content) > 2000:
         content = content[:2000]
+    _sok, _hit = _content_safety_check(content)
+    if not _sok:
+        return jsonify({"success": False, "error": "反馈内容含违规信息，未提交"}), 400
     history_id = payload.get("history_id")
     try:
         history_id = int(history_id) if history_id not in (None, "") else None
@@ -2667,6 +2670,32 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
                               "red" if fail_total else "green", fail_total,
                               quota.get("remaining", 0), quota.get("limit", 500),
                               gen_rows, fail_rows)
+
+
+# 内容安全关键词（第一百四十九轮）：用户提交内容（反馈/知识库入库）拦截涉黄/违法/广告。
+# 只收「无歧义」的硬词，避免误伤正常申报内容；涉政不做关键词匹配（误伤面大、申报领域无关），
+# 由 LLM 生成场景约束 + 双盲脱敏 + 后台人工复核兜底。
+_CONTENT_BLOCK_WORDS = (
+    # 涉黄
+    "色情", "成人网站", "裸聊", "约炮", "卖淫", "嫖娼", "淫秽", "招嫖",
+    # 赌博 / 违法
+    "赌博", "博彩", "代写", "代做", "代跑", "代考", "包过", "包拿奖", "包发表",
+    "刷单", "贩毒", "毒品", "制毒", "洗钱", "诈骗", "传销",
+    "枪支", "军火", "违禁品",
+    # 广告引流
+    "加微信", "加QQ", "微信联系", "淘宝", "优惠券",
+)
+
+
+def _content_safety_check(text):
+    """返回 (ok, 命中词)。命中即拦截，不展示/不入库（第一百四十九轮）。"""
+    t = (text or "").strip()
+    if not t:
+        return True, None
+    for w in _CONTENT_BLOCK_WORDS:
+        if w in t:
+            return False, w
+    return True, None
 
 
 def _categorize_feedback(content):
@@ -4793,11 +4822,10 @@ def kb_add():
     if not content.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
 
-    # 恶意/广告关键词黑名单（第八十九轮）：命中直接拒绝，防污染 RAG 检索库
-    _black = ("加微信", "加QQ", "微信联系", "代写", "代做", "代跑", "包过", "包拿奖",
-              "联系我", "淘宝", "优惠券", "刷单", "兼职", "赚钱", "赌博", "博彩", "色情")
-    if any(k in content for k in _black):
-        return jsonify({"success": False, "error": "内容疑似广告/违规，未入库"}), 400
+    # 内容安全（第一百四十九轮）：命中违规词直接拒绝，防污染 RAG 检索库
+    _sok, _hit = _content_safety_check(content)
+    if not _sok:
+        return jsonify({"success": False, "error": "内容疑似违规，未入库"}), 400
 
     # 版权整改：不再自动把上传内容归为「范文」，只允许「材料/模板」
     score = data.get('score')
