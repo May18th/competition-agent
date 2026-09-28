@@ -3186,6 +3186,20 @@ def _run_generation(data):
                     pass
     except Exception:
         pass
+    # 总审质检（第一百三十四轮）：板块完整性 + 跨板块数字一致性，未通过记日志
+    try:
+        from quality_gate import check_total
+        _tok, _tissues = check_total(payload, data.get("mode") or "fast")
+        if not _tok:
+            print(f"[quality_gate] 总审未通过：{_tissues}")
+            try:
+                with open('运行日志.md', 'a', encoding='utf-8') as _f:
+                    _f.write("[%s] TOTAL FAIL: %s\n" % (
+                        datetime.now().strftime("%Y-%m-%d %H:%M"), '；'.join(_tissues)))
+            except Exception:
+                pass
+    except Exception:
+        pass
     return payload
 
 
