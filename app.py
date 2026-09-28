@@ -3159,7 +3159,9 @@ def _run_generation(data):
         "proposal_chars": proposal_chars,
         "similarity": similarity,
         "keywords": keywords,
-        "completeness": completeness
+        "completeness": completeness,
+        # 第一百五十四轮：结果区固定提示——定位是「辅助草稿」，让用户保持判断与动手能力
+        "disclaimer": "本内容为 AI 辅助生成的草稿与参考框架，请结合您的专业判断修改、完善后使用。",
     }
 
     payload = _strip_identifying_info(payload)
