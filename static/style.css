@@ -1265,13 +1265,6 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     font-size: 20px; font-weight: 700; box-shadow: 0 8px 22px rgba(0,0,0,.35);
     display: none; align-items: center; justify-content: center;
 }
-/* 选中段落改写按钮：随选区浮现 */
-#wbRewriteBtn {
-    position: fixed; z-index: 290; display: none;
-    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--c-a);
-    background: var(--c-a); color: #fff; cursor: pointer; font-size: 13px; font-weight: 600;
-    box-shadow: 0 8px 22px rgba(0,0,0,.4);
-}
 /* 首屏骨架屏 */
 #pageSkeleton {
     position: fixed; inset: 0; z-index: 9990; padding: 24px 18px;
