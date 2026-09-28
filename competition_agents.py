@@ -2146,11 +2146,11 @@ def idea_evaluator(state: CompetitionState) -> CompetitionState:
 
 
 def _official_scoring_dims(competition_name):
-    """从赛事知识库取官方评分维度/权重（结构化 scoring 字段）；无则返回空列表。"""
+    """从赛事 profile 取官方评分维度/权重（结构化 scoring 列表）；无则返回空列表。"""
     try:
-        kb = get_competition_knowledge_structured(competition_name)
+        profile = get_competition_profile(competition_name)
         dims = []
-        for item in (kb.get("scoring") or []):
+        for item in (profile.get("scoring") or []):
             if isinstance(item, (list, tuple)) and len(item) >= 2 and str(item[0]).strip():
                 try:
                     weight = float(item[1])
