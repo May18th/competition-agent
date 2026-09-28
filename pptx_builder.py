@@ -1074,28 +1074,44 @@ def _metrics_body(slide, metrics, top=2.35, height=2.5, accent=PRIMARY):
     card_w = (11.9 - gap * (n - 1)) / n
     num_size = 34 if height >= 2.0 else 28
     for i, m in enumerate(metrics):
-        m = str(m)
-        num, label = m, ""
-        # 单位放宽到 人/家/台/项/次 等：申报书里挖出来的数字带这些单位时，
-        # 不会整串被当成"大号数字"排版（原来只认 %万亿倍年个天元周亿）
-        mm = re.match(r"^\s*([\d.]+\s*[%万亿倍年个天元周亿人家台套项次所校]?)\s*[：:、\s]\s*(.+)$", m)
+        m = str(m).strip()
+        num, label = "", ""
+        # 区间数字（10—30元 / 2-8次 / 3~5家）原来匹配不到：正则不认「—」连接，
+        # 失败后 num=整串、label 走 `label or m` 也印整串 → 大小两层同一串文字叠印
+        #（用户截图实锤：痛点页蓝卡上 34pt 和 13.5pt 两层「10—30元：…」完全重叠）
+        mm = re.match(r"^\s*([\d.]+(?:\s*[-—–~～至到]\s*[\d.]+)?\s*[%万亿倍年个天元周亿人家台套项次所校]?)\s*[：:、，,]\s*(.+)$", m)
         if mm:
             num, label = mm.group(1).strip(), mm.group(2).strip()
+        else:
+            # 兜底绝不再印两遍：有冒号且前半含数字就拆前后两段；否则整串进 label、num 留空
+            m2 = re.match(r"^\s*([^：:]{1,14})[：:]\s*(.+)$", m)
+            if m2 and re.search(r"\d", m2.group(1)):
+                num, label = m2.group(1).strip(), m2.group(2).strip()
+            else:
+                label = m
         x = 0.72 + i * (card_w + gap)
         c1 = CHAPTER[i % len(CHAPTER)]
         card = _add_rect(slide, x, top, card_w, height, c1, round_=True)
         _grad(card, c1, _darken(c1, 0.28), 5400000)
         card.line.fill.background()
-        tb, tf = _add_box(slide, x + 0.2, top + height * 0.16,
-                          card_w - 0.4, height * 0.36)
-        p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-        r = p.add_run(); r.text = num
-        _set_run_font(r, num_size, WHITE, bold=True)
-        tb2, tf2 = _add_box(slide, x + 0.25, top + height * 0.55,
-                            card_w - 0.5, height * 0.36)
-        p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.CENTER
-        r2 = p2.add_run(); r2.text = label or m
-        _set_run_font(r2, 13.5 if height >= 2.0 else 12, WHITE)
+        if num:
+            # 「10—30元」这类长区间 34pt 一行放不下：按长度降号 + 允许换行，防止横向挤爆
+            ns = num_size if len(num) <= 8 else (num_size - 10 if len(num) <= 14 else num_size - 16)
+            tb, tf = _add_box(slide, x + 0.2, top + height * 0.16,
+                              card_w - 0.4, height * 0.36)
+            tf.word_wrap = True
+            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+            r = p.add_run(); r.text = num
+            _set_run_font(r, ns, WHITE, bold=True)
+        if label:
+            # num 拆不出来时 label 独占卡片中部，不留上半截空位
+            ly = top + (height * 0.55 if num else height * 0.24)
+            lh = height * (0.36 if num else 0.58)
+            tb2, tf2 = _add_box(slide, x + 0.25, ly, card_w - 0.5, lh)
+            tf2.word_wrap = True
+            p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.CENTER
+            r2 = p2.add_run(); r2.text = label
+            _set_run_font(r2, 13.5 if height >= 2.0 else 12, WHITE)
 
 
 def _add_notes(slide, text):
