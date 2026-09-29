@@ -3055,3 +3055,10 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - **313②**：已加代码级双保险 `_DEMO_READONLY_USERS={"kcwx123","demo"}`（登录后强制 readonly，即使 .admin_users.json 误配 admin）；服务器 .admin_users.json 也建议一并改。
 - **320**：已实现 `/admin/panel?range=`（今日/近3/7/30天/全部），历史/反馈/失败/工单/满意度/趋势/赛事分布/成功率/评审均分按时间段重算 + 顶部下拉选择器。
 - **309**：扩充演示样例 3-5 个 → **待协调**（需服务器现有 demo_sample.json 对齐 + 用生成链路产出多样化样例，沙箱无 LLM 无法自产）。
+
+---
+
+## 十五、Codex 310b/322 回执（2026-09-29）
+
+- **310b**：新增 `GET/POST /api/auto_generate`（一键演示入口，复用 `/api/demo` 样例加载、不真实生成不耗 LLM），并加入演示只读白名单；前端此前调本接口 404 导致误判「样例数据为空」，现在补齐。另写了 `export_demo_samples.py` 从历史导出多样样例。
+- **322**：`/api/logout` 之前只轮换 `comp_uid`、不清管理/demo 会话 cookie，登出后仍处只读态导致前台生成被 403 卡死；已改为登出同时清 `_ADMIN_COOKIE_NAME`。前端仍需「登出后清只读标记 + 生成失败回显原因」（归 WorkBuddy）。

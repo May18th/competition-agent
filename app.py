@@ -392,7 +392,10 @@ def change_password():
 def logout():
     g.uid = uuid.uuid4().hex
     g.uid_should_sign = True
-    return jsonify({"success": True})
+    resp = jsonify({"success": True})
+    # 第三百二十二轮：登出同时清掉管理/demo 会话 cookie，避免只读状态残留导致前台生成被 403 卡死
+    resp.set_cookie(_ADMIN_COOKIE_NAME, '', max_age=0, httponly=True, samesite='Strict', secure=request.is_secure)
+    return resp
 
 
 @app.route('/api/me')
@@ -891,7 +894,7 @@ def _admin_guard():
     # 一并豁免，让演示账号也能用智能体问答。
     # 第三百零八轮：/api/analyze_segment 演示只读态由接口内部给「登录后可深度解读」友好提示，
     # 故也豁免 _admin_guard 的通用 403，走接口自己的 readonly 分支。
-    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat', '/api/analyze_segment')
+    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat', '/api/analyze_segment', '/api/auto_generate')
     if (_admin_session_role() == 'readonly'
             and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
             and p not in _EXPORT_READONLY_PATHS
@@ -5802,6 +5805,13 @@ def demo_list():
         except Exception:
             pass
     return jsonify({"success": True, "samples": samples})
+
+
+@app.route('/api/auto_generate', methods=['GET', 'POST'])
+def auto_generate():
+    """第三百一十轮：一键演示的自动生成入口——返回预生成样例结果（不真实生成、不耗 LLM）。
+    前端一键演示此前调用本接口得到 404，误判为「样例数据为空」；此处直接复用 /api/demo 的样例加载逻辑。"""
+    return demo_data()
 
 
 _DEFENSE_FAQ = [
