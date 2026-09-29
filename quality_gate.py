@@ -242,7 +242,7 @@ def check_content(text):
             issues.append(f"套话：{c}")
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', text or ""):
         issues.append("疑似泄露院校名（双盲）")
-    if re.search(r'(指导老师|指导教师|导师)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}', text or ""):
+    if re.search(r'(指导老师|指导教师|导师)\s*[:：]?\s*(?!负责|统筹|整体|管理|协调|组织|设计|开发|运营|推广|主持|参与|带领|姓名|由团队|待填)[\u4e00-\u9fa5]{2,4}', text or ""):
         issues.append("疑似泄露导师姓名")
     return (not issues), issues
 
@@ -317,7 +317,7 @@ def score_export(result, mode="deep"):
     if re.search(r'据《.{0,30}202\d.{0,20}》', proposal):
         veto.append("无来源的机构+年份数据（编造嫌疑）")
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', proposal) or \
-       re.search(r'(指导老师|指导教师|导师|负责人|队长)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}', proposal):
+       re.search(r'(指导老师|指导教师|导师|负责人|队长)\s*[:：]?\s*(?!负责|统筹|整体|管理|协调|组织|设计|开发|运营|推广|主持|参与|带领|姓名|由团队|待填)[\u4e00-\u9fa5]{2,4}', proposal):
         veto.append("双盲信息泄露（院校/导师/姓名）")
     if veto:
         return 0, dims, ["一票否决：" + v for v in veto]
