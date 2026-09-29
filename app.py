@@ -1054,6 +1054,15 @@ def init_db():
         c.execute("ALTER TABLE issues ADD COLUMN count INTEGER DEFAULT 1")
     except Exception:
         pass
+    # 376 轮：工单处理闭环——补 user_id（用户侧可见）与 reply（管理员回复）
+    try:
+        c.execute("ALTER TABLE issues ADD COLUMN user_id TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE issues ADD COLUMN reply TEXT DEFAULT ''")
+    except Exception:
+        pass
     # 临时分享链接表：token -> 历史记录，7 天过期，无需登录即可看结果
     c.execute('''CREATE TABLE IF NOT EXISTS shares
                  (token TEXT PRIMARY KEY,
@@ -2572,7 +2581,7 @@ def add_feedback():
                   (rating is not None and rating <= 3) or \
                   any(k in content.lower() for k in _problem_kw)
     if _is_problem:
-        create_issue(_classify_issue(content), "feedback", content)
+        create_issue(_classify_issue(content), "feedback", content, _current_uid())
     return jsonify({"success": True, "id": new_id, "category": category})
 
 
@@ -3410,8 +3419,8 @@ def _classify_issue(content):
     return "backend"
 
 
-def create_issue(kind, source, content):
-    """自动建一条问题工单（路由给前端/后端），幂等去重（内容 hash 相同不重复）。"""
+def create_issue(kind, source, content, user_id=None):
+    """自动建一条问题工单（路由给前端/后端），幂等去重（内容 hash 相同不重复）。376 轮补 user_id。"""
     try:
         import hashlib
         h = hashlib.md5((content or "").strip().encode("utf-8")).hexdigest()[:16]
@@ -3424,8 +3433,8 @@ def create_issue(kind, source, content):
             conn.commit()
             conn.close()
             return row[0]
-        c.execute("INSERT INTO issues (kind, source, content, created_time, status, count) VALUES (?, ?, ?, ?, 'open', 1)",
-                  (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+        c.execute("INSERT INTO issues (kind, source, content, created_time, status, count, user_id) VALUES (?, ?, ?, ?, 'open', 1, ?)",
+                  (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M"), user_id or ''))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
@@ -3436,13 +3445,14 @@ def create_issue(kind, source, content):
 
 @app.route('/api/admin/issues/<int:issue_id>/status', methods=['POST'])
 def issue_status(issue_id):
-    """第三百一十七轮：工单状态流转（open 待处理 / processing 处理中 / resolved 已处理）+ 处理说明。
+    """第三百一十七/三百七十六轮：工单状态流转 + 处理说明 + 管理员回复。
     走 /api/admin/ 前缀，已被 _admin_guard 统一鉴权（仅管理员可改，演示只读 403）。"""
     data = request.get_json(silent=True) or {}
     status = str(data.get('status') or '').strip()
     if status not in ('open', 'processing', 'resolved'):
         return jsonify({"success": False, "error": "无效状态"}), 400
     resolution = str(data.get('resolution') or '').strip()
+    reply = str(data.get('reply') or '').strip()
     conn = get_db()
     c = conn.cursor()
     row = c.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone()
@@ -3451,14 +3461,32 @@ def issue_status(issue_id):
         return jsonify({"success": False, "error": "工单不存在"}), 404
     _now = datetime.now().strftime("%Y-%m-%d %H:%M")
     if status == 'resolved':
-        c.execute("UPDATE issues SET status='resolved', resolved_time=?, resolution=? WHERE id=?",
-                  (_now, resolution, issue_id))
+        c.execute("UPDATE issues SET status='resolved', resolved_time=?, resolution=?, reply=? WHERE id=?",
+                  (_now, resolution, reply, issue_id))
     else:
-        c.execute("UPDATE issues SET status=?, resolution=?, resolved_time=NULL WHERE id=?",
-                  (status, resolution, issue_id))
+        c.execute("UPDATE issues SET status=?, resolution=?, reply=?, resolved_time=NULL WHERE id=?",
+                  (status, resolution, reply, issue_id))
     conn.commit()
     conn.close()
     return jsonify({"success": True, "id": issue_id, "status": status})
+
+
+@app.route('/api/my_issues')
+def my_issues():
+    """第三百七十六轮：用户侧查看自己提交的工单状态与管理员回复。"""
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT id, kind, content, created_time, status, resolution, reply FROM issues "
+        "WHERE user_id=? ORDER BY id DESC LIMIT 50", (_current_uid(),)).fetchall()
+    conn.close()
+    items = [{"id": r["id"], "content": r["content"] or "", "created_time": r["created_time"] or "",
+              "status": r["status"] or "open", "resolution": r["resolution"] or "", "reply": r["reply"] or ""}
+             for r in rows]
+    return jsonify({"success": True, "issues": items})
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
