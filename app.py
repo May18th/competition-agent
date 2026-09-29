@@ -750,7 +750,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:#7B9BFA;box-shado
 .field{margin-bottom:14px}
 button{margin-top:8px;width:100%;background:linear-gradient(135deg,#5B7CFA,#8A6BFA);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
 button:hover{filter:brightness(1.05)}
-.tip{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.7}
+.tip{margin-top:14px;font-size:12px;color:#6b7280;line-height:1.7}
 .foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
 <form class="box" method="post" action="/admin/login">
@@ -2746,8 +2746,8 @@ h1{font-size:24px;margin:0 0 4px}
 .box ul{list-style:none;padding:0;margin:0}
 .box li{font-size:14px;padding:8px 0;border-bottom:1px solid #f1f5f9}
 .box li:last-child{border-bottom:none}
-.box li .t{display:block;font-size:12px;color:#94a3b8;margin-bottom:2px}
-.box li.e{color:#94a3b8;text-align:center;padding:16px}
+.box li .t{display:block;font-size:12px;color:#64748b;margin-bottom:2px}
+.box li.e{color:#64748b;text-align:center;padding:16px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
@@ -2776,10 +2776,10 @@ h1{font-size:24px;margin:0 0 4px}
 </div>
 <div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">智能评分分布</div><div id="vizScore" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">智能评分分布</div><div id="vizScore" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
 </div>
 <div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败率：加载中…</div>
 </div>
@@ -2798,22 +2798,22 @@ function loadViz(){
         // 生成趋势
         try{
             var t=echarts.init(document.getElementById('vizTrend'),dark);
-            t.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.trend.map(function(x){return x.date.slice(5);}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'line',smooth:true,data:j.trend.map(function(x){return x.count;}),areaStyle:{opacity:.15},itemStyle:{color:'#818cf8'}}]});
+            t.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.trend.map(function(x){return x.date.slice(5);}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'line',smooth:true,data:j.trend.map(function(x){return x.count;}),areaStyle:{opacity:.15},itemStyle:{color:'#818cf8'}}]});
         }catch(e){}
         // 评分分布
         try{
             var s=echarts.init(document.getElementById('vizScore'),dark);
-            s.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.score_buckets.map(function(x){return x.range;}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.score_buckets.map(function(x){return x.count;}),barWidth:'55%%',itemStyle:{color:'#c084fc',borderRadius:[5,5,0,0]}}]});
+            s.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.score_buckets.map(function(x){return x.range;}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.score_buckets.map(function(x){return x.count;}),barWidth:'55%%',itemStyle:{color:'#c084fc',borderRadius:[5,5,0,0]}}]});
         }catch(e){}
         // 反馈分类
         try{
             var f=echarts.init(document.getElementById('vizFeedback'),dark);
-            f.setOption({tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#94a3b8',fontSize:10}},series:[{type:'pie',radius:['40%%','65%%'],center:['50%%','45%%'],data:j.feedback.map(function(x){return {name:x.category,value:x.count};}),label:{color:'#cbd5e1',fontSize:10}}]});
+            f.setOption({tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#64748b',fontSize:10}},series:[{type:'pie',radius:['40%%','65%%'],center:['50%%','45%%'],data:j.feedback.map(function(x){return {name:x.category,value:x.count};}),label:{color:'#cbd5e1',fontSize:10}}]});
         }catch(e){}
         // 用户评分
         try{
             var rr=echarts.init(document.getElementById('vizRating'),dark);
-            rr.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.rating.map(function(x){return x.rating+'星';}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.rating.map(function(x){return x.count;}),barWidth:'50%%',itemStyle:{color:'#22d3ee',borderRadius:[5,5,0,0]}}]});
+            rr.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.rating.map(function(x){return x.rating+'星';}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.rating.map(function(x){return x.count;}),barWidth:'50%%',itemStyle:{color:'#22d3ee',borderRadius:[5,5,0,0]}}]});
         }catch(e){}
         window.addEventListener('resize',function(){try{t.resize();s.resize();f.resize();rr.resize();}catch(e){}});
     });
@@ -3125,8 +3125,8 @@ h1{font-size:22px;margin:0 0 18px}
 h2{font-size:16px;margin:18px 0 10px}
 ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
-li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
-li.empty{color:#9ca3af;text-align:center;padding:22px}
+li .t{font-size:12px;color:#6b7280;margin-bottom:4px}
+li.empty{color:#6b7280;text-align:center;padding:22px}
 .box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
 .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
 .barrow .bl{width:160px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;word-break:break-word;line-height:1.35}
@@ -3138,15 +3138,15 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .tcol .tv{font-size:11px;color:#6b7280}
 .tcol .tbar{width:100%%;height:80px;display:flex;align-items:flex-end}
 .tcol .tfill{width:100%%;background:#2563eb;border-radius:4px 4px 0 0;min-height:2px}
-.tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
+.tcol .td{font-size:10px;color:#6b7280;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
-.empty{color:#9ca3af;text-align:center;padding:16px}
+.empty{color:#6b7280;text-align:center;padding:16px}
 /* 111/112 轮：反馈卡片化。白卡+圆角+淡阴影+hover 高亮，分类色块拉齐视觉层级 */
 .fblist{list-style:none;padding:0;margin:0}
 .fbcard{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .15s,transform .15s}
 .fbcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
 .fbmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#6b7280;margin-bottom:6px}
-.fbid{color:#9ca3af;font-variant-numeric:tabular-nums}
+.fbid{color:#6b7280;font-variant-numeric:tabular-nums}
 .fbcat{border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .fbcat-good{background:#dcfce7;color:#15803d}
 .fbcat-idea{background:#dbeafe;color:#1d4ed8}
@@ -3161,7 +3161,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .fbfilter{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
 .fbfilter select{font-size:12px;padding:4px 8px;border:1px solid #dbe3ee;border-radius:7px;
     background:#fff;color:#374151;cursor:pointer;max-width:44vw}
-.fbfilter select:hover{border-color:#94a3b8}
+.fbfilter select:hover{border-color:#64748b}
 @media (max-width:640px){
     .fbcard{padding:10px 11px}
     .fbmeta{gap:5px;flex-wrap:wrap}
@@ -3208,7 +3208,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <div class="box comp-dist">
 <h2 style="margin-top:0">赛事分布（Top 8）</h2>
 %s
-<div style="font-size:11px;color:#9ca3af;margin-top:8px">注：「未指定赛事」为历史记录中未选择赛事的数据，不计入具体赛事。</div>
+<div style="font-size:11px;color:#6b7280;margin-top:8px">注：「未指定赛事」为历史记录中未选择赛事的数据，不计入具体赛事。</div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">反馈分类</h2>
@@ -5531,7 +5531,7 @@ h1{font-size:22px;margin:0 0 18px;color:#fff}
 .cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
 .card{flex:1 1 150px;background:#151b2e;border:1px solid #26304a;border-radius:10px;padding:14px;text-align:center}
 .card .num{font-size:26px;font-weight:700;color:#22d3ee}
-.card .label{font-size:12px;color:#94a3b8;margin-top:4px}
+.card .label{font-size:12px;color:#64748b;margin-top:4px}
 .chart{height:300px;background:#151b2e;border:1px solid #26304a;border-radius:10px;margin-bottom:14px;padding:8px}
 .bar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px}
 button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
@@ -5553,7 +5553,7 @@ button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-rad
 var SCORE = """ + score_json + """;
 var FEEDBACK = """ + feedback_json + """;
 var MODE = """ + mode_json + """;
-function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#94a3b8'}},yAxis:{type:'value',axisLabel:{color:'#94a3b8'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
+function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#64748b'}},yAxis:{type:'value',axisLabel:{color:'#64748b'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
 bar('scoreChart','智能评分分布',SCORE,'#22d3ee');
 bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 </script>
@@ -6954,7 +6954,7 @@ h1{font-size:21px;margin:0 0 14px}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:13px;overflow:hidden}
 .barrow .bfill{display:block;height:100%;border-radius:6px;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa)}
 .barrow .bn{width:104px;flex-shrink:0;font-size:12px;color:#6b7280;text-align:left;word-break:break-word;line-height:1.35}
-.empty{color:#9ca3af;text-align:center;padding:14px;font-size:13px}
+.empty{color:#6b7280;text-align:center;padding:14px;font-size:13px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .filters select,.filters button{font-size:13px;padding:7px 10px;border:1px solid #dbe3ee;border-radius:8px;background:#fff;color:#374151;cursor:pointer}
 .filters label.f{font-size:12.5px;color:#6b7280}
