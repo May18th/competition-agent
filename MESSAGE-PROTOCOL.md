@@ -3357,7 +3357,17 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - 改前端文件必须 bump `?v=`；一项一升版一回执。
 - 不碰他人在制品（`index.html` / `app.js` / `style.css` / `docx_render.py` 等未提交改动）。
 
-### 5. 待主理人拍板
-1. 查并停用周期性 reset 脚本（最高优先级，否则下次还会丢）。
-2. 确认 `ac383e7` 已含 339 全部逻辑；如有遗漏，从 `rescue-20260930-22` 补回。
-3. （延后）删重复模块 `media_factory.py` / `deck_agent.py` / `media_routes.py`。
+### 5. 收口执行记录（2026-09-30 05:40 前后，WorkBuddy 执行）
+- **reset 根因已定位并修复（服务器已上线安全版）**： culprit 是 `deploy_guard.py`，源码写死 `git fetch + reset --hard origin/main` 且只备份 .py，会吞掉未提交前端。已起草安全版并 scp 覆盖到服务器 `/opt/comp-agent/deploy_guard.py`：
+  - 原版已备份：`/opt/comp-agent/deploy_guard.py.bak_before_safe_20260930`；
+  - 新脚本 md5 `0357f3946b172e5b77c33693bd977862`、服务器端 `py_compile` 通过；
+  - 新逻辑：先 `git stash push -u` 保护未提交改动 → 再 reset → 部署完 `git stash pop` 还原；`index.html` / `static/` 也纳入备份与回滚。今后跑守卫不再丢前端。
+  - ⚠️ 未实际执行守卫（=一次真部署），需主理人择机跑一次验证 stash 还原；若新版有问题，`cp` 回 `.bak` 即可。
+- **死链重复模块已删除并推送（bbc241c）**：`media_factory.py` / `deck_agent.py` / `media_routes.py` + 失效注册脚本 `patch_register_media.py`，共删 1822 行。
+  - 实测依据：app.py 对三模块的注册段（~953-956）已是注释、运行时零导入；主链路 `pptx_builder.py` 不引用；`test_backend.py` 不引用；仅三模块内部互引 + 独立 patch 脚本引用。删除安全，不打断测试。
+  - 服务器侧这些文件会在下次部署（守卫 `reset --hard origin/main`）时一并清除，无需手动删。
+
+### 6. 待主理人拍板（仅剩收尾）
+1. 择机在服务器跑一次安全版守卫，验证 stash 保护/还原逻辑（非紧急）。
+2. 确认 `ac383e7` 已含 339 全部逻辑——已实测确认包含，无需补。
+3. 22 提交保险 `rescue-20260930-22` 分支 + 本地 bundle 可保留一段时间，赛后视情况清理。
