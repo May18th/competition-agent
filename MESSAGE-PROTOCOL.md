@@ -3159,7 +3159,8 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 后端已做（app.py，LLM 隔离新增，待提交）：
 - **360 演示视频方案**：`POST /api/demo_script`（body `{idea, competition_name, proposal}` → `{success, script}`，分镜+讲稿+操作+秒数，合计 240~300s）。
 - **362 评分判据**：`POST /api/score_rationale`（body `{dimension, score, proposal}` → `{success, rationale}`）。
+- **354 一致性校验（简化版）**：`POST /api/consistency_check`（body `{proposal}` → `{success, issues:[{type,item,detail}], count}`，启发式检测命名旧新名冲突 + 同单位数值跨度>3 倍的不一致）。
 
-留赛后：361 版本对比回滚（diff/版本存储）、363 申报表生成、364 赛程订阅提醒。
+留赛后：356 段落定位+改写建议、357 批注、359 范文库拆解、361 版本对比回滚、363 申报表生成、364 赛程订阅提醒。
 零后端：365 语音输入（纯前端 Web Speech API）。
 前端归 WorkBuddy：360/362 入口与展示、361 对比 UI、363 预览、364 订阅 UI、365 语音按钮。
