@@ -1042,6 +1042,32 @@ def _strip_fabricated_times(text):
     return t
 
 
+def _fix_mislabeled_measured(text):
+    """把「仿真/推算/测算…（实测值）」这类前后矛盾标注纠正为对应估算标签。
+
+    prompt 规则 9 已禁止仿真/推算标「实测值」，但模型仍可能漏（豆包实锤 4 处）。
+    这里做确定性兜底：按句切分，同一句里出现「仿真/模拟运行/离散事件」又标「实测值」
+    → 改「仿真值」；出现「推算/测算/估计/示例/假设/预计」又标「实测值」→ 改「测算值」。
+    用户真实实测数据由 _inject_user_data 单独注入、明确写「用户提供的真实实测数据」，
+    不与「仿真/推算」同句出现，本函数按句内矛盾信号判断，不会误伤纯「实测值」表述。
+    """
+    if not text:
+        return text
+
+    def _fix_sentence(s):
+        if '实测值' not in s:
+            return s
+        if re.search(r'仿真|模拟运行|离散事件|AnyLogic', s):
+            return s.replace('实测值', '仿真值')
+        if re.search(r'推算|测算|估计|示例|假设|预计', s):
+            return s.replace('实测值', '测算值')
+        return s
+
+    # 按句切（。！？；换行 作为分隔，保留分隔符），逐句判断，避免跨句误伤
+    parts = re.split(r'(?<=[。！？；\n])', str(text))
+    return ''.join(_fix_sentence(p) for p in parts)
+
+
 def _compress_to_length(text, max_chars, topic, rounds=1):
     """简洁版篇幅兜底：正文超过 max_chars 时让模型就地压缩，最多 rounds 轮。
 
