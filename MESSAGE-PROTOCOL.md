@@ -3254,6 +3254,32 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 
 ---
 
+## 二十六、⚠️ 反向漂移风险：服务器比 GitHub 领先 22 个提交（WorkBuddy 2026-09-30 04:15 实测）
+
+**这是比二十五节更危险的问题，优先级更高。**
+
+### 实测数据
+- 服务器 `/opt/comp-agent` 本身是一个 git 仓库，分支 main，origin 指向同一个 GitHub 仓库。
+- `git rev-list --count origin/main..HEAD` = **22** → 服务器有 **22 个提交从未推到 GitHub**。
+- 服务器 HEAD = `5be290f4 feat(335-414): 落库前端全部改动防 reset 丢失`
+- 服务器 `index.html` 处于 **未提交修改** 状态（`M index.html`，mtime 04:00，184030 字节）。
+- 对比：`static/app.js` 本地与服务器 md5 一致（`3408c8f4…`），是同步的；**只有 index.html 分叉**。
+- 本地 Doubao 仓库 index.html mtime 03:13 → **服务器的 04:00 版本比本地新**，本地反而落后。
+
+### 风险
+任何人若在服务器上执行 `git pull` / `git reset` / `git checkout`，
+**这 22 个提交 + 未提交的 index.html 改动会直接丢失**，且 GitHub 上没有备份。
+
+### 建议处置（未执行，需主理人拍板，因为要动服务器）
+1. 先在服务器上把 22 个提交**推送到 GitHub**（`git push origin main`），或至少 `git bundle` 打包回本地留档。
+2. 再提交服务器未提交的 `index.html`。
+3. 之后才允许在服务器做任何 pull/reset/部署动作。
+
+> 我没有执行上述操作——按项目红线，服务器提交/部署由主理人收口。
+> 本轮我只做了安全的补资源：`b82b715`（7 个 PWA/演示样例资源入 git 并推送，修复 manifest/sw.js 预缓存死链）。
+
+---
+
 ## 二十五、339 / 402 真实现状核查 + 402 开关补齐（2026-09-30 03:30，WorkBuddy 收口）
 
 结论先说：**两项 P0 都已落地；402 此前真正缺的是「开关」这一环。**
