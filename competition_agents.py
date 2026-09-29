@@ -993,6 +993,28 @@ def _strip_placeholders(text):
     return t
 
 
+def _strip_ai_artifacts(text):
+    """第二百二十轮：清掉正文里的「AI 半成品痕迹词」——评委一眼识破的表述。
+
+    「测算值」本身是合法标注（prompt 规则 9），不动；只清「待实测替换」「某老师」
+    「待补/占位」这类半成品痕迹。命中即替换为自然表述或删除，不留待办。
+    """
+    if not text:
+        return text
+    t = str(text)
+    # ① （测算值，待实测替换）/（示例值，需替换）→ （示例值）
+    t = re.sub(r'[（(]\s*[^）)]*(?:待实测替换|待替换|需替换|需实测)[^）)]*[）)]', '（示例值）', t)
+    # ② （某老师）→ 删；裸「某老师」→ 指导老师
+    t = re.sub(r'[（(]某老师[）)]', '', t)
+    t = re.sub(r'某老师', '指导老师', t)
+    # ③ 裸「待补/待补充/待实测」括号 → 删除
+    t = re.sub(r'[（(]待(?:补|补充|实测)[）)]', '', t)
+    t = re.sub(r'（占位）|\(占位\)', '', t)
+    # ④ 测算值（无口径）→ 示例值
+    t = re.sub(r'测算值[（(]无口径[）)]', '示例值', t)
+    return t
+
+
 def _downgrade_fabrication(text):
     """把模型臆造的「已经发生」外部事实降级为「计划/拟」的未来时，拦截虚假陈述。
 
@@ -1066,6 +1088,26 @@ def _fix_mislabeled_measured(text):
     # 按句切（。！？；换行 作为分隔，保留分隔符），逐句判断，避免跨句误伤
     parts = re.split(r'(?<=[。！？；\n])', str(text))
     return ''.join(_fix_sentence(p) for p in parts)
+
+
+def _theme_drifted(idea, text):
+    """第二百一十八轮：确定性检测正文是否跑偏到异赛道。
+
+    idea 明显是环保/垃圾分类赛道，正文却出现快递/物流专属词（快递柜/驿站/丰巢/
+    取件/末端配送/柜口/灯条）→ 判定主题漂移。返回 (drifted, hit_words)。
+    只做检测不下结论性重生成，供调用方决定重跑或标记。
+    """
+    if not idea or not text:
+        return False, []
+    _idea = str(idea)
+    _text = str(text)
+    _green = ("垃圾分类", "环保", "回收", "废", "绿色", "碳中和", "节能", "再生", "减碳")
+    _logistics = ("快递柜", "驿站", "丰巢", "取件", "末端配送", "柜口", "灯条", "包裹投递", "排队取件")
+    if any(k in _idea for k in _green):
+        hits = [w for w in _logistics if w in _text]
+        if hits:
+            return True, hits
+    return False, []
 
 
 def _compress_to_length(text, max_chars, topic, rounds=1):
@@ -1249,6 +1291,8 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
 1. 同类产品（至少3个）
 2. 我们的差异化优势
 
+【主题一致性·硬性】先判断项目属于哪个赛道（如垃圾分类/环保、快递物流、医疗、教育…），竞品必须从「同一赛道」选同类产品/方案，严禁跨赛道（环保项目不得出现快递柜/驿站/丰巢/灯条/末端配送等物流竞品）。
+
 ## 二、商业模式
 1. 目标客户
 2. 盈利模式
@@ -1297,6 +1341,7 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深市场分析专家。请只负责分析竞品情况，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+【主题一致性·硬性】先判断本项目属于哪个赛道（如垃圾分类/环保、快递物流、医疗、教育…），竞品必须从「同一赛道」选同类产品/方案，严禁跨赛道（环保项目不得出现快递柜/驿站/丰巢/灯条/末端配送等物流竞品）。竞品名称要具体、真实、与项目可比。
 {_user_data_ref(state)}
 {_analysis_paradigm_ref('competitor')}
 
@@ -1403,6 +1448,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
 
 请写：
 1. 分阶段计划（共8周，每周做什么，交付什么成果）
+   【排期真实性·硬性】试点之后必须留 3~4 周完成「迭代优化 → 材料撰写 → 答辩演练」分层推进，材料准备与答辩演练不得挤在同一周；每阶段要有缓冲，不能出现「试点后 2 周就完成迭代+全部申报材料+答辩」这种不成立的节奏。拿不准团队真实排期时，明确标注「示例排期，需按团队实际调整」。
 2. 每个阶段的里程碑和验收标准
 3. 团队分工（5个人分别负责什么）
 4. 风险预案（如果延期了怎么办）

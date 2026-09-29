@@ -848,6 +848,17 @@
                 });
                 return;
             }
+            // 第二百三十四轮：导出终检（quality_gate.check_docx / check_pdf）打回也走这里，
+            // 后端返回 code=export_quality_fail 且 error 里已带具体原因（如「Heading 层级过少（2）」）。
+            // 只弹「导出失败」用户会以为网站坏了，这里照实转述原因 + 明确内容没丢。
+            if (j && j.code === 'export_quality_fail') {
+                wbToast(label + '暂未通过导出终检', {
+                    type: 'warn', ms: 9000,
+                    sub: (msg ? '原因：' + msg + '。' : '')
+                        + '正文内容还在页面上，补完整章节或重新生成后再导出即可，不用重头再来'
+                });
+                return;
+            }
             if (msg) { wbToast(label + '导出失败：' + msg, { type: 'error', ms: 6000 }); return; }
             wbToast(label + '没导出成功，服务正在重启或网络抖动', {
                 type: 'error', ms: 6000,

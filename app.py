@@ -460,6 +460,12 @@ _RATE_LIMIT = 5
 _rate_lock = threading.Lock()
 _rate_hits = {}  # ip -> list[float] 命中时间戳（Unix 秒）
 
+# 第二百一十轮：反馈提交独立限流（30 秒 3 次），防刷爆反馈表。
+_FB_WINDOW_SEC = 30
+_FB_LIMIT = 3
+_fb_rate_lock = threading.Lock()
+_fb_rate_hits = {}
+
 
 def _client_ip():
     """取客户端 IP，优先信任反代传入的 X-Forwarded-For 首地址。"""
@@ -491,6 +497,23 @@ def _rate_limited():
                 _rate_hits[k] = [t for t in _rate_hits[k] if now - t < _RATE_WINDOW_SEC]
                 if not _rate_hits[k]:
                     del _rate_hits[k]
+        return False
+
+
+def _feedback_rate_limited():
+    """第二百一十轮：反馈提交限流——同一用户/IP 30 秒内最多 3 次，防脚本刷反馈表。"""
+    try:
+        key = _current_uid() or _client_ip()
+    except Exception:
+        key = _client_ip()
+    now = time.time()
+    with _fb_rate_lock:
+        hits = [t for t in _fb_rate_hits.get(key, []) if now - t < _FB_WINDOW_SEC]
+        if len(hits) >= _FB_LIMIT:
+            _fb_rate_hits[key] = hits
+            return True
+        hits.append(now)
+        _fb_rate_hits[key] = hits
         return False
 
 
@@ -2419,6 +2442,8 @@ def rate_history(history_id):
 @app.route('/api/feedback', methods=['POST'])
 def add_feedback():
     """收集用户反馈：结果页文本框 + 提交按钮，纯文本入库，后台直接看。"""
+    if _feedback_rate_limited():
+        return jsonify({"success": False, "error": "反馈提交太频繁，请稍后再试"}), 429
     payload = request.get_json(silent=True) or {}
     content = str(payload.get("content") or "").strip()
     if not content:
@@ -3689,13 +3714,23 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured
+        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
                    "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
             if isinstance(payload.get(_k), str) and payload[_k]:
-                payload[_k] = _fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k])))))
+                payload[_k] = _strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))))
+    except Exception:
+        pass
+    # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
+    # 命中的写进 payload.theme_drift 供导出质检/前端标记（重生成由 219 轮自愈层处理）。
+    try:
+        from competition_agents import _theme_drifted
+        _drifted, _hitwords = _theme_drifted(data.get("idea", ""), payload.get("proposal", ""))
+        payload["theme_drift"] = {"drifted": bool(_drifted), "hit_words": _hitwords}
+        if _drifted:
+            print(f"[theme-drift] 检测到主题跑偏，命中异赛道词：{_hitwords}")
     except Exception:
         pass
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
