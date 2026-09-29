@@ -663,6 +663,10 @@ def admin_logout():
     return resp
 
 
+# 第三百一十三轮：演示账号强制只读名单（即使 .admin_users.json 误配成 admin，登录后也强制 readonly）
+_DEMO_READONLY_USERS = {"kcwx123", "demo"}
+
+
 def _admin_login_verify(username, password, ip):
     """校验账号密码（198 轮：用户名+密码 bcrypt）。
     成功返回 (role, None)，失败返回 (None, (错误信息, http状态码))。"""
@@ -677,7 +681,11 @@ def _admin_login_verify(username, password, ip):
                 import bcrypt
                 if bcrypt.checkpw(password.encode('utf-8'), hit['pass_hash'].encode('utf-8')):
                     _ADMIN_FAILS.pop(ip, None)
-                    return (hit.get('role') or 'admin'), None
+                    _role = hit.get('role') or 'admin'
+                    # 313 轮：演示账号强制只读（防 .admin_users.json 配错成 admin，双保险）
+                    if username in _DEMO_READONLY_USERS:
+                        _role = 'readonly'
+                    return _role, None
             except Exception:
                 pass
         _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
@@ -753,7 +761,7 @@ __ERROR__
 <input type="password" id="pwd" name="password" autocomplete="current-password" required></div>
 <input type="hidden" name="csrf" value="__CSRF__">
 <button type="submit">登录</button>
-<div class="tip">评委请使用「演示账号」登录（账号 <b>demo</b> / 密码 <b>123456</b>），进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
+<div class="tip">演示账号登录（账号 <b>demo</b> / 密码 <b>123456</b>），进入只读模式（不可执行删除 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
 <div class="foot">v2.0 · ©可创无限团队</div>
 </form></body></html>"""
 
@@ -2649,6 +2657,21 @@ def export_feedback():
         as_attachment=True, download_name=fname)
 
 
+def _friendly_fail_text(r):
+    """第三百一十六轮：把后台「最近失败」里的英文技术报错转成友好中文，技术细节留给日志。"""
+    raw = (r["detail"] or r["error_msg"] or r["error"] or "").strip()
+    if not raw:
+        return "未知原因"
+    _low = raw.lower()
+    if "interpreter shutdown" in _low or "cannot schedule" in _low or "future" in _low:
+        return "上次服务重启时中断的任务记录，已自动恢复"
+    if "timeout" in _low or "timed out" in _low:
+        return "生成超时，请重试"
+    if "quota" in _low or "已达上限" in raw:
+        return "今日调用额度已用尽，请明天再试"
+    return raw
+
+
 @app.route('/admin')
 def admin_home():
     """管理后台 · 总览首页：关键数字一屏看完，再点进详细面板 / 监视。"""
@@ -2672,7 +2695,7 @@ def admin_home():
     recent_fb = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
-        "SELECT error, detail, error_msg, created_time FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
+        "SELECT error, detail, error_msg, created_time FROM gen_failures WHERE status='open' ORDER BY id DESC LIMIT 4").fetchall()
     conn.close()
 
     fb_rows = "".join(
@@ -2681,7 +2704,7 @@ def admin_home():
         for r in recent_fb) or '<li class="e">暂无反馈</li>'
     fail_rows = "".join(
         '<li><span class="t">%s</span>%s</li>'
-        % (r["created_time"] or "", _html_escape(r["detail"] or r["error_msg"] or r["error"] or "未知原因"))
+        % (r["created_time"] or "", _html_escape(_friendly_fail_text(r)))
         for r in recent_fail) or '<li class="e">暂无失败</li>'
     issue_rows = "".join(
         '<li><span class="t">#%s · %s · %s</span>%s</li>'
@@ -2723,8 +2746,8 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="hero">
 <div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
 <div class="h"><div class="n">%d</div><div class="l">今日生成</div></div>
-<div class="h"><div class="n %s">%s</div><div class="l">满意度平均分（%d 人打分）</div></div>
-<div class="h"><div class="n %s">%s%%</div><div class="l">生成成功率</div></div>
+<div class="h"><div class="n %s">%s/5分</div><div class="l">满意度平均分（%d 人打分）</div></div>
+<div class="h"><div class="n %s">%s%%</div><div class="l" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
 <div class="h"><div class="n %s">%d</div><div class="l">待处理工单</div></div>
 <div class="h"><div class="n">%d</div><div class="l">反馈总数</div></div>
 </div>
@@ -2734,29 +2757,6 @@ h1{font-size:24px;margin:0 0 4px}
 </div>
 <div class="box" style="margin-top:14px"><h2>待处理工单（%d）</h2><ul>%s</ul></div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
-<div class="box" style="margin-top:14px"><h2>🧠 写作范式蒸馏</h2>
-<p style="font-size:13px;color:#64748b;margin:0 0 10px">从当前范文库重新提炼「获奖写法共性规律」，注入生成 prompt（约耗 1 次 LLM 调用）。</p>
-<button id="distillBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏</button>
-<span id="distillMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
-</div>
-<div class="box" style="margin-top:14px"><h2>🎤 答辩范式蒸馏</h2>
-<p style="font-size:13px;color:#64748b;margin:0 0 10px">从高频答辩题库提炼「评委必问套路 + 回答框架」，注入答辩生成。</p>
-<button id="distillDefenseBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏答辩范式</button>
-<span id="distillDefenseMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
-</div>
-<div class="box" style="margin-top:14px"><h2>⚖️ 评委评分范式蒸馏</h2>
-<p style="font-size:13px;color:#64748b;margin:0 0 10px">从历史生成的多专家评审记录提炼「高频扣分点 + 三视角常挑的毛病」，注入评委打分。</p>
-<button id="distillJudgeBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏评委范式</button>
-<span id="distillJudgeMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
-</div>
-<div class="box" style="margin-top:14px"><h2>📐 分析/PPT·演讲稿/同质化范式</h2>
-<button id="distillAnalysisBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">分析范式</button>
-<span id="distillAnalysisMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
-<button id="distillDeckBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">PPT/演讲稿</button>
-<span id="distillDeckMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
-<button id="distillSimBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">同质化</button>
-<span id="distillSimMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
-</div>
 <div class="box" style="margin-top:14px"><h2>📊 数据洞察（自动扫描）</h2>
 <div id="insightGaps" style="font-size:13px;color:#64748b">赛事资料缺口：加载中…</div>
 <div id="insightFeedback" style="font-size:13px;color:#64748b;margin-top:6px">反馈优先级：—</div>
@@ -2775,13 +2775,6 @@ h1{font-size:24px;margin:0 0 4px}
 <script src="/static/echarts.min.js"></script>
 <script>
 var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
-function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';AF(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
-bindDistill('distillBtn','distillMsg','/api/distill',function(j){return '完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';});
-bindDistill('distillDefenseBtn','distillDefenseMsg','/api/distill/defense',function(j){return '完成：用了 '+j.questions_used+' 道题、'+j.pattern_count+' 条必问套路';});
-bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j){return '完成：提炼 '+j.criticism_count+' 条高频扣分点';});
-bindDistill('distillAnalysisBtn','distillAnalysisMsg','/api/distill/analysis',function(j){return '完成：竞品/商业/风险/技术要点已更新';});
-bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',function(j){return '完成：PPT结构+演讲稿套路已更新';});
-bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
 function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
 function loadViz(){
@@ -2833,12 +2826,43 @@ def admin_dashboard():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    # 第三百二十轮：时间段选择器（今日/近3天/近7天/近30天/全部）
+    _range = (request.args.get("range") or "all").strip().lower()
+    _now = datetime.now()
+    if _range == "today":
+        _since = _now.strftime("%Y-%m-%d")
+    elif _range == "3d":
+        _since = (_now - timedelta(days=2)).strftime("%Y-%m-%d")
+    elif _range == "7d":
+        _since = (_now - timedelta(days=6)).strftime("%Y-%m-%d")
+    elif _range == "30d":
+        _since = (_now - timedelta(days=29)).strftime("%Y-%m-%d")
+    else:
+        _range = "all"
+        _since = None
+
+    def _h(where="", params=()):
+        """给带 created_time 列的查询追加时间段过滤（无时间段时不追加）。"""
+        if not _since:
+            return where, params
+        if where:
+            return where + " AND created_time >= ?", params + (_since,)
+        return " WHERE created_time >= ?", (_since,)
+
+    _range_opts = "".join(
+        '<option value="%s"%s>%s</option>' % (v, " selected" if v == _range else "", label)
+        for v, label in (("all", "全部"), ("today", "今日"), ("3d", "近3天"), ("7d", "近7天"), ("30d", "近30天")))
+    _range_ui = ('<div style="margin:10px 0;font-size:13px;color:#64748b">统计时间段：'
+                 '<select onchange="location.href=\'/admin/panel?range=\'+this.value">%s</select></div>' % _range_opts)
+
+    _w, _p = _h()
+    total_gen = c.execute("SELECT COUNT(*) FROM history" + _w, _p).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
         "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
+    _w, _p = _h(" WHERE rating > 0")
     avg_row = c.execute(
-        "SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
+        "SELECT AVG(rating), COUNT(*) FROM history" + _w, _p).fetchone()
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
     rated_count = avg_row[1] if avg_row else 0
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
@@ -2890,37 +2914,46 @@ def admin_dashboard():
             pass
     # 满意度分布（1-5 星）
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    _w, _p = _h(" WHERE rating > 0")
     for r, n in c.execute(
-            "SELECT rating, COUNT(*) FROM history WHERE rating > 0 GROUP BY rating").fetchall():
+            "SELECT rating, COUNT(*) FROM history" + _w + " GROUP BY rating", _p).fetchall():
         rating_dist[int(r)] = n
     # 生成趋势（最近 14 天）
+    _w, _p = _h()
     trend = c.execute(
-        "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
-        "GROUP BY d ORDER BY d DESC LIMIT 7").fetchall()
-    # 赛事分布（Top 8）：空/空白赛事名归并到「未指定赛事」，避免图表出现空白标签（285 轮）
+        "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history" + _w +
+        " GROUP BY d ORDER BY d DESC LIMIT 7", _p).fetchall()
+    # 赛事分布（Top 8）：空/空白/脏值（如 "x"）赛事名归并到「未指定赛事」，避免图表出现异常标签
+    _w, _p = _h()
     _comp_raw = c.execute(
-        "SELECT competition_name, COUNT(*) n FROM history GROUP BY competition_name").fetchall()
+        "SELECT competition_name, COUNT(*) n FROM history" + _w + " GROUP BY competition_name", _p).fetchall()
     _comp_agg = {}
     for _name, _cnt in _comp_raw:
-        _key = (_name or "").strip() or "未指定赛事"
+        _key = (_name or "").strip()
+        if not _key or len(_key) <= 1 or _key.lower() in ("x", "null", "none", "undefined", "nan", "n/a"):
+            _key = "未指定赛事"
         _comp_agg[_key] = _comp_agg.get(_key, 0) + _cnt
     comp_dist = sorted(_comp_agg.items(), key=lambda x: (-x[1], x[0]))[:8]
     # 反馈分类聚合
+    _w, _p = _h()
     fb_cat = c.execute(
-        "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
+        "SELECT category, COUNT(*) n FROM feedback" + _w + " GROUP BY category ORDER BY n DESC", _p).fetchall()
     # 评估指标：平均耗时 / 成功率 / 评审引擎平均分
-    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
+    _w, _p = _h(" WHERE duration > 0")
+    avg_dur = c.execute("SELECT AVG(duration) FROM history" + _w, _p).fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
-    succ_total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
+    _w, _p = _h()
+    succ_total = c.execute("SELECT COUNT(*) FROM history" + _w, _p).fetchone()[0]
+    _w, _p = _h(" WHERE status='open'")
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures" + _w, _p).fetchone()[0]
     success_rate = round(succ_total * 100.0 / (succ_total + fail_total), 1) if (succ_total + fail_total) else 100.0
+    _w, _p = _h(" WHERE json_extract(result_data,'$.score') IS NOT NULL")
     judge_avg = c.execute(
-        "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
-        "WHERE json_extract(result_data,'$.score') IS NOT NULL").fetchone()[0]
+        "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history" + _w, _p).fetchone()[0]
     judge_avg = round(judge_avg, 1) if judge_avg else 0
+    _w, _p = _h(" WHERE status='open'")
     open_issues = c.execute(
-        "SELECT id, kind, source, content, created_time FROM issues "
-        "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
+        "SELECT id, kind, source, content, created_time FROM issues" + _w + " ORDER BY id DESC LIMIT 15", _p).fetchall()
     conn.close()
 
     # 今日大模型调用额度（第二百五十四轮：统一走 get_quota_status，避免硬编码 500
@@ -3080,7 +3113,7 @@ li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
 li.empty{color:#9ca3af;text-align:center;padding:22px}
 .box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
 .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
-.barrow .bl{width:110px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barrow .bl{width:160px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;word-break:break-word;line-height:1.35}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
 .barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
 .barrow .bn{width:34px;font-size:13px;color:#6b7280;flex-shrink:0}
@@ -3137,15 +3170,16 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
+%s
 <div class="cards">
 <div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
 <div class="card"><div class="num">%d</div><div class="label">今日生成</div></div>
 <div class="card"><div class="num">%d</div><div class="label">今日剩余额度</div></div>
-<div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
+<div class="card"><div class="num">%s/5分</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 <div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
-<div class="card"><div class="num">%s%%</div><div class="label">生成成功率</div></div>
-<div class="card"><div class="num">%s</div><div class="label">评审引擎平均分</div></div>
+<div class="card"><div class="num">%s%%</div><div class="label" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
+<div class="card"><div class="num">%s/100分</div><div class="label">评审引擎平均分</div></div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">满意度分布</h2>
@@ -3158,6 +3192,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <div class="box comp-dist">
 <h2 style="margin-top:0">赛事分布（Top 8）</h2>
 %s
+<div style="font-size:11px;color:#9ca3af;margin-top:8px">注：「未指定赛事」为历史记录中未选择赛事的数据，不计入具体赛事。</div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">反馈分类</h2>
@@ -3171,7 +3206,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <ul class="fblist">%s</ul>
 %s
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
-</div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
+</div></body></html>""" % (_range_ui, total_gen, today_gen, quota_remaining, avg_rating,
                               rated_count, feedback_total, avg_dur, success_rate,
                               judge_avg, rating_bars_html, trend_html, comp_html,
                               cat_html, issues_html, fb_title, fb_html, fb_pager)
@@ -3234,7 +3269,7 @@ def monitor():
         "SELECT competition_name, mode, duration, status, created_time FROM history "
         "ORDER BY id DESC LIMIT 12").fetchall()
     recent_fail = c.execute(
-        "SELECT error, detail, error_msg, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+        "SELECT error, detail, error_msg, created_time FROM gen_failures WHERE status='open' ORDER BY id DESC LIMIT 12").fetchall()
     total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
@@ -3255,7 +3290,7 @@ def monitor():
         for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
     fail_rows = "".join(
         '<tr><td>%s</td><td>%s</td></tr>'
-        % (r["created_time"] or "", _html_escape(r["detail"] or r["error_msg"] or r["error"] or "未知原因"))
+        % (r["created_time"] or "", _html_escape(_friendly_fail_text(r)))
         for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
 
     return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -5172,7 +5207,7 @@ def admin_stats():
         recent_failures = c.execute(
             "SELECT task_id, type, path, error, detail, created_time, count, "
             "stage, error_code, error_msg FROM gen_failures "
-            "ORDER BY id DESC LIMIT 10").fetchall()
+            "WHERE status='open' ORDER BY id DESC LIMIT 10").fetchall()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
         failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
@@ -6737,7 +6772,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
       + '<h3>标记状态</h3>'
       + '<div class="detrow">'
       + '<select data-role="status">' + statusOptions(v.status) + '</select>'
-      + '<label><input type="checkbox" data-role="distilled"' + (v.distilled ? ' checked' : '') + '> 蒸馏标记</label>'
+      + '<label><input type="checkbox" data-role="distilled"' + (v.distilled ? ' checked' : '') + '> 已提炼</label>'
       + '<button class="detbtn" type="button" data-act="submit">提交</button>'
       + '<span class="detmsg" data-role="msg"></span>'
       + '</div>'
