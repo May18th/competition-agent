@@ -824,6 +824,22 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     overflow-wrap: anywhere;
     word-break: break-word;
 }
+/* ③ 236 轮补漏：上面这条只护住 .content-block 内部，AI 生成文本还有几处落在「裸容器」里。
+   375px CDP 实测（每处单独注入 202 字符无空格长串）：
+     #oneLiner → scrollWidth-clientWidth=1285、innerWidth 375→1500
+     #expertReviewContent → 1264 / 1500
+     .deck-card .dc-title → 1006 / 1381（另被 .deck-card 的 overflow:hidden 裁掉 1037px）
+     .deck-card .dc-li → 718 / 1093
+   只给这三个「已确认是文本承载器」的选择器加断词，不给 .card / #resultArea 全局加
+   （会改变表格固有宽度与整体排版）；长串一律靠换行消化，不用 ellipsis / line-clamp / nowrap；
+   表格维持「横向滚动下沉到 table 自身」的既有策略，不动。 */
+#oneLiner,
+#expertReviewContent,
+.deck-card .dc-title,
+.deck-card .dc-li {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 /* 桌面端唯一纵向裁剪源：.card 的 overflow:hidden（1397 行只在 ≤768px 豁免过，
    所以 180 轮修完手机上好了、桌面还在切）。结果区单独豁免，不影响其它卡片裁圆角/装饰。 */
 #resultArea { overflow: visible; }
