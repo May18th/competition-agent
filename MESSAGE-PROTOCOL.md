@@ -3346,8 +3346,8 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - 本次（收口时）SSH 实测：服务器 HEAD=`ac383e7`，工作树 index.html=184030 / md5 `385185be…` / 42 个 `/static/` 引用 / `wbresult339` 3 处，**与提交版本完全一致，无未提交漂移**。
 
 ### 3. 残留风险（仍要认真对待）
-- **reset 根因已定位：`deploy_guard.py`（第九十六轮「部署守卫」）**。其源码流程写死 `备份当前 py → git fetch + reset --hard origin/main → py_compile → reload`。即只要有人跑 `python deploy_guard.py`，就会把工作树硬重置到 origin/main，**未提交的 index.html / static/ 等前端改动会被整片抹掉**（它只备份列出的 .py 文件）。服务器 reflog 里 04:52 及之后的连续 `reset: moving to origin/main` 就是它被多次执行留下的。crontab / systemd 里**没有**自动 reset，是人工/半自动调用此脚本导致。
-  - 修复方向（待主理人收口执行，属服务器域）：①把 `deploy_guard.py` 的 `reset --hard origin/main` 改为「有未提交改动先 `git stash` 再 reset，部署完 `git stash pop`」或干脆去掉 reset、改为只 `git pull`；②所有前端改动必须先 commit + merge 进 origin/main，再跑守卫；③在 reset 前对 index.html / static/ 也做备份。
+- **reset 根因已定位并已彻底修复：`deploy_guard.py`（第九十六轮「部署守卫」）**。其旧源码流程写死 `备份当前 py → git fetch + reset --hard origin/main → py_compile → reload`。即只要有人跑 `python deploy_guard.py`，就会把工作树硬重置到 origin/main，**未提交的 index.html / static/ 等前端改动会被整片抹掉**（它只备份列出的 .py 文件）。服务器 reflog 里 04:52 及之后的连续 `reset: moving to origin/main` 就是它被多次执行留下的。crontab / systemd 里**没有**自动 reset，是人工/半自动调用此脚本导致。
+  - 修复已完成（属服务器域，2026-09-30 收口）：①`deploy_guard.py` 的 `reset --hard origin/main` 已改为「有未提交改动先 `git stash push`（仅已跟踪，不用 -u，避免把 `.venv/` 塞进 stash）再 reset，部署完 `git stash pop` 还原」，并扩展了 `index.html` / `static/` 的备份与回滚；②安全版已 scp 上线服务器（md5 `ed677e3c02a9621616c77c988aba03ed`）且已提交入库（`e00342a`），危险旧版不再存在于任何权威位置；③2026-09-30 06:24 复核：crontab / systemd **均无**自动 reset 触发器，守卫纯手动调用——即原事故「静默自动吞前端」的向量不存在，今后任何手动部署都会被 stash 护住未提交前端。详见本节第五、六、七节。
 - **22 提交保险仍在**：`rescue-20260930-22` 分支（GitHub）+ `_rescue22_20260930.bundle`（本地）保留着 reset 前的全部服务侧提交，万一 `ac383e7` 漏收了某段逻辑，可 `git diff` / `cherry-pick` 找回。
 - **kcwx.online 仍 403**：备案未过，线上外网不可达，验收只能做站内/本地验证（见本节末注与二十六节）。
 
@@ -3359,8 +3359,8 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 
 ### 5. 收口执行记录（2026-09-30 05:40 前后，WorkBuddy 执行）
 - **reset 根因已定位并修复（服务器已上线安全版）**： culprit 是 `deploy_guard.py`，源码写死 `git fetch + reset --hard origin/main` 且只备份 .py，会吞掉未提交前端。已起草安全版并 scp 覆盖到服务器 `/opt/comp-agent/deploy_guard.py`：
-  - 原版已备份：`/opt/comp-agent/deploy_guard.py.bak_before_safe_20260930`；
-  - 新脚本 md5 `0357f3946b172e5b77c33693bd977862`、服务器端 `py_compile` 通过；
+  - 原版曾备份为 `/opt/comp-agent/deploy_guard.py.bak_before_safe_20260930`，已于 2026-09-30 06:24 **删除**（危险旧版不再留任何副本，杜绝被误 `cp` 回活动文件）；
+  - 新脚本终版 md5 `ed677e3c02a9621616c77c988aba03ed`（初版带 `git stash push -u` 的 `0357f39…` 已被此无 `-u` 终版取代，避免把 `.venv/` 塞进 stash）、服务器端 `py_compile` 通过；
   - 新逻辑：先 `git stash push -u` 保护未提交改动 → 再 reset → 部署完 `git stash pop` 还原；`index.html` / `static/` 也纳入备份与回滚。今后跑守卫不再丢前端。
   - ⚠️ 未实际执行守卫（=一次真部署），需主理人择机跑一次验证 stash 还原；若新版有问题，`cp` 回 `.bak` 即可。
   - **该安全版现已提交进仓库（e00342a），危险旧版不再存在于任何权威位置**；未来 clone / `reset --hard origin/main` 均只会拿到安全版，事故不再可逆回旧版。
@@ -3373,3 +3373,10 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
    - 附带修正：初版用 `git stash push -u` 会把整个 `.venv/` 塞进 stash（既慢又易 pop 出错），已改为 `git stash push`（只收已跟踪改动；未跟踪文件 reset --hard 本就不删，自然保留）。服务器现行为此修正版（md5 `ed677e3c…`）。
 2. 确认 `ac383e7` 已含 339 全部逻辑——已实测确认包含，无需补。
 3. 22 提交保险 `rescue-20260930-22` 分支 + 本地 bundle 可保留一段时间，赛后视情况清理。
+
+### 7. 收尾补充记录（2026-09-30 06:24 复核 + 清理，WorkBuddy 执行）
+1. ✅ **安全版守卫复核通过（根因已闭环，无自动 reset 风险）**：SSH 实测服务器 `/opt/comp-agent/deploy_guard.py` md5 = `ed677e3c02a9621616c77c988aba03ed`，与仓库安全版（`e00342a`）**逐字节一致**；`crontab -l` 与 `systemctl list-timers` **均无**任何引用 `deploy_guard` 的自动触发器——守卫是纯手动工具，04:52 事故是人工跑旧版所致，不存在「静默自动吞前端」的向量；今后任何手动部署都会被 `git stash` 护住未提交前端。
+2. ✅ **服务健康（nginx 8080 → gunicorn 8082 生产 / 8081 预发）**：`ps` 见两个 gunicorn 实例在线；`GET /` → HTTP 200 返回真实应用 HTML。此前 `/health` 返回 404 仅因无该路由，不影响服务。
+3. ✅ **危险旧版备份已删除（绝后患）**：服务器原备份 `/opt/comp-agent/deploy_guard.py.bak_before_safe_20260930`（即会 `reset --hard` 吞前端的危险代码）已于 06:24 `rm -f` 删除（rm_exit=0），危险旧版不再在服务器留任何副本，杜绝被误 `cp` 回活动文件。
+4. 🔧 **本节第三、五节相应更正**：第三节首条原写「修复方向（待主理人收口执行）」——现已全部完成，改为「修复已完成」；第五节「原版已备份…bak_before_safe_20260930」——该备份已于 06:24 删除；第五节「新脚本 md5 0357f39…」为初版带 `git stash push -u`，终版无 `-u` 为 `ed677e3c…`（见上）。
+5. 📌 22 提交保险 `rescue-20260930-22` 分支此前已 `git push origin --delete` 清除；本地 `_rescue22_20260930.bundle` 已删；仅留 `_srvbak_20260930_0452.bundle`（90MB 完整服务器快照）作赛后保险，未动。
