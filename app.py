@@ -448,8 +448,10 @@ def _task_owned(task_id):
 #    （systemd 单元 --workers 1）；要扩多 worker 先把这些下沉到 Redis/DB，否则状态分裂。
 MAX_CONCURRENT_GEN = 16
 _GEN_QUEUE_MAX = 40            # 排队上限：超过就明确拒绝（避免用户排到天荒地老）
+_MAX_PER_KEY = 2               # 第二百一十一轮 C：单 IP/用户同时最多 2 个生成任务，超出排队
 _active_gen_lock = threading.Lock()
 _active_gen_count = 0
+_active_by_key = {}            # key(uid/ip) -> 当前在跑+排队的任务数
 _gen_queue = collections.deque()   # 排队中的 task_id（FIFO）
 
 # 简单限流：同一 IP 1 分钟最多生成 5 次，防止刷接口（学生项目级防护，无需登录系统）。
@@ -685,6 +687,21 @@ def _audit_admin_login(username, ip, ok, role):
             _f.write("%s | login | user=%s | ip=%s | %s | role=%s\n" % (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username or '-', ip,
                 'ok' if ok else 'fail', role or '-'))
+    except Exception:
+        pass
+
+
+def _audit_write(action, object_id=""):
+    """第二百一十一轮 D：后台写操作审计——记录操作者账号+时间+动作+对象ID。
+
+    与登录审计同写 docs/后台审计.md；仅 admin 会话可查（/api/admin/audit）。
+    """
+    try:
+        _role = _admin_session_role() or '-'
+        _who = (_admin_session_role() or '') + '/' + (_current_uid() or '-')
+        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+            _f.write("%s | write | action=%s | obj=%s | who=%s\n" % (
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), action or '-', object_id or '-', _who))
     except Exception:
         pass
 
@@ -3309,6 +3326,7 @@ def delete_history(history_id):
     deleted = c.rowcount
     conn.close()
     if deleted:
+        _audit_write("delete_history", str(history_id))
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "记录不存在"}), 404
 
@@ -3986,27 +4004,43 @@ def _start_generation(data):
     # 今日额度撞顶（第九十九轮）：提前拦下，前端据此 toast「今日生成额度已满，明日恢复」
     try:
         from competition_agents import get_quota_status
-        if get_quota_status().get("exceeded"):
-            return None, jsonify({"success": False, "code": "quota_exceeded",
-                                  "error": "今日生成次数已达上限，请明天再试"})
+        _qs = get_quota_status()
+        _calls = int(_qs.get("calls", 0))
+        _limit = int(_qs.get("limit", 0)) or 1
+        _ratio = _calls / _limit
+        _req_mode = data.get("mode", "fast")
+        if _calls >= _limit:
+            # 第二百一十一轮 B：额度耗尽时深度版暂停，简洁版仍放行（低成本兜底）
+            if _req_mode == "deep":
+                return None, jsonify({"success": False, "code": "quota_exceeded",
+                                      "error": "今日深度版额度已满，可先用简洁版"})
+        elif _ratio >= 0.9 and _req_mode == "deep":
+            # 用量 ≥90%：深度版自动降档到简洁版，避免撞顶硬拦；给自然提示不暴露额度数字
+            data["mode"] = "fast"
+            data["_quota_downgraded"] = True
+            print("[quota] 用量≥90%，深度版自动降档为简洁版")
     except Exception:
         pass
     if _rate_limited():
         return None, jsonify({"success": False,
                               "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
     task_id = uuid.uuid4().hex
+    _key = _current_uid() or _client_ip()
     tasks[task_id] = {"status": "queued", "stage": "queued", "updated_at": time.time(), "start_time": time.time(),
-                      "mode": data.get("mode", "fast"), "data": data}
+                      "mode": data.get("mode", "fast"), "data": data, "key": _key}
     with _active_gen_lock:
-        if _active_gen_count >= MAX_CONCURRENT_GEN:
+        _my_active = _active_by_key.get(_key, 0)
+        if _active_gen_count >= MAX_CONCURRENT_GEN or _my_active >= _MAX_PER_KEY:
             if len(_gen_queue) >= _GEN_QUEUE_MAX:
                 tasks.pop(task_id, None)
                 return None, jsonify({"success": False,
                                       "error": "当前排队人数较多，请过 1~2 分钟再试"})
             _gen_queue.append(task_id)
+            _active_by_key[_key] = _my_active + 1
             _sweep_tasks()
             return task_id, None      # status=queued，前端轮询显示「排队第 N 位」
         _active_gen_count += 1
+        _active_by_key[_key] = _my_active + 1
         _sync_gen_marker()
     tasks[task_id]["status"] = "running"
     _launch_worker(task_id)
@@ -4032,6 +4066,16 @@ def _launch_worker(task_id):
                     rd = _run_generation(data)
                     if progress.is_cancelled(task_id):
                         return
+                    # 第二百一十九轮：主题跑偏自动重生成——检测到异赛道关键词就同 idea 再跑一次，
+                    # 用户全程看不到跑偏内容；控制只重试 1 次（成本/历史重复可控）。
+                    try:
+                        from competition_agents import _theme_drifted
+                        _d, _h = _theme_drifted(data.get("idea", ""), rd.get("proposal", ""))
+                        if _d:
+                            print(f"[theme-drift] 跑偏（{_h}），自动重生成 1 次")
+                            rd = _run_generation(data)
+                    except Exception as _td:
+                        print(f"[theme-drift] 重生成异常，保留原结果：{_td}")
                     progress.mark_done(task_id, data=rd)
                     return
                 except TaskCancelled:
@@ -4065,6 +4109,13 @@ def _launch_worker(task_id):
             clear_current_task()
             with _active_gen_lock:
                 _active_gen_count = max(0, _active_gen_count - 1)
+                _key = (tasks.get(task_id) or {}).get("key", "")
+                if _key:
+                    _left = max(0, _active_by_key.get(_key, 0) - 1)
+                    if _left:
+                        _active_by_key[_key] = _left
+                    else:
+                        _active_by_key.pop(_key, None)
                 _sync_gen_marker()
             _promote_next()            # 腾出坑位后立刻给排队的任务补位
 
@@ -4469,6 +4520,7 @@ def export_all():
     _a = _require_uid()
     if _a is not None:
         return _a
+    _audit_write("export_all")
     import zipfile
     import io
     from docx_render import build_docx
@@ -5464,6 +5516,62 @@ def api_vulns_stats():
     })
 
 
+@app.route('/api/admin/audit')
+def api_admin_audit():
+    """第二百一十一轮 D：审计日志查询（仅 admin 可见）。读 docs/后台审计.md 最近 N 行。"""
+    _a = _require_admin()
+    if _a is not None:
+        return _a
+    try:
+        limit = min(int(request.args.get("limit", 200)), 2000)
+    except (TypeError, ValueError):
+        limit = 200
+    p = os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md')
+    if not os.path.isfile(p):
+        return jsonify({"success": True, "audit": [], "total": 0})
+    try:
+        with open(p, encoding='utf-8') as f:
+            lines = [l.rstrip('\n') for l in f if l.strip()]
+    except Exception:
+        return jsonify({"success": True, "audit": [], "total": 0})
+    return jsonify({"success": True, "audit": lines[-limit:], "total": len(lines)})
+
+
+@app.route('/api/admin/textcheck')
+def api_admin_textcheck():
+    """第二百一十三轮：文案自查工具（admin）——扫全站常见不一致/错别字，返回命中位置。"""
+    _a = _require_admin()
+    if _a is not None:
+        return _a
+    # 词表：(正确写法, 疑似错误写法)
+    _rules = [
+        ("科创赛事助手", "赛创助手"),
+        ("科创赛事助手", "赛创赛事助手"),
+        ("简洁版", "简洁快速版"),
+        ("评审引擎", "模拟评委"),
+        ("多智能体协作", "AI 生成"),
+    ]
+    _files = ["index.html", "static/app.js", "static/style.css", "static/wbconst.js"]
+    _hits = []
+    for _fname in _files:
+        _p = os.path.join(os.path.dirname(__file__), _fname)
+        if not os.path.isfile(_p):
+            continue
+        try:
+            with open(_p, encoding='utf-8') as _f:
+                _lines = _f.read().splitlines()
+        except Exception:
+            continue
+        for _i, _ln in enumerate(_lines, 1):
+            for _correct, _wrong in _rules:
+                if _wrong in _ln:
+                    _hits.append({"file": _fname, "line": _i,
+                                  "wrong": _wrong, "correct": _correct,
+                                  "snippet": _ln.strip()[:80]})
+                    break
+    return jsonify({"success": True, "hits": _hits, "total": len(_hits)})
+
+
 @app.route('/api/demo')
 def demo_data():
     """演示模式：返回固定的一条深度版生成结果（完整数据），稳定不随最新生成变化。"""
@@ -5739,6 +5847,7 @@ def distill_paradigm():
 
     成功后注入生成 prompt 的写作范式立即更新；失败返回错误且不覆盖旧范式。
     """
+    _audit_write("distill_paradigm")
     try:
         from kb_distill import distill_from_samples
         result = distill_from_samples()
