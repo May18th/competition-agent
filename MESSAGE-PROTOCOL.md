@@ -3367,7 +3367,8 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
   - 实测依据：app.py 对三模块的注册段（~953-956）已是注释、运行时零导入；主链路 `pptx_builder.py` 不引用；`test_backend.py` 不引用；仅三模块内部互引 + 独立 patch 脚本引用。删除安全，不打断测试。
   - 服务器侧这些文件会在下次部署（守卫 `reset --hard origin/main`）时一并清除，无需手动删。
 
-### 6. 待主理人拍板（仅剩收尾）
-1. 择机在服务器跑一次安全版守卫，验证 stash 保护/还原逻辑（非紧急）。
+### 6. 收尾记录（2026-09-30 05:49 真机跑通）
+1. ✅ **安全版守卫已真机端到端验证通过**：在服务器实际 `python3 deploy_guard.py`，当时工作树有未提交改动（安全版 `deploy_guard.py` 207 行 + `docs/工作日志` + 大量未跟踪文件含 `.venv/`）。守卫正确执行「stash 已跟踪改动 → reset --hard origin/main → py_compile → reload → health=ok → stash pop 还原」，跑完后 `git status` 仍显示 `M deploy_guard.py`（未提交改动原样还原），`.venv/` 等未跟踪文件未被触动，服务 reload 后 `health=ok`。根因修复闭环。
+   - 附带修正：初版用 `git stash push -u` 会把整个 `.venv/` 塞进 stash（既慢又易 pop 出错），已改为 `git stash push`（只收已跟踪改动；未跟踪文件 reset --hard 本就不删，自然保留）。服务器现行为此修正版（md5 `ed677e3c…`）。
 2. 确认 `ac383e7` 已含 339 全部逻辑——已实测确认包含，无需补。
 3. 22 提交保险 `rescue-20260930-22` 分支 + 本地 bundle 可保留一段时间，赛后视情况清理。
