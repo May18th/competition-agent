@@ -5932,6 +5932,85 @@ def defense_review():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
+@app.route('/api/demo_script', methods=['POST'])
+def demo_script():
+    """第三百六十轮：5 分钟演示视频方案——分镜脚本 + 讲稿 + 操作步骤 + 预计秒数。"""
+    data = request.get_json(silent=True) or {}
+    idea = (data.get('idea') or '').strip()
+    comp = (data.get('competition_name') or '').strip()
+    proposal = (data.get('proposal') or '').strip()
+    if not idea and not proposal:
+        return jsonify({"success": False, "error": "缺少项目创意或正文"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        _body = (proposal or idea)[:3000]
+        prompt = ("你是路演导演。请为下面这个参赛项目设计一份 5 分钟以内的演示视频方案，输出 Markdown：\n"
+                  "## 分镜脚本\n按「开场定位→核心功能→实测数据→评分亮点→收尾」拆 5~7 屏，每屏写："
+                  "`镜头N（预计Xs）` + 讲稿 120~180 字（口语化）+ `操作：`（演示者要点哪个按钮/输入什么）。\n"
+                  "## 时长汇总\n各屏秒数合计控制在 240~300 秒。\n"
+                  "只写方案，不写多余解释。\n赛事：" + (comp or "未指定") + "\n项目：" + _body)
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=1200)
+        return jsonify({"success": True, "script": (resp.content or '').strip(), "source": "llm"})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/score_rationale', methods=['POST'])
+def score_rationale():
+    """第三百六十二轮：评分判据拆解——某维度为什么给这个分 + 提分动作。"""
+    data = request.get_json(silent=True) or {}
+    dimension = (data.get('dimension') or '').strip()
+    score = data.get('score')
+    proposal = (data.get('proposal') or '').strip()
+    if not dimension or not proposal:
+        return jsonify({"success": False, "error": "缺少维度或正文"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        _score = ("（得分 %s）" % score) if score is not None else ""
+        prompt = ("你是赛事评委。请为下面项目在「%s」这个维度%s写评分判据："
+                  "①对应官方评分要点；②判定说明（为什么这个分——好在哪里、哪里偏弱）；③1~2 条针对性提分动作。"
+                  "用 3~5 句，直接写，不客套。\n项目正文（节选）：\n%s"
+                  % (dimension, _score, proposal[:2500]))
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=300)
+        return jsonify({"success": True, "rationale": (resp.content or '').strip(), "source": "llm"})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/consistency_check', methods=['POST'])
+def consistency_check():
+    """第三百五十四轮（简化版）：材料一致性校验——数字/命名口径的启发式比对，列出不一致清单。"""
+    data = request.get_json(silent=True) or {}
+    proposal = (data.get('proposal') or '').strip()
+    comp = (data.get('competition_name') or '').strip()
+    if not proposal:
+        return jsonify({"success": False, "error": "缺少正文"}), 400
+    issues = []
+    import re
+    from collections import defaultdict
+    # 命名一致性：旧名/新名冲突
+    if '中国国际互联网+' in proposal and '中国国际大学生创新大赛' in proposal:
+        issues.append({"type": "命名", "item": "赛事名",
+                       "detail": "同时出现旧名「中国国际互联网+」与新名「中国国际大学生创新大赛」，请统一口径"})
+    # 数字一致性：同单位出现跨度悬殊的数值 → 疑似同一指标口径不一致
+    nums = re.findall(r'(\d+(?:\.\d+)?)\s*(%|元|万元|人|次|家|个|所|亿|天|小时|分钟)', proposal)
+    groups = defaultdict(set)
+    for n, unit in nums:
+        try:
+            groups[unit].add(float(n))
+        except ValueError:
+            pass
+    for unit, vals in groups.items():
+        vals = sorted(v for v in vals if v > 0)
+        if len(vals) >= 2 and vals[-1] / vals[0] > 3:
+            _show = '、'.join(str(int(v)) if v == int(v) else str(v) for v in vals)
+            issues.append({"type": "数字", "item": "单位「%s」" % unit,
+                           "detail": "出现多个数值（%s），跨度较大，请核对是否同一指标口径不一致" % _show})
+    return jsonify({"success": True, "issues": issues, "count": len(issues)})
+
+
 @app.route('/api/user_state', methods=['GET', 'POST'])
 @app.route('/api/prefs', methods=['GET', 'POST'])
 def user_prefs():

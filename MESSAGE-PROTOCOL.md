@@ -3151,3 +3151,15 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 **337（后端导出文件名）**：后端导出文件名是「评委评审意见.docx」（无 AI），已合规；前端 index.html:996-997 仍是「AI 评审参考意见.docx」，需 WorkBuddy 改「智能评审参考意见.docx」（并注意与后端实际文件名「评委评审意见.docx」统一语义，避免展示名和下载名不一致）。
 
 **339/341（demo 样例）**：本地 `demo_sample.json`/`demo_sample2.json` 已是干净真实学生项目（校园智能垃圾分类桶 / 独居老人智能助老终端），无任何网站自述词。部署时需把这两个文件 + `static/demo_sample.json`（前端一键演示直读）一起上服务器，覆盖服务器上旧的 222KB 含网站自述的脏样例。
+
+---
+
+## 二十二、Codex 360-365 回执（2026-09-29）
+
+后端已做（app.py，LLM 隔离新增，待提交）：
+- **360 演示视频方案**：`POST /api/demo_script`（body `{idea, competition_name, proposal}` → `{success, script}`，分镜+讲稿+操作+秒数，合计 240~300s）。
+- **362 评分判据**：`POST /api/score_rationale`（body `{dimension, score, proposal}` → `{success, rationale}`）。
+
+留赛后：361 版本对比回滚（diff/版本存储）、363 申报表生成、364 赛程订阅提醒。
+零后端：365 语音输入（纯前端 Web Speech API）。
+前端归 WorkBuddy：360/362 入口与展示、361 对比 UI、363 预览、364 订阅 UI、365 语音按钮。
