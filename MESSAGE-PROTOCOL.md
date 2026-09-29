@@ -3109,3 +3109,9 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 2. 无样例时回退到「最新一条深度版」`ORDER BY id DESC LIMIT 1`，同样无鉴权暴露最新用户深度生成。
 
 **修复**：`demo_data()` 改为只返回预置样例文件（`_demo_sample_files` + `_demo_sample_inner`），彻底移除 history_id 直读与最新深度版回退；无样例时返回「暂无演示样例，请先导入样例数据」。`/api/demo/list`、`/api/demo/sample` 本就只读文件、无此问题。已用 AST/compile 验证 `demo_data` 不再含 `SELECT result_data FROM history`。
+
+**续挖（同样高危，已一并修复）**：
+1. `/api/share/<history_id>`（POST 建分享链接）原先只查 `WHERE id=?` 不查归属 → 任意用户可按 id 枚举创建他人内容的分享链接。已改 `WHERE id=? AND user_id=?` + `_require_uid`。
+2. 导出回源 `_fetch_record_from_source` 的 history_id 分支原先 `WHERE id=?` 无归属 → 任意有效 uid 可 `/api/export_word?history_id=X` 导出他人内容。已改 `WHERE id=? AND user_id=?`（分享页走 token 的 `share_export` 不受影响，它不经过此函数）。
+
+以上三处均为「按自增 id 枚举他人生成内容」的越权读取漏洞，现已封堵；`/api/history/<id>`、`/api/history/<id>/rate`、删除等本就带 `AND user_id=?`，无问题。

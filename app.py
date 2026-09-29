@@ -1607,7 +1607,9 @@ def _fetch_record_from_source(data):
             conn = get_db()
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            row = c.execute("SELECT result_data, mode FROM history WHERE id=?", (int(hid),)).fetchone()
+            # 深挖修复：导出回源只允许取本人历史记录，防止按 history_id 枚举导出他人内容
+            row = c.execute("SELECT result_data, mode FROM history WHERE id=? AND user_id=?",
+                            (int(hid), _current_uid())).fetchone()
             conn.close()
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
@@ -2310,12 +2312,16 @@ def _md_to_html(t):
 def create_share(history_id):
     import secrets
     from datetime import timedelta
+    # 隐私（深挖修复）：只允许分享本人历史记录，防止按 id 枚举创建他人内容的分享链接
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT id FROM history WHERE id=?", (history_id,))
+    c.execute("SELECT id FROM history WHERE id=? AND user_id=?", (history_id, _current_uid()))
     if not c.fetchone():
         conn.close()
-        return jsonify({"success": False, "error": "记录不存在"}), 404
+        return jsonify({"success": False, "error": "记录不存在或无权分享"}), 404
     token = secrets.token_urlsafe(8)
     now = datetime.now()
     expires = now + timedelta(days=7)
