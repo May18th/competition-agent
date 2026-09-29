@@ -2818,11 +2818,11 @@
             var ft = document.getElementById('ideaRadarFoot');
             if (ft) {
                 // 第二十三/二十四/三十一轮反复刺：这里原来还挂一个「创意结构分 66 / 100」，
-                // 和上方「AI 自评参考 86」形成两个总分，评委不知道信哪个。
+                // 和上方「智能自评参考 86」形成两个总分，评委不知道信哪个。
                 // 现在只做维度分解——五个维度的分都在图上，不再汇总出第二个总分。
                 ft.innerHTML = '创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
                     + '<div style="margin-top: 5px;">这五个维度看的是<b>创意本身</b>的强弱，仅作分解参考，'
-                    + '不另设总分；页面唯一评分是上方「AI 自评参考（文档质量）」。</div>';
+                    + '不另设总分；页面唯一评分是上方「智能自评参考（文档质量）」。</div>';
             }
             box.style.display = 'block';
         }
@@ -4103,7 +4103,7 @@
                 })
                 .catch(function () {});
         }
-        /* ---- AI 自评参考：面板内二级标签 ---- */
+        /* ---- 智能自评参考：面板内二级标签 ---- */
         var WB_SUB_TABS = [['score', 'wbSubTabScore'], ['judge', 'wbSubTabJudge'], ['check', 'wbSubTabCheck']];
         function switchScoreTab(ev, name) {
             WB_SUB_TABS.forEach(function (t) {
@@ -6216,8 +6216,8 @@
                 if (_locList.length) {
                     list.innerHTML =
                         '<p style="color: var(--text-mute); text-align: center; font-size: 12.5px; line-height: 1.7; margin-bottom: 8px;">'
-                        + '浏览器限制了本机存储，后端暂时查不到你的记录；下面是<b>本次会话</b>生成的，'
-                        + '换个浏览器或关掉无痕模式就能长期保存。</p>' +
+                        + '以下是本机最近生成的记录（本次会话内有效），'
+                        + '换设备或登录后可跨端长期保存。</p>' +
                         _locList.map(function (h) {
                             return '<div class="history-item" style="cursor: pointer;" onclick="openHistory(' + h.id + ')">' +
                                 '<div class="history-info">' +
