@@ -108,17 +108,32 @@ def get_quota_status():
 _LLM_GATE = threading.Semaphore(16)
 _quota_lock = threading.Lock()
 _llm_invoke_original = llm.invoke
+_llm_fail_count = 0            # 第二百一十一轮 E：主通道连续失败计数
+_llm_fail_lock = threading.Lock()
 
 
 def _llm_invoke_with_quota(*args, **kwargs):
+    global _llm_fail_count
     # ⚠️ 读-改-写必须加锁：16 路生成并发时无锁的「load→+1→save」会互相覆盖
     # 丢计数（配额被低估）。锁只包文件操作，不包 LLM 调用本身，不串行化。
     with _quota_lock:
         data = _quota_load()
         if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
             raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
-    with _LLM_GATE:
-        result = _llm_invoke_original(*args, **kwargs)
+    # 第二百一十一轮 E：主通道连续失败 ≥3 次且已配备用 → 本次改用备用通道兜底
+    with _llm_fail_lock:
+        _use_backup = (_backup_llm is not None) and (_llm_fail_count >= 3)
+    _target = _backup_llm if _use_backup else _llm_invoke_original
+    try:
+        with _LLM_GATE:
+            result = _target(*args, **kwargs)
+    except Exception:
+        with _llm_fail_lock:
+            _llm_fail_count += 1
+        raise
+    # 成功一次即认为通道恢复，复位失败计数
+    with _llm_fail_lock:
+        _llm_fail_count = 0
     with _quota_lock:
         data = _quota_load()
         data["calls"] = data.get("calls", 0) + 1
@@ -129,15 +144,22 @@ def _llm_invoke_with_quota(*args, **kwargs):
 # ChatDeepSeek 是 pydantic 模型，需用 object.__setattr__ 绕过字段校验来 monkey-patch
 object.__setattr__(llm, "invoke", _llm_invoke_with_quota)
 
-# Claude模型（火山引擎）
-# from langchain_openai import ChatOpenAI
-# claude_llm = ChatOpenAI(
-#     model="ep-20250923144558-7gqfz",
-#     api_key=CLAUDE_API_KEY,
-#     base_url="https://ark.cn-beijing.volces.com/api/v3",
-#     temperature=0.5,
-#     max_tokens=6000
-# )
+# 第二百一十一轮 E：备用通道（火山引擎 Claude）。配置了 CLAUDE_API_KEY 才启用；
+# DeepSeek 连续失败 ≥3 次自动切到这里降档兜底，仍失败才向用户报错。
+_backup_llm = None
+try:
+    if CLAUDE_API_KEY:
+        from langchain_openai import ChatOpenAI
+        _backup_llm = ChatOpenAI(
+            model="ep-20250923144558-7gqfz",
+            api_key=CLAUDE_API_KEY,
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            temperature=0.5,
+            max_tokens=6000,
+            request_timeout=120,
+        )
+except Exception as _e:
+    print(f"[backup-llm] 备用通道初始化失败（忽略，仅用主通道）：{_e}")
 
 # GPT模型框架（后面加API key就能用，现在先注释掉）
 # GPT_API_KEY = ""
