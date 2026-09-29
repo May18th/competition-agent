@@ -752,7 +752,7 @@ button{margin-top:8px;width:100%;background:linear-gradient(135deg,#5B7CFA,#8A6B
 button:hover{filter:brightness(1.05)}
 .tip{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.7}
 .foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
-</style></head><body>
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
 <form class="box" method="post" action="/admin/login">
 <img src="/static/logo.png" alt="科创赛事助手" style="height:56px;display:block;margin:0 auto 12px">
 <h1>科创赛事助手 · 管理后台</h1>
@@ -2750,7 +2750,7 @@ h1{font-size:24px;margin:0 0 4px}
 .box li.e{color:#94a3b8;text-align:center;padding:16px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
-</style></head><body><div class="wrap">
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
 <nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
@@ -3182,7 +3182,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
-</style></head><body><div class="wrap">
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
 <nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
@@ -3330,7 +3330,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
 .nav a.active{background:#22d3ee;color:#0b1026}
-</style></head><body><div class="wrap">
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
 <nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
@@ -5174,10 +5174,14 @@ def competition_index():
 
 @app.route('/api/quota')
 def quota():
-    """返回今日 LLM 调用配额使用情况"""
+    """返回今日 LLM 调用配额使用情况（324⑦：加 near_limit，供前端只在接近限额时提示、不展示具体数字）"""
     try:
         from competition_agents import get_quota_status
-        return jsonify({"success": True, **get_quota_status()})
+        q = get_quota_status()
+        calls = int(q.get("calls") or 0)
+        limit = int(q.get("limit") or 0)
+        q["near_limit"] = bool(limit > 0 and calls >= limit * 0.9)
+        return jsonify({"success": True, **q})
     except Exception as e:
         print(f"[quota] 状态读取失败：{e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5531,7 +5535,7 @@ h1{font-size:22px;margin:0 0 18px;color:#fff}
 .chart{height:300px;background:#151b2e;border:1px solid #26304a;border-radius:10px;margin-bottom:14px;padding:8px}
 .bar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px}
 button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
-</style></head><body>
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
 <div class="wrap">
 <h1>科创赛事助手 · 测试数据报告</h1>
 <div class="cards">
@@ -6995,7 +6999,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   .barrow .bn{width:76px}
   .filters{width:100%}
 }
-</style></head><body><div class="wrap">
+<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
 <nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
 <h1>🐞 漏洞库</h1>
 <div id="pageMsg" class="msg"></div>
