@@ -1535,6 +1535,15 @@ def _fetch_record_from_source(data):
                 return _clean_legacy_record(d)
         hid = data.get('history_id')
         if hid:
+            # 第二百四十九轮第 3 条：传入 id 与最近成功记录不一致时打印日志，便于审计错配
+            try:
+                _conn = get_db()
+                _latest = _conn.execute("SELECT id FROM history ORDER BY id DESC LIMIT 1").fetchone()
+                _conn.close()
+                if _latest and int(hid) != int(_latest[0]):
+                    print(f"[export-audit] history_id={hid} 与最近成功记录 id={_latest[0]} 不一致，导出可能错配")
+            except Exception:
+                pass
             import json as _json
             conn = get_db()
             conn.row_factory = sqlite3.Row
@@ -2837,7 +2846,7 @@ def admin_dashboard():
     # 反馈分类聚合
     fb_cat = c.execute(
         "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
-    # 评估指标：平均耗时 / 成功率 / AI 评委平均分
+    # 评估指标：平均耗时 / 成功率 / 评审引擎平均分
     avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
     succ_total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
@@ -3078,7 +3087,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 <div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
 <div class="card"><div class="num">%s%%</div><div class="label">生成成功率</div></div>
-<div class="card"><div class="num">%s</div><div class="label">AI 评委平均分</div></div>
+<div class="card"><div class="num">%s</div><div class="label">评审引擎平均分</div></div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">满意度分布</h2>
@@ -4311,7 +4320,7 @@ _SPLASH_FACTS = [
 ]
 _EDIT_HINTS = {
     "writing": "正文生成中，可以先去准备实测数据",
-    "judging": "AI 评委正在打分，稍等",
+    "judging": "评审引擎正在打分，稍等",
     "revision": "正在按评委意见定向改写",
     "analysis": "正在并行分析竞品、商业模式、风险、技术方案",
 }
