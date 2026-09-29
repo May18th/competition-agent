@@ -2001,3 +2001,34 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
     /* 排到第一位后标题行距卡片顶更近，去掉多余的上间距，第一屏多露一行 */
     .wb-formgrid > .form-group:nth-child(3) { margin-top: 2px; }
 }
+
+/* ===== 第二百四十二轮：长结果页导航（一键到底 + 深度版章节折叠）=====
+   背景：深度版结果动辄上万字。横向的「板块快速定位」锚点条已经有了，
+   缺的是「干脆一键翻到底看评分与导出」和「不关心的长章节先收起来」。
+   本段**纯追加**，不覆盖任何既有规则；折叠靠给内容块的父容器挂 class，
+   不插包裹层、不改正文 DOM 结构，导出/复制读的还是同一份 DOM。 */
+#wbBottom {
+    position: fixed; right: 16px; bottom: 96px; z-index: 280;
+    /* ↑96px：避开 #wbTop(150px) 和 #wbFab(16px+56px)，三者不叠在一起 */
+    width: 44px; height: 44px; padding: 0; line-height: 1; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--surface-solid); color: var(--text);
+    font-size: 20px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .35);
+    display: none; align-items: center; justify-content: center;
+}
+#wbBottom.wbnav-btn-show { display: flex; }
+/* 折叠态：只藏「标题以外的兄弟节点」，标题（含展开钮）始终可见 */
+.wbnav-folded > *:not(h3):not(h2) { display: none !important; }
+.wbnav-toggle {
+    margin-left: 10px; padding: 4px 12px; font-size: 12px; font-weight: 400;
+    border-radius: 999px; cursor: pointer; vertical-align: middle;
+    border: 1px solid var(--line); background: var(--btn-ghost); color: var(--text-dim);
+}
+.wbnav-toggle:hover { color: var(--c-a); border-color: var(--c-a); }
+@media (max-width: 768px) {
+    /* 小屏不挡内容：缩小 + 降透明度，按住/聚焦时才实心 */
+    #wbBottom { right: 10px; bottom: 88px; width: 38px; height: 38px; font-size: 16px; opacity: .78; }
+    #wbBottom.wbnav-btn-show:active { opacity: 1; }
+    /* 同 104 轮的老规矩：手机上这类薄片要有触达面积，别做成 4px 小目标 */
+    .wbnav-toggle { padding: 10px 14px; font-size: 12.5px; }
+}

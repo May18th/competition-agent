@@ -866,7 +866,28 @@
             });
         }
 
+        // 第二百四十九轮：导出目标对账 —— 当前展示的记录 id 必须与导出要用的 id 一致。
+        // 两边不一致只可能是状态串了，此时继续导出等于把别的内容交到用户手里，
+        // 用户是拿去交作品的，下错了比下不出来严重得多。
+        function wbExportTargetOk() {
+            var shown = window._shownResultId, hid = window._lastHistoryId;
+            // 两者都为空：还没绑定记录，导出走本次提交的正文 —— 内容就是页面上这一版，安全
+            if (shown === undefined || (shown === null && hid === null)) return true;
+            if (shown === hid) return true;
+            wbToast('导出目标与当前结果不一致，已拦下', {
+                type: 'warn', ms: 9000,
+                sub: '检测到本次导出会绑定到另一条记录（' + (hid || '未知') + '），'
+                     + '为避免下载到别的内容，已取消这次导出。请刷新页面后重新生成再导出。'
+            });
+            return false;
+        }
+        window.wbExportTargetOk = wbExportTargetOk;
+
         async function exportOne(id, name) {
+            // 第二百四十九轮 P0 防御：导出的目标记录必须与「当前展示的结果」是同一条。
+            // 只要两边对不上，就说明状态串了（并发生成 / 回看历史 / 接口晚到都可能造成），
+            // 此时继续导出会把别的内容交到用户手里——宁可拦下让用户重来，也不能静默给错文件。
+            if (_DOM_TO_KEY[id] === 'proposal' && !wbExportTargetOk()) return;
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
@@ -965,6 +986,8 @@
         async function exportOnePDF(id, name) {
             /* iCAN 官方交的就是 PDF（≤20页），这里必须和 Word 一样先清洗，
                否则「待补充」「待替换数据清单」会原样进 PDF */
+            // 249 轮：PDF 同样要过目标对账，否则会导出到上一条记录
+            if (_DOM_TO_KEY[id] === 'proposal' && !wbExportTargetOk()) return;
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
@@ -1016,6 +1039,8 @@
             return el.innerText || el.textContent || '';
         }
         async function exportAll() {
+            // 249 轮：一键打包同样要过目标对账（打包里含申报书，绑错记录后果一样严重）
+            if (!wbExportTargetOk()) return;
             var rd = window._lastData || {};
             var _m = wbMeta();
             var deck = rd.rich_deck || null;
@@ -2502,7 +2527,7 @@
                     : '<span style="color:var(--info-text);">已收录，部分章节待补充：' + (f.missing || []).map(_esc).join('、') + '</span>';
                 cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → 命中《' + _esc(row.hit[0]) + '》' + tail;
             } else {
-                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，AI 将按通用标准评审</span>';
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，将按通用评审标准评审</span>';
             }
             renderKbDetail();
         }
@@ -3490,7 +3515,7 @@
             var el = document.getElementById('deckRoadPlan');
             if (!el) return;
             if (!wbRoadshowOn()) {
-                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按 AI 原始结构导出（页数与顺序不固定）。</div>';
+                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按原始结构导出（页数与顺序不固定）。</div>';
                 return;
             }
             if (!deck || !deck.slides) { el.innerHTML = ''; return; }
@@ -4343,6 +4368,11 @@
             document.getElementById('resultArea').style.display = 'none';
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
             _currentTaskId = null;
+            // 第二百四十九轮 P0：开始新一轮时必须先把「上一次结果的历史 id」清掉。
+            // 原来只在生成完成后赋值，且赋值还会回落到旧值（见下方），于是新一轮刚开头、
+            // 新 id 还没拿到的窗口里，导出按钮读到的仍是上一条记录的 id —— 用户点了导出，
+            // 后端按旧 id 回源，下载到的是上一条的内容（实测 id=217 生成完却下载到 216）。
+            window._lastHistoryId = null;
             streamPrepare(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
@@ -4782,7 +4812,14 @@
 
                         // 不依赖渲染结果的：同步执行
                         // 分享需要知道这条结果对应哪条历史记录
-                        window._lastHistoryId = (data.data && data.data.history_id) || window._lastHistoryId || null;
+                        // 第二百四十九轮 P0：这里原来是 `(新id) || window._lastHistoryId || null`，
+                        // 新 id 还没落库时会**回落到上一条记录的 id**，导出就绑错记录。
+                        // 正确做法：拿不到就是 null（后端会退回用本次提交的正文，内容仍然是当前这一版），
+                        // 绝不允许继承上一条的 id。
+                        window._lastHistoryId = (data.data && data.data.history_id) || null;
+                        // 记下「当前展示的结果是哪条」：导出前拿它跟 _lastHistoryId 对账，
+                        // 两边不一致说明状态串了，宁可拦下也不能把错记录交给用户。
+                        window._shownResultId = window._lastHistoryId;
                         // 生成完就存一份在本机：后端历史按 uid 隔离，手机端 uid 存不住时
                         // 只剩这份能保证「刷新后还能打开刚才那版」
                         try {
@@ -6257,6 +6294,8 @@
                 // 打开历史必须同步记下 history_id，否则 wbShare 和导出回源都会拿不到 id，
                 // 表现成「分享提示还没存进历史」「导出不回源当前记录」。
                 window._lastHistoryId = id;
+                // 249 轮：回看历史同样要记「当前展示的是哪条」，供导出前对账
+                window._shownResultId = id;
                 // 174 轮：回看历史必须重算「沉淀」入口。原来只在生成完成那次同步过，
                 // 于是回看一条旧记录时，按钮上写的还是上一条的分数、点下去沉淀的却是当前这条
                 // ——「显示的分数」和「实际入库的记录」不是同一条，属于静默错沉淀。

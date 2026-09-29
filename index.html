@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260929j">
+    <link rel="stylesheet" href="/static/style.css?v=20260929k">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -402,7 +402,7 @@
                         <!-- 「从材料识别」：已有申报书/材料的用户不用手抄五遍。
                              入口放在创意标题右侧（手就在这里），点开是弹层，不占首屏高度 -->
                         <button type="button" class="wb-textbtn" style="margin-left: auto;"
-                                title="上传或粘贴已有材料，AI 识别后自动填充创意/团队/实测数据等"
+                                title="上传或粘贴已有材料，智能识别后自动填充创意/团队/实测数据等"
                                 onclick="wbMatOpen()">从材料识别</button>
                     </label>
                     <textarea id="idea" aria-label="项目创意" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
@@ -479,7 +479,7 @@
                                  onclick="document.getElementById('udFile').click()">
                                 <svg class="wb-ico" style="width: 17px; height: 17px;" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg>
                                 <span><b>点击上传</b> 或把文件拖到这里</span>
-                                <span class="wb-drop-sub">测试报告 / 调研数据 / 用户反馈（pdf · docx · txt · md · csv · xlsx），AI 自动识别后填到对应位置</span>
+                                <span class="wb-drop-sub">测试报告 / 调研数据 / 用户反馈（pdf · docx · txt · md · csv · xlsx），智能识别后自动填到对应位置</span>
                             </div>
                             <input type="file" id="udFile" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm" style="display: none;">
                             <div id="udFileInfo" style="display: none; margin-top: 10px; font-size: 12.5px; line-height: 1.7;"></div>
@@ -600,7 +600,7 @@
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
                             <!-- 同上 186 轮：数字一律动态取，不写死（写死值已与接口实测脱节） -->
                             <b style="color: var(--c-b);" id="statDeepHead">内容全，含图表与路演稿</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statDeepDetail">（正在读取实测数据…）</span><br>
-                            简洁版全部 + 多视角评审（AI） · 8 张图表 · 路演 PPT · 12 章正文
+                            简洁版全部 + 多视角评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
                 </div>
@@ -617,7 +617,7 @@
                         <b style="color: var(--text);">低分自动补写</b>
                         <span class="wb-opt">（默认开）</span>
                         <span class="wb-tier-flag wb-tier-pro">老手可选</span>
-                        <span class="wb-tip" data-tip="勾上后，若 AI 自评分数偏低会自动返工一轮补强，多等 30～60 秒；不勾就是一次成稿、快。" onclick="event.preventDefault();event.stopPropagation();wbShowTip(this)">?</span>
+                        <span class="wb-tip" data-tip="勾上后，若自评分数偏低会自动返工一轮补强，多等 30～60 秒；不勾就是一次成稿、快。" onclick="event.preventDefault();event.stopPropagation();wbShowTip(this)">?</span>
                     </span>
                 </label>
             </div>
@@ -828,7 +828,7 @@
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>
                 正文里有 <b id="wbPhCount">0</b> 处标黄的
                 <b>【待你填写：xxx】</b>／<b>【示例值，需核实】</b>
-                —— 这些是 AI 编不出来的真实数据，<b>必须换成你自己跑出来的</b>再交。
+                —— 这些是需要实测的真实数据，<b>必须换成你自己跑出来的</b>再交。
                 带着占位符交上去，评委一问就穿帮。
             </div>
             <div id="wbBanBar" style="display: none; background: #FDECEA; border-left: 4px solid #C0392B; padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px; line-height: 1.8; color: #7B241C;">
@@ -887,32 +887,32 @@
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg> 竞品分析</h3>
                     <div class="content-block" id="competitorAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-coin"/></svg> 商业模式</h3>
                     <div class="content-block" id="businessModel"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 风险分析</h3>
                     <div class="content-block" id="riskAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-wrench"/></svg> 技术方案</h3>
                     <div class="content-block" id="techSolution"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 实施计划</h3>
                     <div class="content-block" id="implementationPlan"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
             </div>
 
@@ -1071,7 +1071,7 @@
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
                     <div class="content-block" id="projectSummary"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
@@ -1081,21 +1081,21 @@
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="proposalText"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                     <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
                     <div class="content-block" id="proposalAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
                     <div class="content-block" id="judgeFeedback"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
-                    <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多视角评审（AI）</h3>
+                    <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多视角评审</h3>
                     <div id="expertReviewContent" style="background:var(--surface-solid); border-radius:8px; padding:16px;"></div>
                 </div>
             </div>
@@ -1103,7 +1103,7 @@
             <div id="tab-charts" class="tab-content">
                 <div id="richChartsWrap" style="display:none;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> AI 智能图表 <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（根据你的项目内容自动生成）</span></h3>
+                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 智能图表 <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（根据你的项目内容自动生成）</span></h3>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;" id="richCharts"></div>
                     <h3 style="color: var(--c-a); margin: 28px 0 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 关键数据表格</h3>
@@ -1137,7 +1137,7 @@
                     <!-- 第二十七轮：这一区会主动承认「问卷没发、原型没做、零实测」，
                          是很好的内部准备，但若被当成提交材料递上去等于自曝短板，标题先标清楚 -->
                     <div style="margin-bottom: 10px; padding: 9px 12px; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 6px; font-size: 12.5px; color: var(--text-dim); line-height: 1.7;">
-                        下面是 AI 替评委挑的<b>尖锐问题</b>，用来内部演练；里面会直说你的短板（如"零实测"），
+                        下面是按评委视角挑的<b>尖锐问题</b>，用来内部演练；里面会直说你的短板（如"零实测"），
                         <b>不要放进提交材料</b>。导出时这一项默认不勾选。
                     </div>
                     <div class="content-block" id="defenseQuestions"></div>
@@ -1148,7 +1148,7 @@
                 </div>
                 <div id="deckWrap" style="display:none; margin-top: 28px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom: 12px;">
-                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> AI 路演 PPT <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（已按大纲自动排版，可直接下载 .pptx）</span></h3>
+                        <h3 style="color: var(--c-a); margin:0;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 路演 PPT <span style="font-size:12px; color:var(--text-mute); font-weight:400;">（已按大纲自动排版，可直接下载 .pptx）</span></h3>
                         <div id="deckThemeRow" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                             <!-- 主题下拉保留但隐藏：值仍由它承载，缩略图点选时改它的值。
                                  不删是因为 exportPptx / previewDeckStyle 都读它 -->
@@ -1586,7 +1586,7 @@
             }
             try {
                 h = h.replace(PH_RE, function (m) {
-                    return '<mark class="wb-ph" title="AI 编不出来的内容，必须你自己填">'
+                    return '<mark class="wb-ph" title="需要你实测补充的内容，必须你自己填">'
                          + m + '</mark>';
                 });
             } catch (e) { /* 高亮失败也不能影响正文显示 */ }
@@ -1598,8 +1598,11 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260929j"></script>
-    <script src="/static/app.js?v=20260929j"></script>
+    <script src="/static/wbconst.js?v=20260929k"></script>
+    <script src="/static/app.js?v=20260929k"></script>
+    <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
+         它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
+    <script src="/static/wbnavig.js?v=20260929k"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1648,7 +1651,7 @@
               style="margin-left: auto; cursor: pointer; color: var(--text-mute); font-size: 18px; line-height: 1; padding: 0 4px;">×</span>
     </div>
     <div style="margin-top: 8px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
-        把已有的申报书 / 项目材料粘进来，或上传 PDF / DOCX / TXT，AI 识别后自动填到赛事、创意、团队成员、实测数据、关键词。
+        把已有的申报书 / 项目材料粘进来，或上传 PDF / DOCX / TXT，智能识别后自动填到赛事、创意、团队成员、实测数据、关键词。
         <b style="color: var(--text);">文件只用于本次识别，不进共享知识库</b>。
     </div>
     <textarea id="wbMatText" rows="6" placeholder="粘贴申报书 / 项目材料文字…" style="margin-top: 10px; min-height: 120px;"></textarea>
@@ -1669,11 +1672,11 @@
     </div>
 </div>
 
-<script src="/static/wbpage.js?v=20260929j"></script>
+<script src="/static/wbpage.js?v=20260929k"></script>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>
-    <div style="opacity: .75;">基于官方评审规则 · AI 多智能体辅助撰写 · 最终内容以你的真实项目与署名为准</div>
+    <div style="opacity: .75;">基于官方评审规则 · 多智能体协作辅助撰写 · 最终内容以你的真实项目与署名为准</div>
     <!-- 第二百零四轮：后台入口原来只能靠手敲 /admin/login，评委/管理员自己都找不到。
          拍板结论是「不改路径、不撤入口，安全靠登录门不靠路径保密」，所以这里放一个
          不起眼的小字链接——访客几乎不会注意，但知道的人点一下就到登录页。
