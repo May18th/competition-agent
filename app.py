@@ -1591,6 +1591,65 @@ def _pdf_limits(competition_name):
     return max_pages, max_bytes
 
 
+# ===== 415 轮：夸克 / UC 内核「临时文件 URL」直链下载通道 =====
+# 夸克（UC 内核）对 fetch-blob + Blob URL + a[download] 的支持很差，表现为点「该网页请求打开外部应用」后无反应、文件管理器找不到文件。
+# 这里补一条原生 HTTP 下载通道：前端对 UC 系不再 fetch-blob，而是 POST 生成 -> 拿到一次性 token URL -> window.location 跳转，
+# 交给浏览器自带下载器接管，才能真正落盘。URL 一次性、1 小时过期、用完即删。
+_DOWNLOAD_REGISTRY = {}          # token -> {"path": str, "name": str, "expires": float}
+_DOWNLOAD_TMP_DIR = None
+
+
+def _download_tmp_dir():
+    global _DOWNLOAD_TMP_DIR
+    if _DOWNLOAD_TMP_DIR is None:
+        _DOWNLOAD_TMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp_downloads')
+    try:
+        os.makedirs(_DOWNLOAD_TMP_DIR, exist_ok=True)
+    except Exception:
+        pass
+    return _DOWNLOAD_TMP_DIR
+
+
+def _register_download(filepath, download_name):
+    """把刚生成的导出文件挪进 tmp_downloads 并登记一个一次性 token，返回相对 URL；失败返回 None。"""
+    token = uuid.uuid4().hex
+    ext = os.path.splitext(filepath)[1] or ''
+    _dir = _download_tmp_dir()
+    newpath = os.path.join(_dir, token + ext)
+    try:
+        os.replace(filepath, newpath)
+    except Exception:
+        try:
+            import shutil as _sh
+            _sh.move(filepath, newpath)
+        except Exception:
+            return None
+    _DOWNLOAD_REGISTRY[token] = {
+        "path": newpath,
+        "name": download_name,
+        "expires": time.time() + 3600,
+    }
+    # 顺带清理过期项（低频、O(n) 可接受）
+    _now = time.time()
+    for _t in [k for k, v in _DOWNLOAD_REGISTRY.items() if v.get("expires", 0) < _now]:
+        _p = _DOWNLOAD_REGISTRY.pop(_t, {}).get("path")
+        if _p:
+            try:
+                os.unlink(_p)
+            except Exception:
+                pass
+    return "/api/download/" + token
+
+
+def _export_reply(data, filepath, download_name):
+    """按需返回文件流或一次性下载 URL。data['return_url'] 为真时走 URL 通道（供 UC 系跳转原生下载）。"""
+    if data.get('return_url'):
+        url = _register_download(filepath, download_name)
+        if url:
+            return jsonify({"success": True, "url": url, "filename": download_name})
+    return send_file(filepath, as_attachment=True, download_name=download_name)
+
+
 def _normalize_heading_title(s):
     """把「一、项目概述 / (1)项目概述 / 1.项目概述 / 项目概述」归一成可用于匹配的关键词串。"""
     s = re.sub(r"^\s*(?:[一二三四五六七八九十]+、|\d+[.、]|\(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩]+)\s*", "", s or "")
@@ -2043,6 +2102,24 @@ def parse_material():
     return jsonify({"success": True, "profile": profile})
 
 
+@app.route('/api/download/<token>')
+def download_token(token):
+    """415 轮：一次性「临时文件 URL」直链下载（供夸克 / UC 内核跳转原生下载）。"""
+    rec = _DOWNLOAD_REGISTRY.get(token)
+    if not rec:
+        return jsonify({"success": False, "error": "下载链接不存在或已过期"}), 404
+    if time.time() > rec.get("expires", 0):
+        _DOWNLOAD_REGISTRY.pop(token, None)
+        return jsonify({"success": False, "error": "下载链接已过期，请重新导出"}), 410
+    _path = rec.get("path")
+    if not _path or not os.path.exists(_path):
+        _DOWNLOAD_REGISTRY.pop(token, None)
+        return jsonify({"success": False, "error": "文件已清理，请重新导出"}), 404
+    _name = rec.get("name") or os.path.basename(_path)
+    _DOWNLOAD_REGISTRY.pop(token, None)
+    return send_file(_path, as_attachment=True, download_name=_name)
+
+
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
@@ -2118,8 +2195,8 @@ def export_word():
         print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return send_file(filepath, as_attachment=True,
-                     download_name=_export_filename(project, competition, title, '.docx'))
+    return _export_reply(data, filepath,
+                         _export_filename(project, competition, title, '.docx'))
 
 
 @app.route('/api/export_pdf', methods=['GET', 'POST'])
@@ -2165,8 +2242,8 @@ def export_pdf():
         pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return send_file(filepath, as_attachment=True,
-                     download_name=_export_filename(project, competition, title, '.pdf'))
+    return _export_reply(data, filepath,
+                         _export_filename(project, competition, title, '.pdf'))
 
 
 @app.route('/api/export_defense')
@@ -5184,9 +5261,8 @@ def export_zip():
                             "error": "打包质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
         pass
-    return send_file(zippath, as_attachment=True,
-                     download_name=_export_filename(project, competition, '材料包', '.zip'),
-                     mimetype='application/zip')
+    return _export_reply(data, zippath,
+                         _export_filename(project, competition, '材料包', '.zip'))
 
 
 # ============ 富媒体：图表图片 & PPT 导出 ============
@@ -6588,9 +6664,8 @@ def export_pptx():
                                 "error": "PPT 质量未达标：" + "；".join(_issues[:3])}), 422
         except Exception:
             pass
-        return send_file(out, as_attachment=True,
-                         download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
-                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        return _export_reply(data, out,
+                             _export_filename(project, competition, '路演PPT', '.pptx'))
     except Exception as e:
         import traceback
         traceback.print_exc()
