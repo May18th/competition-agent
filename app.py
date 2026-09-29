@@ -5904,12 +5904,16 @@ def chat():
 
 @app.route('/api/analyze_segment', methods=['POST'])
 def analyze_segment():
-    """第三百零八轮：段落「智能解读」——对正文某段做 2~4 句通俗解读（要点/术语/评分支撑）。
-    独立接口，不改生成/导出主链路；演示只读态不接 LLM；计入生成额度（llm.invoke 自动计数）。"""
+    """第三百零八轮：段落/图表「智能解读」——对正文某段或某张图表做通俗深度解读。
+    独立接口，不改生成/导出主链路；演示只读态不接 LLM；计入生成额度（llm.invoke 自动计数）。
+    kind=text（默认，正文段落）/ chart（图表标题+数据），图表不可划选，前端用点按/悬停触发。"""
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '').strip()
+    kind = str(data.get('kind') or 'text').strip().lower()
+    if kind not in ('text', 'chart'):
+        kind = 'text'
     if not text:
-        return jsonify({"success": False, "error": "缺少需要解读的正文段落"}), 400
+        return jsonify({"success": False, "error": "缺少需要解读的内容"}), 400
     if len(text) > 3000:
         text = text[:3000]
     # 演示只读会话：不接 LLM，给预设提示（不烧额度）
@@ -5920,11 +5924,17 @@ def analyze_segment():
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
-        prompt = ("你是「%s」智能助手。请用 2~4 句通俗中文解读下面这段申报书正文："
-                  "提炼要点、解释专业术语、提示它对哪些评分维度的支撑。不编造、不评价优劣、不扩写原文。\n"
-                  "正文：\n%s" % (_CHAT_NAME, text))
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=300)
-        return jsonify({"success": True, "analysis": (resp.content or '').strip(), "source": "llm"})
+        if kind == 'chart':
+            _task = ("下面是一张图表的标题与数据。请用通俗中文「说人话」讲清这张图说明了什么、"
+                     "关键数据是什么、它对哪些评分维度有支撑；不要只罗列数字，不要套话模板。")
+        else:
+            _task = ("下面是一段申报书正文。请用 2~4 句通俗中文做深度解读：提炼要点、解释专业术语、"
+                     "提示它对哪些评分维度的支撑；必须结合这段内容具体展开，禁止敷衍套话/通用模板，"
+                     "不编造、不评价优劣、不扩写原文。")
+        prompt = ("你是「%s」智能助手。%s\n内容：\n%s" % (_CHAT_NAME, _task, text))
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=350)
+        return jsonify({"success": True, "analysis": (resp.content or '').strip(),
+                        "source": "llm", "kind": kind})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 

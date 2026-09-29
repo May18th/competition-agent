@@ -3020,4 +3020,4 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 
 ## 十二、Codex 308 回执（段落智能解读，2026-09-29）
 
-后端已实现 `POST /api/analyze_segment`（入参 `{text}`，LLM 2~4 句通俗解读，计入额度，演示只读态返「登录后可深度解读」403，失败优雅降级），并加入演示只读白名单走接口自己的 readonly 分支。前端契约转 WorkBuddy：`docs_tmp/接口契约_308_智能解读_Codex对WB.md`（按钮名「智能解读」，规避「AI」字样，见 308b）。
+后端已实现 `POST /api/analyze_segment`（入参 `{text, kind=text|chart}`，文本划选 + 图表点按/悬停，LLM 通俗深度解读、禁止套话模板，计入额度，演示只读态返「登录后可深度解读」403，失败优雅降级），并加入演示只读白名单走接口自己的 readonly 分支。前端契约转 WorkBuddy：`docs_tmp/接口契约_308_智能解读_Codex对WB.md`（308c 划选触发 + 308d 图表解读；规避「AI」字样用「智能解读」）。
