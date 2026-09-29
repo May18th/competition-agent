@@ -24,6 +24,7 @@ docx_render.py —— 把 Markdown 渲染成符合《全国大学生竞赛申报
     doc.save('申报书.docx')
 """
 import datetime
+import os
 import re
 
 from docx import Document
@@ -421,6 +422,75 @@ def _page_number_footer(doc):
 
 # ============ 封面 ============
 
+# ---- 第三百零二轮：封面左上角 Logo ----
+# 等比缩放不拉伸；图本身是白底，docx 内不做任何反色/描边处理（夜间模式同样不处理）。
+_LOGO_HEIGHT_CM = 1.6      # 封面 Logo 显示高度
+_LOGO_X_CM = 1.5           # 相对页面左上角的水平偏移
+_LOGO_Y_CM = 1.2           # 相对页面左上角的垂直偏移
+_LOGO_REL_PATH = ('static', 'logo.png')
+
+
+def _logo_path():
+    """Logo 绝对路径：以本文件位置为基准定位 static/logo.png，不依赖进程工作目录。"""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), *_LOGO_REL_PATH)
+
+
+def _logo_aspect(path):
+    """读图片真实像素宽高比 w/h；读不出来返回 None（调用方按 1:1 兜底，绝不拉伸）。"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            w, h = im.size
+            if w and h:
+                return float(w) / float(h)
+    except Exception:
+        pass
+    try:
+        import struct
+        with open(path, 'rb') as f:
+            head = f.read(32)
+        if head[:8] == b'\x89PNG\r\n\x1a\n':
+            w, h = struct.unpack('>II', head[16:24])
+            if w and h:
+                return float(w) / float(h)
+    except Exception:
+        pass
+    return None
+
+
+def _cover_logo(doc, anchor_paragraph):
+    """封面左上角 Logo（第三百〇二轮）。
+
+    用 python-docx 原生 add_picture 插成行内图，挂在封面第一个段落上并左对齐，
+    视觉位置就是封面版心左上角；宽高按图片真实宽高比算，绝不拉伸。
+
+    为什么不用浮动图（_add_float_picture 那套 parse_xml 拼 <w:drawing>）：
+    手写 drawing XML 依赖完整的 xmlns 声明，漏一个 w 前缀就整段解析失败，
+    而且失败得很隐蔽 —— 图片进了 word/media/，drawing 节点却没插进去，
+    自检只看 media 里有图就会误判成功。原生 API 没有这个坑。
+
+    任何异常（文件缺失 / 图片损坏 / 依赖缺失）一律静默跳过：
+    封面 Logo 是锦上添花，绝不能让导出这条核心链路失败。
+    """
+    try:
+        path = _logo_path()
+        if not os.path.exists(path):
+            return
+        ratio = _logo_aspect(path) or 1.0
+        height = Cm(_LOGO_HEIGHT_CM)
+        width = Cm(_LOGO_HEIGHT_CM * ratio)     # 按真实宽高比算，不拉伸
+        run = anchor_paragraph.add_run()
+        run.add_picture(path, width=width, height=height)
+        try:
+            anchor_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print('[docx_render] 封面 Logo 插入失败，忽略：%r' % (e,))
+        return False
+
+
 def _header(doc, title):
     """页眉：文档标题，宋体五号居中（无装饰线，符合「无特效」要求）。"""
     header = doc.sections[0].header
@@ -440,6 +510,9 @@ def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=
     sp.paragraph_format.space_after = Pt(0)
     sp.paragraph_format.line_spacing = 1.0
     _font(sp.add_run(''), 1)
+
+    # 第三百零二轮：封面左上角 Logo（挂在上面这个段落上，不额外占位；失败自动跳过）
+    _cover_logo(doc, sp)
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -909,10 +982,171 @@ def _render_hr(doc):
 
 # ============ 主入口 ============
 
+# ---------- 245.1：章节编号统一 & 重复章节去重（渲染层兜底） ----------
+_CN_DIGITS = '零一二三四五六七八九'
+# 紧跟这些字说明是「1.5 万元预算」这类正文，不是编号前缀
+_UNIT_CHARS = '万亿亿元秒米克吨%％个人次件套项部章节篇'
+
+# 标题上可能已经带的编号前缀：一、/（一）/（1）/第X章/1.1 / 1.1.2 / 3.
+_RE_HEAD_PREFIX = re.compile(
+    r'^\s*(?:'
+    r'第[0-9一二三四五六七八九十百]+[章篇節节]'
+    r'|[（(]\s*[0-9一二三四五六七八九十]+\s*[)）]'
+    r'|[0-9]+(?:\.[0-9]+)*[、.．]\s*'
+    r'|[一二三四五六七八九十百]+[、．.]'
+    r')\s*'
+)
+
+
+def _cn_numeral(n):
+    """1->一  10->十  11->十一  20->二十  42->四十二；>=100 退回阿拉伯数字"""
+    n = int(n)
+    if n < 10:
+        return _CN_DIGITS[n]
+    if n < 20:
+        return '十' + (_CN_DIGITS[n - 10] if n > 10 else '')
+    if n < 100:
+        return _CN_DIGITS[n // 10] + '十' + (_CN_DIGITS[n % 10] if n % 10 else '')
+    return str(n)
+
+
+def _strip_head_prefix(text):
+    """剥掉标题上已有的编号前缀；判定为误匹配时原样返回。"""
+    s0 = str(text or '')
+    m = _RE_HEAD_PREFIX.match(s0)
+    if not m:
+        return s0
+    rest = s0[m.end():]
+    # 前缀吃掉了整行 -> 大概率是误匹配（如「一体化方案」），原样返回
+    if not rest:
+        return s0
+    frag = m.group(0).strip()
+    # 下面两道闸门只对阿拉伯数字前缀生效。中文数字（一、二、）和整数编号（1、）一律照剥 ——
+    # 否则「一、项目背景」会因为 rest 首字「项」命中单位闸门而剥不掉，重排后变成「一、一、」。
+    if re.match(r'^[0-9]', frag):
+        # 点分数字 + 紧跟单位字 -> 是正文（1.5 万元预算），不剥
+        if re.match(r'^[0-9]+\.[0-9]', frag) and rest[0] in _UNIT_CHARS:
+            return s0
+        # 首位为 0 -> 是正文（0.8 秒识别），不剥
+        if re.match(r'^0', frag):
+            return s0
+    return rest
+
+
+def _core_key(text):
+    """去重主键：剥编号 + 去空白 + 括号归一"""
+    t = _strip_head_prefix(str(text or ''))
+    t = t.replace('（', '(').replace('）', ')')
+    return re.sub(r'\s+', '', t).lower()
+
+
+def _head_prefix(depth, n):
+    """章层级 一、/ 二级（一）/ 三级 1. / 四级（1）——沿用《统一字体格式标准》"""
+    if depth <= 0:
+        return _cn_numeral(n) + '、'
+    if depth == 1:
+        return '（' + _cn_numeral(n) + '）'
+    if depth == 2:
+        return '%d. ' % n
+    return '（%d）' % n
+
+
+def _chapter_level(blocks):
+    """章层级 = 实际存在的、拥有 >=2 个标题的最浅层级。
+    不写死 Heading1：申报书正文几乎全是 markdown 的 ##(Heading2)，
+    偶发的单个 # 是文档名不是章节，写死 H1 会把文档名编成「一、」。"""
+    cnt = {}
+    for blk in blocks:
+        if blk[0] == 'h':
+            cnt[blk[1]] = cnt.get(blk[1], 0) + 1
+    if not cnt:
+        return None
+    for lv in sorted(cnt):
+        if cnt[lv] >= 2:
+            return lv
+    return None
+
+
+def _append_body(seg, blk):
+    """把重复章节的正文并入已保留章节：完全相同的跳过，同类列表合并去重。"""
+    if blk[0] == 'p':
+        for prev in seg:
+            if prev[0] == 'p' and list(prev[1]) == list(blk[1]):
+                return
+        seg.append(blk)
+    elif blk[0] in ('ul', 'ol'):
+        for prev in seg:
+            if prev[0] == blk[0]:
+                for it in blk[1]:
+                    if it not in prev[1]:
+                        prev[1].append(it)
+                return
+        seg.append(blk)
+    else:
+        seg.append(blk)
+
+
+def _normalize_sections(blocks):
+    """重复章节去重 + 按真实层级顺序重排章节编号。"""
+    if not blocks:
+        return blocks
+    cl = _chapter_level(blocks)
+    if cl is None:
+        return blocks
+
+    # 1) 按章层级切段：章层级标题开启新段，之前的内容（如文档名 H1）作为 prelude
+    segs, prelude, cur = [], [], None
+    for blk in blocks:
+        if blk[0] == 'h' and blk[1] == cl:
+            cur = {'title': blk[2], 'body': []}
+            segs.append(cur)
+        elif cur is not None:
+            cur['body'].append(blk)
+        else:
+            prelude.append(blk)
+
+    # 2) 合并重复章节：一律保留先出现的（保留"更完整的"会把整章搬到文末），
+    #    重复项的正文并进来，不丢内容
+    merged, index = [], {}
+    for seg in segs:
+        key = _core_key(seg['title'])
+        if key in index:
+            for b in seg['body']:
+                _append_body(merged[index[key]]['body'], b)
+            continue
+        index[key] = len(merged)
+        merged.append(seg)
+
+    # 3) 重排编号
+    out, counters = list(prelude), {}
+    for seg in merged:
+        counters[cl] = counters.get(cl, 0) + 1
+        for k in [k for k in counters if k > cl]:
+            del counters[k]
+        out.append(('h', cl, _head_prefix(0, counters[cl]) + _strip_head_prefix(seg['title'])))
+        for b in seg['body']:
+            if b[0] == 'h':
+                d = b[1] - cl
+                if d > 0:
+                    lv = b[1]
+                    counters[lv] = counters.get(lv, 0) + 1
+                    for k in [k for k in counters if k > lv]:
+                        del counters[k]
+                    out.append(('h', lv, _head_prefix(d, counters[lv]) + _strip_head_prefix(b[2])))
+                else:
+                    out.append(b)   # 比章层级更浅的标题不编号
+            else:
+                out.append(b)
+    return out
+
 def build_docx(title, text, subtitle=None, org=None, toc=None,
                cover=None, cover_image=False, topic=None, doc_type='report',
                school=None, team=None, advisor=None, show_school_advisor=True,
                header_title=None, toc_pages=None):
+    # _WB_ASSIST_DECL_417 417 轮 P0：所有生成文档底部统一加「智能辅助」声明
+    # 措辞温和、禁用「AI」字样（418 轮口径）；幂等，重复执行不会叠加。
+    if '本材料由智能助手辅助起草' not in (text or ''):
+        text = (text or '') + '\n\n' + '本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。'
     """生成符合格式标准的 Word 文档。
 
     :param title:       文档主标题（封面黑体小初）
@@ -941,6 +1175,8 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         toc = False
 
     blocks = _blocks(text or '')
+    # 第二百四十五轮：渲染层兜底 —— 重复章节去重 + 按真实层级顺序重排编号
+    blocks = _normalize_sections(blocks)
     # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
     headings, _bm_id = [], 0
     for blk in blocks:
@@ -1022,6 +1258,7 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
 # ---- 封面背景图（默认不启用，保留给非申报场景）----
 
 _NS_DRAW = (
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
     'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" '
