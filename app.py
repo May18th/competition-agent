@@ -655,6 +655,14 @@ def admin_login():
     return resp
 
 
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    """后台退出登录：清掉 admin_session 会话 cookie（第二百六十七轮，demo 只读会话要能退出）。"""
+    resp = jsonify({"success": True})
+    resp.set_cookie(_ADMIN_COOKIE_NAME, '', max_age=0, httponly=True, samesite='Strict', secure=request.is_secure)
+    return resp
+
+
 def _admin_login_verify(username, password, ip):
     """校验账号密码（198 轮：用户名+密码 bcrypt）。
     成功返回 (role, None)，失败返回 (None, (错误信息, http状态码))。"""
@@ -862,10 +870,15 @@ def _admin_guard():
     # 落到参数校验层返回 400「内容为空」，而非 403，既暴露接口行为又没体现只读语义。
     # 第二百六十七轮：导出接口（/api/export*）本质是「读数据生成文件」，不写库不删数据，
     # demo 只读会话也应能导出（评委演示要看导出），此处豁免，不再误伤。
+    # 演示只读会话白名单：导出（读数据生成文件）与退出登录（登出不是写操作）豁免 403。
+    _readonly_whitelist = ('/api/logout', '/api/admin/logout')
     if (_admin_session_role() == 'readonly'
             and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
-            and not p.startswith('/api/export')):
-        resp = jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"})
+            and not p.startswith('/api/export')
+            and p not in _readonly_whitelist):
+        # 278 轮：给友好引导而非生硬 403，提示评委可看示例或用普通账号
+        resp = jsonify({"success": False,
+                        "error": "演示账号为只读，此操作已限制。可点「一键演示」查看完整示例，或换普通账号登录后再生成/修改。"})
         resp.status_code = 403
         return resp
     needs_admin = False
@@ -1029,6 +1042,9 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   history_id INTEGER, score INTEGER, dims TEXT,
                   reasons TEXT, passed INTEGER, created_time TEXT)''')
+    # 292 轮：双端同步——用户偏好（赛事选择/档位/个性化设置）以服务端为准，禁 localStorage 单端私有
+    c.execute('''CREATE TABLE IF NOT EXISTS user_prefs
+                 (uid TEXT PRIMARY KEY, prefs TEXT)''')
     conn.commit()
     conn.close()
 
@@ -5138,7 +5154,8 @@ def admin_stats():
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
             "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
         recent_failures = c.execute(
-            "SELECT task_id, type, path, error, detail, created_time, count FROM gen_failures "
+            "SELECT task_id, type, path, error, detail, created_time, count, "
+            "stage, error_code, error_msg FROM gen_failures "
             "ORDER BY id DESC LIMIT 10").fetchall()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
         failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
@@ -5187,6 +5204,8 @@ def admin_stats():
         "time": r["created_time"], "type": r["type"] or "generate",
         "path": r["path"] or "", "error": r["error"], "detail": r["detail"],
         "task_id": r["task_id"] or "", "count": r["count"] or 1,
+        "stage": r["stage"] or "", "error_code": r["error_code"] or "",
+        "error_msg": r["error_msg"] or "",
     } for r in recent_failures]
 
     denom = total + failed
@@ -5739,6 +5758,68 @@ _DEFENSE_FAQ = [
 def defense_faq():
     """第二百七十一轮：答辩模拟问答的静态预置高频问题 + 回答框架（不调 LLM、不写库）。"""
     return jsonify({"success": True, "faq": _DEFENSE_FAQ})
+
+
+@app.route('/api/prefs', methods=['GET', 'POST'])
+def user_prefs():
+    """第二百九十二轮：双端同步——赛事选择/档位/个性化设置等服务端存储，跨设备一致。"""
+    uid = _current_uid()
+    conn = get_db()
+    c = conn.cursor()
+    if request.method == 'GET':
+        row = c.execute("SELECT prefs FROM user_prefs WHERE uid=?", (uid,)).fetchone()
+        conn.close()
+        prefs = {}
+        if row and row[0]:
+            try:
+                prefs = json.loads(row[0])
+            except Exception:
+                prefs = {}
+        return jsonify({"success": True, "prefs": prefs if isinstance(prefs, dict) else {}})
+    data = request.get_json(silent=True) or {}
+    _p = data.get('prefs') if isinstance(data.get('prefs'), dict) else {}
+    c.execute("INSERT OR REPLACE INTO user_prefs (uid, prefs) VALUES (?, ?)",
+              (uid, json.dumps(_p, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
+
+_CHAT_PRESET = [
+    (("评分", "打分", "维度", "权重", "多少分"),
+     "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
+    (("章节", "结构", "几章", "目录"),
+     "申报书章节按各赛事官方要求自动组织。例：iCAN 为 8 章（背景与痛点→需求与用户→技术选型→技术方案→功能与智能作用→使用说明→前景与商业模式→团队与知识产权）。"),
+    (("答辩", "问题", "评委会问"),
+     "系统会预测评委高频问题并给回答框架，见「答辩准备」板块；也可用首页右下角「答辩模拟」逐条练习。"),
+    (("PPT", "路演", "ppt"),
+     "深度版会自动生成路演 PPT 大纲（含结构页）与演讲稿，可一键下载；支持 31 套风格。"),
+    (("简洁", "深度", "档位", "区别", "什么区别"),
+     "简洁版=结论型（快速出稿）；深度版=论证型（竞品定量对比、风险分级矩阵、技术分步链路、财务测算、多专家评审、答辩预测）。"),
+]
+
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """第二百九十四轮：智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。"""
+    data = request.get_json(silent=True) or {}
+    msg = (data.get('message') or '').strip()
+    if not msg:
+        return jsonify({"success": False, "error": "请输入问题"}), 400
+    if len(msg) > 500:
+        msg = msg[:500]
+    for kws, ans in _CHAT_PRESET:
+        if any(k in msg for k in kws):
+            return jsonify({"success": True, "answer": ans, "source": "preset"})
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = ("你是「科创赛事助手」的客服智能体。用 2~4 句简洁中文回答用户问题，"
+                  "只谈本产品功能与赛事规则，不编造数据。\n用户问题：" + msg)
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=400)
+        return jsonify({"success": True, "answer": (resp.content or '').strip(), "source": "llm"})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
 @app.route('/api/health')
