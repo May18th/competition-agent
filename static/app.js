@@ -659,8 +659,8 @@
                 var tx = document.getElementById('wbRestoreText');
                 // 提示里不再出现具体时间：那等于把「你什么时候在这台电脑上写过东西」也告诉了下一个人
                 var msg = safeHit && sensHit
-                    ? '已恢复上次选择的赛事与档位，本页草稿也还在（关闭标签页后自动清除）'
-                    : (safeHit ? '已恢复上次选择的赛事与档位'
+                    ? '已恢复本机上次选择的赛事与档位，本页草稿也还在（关闭标签页后自动清除）'
+                    : (safeHit ? '已恢复本机上次选择的赛事与档位'
                                : '已恢复本页上次填写的草稿（关闭标签页后自动清除）');
                 if (tx) tx.textContent = msg;
                 box.style.display = 'flex';
