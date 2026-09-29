@@ -235,9 +235,9 @@ def _fallback_deck(result, idea):
         if m and len(m.group(1)) <= 30:
             if cur:
                 slides.append(cur)
-            cur = {"type": "bullets", "title": m.group(1).lstrip("#* "), "bullets": []}
+            cur = {"type": "bullets", "title": m.group(1).strip().strip("#* ").strip(), "bullets": []}
         elif cur and line and len(slides) < 14:
-            clean = re.sub(r"^[-*•·]\s*", "", line)
+            clean = re.sub(r"^[-*•·]\s*", "", line).strip()
             if len(clean) <= 40:
                 cur.setdefault("bullets", []).append(clean)
     if cur:
@@ -262,7 +262,8 @@ def _outline_deck(outline):
         # 标题：## x / # x / 1. x / 第1页 x / 01 / x
         m = re.match(r"^#{1,4}\s+(.*)", line) or re.match(r"^(?:页?\d+|[（(]?\d+[）)])[.、:：\s]+(.*)", line)
         if m:
-            title = m.group(1).strip().lstrip("#* ").strip()
+            # 第二百三十五轮：标题剥掉两端 Markdown 加粗/标题标记，避免「市场规模**」这类星号残留
+            title = m.group(1).strip().strip("#* ").strip()
             if not title or len(title) > 40:
                 continue
             # 跳过文档级标题（「PPT 大纲」「路演大纲」「目录」等），它只是整份大纲的名字，不是某一页

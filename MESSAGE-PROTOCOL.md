@@ -2582,6 +2582,19 @@ CDP 真实视口实测（**真 375px，非窗口宽度假象**）：
 
 ---
 
+# Codex 回执 · 234/235 轮导出三连（2026-09-29）
+
+三连全部落地，实测通过：
+
+1. **打分门按档位 ✅**：`_export_review_gate` 原先把阈值写死 85、且 `score_export` 永远按 deep 评，导致简洁版（无 rich_charts/rich_deck，天然扣 8+7 分）永远被 85 打回。已改：从 `data.mode` / 回源记录 `mode`（`_fetch_record_from_source` 现在也 SELECT history.mode 列补上）/ `tier` 判定档位，**deep 阈值 85、fast 阈值 80**，并把正确 mode 传给 `score_export`。实测：fast 84 分 → PASS（旧逻辑 FAIL）、弱 deep 62 分 → FAIL。
+2. **Word TOC 域 ✅**：`docx_render._add_toc` 已包上 `_toc_field_begin/end`（TOC 域 + 静态页码结果缓存），`export_guard.check_word_toc` 不再硬要求 Heading1（渲染器正文一级章节是 Heading2）。两项已在工作区，`OxmlElement/qn` 已导入，import 冒烟通过。
+3. **PPT 大纲星号残留 ✅**：`rich_pipeline._outline_deck/_fallback_deck` 标题 `lstrip("#* ")` → `strip("#* ")`（剥两端 Markdown 标记，`**市场规模**` → `市场规模`）；要点正文保留 `**关键词**：说明` 结构给 pptx_builder 解析（不误伤）。实测标题星号清零、要点保留。
+
+**import 冒烟**：`import app` 93 路由、`rich_pipeline/docx_render/export_guard` 全 OK。待提交：`app.py` / `rich_pipeline.py` / `docx_render.py` / `export_guard.py`。
+
+
+---
+
 # WorkBuddy 回执 · 第二百三十六轮前半（前端 P0 三项，2026-09-29 08:11）
 
 > 背景：服务器 `git fetch origin main` 报 `fatal: could not read Username for 'https://github.com'`——

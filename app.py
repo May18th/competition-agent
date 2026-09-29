@@ -1487,8 +1487,11 @@ def _fetch_record_from_source(data):
     try:
         tid = str(data.get('task_id') or '').strip()
         if tid and tid in tasks:
-            d = tasks[tid].get('data') or {}
+            d = dict(tasks[tid].get('data') or {})
             if d:
+                # 带上任务档位（tasks 顶层有 mode），供导出打分门按档位判定阈值
+                if not d.get('mode') and tasks[tid].get('mode'):
+                    d['mode'] = tasks[tid]['mode']
                 return _clean_legacy_record(d)
         hid = data.get('history_id')
         if hid:
@@ -1496,11 +1499,15 @@ def _fetch_record_from_source(data):
             conn = get_db()
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            row = c.execute("SELECT result_data FROM history WHERE id=?", (int(hid),)).fetchone()
+            row = c.execute("SELECT result_data, mode FROM history WHERE id=?", (int(hid),)).fetchone()
             conn.close()
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
                 if rd:
+                    rd = dict(rd)
+                    # result_data 里没有 mode，这里从 history.mode 列补上，供打分门按档位
+                    if not rd.get('mode') and row['mode']:
+                        rd['mode'] = row['mode']
                     return _clean_legacy_record(rd)
     except Exception as e:
         print(f"[export] 后端记录原文覆盖失败，退回前端数据：{e}")
@@ -1548,9 +1555,10 @@ def _export_data_from_request():
 
 
 def _export_review_gate(data, mode="deep"):
-    """系统默认评委打分门（第一百二十一轮）：导出前评分，<80 打回；记录入 export_reviews。
+    """系统默认评委打分门（第一百二十一轮）：导出前评分，按档位打回；记录入 export_reviews。
 
-    返回 (passed, score, reasons)。前台只看到「已达标/未达标」，不展示分数明细。
+    打分门按档位（第二百三十四轮）：深度版阈值 85、简洁版阈值 80——简洁版无 rich_charts /
+    rich_deck，天然少两项扣分，若共用 85 会把简洁版全部打回。返回 (passed, score, reasons)。
     """
     rec = _fetch_record_from_source(data)
     if not rec:
@@ -1558,8 +1566,12 @@ def _export_review_gate(data, mode="deep"):
         return True, None, []
     try:
         from quality_gate import score_export
-        score, dims, reasons = score_export(rec, mode)
-        passed = score >= 85
+        # 档位判定：优先请求体 mode，其次回源记录 mode/tier，最后用入参默认（deep）
+        _mode = (data.get('mode') or rec.get('mode') or rec.get('tier') or mode or 'deep')
+        _mode = 'deep' if str(_mode).strip().lower() == 'deep' else 'fast'
+        _threshold = 85 if _mode == 'deep' else 80
+        score, dims, reasons = score_export(rec, _mode)
+        passed = score >= _threshold
         conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO export_reviews (history_id, score, dims, reasons, passed, created_time) "
@@ -1894,7 +1906,10 @@ def parse_material():
 def export_word():
     data = _export_data_from_request()
     # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，<80 打回
-    _passed, _score, _reasons = _export_review_gate(data)
+    # 第二百三十五轮：必须按档位评分——此前签名默认 mode="deep"，简洁版被深度版标准
+    # 拦死（导出 422）。前端现在会传 mode；拿不到时按 fast 放行，宁可宽松也不误杀。
+    _gate_mode = (data.get('mode') or 'fast')
+    _passed, _score, _reasons = _export_review_gate(data, mode=_gate_mode)
     if _passed is False:
         return jsonify({"success": False, "code": "quality_fail", "score": _score,
                         "error": "内容质量未达标，请重新生成后再导出",
