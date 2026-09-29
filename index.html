@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260929f">
+    <link rel="stylesheet" href="/static/style.css?v=20260929g">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -423,7 +423,7 @@
                                 onclick="event.stopPropagation(); wbTeamSuggest()">智能建议分工</button>
                     </div>
                     <div id="teamBody">
-                        <textarea id="udTeam" aria-label="团队成员" rows="3" placeholder="张三（队长，计算机学院）：统筹进度 + 核心算法&#10;李四（机械学院）：结构设计 + 样机加工" style="min-height: 80px;"></textarea>
+                        <textarea id="udTeam" aria-label="团队成员" rows="3" placeholder="每行一位，参考格式：姓名（角色，院系/单位）：负责的工作" style="min-height: 80px;"></textarea>
                         <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
                             有真实团队就填：<b style="color: var(--text);">姓名、学校/院系、角色、具体分工</b>，会原样写进团队章节。
                             评委最想看到的是「人」，不填就只出「角色 + 职责」的通用模板。
@@ -600,7 +600,7 @@
                         <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
                             <!-- 同上 186 轮：数字一律动态取，不写死（写死值已与接口实测脱节） -->
                             <b style="color: var(--c-b);" id="statDeepHead">内容全，含图表与路演稿</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statDeepDetail">（正在读取实测数据…）</span><br>
-                            简洁版全部 + 多专家模拟评审 · 8 张图表 · 路演 PPT · 12 章正文
+                            简洁版全部 + 多视角评审（AI） · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
                 </div>
@@ -751,7 +751,7 @@
             <section id="scorePanel" style="margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
                 <div style="display: flex; align-items: center; gap: 8px; padding: 12px 16px 0; font-size: 14px; color: var(--text);">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg>
-                    <span>AI 模拟自评</span>
+                    <span>AI 自评参考</span>
                     <span style="margin-left: auto; color: var(--text-mute); font-size: 12px;">分数不必写进正式材料</span>
                 </div>
                 <div class="wb-subtabs" id="scoreSubTabs">
@@ -768,7 +768,7 @@
                 <div class="score-number" id="scoreNum">86</div>
                 <!-- 双评分并存（第二十三/二十四/三十一轮反复刺）：本页只认这一个总分，
                      下方雷达区只做维度分解、不再给第二个总分 -->
-                <div class="score-label">AI 模拟自评（文档质量）/ 100<span style="display:block; font-size: 11.5px; color: var(--text-mute); font-weight: 400; margin-top: 2px;">本页唯一评分</span></div>
+                <div class="score-label">AI 自评参考（文档质量）/ 100<span style="display:block; font-size: 11.5px; color: var(--text-mute); font-weight: 400; margin-top: 2px;">本页唯一评分</span></div>
                 <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
                 <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
                 <!-- 174 轮「验证即沉淀」的用户侧入口：只在分数达标时露出来（不达标点了也是 422，
@@ -777,7 +777,7 @@
                 <!-- 用户拍板必做（第七十一/七十二轮）：同一项目两次生成 74 vs 86，队友以为出 bug。
                      波动说明必须常驻在评分大数字下方，不得省略 -->
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
-                    这个分数是模拟评委给的，帮你定位薄弱部分，<b>仅作评审参考，不写进正式材料</b>。<br>
+                    这个分数由 AI 依据公开评审规则给出，帮你定位薄弱部分，<b>仅作评审参考，不写进正式材料</b>。<br>
                     同一项目重复生成，分数随内容浮动（约 ±10 分），<b>非 Bug</b>；多次生成取最高分版本提交即可。
                 </div>
             </div>
@@ -993,8 +993,8 @@
                                 <button onclick="exportOne('proposalAnalysis', '申报书诊断分析')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
                             </div>
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
-                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> AI模拟评审意见.docx</span>
-                                <button onclick="exportOne('judgeFeedback', 'AI模拟评审意见')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; font-size:12px;">单独下载</button>
+                                <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> AI 评审参考意见.docx</span>
+                                <button onclick="exportOne('judgeFeedback', 'AI 评审参考意见')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; font-size:12px;">单独下载</button>
                             </div>
                             <div class="deep-only" style="display:none; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 竞品分析报告.docx</span>
@@ -1095,7 +1095,7 @@
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · AI 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
-                    <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多专家模拟评审</h3>
+                    <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多视角评审（AI）</h3>
                     <div id="expertReviewContent" style="background:var(--surface-solid); border-radius:8px; padding:16px;"></div>
                 </div>
             </div>
@@ -1244,12 +1244,12 @@
                 </div>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <input type="text" id="wbRateInput" maxlength="200"
-                           placeholder="哪里不好？一句话就行（选填）"
+                           placeholder="任何想法都可以说：想夸的、想改的、踩到的问题，一句话就够（选填）"
                            style="flex: 1 1 240px; height: 40px; padding: 0 12px; border: 1px solid var(--line);
                                   border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 13px;">
                     <button id="wbRateBtn" onclick="wbRateSubmit()"
                             style="height: 40px; padding: 0 18px; background: var(--c-a); color: #fff; border: none;
-                                   border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">提交反馈</button>
+                                   border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">说说你的想法</button>
                 </div>
                 <div id="wbRateDone" style="display: none; margin-top: 9px; font-size: 12.5px; color: var(--ok);">
                     已收到，谢谢！
@@ -1598,8 +1598,8 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260929f"></script>
-    <script src="/static/app.js?v=20260929f"></script>
+    <script src="/static/wbconst.js?v=20260929g"></script>
+    <script src="/static/app.js?v=20260929g"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1780,7 +1780,7 @@ window.addEventListener('resize', function () {
         { k: 'analysis', n: '方案分析 Agent',   s: ['analysis'] },
         { k: 'assets',   n: '素材生成 Agent',   s: ['rich_assets'] },
         { k: 'write',    n: '申报书写作 Agent', s: ['writing'] },
-        { k: 'judge',    n: '模拟评委 Agent',   s: ['judging', 'expert_review', 'diagnosis', 'revision'] },
+        { k: 'judge',    n: '评审 Agent',   s: ['judging', 'expert_review', 'diagnosis', 'revision'] },
         { k: 'defense',  n: '答辩预测 Agent',   s: ['defense'] },
         { k: 'road',     n: '路演生成 Agent',   s: ['ppt', 'speech', 'done'] }
     ];
@@ -1788,7 +1788,7 @@ window.addEventListener('resize', function () {
     var STAGE_LABEL = {
         start: '正在启动', parsing_rules: '解析评分规则', similarity: '检索同质化项目',
         idea_scoring: '提炼一句话定位', analysis: '分析赛题与方案', rich_assets: '生成图表与 PPT 素材',
-        writing: '撰写申报书正文', judging: '模拟评委打分', expert_review: '多专家模拟评审',
+        writing: '撰写申报书正文', judging: 'AI 评审打分', expert_review: '多视角评审（AI）',
         diagnosis: '诊断短板', revision: '按意见定向改写', defense: '预测答辩问题',
         ppt: '生成 PPT 大纲', speech: '撰写路演稿', done: '收尾'
     };

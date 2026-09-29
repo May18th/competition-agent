@@ -2640,7 +2640,7 @@
             h3.appendChild(sp);
         }
 
-        // ---- 多专家模拟评审面板（深度版专属，简洁版为空自动隐藏）----
+        // ---- 多视角评审（AI）面板（深度版专属，简洁版为空自动隐藏）----
         function _erColor(s) {
             s = Number(s) || 0;
             if (s >= 85) return 'var(--ok)';
@@ -2779,11 +2779,11 @@
             var ft = document.getElementById('ideaRadarFoot');
             if (ft) {
                 // 第二十三/二十四/三十一轮反复刺：这里原来还挂一个「创意结构分 66 / 100」，
-                // 和上方「AI 模拟自评 86」形成两个总分，评委不知道信哪个。
+                // 和上方「AI 自评参考 86」形成两个总分，评委不知道信哪个。
                 // 现在只做维度分解——五个维度的分都在图上，不再汇总出第二个总分。
                 ft.innerHTML = '创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
                     + '<div style="margin-top: 5px;">这五个维度看的是<b>创意本身</b>的强弱，仅作分解参考，'
-                    + '不另设总分；页面唯一评分是上方「AI 模拟自评（文档质量）」。</div>';
+                    + '不另设总分；页面唯一评分是上方「AI 自评参考（文档质量）」。</div>';
             }
             box.style.display = 'block';
         }
@@ -2908,7 +2908,7 @@
 
             // 底部免责声明：专家身份是虚构的，必须写明，否则学生可能以为真有这三位评委审过
             var dcl = d.disclaimer
-                || '本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
+                || '本评审由 AI 参考多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
             h += '<div style="margin-top:14px; padding:10px 12px; border-radius:6px; ' +
                  'background:var(--surface-2); border:1px dashed var(--line); ' +
                  'font-size:12px; color:var(--text-mute); line-height:1.6;">' +
@@ -4064,7 +4064,7 @@
                 })
                 .catch(function () {});
         }
-        /* ---- AI 模拟自评：面板内二级标签 ---- */
+        /* ---- AI 自评参考：面板内二级标签 ---- */
         var WB_SUB_TABS = [['score', 'wbSubTabScore'], ['judge', 'wbSubTabJudge'], ['check', 'wbSubTabCheck']];
         function switchScoreTab(ev, name) {
             WB_SUB_TABS.forEach(function (t) {
@@ -4724,7 +4724,7 @@
                             if (!isDeep) {
                                 const UPSELL = [
                                     ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
-                                    ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
+                                    ['judgeFeedback', '升级深度版：<b>3 位专家视角评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
                                 ];
@@ -5142,7 +5142,7 @@
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
                     ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多专家模拟评审（实测字数与用时见档位卡）'],
+                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多视角评审（AI）（实测字数与用时见档位卡）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
