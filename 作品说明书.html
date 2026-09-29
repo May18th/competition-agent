@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>科创赛事多智能体协同创作助手 · 作品说明书</title>
+<style>
+  :root{
+    --ink:#1f2328; --sub:#5b6168; --line:#d8dce0; --accent:#1a56c4; --soft:#f4f7fc;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#eef1f5; color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Noto Sans CJK SC",sans-serif;
+    line-height:1.75; font-size:15px;
+  }
+  .page{
+    max-width:820px; margin:28px auto; background:#fff; padding:56px 64px;
+    box-shadow:0 6px 24px rgba(20,40,80,.10); border-radius:6px;
+  }
+  .cover{ text-align:center; padding:40px 0 28px; border-bottom:3px solid var(--accent); margin-bottom:36px;}
+  .cover h1{ font-size:30px; letter-spacing:1px; margin:0 0 10px;}
+  .cover .sub{ color:var(--sub); font-size:15px; letter-spacing:3px;}
+  h2{ font-size:20px; color:var(--accent); margin:34px 0 12px; padding-left:12px; border-left:5px solid var(--accent);}
+  p{ margin:10px 0;}
+  ul{ margin:10px 0 10px 4px; padding-left:22px;}
+  li{ margin:6px 0;}
+  .muted{ color:var(--sub); font-size:13.5px;}
+  table{ width:100%; border-collapse:collapse; margin:16px 0; font-size:14px;}
+  th,td{ border:1px solid var(--line); padding:9px 12px; text-align:center;}
+  thead th{ background:var(--soft); color:var(--accent); font-weight:600;}
+  tbody th{ background:var(--soft); font-weight:600; text-align:left;}
+  .tag{ display:inline-block; background:var(--soft); color:var(--accent); border:1px solid var(--line);
+        border-radius:4px; padding:1px 8px; font-size:13px; margin-right:6px;}
+  .footer{ margin-top:40px; padding-top:16px; border-top:1px dashed var(--line);
+           color:var(--sub); font-size:12.5px; text-align:center;}
+  @media print{ body{background:#fff;} .page{box-shadow:none;margin:0;} }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="cover">
+    <h1>科创赛事多智能体协同创作助手</h1>
+    <div class="sub">作 品 说 明 书</div>
+  </div>
+
+  <h2>一、项目背景</h2>
+  <p>「科创赛事多智能体协同创作助手」是面向大学生科创竞赛团队的端到端多智能体系统，基于 Flask + LangGraph 多智能体编排开发，实现赛事规则解析、创意同质化检测、申报书智能生成与优化、模拟评委评审的全流程自动化，目标是显著降低学生参赛的内容生产与格式打磨门槛。</p>
+  <p>近年来大学生科创赛事规模持续扩大。据教育部、人民日报等公开口径，中国国际大学生创新大赛（2025）覆盖 161 个国家和地区、5673 所学校、619 万个项目、2443 万人次参赛，总决赛入围 4720 个项目。在如此体量下，参赛团队普遍面临"不知道评委要什么、材料反复改格式、不同比赛规则各异难以复用"的真实困境。</p>
+  <p>本作品以 iCAN 大学生创新创业大赛、中国国际"互联网+"大学生创新创业大赛、挑战杯、国家级大创等赛事为首批内置知识库对象，把"读懂评分标准 → 检测撞题风险 → 生成/优化申报书 → 模拟评委打分"这一评审逻辑固化成可复用的智能体流水线，让单个学生也能产出接近团队水平的参赛材料。</p>
+
+  <h2>二、痛点分析</h2>
+  <p><b>1. 学生侧真实痛点（脱敏后的通用场景）</b></p>
+  <ul>
+    <li>写申报书写了一周，仍然不清楚评委到底在考察什么。</li>
+    <li>做展示 PPT 要反复调格式、想表达，耗时远大于内容本身。</li>
+    <li>不同比赛的模板、评分标准各不相同，一份材料无法复用，改了又改。</li>
+  </ul>
+  <p><b>2. 现有竞品的不足（公开评价）</b></p>
+  <ul>
+    <li>秘塔写作猫：免费版仅能体验，正常需开会员（24 元/月、48 元/月两档）；在 Safari 上兼容性差；定位偏"校对/润色/摘要"，并非完整申报书全流程工具。</li>
+    <li>讯飞写作：手机 App 功能偏极简，缺少比赛差异化模板；公开评测指出其大模型存在直接输出未经核实数据（幻觉）的风险。</li>
+  </ul>
+  <p><b>3. 竞品缺口</b></p>
+  <p>现有工具多是"通用写作助手"，缺少"按具体比赛评分标准生成 + 多智能体协作 + 图表/PPT 联动"的完整链路——这正是本作品切入的位置。</p>
+
+  <h2>三、需求分析</h2>
+  <p>由上述痛点可推导出核心需求：</p>
+  <ul>
+    <li><b>标准对齐</b>：系统必须内置各赛事的评分维度与权重，让生成内容直接对标评审标准，而非泛泛而谈。</li>
+    <li><b>全流程覆盖</b>：从规则解析、同质化检测、文稿生成到模拟评委评审，形成一条可端到端跑通的生产线。</li>
+    <li><b>差异化输出</b>：支持按"简洁版 / 深度版"提供不同深度的结果，并支持 Markdown / Word 多格式导出，适配不同赛事材料要求。</li>
+    <li><b>可复用与可演进</b>：本地赛事知识库 + 历史记录存储，使同一项目可多次迭代、跨赛事复用。</li>
+  </ul>
+
+  <h2>四、目标用户群体</h2>
+  <ul>
+    <li><b>参赛学生个人</b>：单人参赛、缺乏团队支撑，需要快速产出合格申报书与答辩材料。</li>
+    <li><b>高校科创竞赛团队</b>：iCAN、互联网+、挑战杯、国创等赛队的负责人与成员，需要标准化、可复用的内容生产工具。</li>
+    <li><b>指导教师（辅助侧）</b>：用于快速把脉学生项目的撞题风险与材料短板，提高指导效率。</li>
+  </ul>
+
+  <h2>五、功能需求</h2>
+  <p>核心模块分为 4 部分（赛事知识库、核心引擎、版本区分、导出中心），并围绕"简洁版 / 深度版"提供差异化的功能深度：</p>
+  <table>
+    <thead><tr><th>功能</th><th>简洁版</th><th>深度版</th></tr></thead>
+    <tbody>
+      <tr><th>生成时间</th><td>约 1–2 分钟</td><td>约 3–5 分钟</td></tr>
+      <tr><th>规则解析</th><td>支持</td><td>支持</td></tr>
+      <tr><th>同质化检测</th><td>支持</td><td>支持</td></tr>
+      <tr><th>申报书长度</th><td>2000~4000 字级</td><td>12000 字级</td></tr>
+      <tr><th>评委打分点评</th><td>支持</td><td>支持</td></tr>
+      <tr><th>竞品 / 商业 / 风险分析</th><td>不支持</td><td>支持</td></tr>
+      <tr><th>技术方案 + 实施计划</th><td>不支持</td><td>支持</td></tr>
+      <tr><th>答辩问题 + PPT 大纲</th><td>不支持</td><td>支持</td></tr>
+    </tbody>
+  </table>
+
+  <h2>六、开发工具</h2>
+  <ul>
+    <li><b>后端框架</b>：Flask（REST API，处理文件上传、生成请求、导出接口）。</li>
+    <li><b>多智能体编排</b>：LangGraph（多 Agent 工作流编排，可并行环节并行，如深度版写作拆两段并行）。</li>
+    <li><b>大模型服务</b>：DeepSeek 大模型 + 火山引擎 Claude。</li>
+    <li><b>前端</b>：HTML / CSS / JavaScript（用户交互与结果展示）。</li>
+    <li><b>数据存储</b>：本地比赛知识库 + SQLite 历史记录。</li>
+  </ul>
+
+  <h2>七、技术方案</h2>
+  <p>系统从前端到存储分为 5 层：</p>
+  <ul>
+    <li><b>前端页面层</b>：HTML/CSS/JS，负责用户交互和结果展示。</li>
+    <li><b>Flask 后端 API 层</b>：处理文件上传、生成请求、导出接口。</li>
+    <li><b>多智能体编排层</b>：多 Agent 工作流编排（可并行环节并行，如深度版写作拆两段并行）。</li>
+    <li><b>模型服务层</b>：DeepSeek 大模型 + 火山引擎 Claude。</li>
+    <li><b>数据存储层</b>：本地比赛知识库 + SQLite 历史记录。</li>
+  </ul>
+  <p><b>完整运行流程：</b>用户输入 → 选择比赛 → 输入项目创意 / 上传申报书 → 选择版本 → 规则解析 Agent 提取评审标准 → 同质化检测 Agent 评估撞题风险 → 文稿生成 Agent 生成 / 优化申报书 → 评委评审 Agent 打分并给出改进建议 → 结果展示 → 导出文件。</p>
+
+  <h2>八、作品功能逐一说明</h2>
+  <ul>
+    <li><b>赛事知识库</b>：内置 iCAN、互联网+、挑战杯、国创等比赛规则与评分口径，作为生成与评审的"标准底座"。</li>
+    <li><b>规则解析 Agent</b>：从所选赛事规则中提取评审维度、权重与扣分点，为后续生成提供对齐目标。</li>
+    <li><b>同质化检测 Agent</b>：评估项目创意与已有获奖/在研方向的撞题风险，提示差异化空间。</li>
+    <li><b>文稿生成 Agent</b>：依据评分标准生成或优化申报书（简洁版 2000~4000 字级，深度版约 12000 字级），深度版额外产出竞品/商业/风险分析、技术方案与实施计划、答辩问题与 PPT 大纲。</li>
+    <li><b>评委评审 Agent</b>：以模拟评委视角对成稿打分并给出改进建议，形成"生成—评审—优化"闭环。</li>
+    <li><b>导出中心</b>：支持一键导出全部结果，或单独导出各模块，提供 Markdown / Word 格式，适配不同赛事材料要求。</li>
+  </ul>
+
+  <h2>九、AI 功能核心作用</h2>
+  <p>本作品的 AI 能力并非"通用续写"，而是围绕评审逻辑设计的多智能体协作：</p>
+  <ul>
+    <li><b>按标准生成</b>：以规则解析 Agent 产出的评审维度为锚，让生成内容直接对标评分权重，减少"偏题"。</li>
+    <li><b>风险前置</b>：同质化检测在学生动手写之前就提示撞题风险，避免方向性返工。</li>
+    <li><b>闭环评审</b>：评委评审 Agent 把"专家打分"前置到创作阶段，使成稿在提交前完成一轮自我修正。</li>
+    <li><b>并行提效</b>：编排层对无依赖环节并行执行（如深度版写作拆两段并行），把"团队数天"压缩到"分钟级"。</li>
+  </ul>
+
+  <h2>十、使用说明</h2>
+  <ul>
+    <li>打开前台网站（<span class="tag">https://kechuang2026.cn</span>），进入创作首页。</li>
+    <li>选择目标赛事（如 iCAN、互联网+ 等），输入项目创意或上传已有申报书草稿。</li>
+    <li>选择版本：<b>简洁版</b>约 1–2 分钟快速出结果，适合先摸底；<b>深度版</b>约 3–5 分钟，产出完整申报书及竞品/商业/风险分析、技术方案、答辩问题与 PPT 大纲。</li>
+    <li>查看规则解析、同质化检测、文稿与评委点评结果。</li>
+    <li>在导出中心一键导出全部结果，或单独导出各模块（Markdown / Word）。</li>
+  </ul>
+  <p class="muted">评审 / 体验账号：前台与后台共用同一登录入口 <span class="tag">https://kechuang2026.cn/admin/login</span>，提供演示账号 <b>demo / 123456</b> 供评审与体验使用；后台管理端另设管理账号，credentials 由团队持有，不随本说明书公开。</p>
+
+  <h2>十一、应用前景</h2>
+  <ul>
+    <li><b>市场空间</b>：据 QYResearch 估算，全球 AI 写作辅助软件市场 2025 年约 53.57 亿美元，2032 年预计 201.1 亿美元，年复合增长率约 20.8%（第三方调研，口径为估算，非既定事实）。大学生科创赛事参赛规模持续处于千万级人次，存在明确且稳定的工具需求。</li>
+    <li><b>赛事可扩展性</b>：当前已内置 iCAN、互联网+、挑战杯、国创等规则，知识库可按新赛事持续扩充，能力向更多学科竞赛、课程大作业、科研立项书等场景延展。</li>
+    <li><b>教学辅助价值</b>：可作为高校双创教育的实训工具，把"评审标准意识"前置到学生创作全过程。</li>
+  </ul>
+
+  <h2>十二、商业模式</h2>
+  <ul>
+    <li><b>版本分级（Freemium）</b>：简洁版满足快速摸底与轻度使用，深度版面向需要完整申报书与商业/风险分析、答辩材料的重度用户，对应差异化付费。</li>
+    <li><b>对标参考</b>：同类写作辅助工具普遍采用会员制（如竞品 24 元/月、48 元/月两档），本作品可参照设置个人订阅档位。</li>
+    <li><b>机构授权</b>：面向高校双创学院、实验室提供院校级授权与私有化部署，按席位或年度授权收费。</li>
+    <li><b>增值服务</b>：围绕申报书生成延展的 PPT 大纲、答辩问题、查新/同质化检测等可作为增值模块，形成"生成—评审—提交"闭环内的持续付费点。</li>
+  </ul>
+
+  <div class="footer">本说明书对应线上作品 kechuang2026.cn（科创赛事多智能体协同创作助手），与 PDF 版内容一致。</div>
+</div>
+</body>
+</html>
