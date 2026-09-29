@@ -34,3 +34,16 @@
 - 首页公告条：调 `/api/notice`
 - 后台额度/失败/趋势卡：调 `/api/admin/quota` + `/api/admin/stats`
 - PPT 风格缩略图：调 `/api/ppt_themes`（自带配色，不用前端维护对照表）
+
+## 新增（270/271/246-247 轮，供前端接）
+- `GET /api/demo/list`：演示样例清单 → `{success, samples:[{name, competition_name}]}`（2 套样例）
+- `GET /api/demo?id=0|1`：取某套演示样例完整结果 → `{success, data:{...全量结果含 rich_deck}}`（不调 LLM、demo 只读可访问）
+- `GET /api/defense_faq`：答辩模拟问答静态 FAQ → `{success, faq:[{q, framework}]}`（6 条，不调 LLM）
+- `POST /api/revise_chapter`：提出修改 → body `{instruction, history_id(可空), proposal(可空)}` → `{success, proposal(新全文), old_proposal(旧全文)}`
+
+## 演示模式前端接法（270 轮）
+1. 「一键演示」按钮 → `GET /api/demo/list` 出下拉选样例
+2. 选一套 → `GET /api/demo?id=N` 拿 `data`
+3. 把 `data` 喂给现有结果页渲染逻辑（正文/评分/各 tab/PPT 预览/图表兜底全部复用），不走 `/api/generate_async`
+
+详细字段结构见 `docs/后端接口说明_演示模式.md`。

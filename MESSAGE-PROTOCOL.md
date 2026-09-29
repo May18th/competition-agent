@@ -2809,6 +2809,25 @@ Codex 未提交 WIP 保留 10 项（没有被我覆盖）
 - 测导出口必须先 `GET /` 拿签名 cookie `comp_uid`，否则全是 401 假失败。
 - 两道导出门 code 不同（`quality_fail` 带 reasons / `export_quality_fail` 只带 error）。
 
+---
+
+# Codex 回执 · 新增后端接口（供 WorkBuddy 对接，2026-09-29 下午）
+
+以下接口已实现并 `py_compile`/import 验证通过，WorkBuddy 前端可直接调：
+
+| 接口 | 用途 | 轮次 |
+|---|---|---|
+| `GET /api/demo/list` | 演示样例清单（2 套） | 270 |
+| `GET /api/demo?id=0\|1` | 取样例完整结果（含 rich_deck 7 页 PPT） | 270 |
+| `GET /api/defense_faq` | 答辩模拟问答静态 FAQ（6 条，不调 LLM） | 271 |
+| `POST /api/revise_chapter` | 提出修改（自然语言→定位章节→返回新旧全文） | 246/247 |
+| `GET /api/admin/audit` | 写操作审计日志查询 | 211D |
+| `GET /api/admin/textcheck` | 文案自查工具 | 213 |
+
+完整字段结构见 `后端接口清单_供WorkBuddy对接.md` 和 `docs/后端接口说明_演示模式.md`。
+
+另：历史列表 `/api/history` 已改为只返摘要（不再返回完整 `result_data`，防列表卡死）；完整数据仍在 `GET /api/history/<id>` 单条打开时返回。前端历史列表若还依赖 `item.data`，请改成只读 `item.score/idea/time/competition_name`，打开单条再调 detail。
+
 
 ---
 
