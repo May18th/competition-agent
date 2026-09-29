@@ -4251,7 +4251,10 @@ def _sync_gen_marker():
     tasks/计数都是进程内存态，重启即丢；部署前等它归零，避免把用户的深度版拦腰杀掉
     （2026-09-27 实锤：三次重启连杀三个在跑的深度任务）。"""
     try:
-        with open("/tmp/comp_agent_gens", "w") as f:
+        # 421 轮孪生站独立化：marker 不能写死 /tmp，否则生产与 staging 互相覆盖计数，
+        # 谁重启都判断错在跑任务数。改为随 app.py 所在目录（生产/staging 各自独立）。
+        _marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.comp_agent_gens')
+        with open(_marker, "w") as f:
             f.write(str(_active_gen_count))
     except Exception:
         pass

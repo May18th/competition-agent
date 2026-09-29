@@ -10,7 +10,9 @@
 # 原理：app.py 在每次生成计数变化时把在跑数量写到 /tmp/comp_agent_gens，
 #       本脚本轮询它，归零（或超时）才重启。任何人都不要再裸 systemctl restart。
 MAX_WAIT=${1:-600}
-MARK=/tmp/comp_agent_gens
+# 421 轮孪生站独立化：marker 随工作目录（生产 /opt/comp-agent、staging /opt/comp-agent-staging 各自独立），
+# 不再用 /tmp/comp_agent_gens（否则两边互相覆盖计数）。
+MARK="$(pwd)/.comp_agent_gens"
 STEP=5
 waited=0
 while [ "$waited" -lt "$MAX_WAIT" ]; do

@@ -48,6 +48,25 @@
     --radius:18px;
 }
 
+/* 402 全局对比度（WCAG AA / AAA）：覆盖主题文字与边框变量，任何主题生效。
+   默认标准档不动任何变量；高对比=AA 级加深文字/加粗边框；最高对比=AAA 级。 */
+html.contrast-high{
+    --text:#eef2ff; --text-soft:#dfe6fb; --text-dim:#cdd6f4; --text-mute:#aab4d4;
+    --line:rgba(125,211,252,.55); --line-strong:rgba(125,211,252,.72); --surface-solid:#11163a;
+}
+html.contrast-high body.light{
+    --text:#080d18; --text-soft:#1a2340; --text-dim:#28325a; --text-mute:#3a456e;
+    --line:rgba(10,30,60,.42); --line-strong:rgba(10,30,60,.6); --surface-solid:#ffffff;
+}
+html.contrast-max{
+    --text:#ffffff; --text-soft:#f2f5ff; --text-dim:#eef2ff; --text-mute:#cdd6f4;
+    --line:rgba(150,220,255,.8); --line-strong:rgba(180,235,255,.95); --surface-solid:#0a0f2e;
+}
+html.contrast-max body.light{
+    --text:#000000; --text-soft:#0a0f1f; --text-dim:#0a0f1f; --text-mute:#222a44;
+    --line:rgba(0,0,0,.55); --line-strong:rgba(0,0,0,.75); --surface-solid:#ffffff;
+}
+
 /* 错别字标红（一键修正前的高亮，不进导出件） */
 .wb-typo {
     background: rgba(248, 113, 113, .18);

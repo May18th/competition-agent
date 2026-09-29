@@ -4,25 +4,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>可创无限 · 科创赛事助手</title>
-    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 3~4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
+    <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
          标签页也永远是空白图标。直接复用 logo.png，零风险。
          193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
          png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
-    <link rel="icon" href="/static/favicon.ico" sizes="any">
-    <link rel="icon" type="image/png" href="/static/logo.png">
-    <link rel="apple-touch-icon" href="/static/logo.png">
+    <link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
+    <link rel="icon" type="image/png" href="/static/logo.png?v=20260930d">
+    <link rel="apple-touch-icon" href="/static/logo.png?v=20260930d">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png?v=20260930d">
+    <!-- 273 轮 PWA：移动端可「添加到主屏幕」。
+         只声明可安装性 + 注册离线壳的 SW；不改任何页面结构，桌面端无感。 -->
+    <link rel="manifest" href="/static/manifest.json?v=20260930d">
+    <meta name="theme-color" content="#0e7490">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="科创助手">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
-    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 3~4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
+    <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 旧域名国内多数网络打不开，微信/QQ 分享卡片图片一直加载失败；统一切现域名 -->
     <meta property="og:image" content="https://kechuang2026.cn/static/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260930a">
+    <link rel="stylesheet" href="/static/style.css?v=20260930d">
+    <!-- 283 轮：全站按钮统一规范。拆成三个独立文件（基础族 / 结果页 / 历史弹窗+后台），
+         由三条线并行产出，互不覆盖；必须排在 style.css 之后才能盖住既有规则。 -->
+    <link rel="stylesheet" href="/static/wbbtn-base.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbbtn-result.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260930d">
+    <!-- 286 轮：移动端表单步骤顺序（≤480px 恢复自然文档顺序） -->
+    <link rel="stylesheet" href="/static/wbsteps.css?v=20260930d">
+    <!-- 295 轮：293 导出中心按钮统一 + 289 结果页 tabs 溢出/图标/浮动按钮/对比度 -->
+    <link rel="stylesheet" href="/static/wbfix295.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbfab302.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbsmart.css?v=20260930d">
+    <!-- 307/318 轮：顶部工具入口与 hero 新手步骤的双端增强，保持最后加载以覆盖旧样式。 -->
+    <link rel="stylesheet" href="/static/wbtools307.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbdemo.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbtheme344.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbmenu398.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbresult339.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wblogo412.css?v=20260930d">
+    <!-- 402 轮：首页浅底小字对比度。
+         只在本文件内定义两个私有变量，不动任何公共样式表（另一条线在统一收 css）：
+         .light 下给出实测达标的固定值，夜间模式继续沿用主题自带的 --text / --text-mute，
+         避免把浅色小字硬写死、夜间模式变成「深底深字」。 -->
+    <style>
+        body { --wb-txt-body: var(--text); --wb-txt-muted: var(--text-mute); }
+        body.light { --wb-txt-body: #374151; --wb-txt-muted: #57617a; }
+        /* 334 轮同类竖排（移动端实测）：PWA「装到主屏幕」横幅的文案被压成 28px 宽 × 231px 高的竖条，
+           逐字换行。根因不是竖排属性（全站 grep writing-mode 为零），而是两层 flex 都没给宽度：
+           #wbPwaHost 是 fixed 定位却没有 width（只有 max-width），收缩到 min-content；
+           横幅 width:100% 取到一个不确定的宽度，`.wb-pwa-txt{flex:1;min-width:0}` 于是被压到 0 附近。
+           这里在 index.html 内兜底：给宿主定宽 + 允许换行 + 文案给下限宽度，
+           实测 390px 下文案回到 186px 宽 / 2 行横排。正式修法请 pwa-line 同步进 wbpwa.js 的 injectStyle。 */
+        #wbPwaHost { width: min(94vw, 720px) !important; }
+        #wbPwaHost .wb-pwa-bar { flex-wrap: wrap !important; }
+        #wbPwaHost .wb-pwa-txt { flex: 1 1 170px !important; min-width: 120px !important; }
+    </style>
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -136,8 +180,12 @@
              标志目前是内联 SVG 占位（申报书+对勾徽章，贴「生成申报材料」这件事本身）；
              logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
              <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手"> 即可，样式已写好 -->
+        <!-- 338/342 轮：正式 logo 已定稿（docs/logo_正式版_20260929.png，519×397），
+             已由它程序化生成 512×512 的 /static/logo.png 以及 icon-180/192/512、icon-maskable-512、
+             favicon.ico（16/32/48 三帧），原来的内联 SVG 占位整段换成 <img>。
+             文件名不变，引用处统一加 ?v=20260930d 破 CDN 缓存。 -->
         <div class="hero">
-            <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手" width="54" height="54">
+            <img src="/static/logo.png?v=20260930d" class="wb-hero-logo" alt="科创赛事助手" width="84">
             <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 科创赛事助手」统一。
                  之前页面内叫「赛创助手」、标签页叫「科创赛事助手」，同一产品两个名字，
                  评委截图/口口相传时会以为是两家东西 -->
@@ -146,51 +194,57 @@
             <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点。
                  第一百五十七轮（137/147/151 轮反复要求，实测仍残留）：删掉框架名等技术栈名词
                  ——用户看不懂、也偏离「自主构建产品」的表述（151轮），
-                 只留价值导向的「多智能体协作引擎」+ 可溯源的「15 个赛事知识库」 -->
-            <p class="wb-hero-tech">
+                 只留可溯源的「15 个赛事知识库」：技术黑话（如「协作引擎」）用户读不懂，一律删 -->
+            <p class="wb-hero-tech" style="color: var(--wb-txt-body);">
                 <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>
-                多智能体协作引擎 · 15 个赛事知识库自动匹配评审规则</p>
+                15 个赛事知识库自动匹配评审规则</p>
             <!-- 164 轮：新手不知道从哪下手，首屏给一句「三步流程 + 多久出结果」；
                  老手要的进阶能力改到档位卡上用徽标区分，两边互不打扰 -->
-            <p class="wb-hero-newbie">
-                第一次用？<b>① 选赛事 → ② 写一句话创意 → ③ 点生成</b>，约 1 分钟出申报书初稿
+            <p class="wb-hero-newbie wbhero318-newbie">
+                <span class="wbhero318-label">第一次用？</span>
+                <span class="wbhero318-steps" aria-label="三步生成申报书初稿">
+                    <span class="wbhero318-step"><strong>①</strong> 选赛事</span>
+                    <span class="wbhero318-step"><strong>②</strong> 写一句话创意</span>
+                    <span class="wbhero318-step"><strong>③</strong> 点生成</span>
+                </span>
+                <span class="wbhero318-promise">约 1~2 分钟出申报书初稿</span>
             </p>
         </div>
 
         <!-- 历史记录 / 使用说明：单独成行，与主标题拉开间距 -->
-        <!-- z-index 提到引导遮罩（1500）之上：否则首次访问引导还在时，手指点这三个按钮
+        <!-- z-index 提到引导遮罩（1500）之上：否则首次访问引导还在时，手指点这些按钮
              会被全屏遮罩吃掉（点了只是关掉遮罩，用户看到的就是「点了没反应」） -->
-        <div id="wbTopTools" style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap; position: relative; z-index: 1600;">
+        <div id="wbTopTools" class="wbtools307-bar" style="display: flex; justify-content: flex-end; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap; position: relative; z-index: 1600;">
             <!-- 今日额度不再前端展示（用户拍板）：数字是全站剩余不是个人维度，
                  显眼了反而让用户困惑、也把运营盘子亮给评委。后端 /api/quota 接口保留，后台可查 -->
-            <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
-                <span class="wb-dot"></span>使用说明
+            <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn" onclick="showIntro(true)">
+                <svg class="wb-ico wbtools307-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg>使用说明
             </button>
-            <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
-                <span class="wb-dot"></span>历史
+            <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn" onclick="showHistory()">
+                <svg class="wb-ico wbtools307-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-history"/></svg>历史
             </button>
             <!-- 第一百四十二 / 第一百四十七轮催办：顶部主按钮收敛。
                  「背景」是低频装饰项（换页面底图），不该与「使用说明 / 历史 / 反馈」平级占位，
                  收进「更多 ▾」下拉；顶部常驻入口由 4 个降到 3 个，版面不再拥挤。
                  菜单项点击后由 wbMoreClose() 关闭（见 app.js wbMoreToggle）。 -->
             <div id="wbMoreWrap" style="position: relative;">
-                <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
+                <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm wbtools307-btn" onclick="wbMoreToggle(event)"
                         aria-haspopup="true" aria-expanded="false" title="更多功能">
-                    <span class="wb-dot"></span>更多 ▾
+                    <svg class="wb-ico wbtools307-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg>更多 ▾
                 </button>
                 <div id="wbMoreMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px);
                                             z-index: 1700; min-width: 148px; padding: 6px;
                                             background: var(--surface-solid); border: 1px solid var(--line);
                                             border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45);">
-                    <button class="wb-glass-btn wb-glass-btn-sm"
+                    <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn"
                             style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
                             onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
-                        <span class="wb-dot"></span>页面背景
+                        <svg class="wb-ico wbtools307-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg>页面背景
                     </button>
                 </div>
             </div>
-            <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbFeedbackOpen()" title="任何状态下都能反馈问题或建议">
-                <span class="wb-dot"></span>反馈
+            <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn" onclick="wbFeedbackOpen()" title="任何状态下都能反馈问题或建议">
+                <svg class="wb-ico wbtools307-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-quote"/></svg>反馈
             </button>
         </div>
 
@@ -206,7 +260,6 @@
                     <input type="file" id="wbBgFileInput" accept="image/*" onchange="wbBgUpload(this)" style="display: none;">
                 </label>
                 <button onclick="wbBgReset()" style="padding: 6px 12px; background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; cursor: pointer;">恢复默认</button>
-                <span style="font-size: 11.5px; color: var(--text-mute);">图片仅存本机，不上传服务器</span>
             </div>
             <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <span style="font-size: 11.5px; color: var(--text-mute);">压暗</span>
@@ -214,7 +267,7 @@
                 <span style="font-size: 11.5px; color: var(--text-mute);">（保证文字始终清晰）</span>
             </div>
             <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">
-                请使用自己拍摄、自己生成或已获授权的图片；预设背景均为本站程序化生成。
+                图片仅存本机、不上传服务器；请使用自己拍摄或已获授权的图片，预设背景均为本站程序化生成。
             </div>
         </div>
 
@@ -229,12 +282,18 @@
                         title="清空已填内容并删除本机草稿"
                         onclick="wbClearFormAsk()">清空重写</button>
             </div>
-            <div id="wbRestoreTip" style="display: none; margin-bottom: 4px; font-size: 11.5px; color: var(--text-mute); align-items: center; gap: 8px;">
-                <span id="wbRestoreText"></span>
+            <!-- 324 轮：全站只留这一条常驻提示。
+                 原先 index.html 有一个静态 div、app.js 恢复草稿时又往 #wbRestoreTip 写了一遍
+                 一模一样的句子，首页出现上下相邻的两条重复提示（实测两行并存：y=312 / y=331）。
+                 现在两条合并进 #wbRestoreTip 这一个容器：文案写在 HTML 里（不依赖 JS 也可见），
+                 app.js 恢复草稿时写的是同一句话，仍是同一行，不会冒出第二条。 -->
+            <div id="wbRestoreTip" style="display: flex; margin-bottom: 10px; font-size: 12px; color: var(--wb-txt-muted); line-height: 1.6; align-items: center; gap: 8px;">
+                <span id="wbRestoreText" style="flex: 1 1 auto; min-width: 0;">赛事与档位会记住；创意和草稿只保存在当前标签页，关闭即清除</span>
             </div>
-            <!-- 全站唯一常驻提示：其余长说明都收进字段旁的「?」图标（评委反馈文案过载） -->
-            <div style="margin-bottom: 10px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
-                信息越具体，生成内容越精准 · 赛事与档位会记住；创意和草稿只保留在当前标签页，关闭即清除
+            <!-- 326 轮：备赛提示从结果页挪一份到生成前 —— 填之前就该知道「别一份稿子通投」，
+                 等到出稿再说是马后炮。一行，不占大块 -->
+            <div style="margin-bottom: 10px; font-size: 12px; color: var(--wb-txt-muted); line-height: 1.6;">
+                同一份材料投不同赛道要改侧重：工程类看实现与测试，创业类看市场与商业模式。
             </div>
             <div class="wb-formgrid" style="display: grid; gap: 20px;">
                 <div class="form-group">
@@ -301,11 +360,11 @@
                     <!-- 第八十四轮催办：快捷 chip 只放 5 个常用赛事（塞满会把 375px 撑出横向滚动），
                          但用户看不出「到底有几个赛事可选」，会以为只有这 5 个 → 补一行明示数量，
                          并指向「全部赛事」。用块级小字，宽度自适应，不会影响窄屏布局。 -->
-                    <div id="compCountHint" onclick="try{wbCompAll()}catch(e){}" title="点这里展开全部 15 个赛事" style="margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6; cursor: pointer;">
+                    <div id="compCountHint" onclick="try{wbCompAll()}catch(e){}" title="点这里展开全部 15 个赛事" style="margin-top: 6px; font-size: 12px; color: var(--wb-txt-muted); line-height: 1.6; cursor: pointer;">
                         共 <b id="compCountNum" style="color: var(--c-a);">15</b> 个内置赛事：点右侧「全部 15 赛 ▾」展开完整清单；不在清单里也可以直接手输，按通用科创赛事标准生成。
                     </div>
                     <div id="compAutoTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.6;"></div>
-                    <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-mute); line-height: 1.6;">
+                    <div id="compCustomTip" style="display: none; margin-top: 6px; font-size: 12px; color: var(--wb-txt-muted); line-height: 1.6;">
                         这个赛事名不在内置清单里也没关系，会按通用科创赛事标准生成。
                     </div>
 
@@ -369,6 +428,9 @@
                         <div id="kbCurrent" style="margin-top: 8px; color: var(--text-dim); font-size: 12.5px;"></div>
                     </div>
                     <div id="kbDetail" style="display: none; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); font-size: 12.5px; max-height: 320px; overflow: auto;"></div>
+                    <!-- 272 轮赛事知识库可视化：15 赛事评分雷达 + 章节要求对比。
+                         纯前端只读（数据源 = competition_profiles / 内置规则），零后端改动、零 LLM 消耗。 -->
+                    <div id="kbCompare" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid);"></div>
                     <textarea id="rules" style="display: none;"></textarea>
 
                     <!-- 上传官方文件降级为默认折叠的小字入口（Codex 待办 P0-2）：
@@ -412,11 +474,13 @@
                      没给才回退「角色 + 职责」模板（competition_agents.py，Codex 2026-09-28）。
                      整块可选，手机上默认折叠，不占首屏 -->
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 团队成员<span class="wb-opt">（选填，强烈建议：有真人就填）</span></label>
+                    <!-- 324 轮：原来标签写「（选填，强烈建议：有真人就填）」、下方正文又劝一遍「有真实团队就填」，
+                         同一个意思出现两次。合并成一处：标签只留「（选填）」，真人提示放在正文里说清。 -->
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 团队成员<span class="wb-opt">（选填）</span></label>
                     <div style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
                         <!-- 105-2：成员输入框全端默认展开（用户反馈「正常输入栏没有了」），文案不再写「展开填写」 -->
                         <span onclick="wbAdvToggle('teamBody')" style="color:var(--c-a); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px;">
-                            第 3 步 · 团队成员 / 分工（选填，强烈建议填真人）<span id="teamBodyArrow">▾</span>
+                            第 3 步 · 团队成员 / 分工<span id="teamBodyArrow">▾</span>
                         </span>
                         <button type="button" class="wb-textbtn" style="margin-left:auto; font-size:12px;"
                                 title="按赛事类型给一套能直接改的分工模板，填完请改成你队友的真实姓名与分工"
@@ -424,8 +488,8 @@
                     </div>
                     <div id="teamBody">
                         <textarea id="udTeam" aria-label="团队成员" rows="3" placeholder="每行一位，参考格式：姓名（角色，院系/单位）：负责的工作" style="min-height: 80px;"></textarea>
-                        <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
-                            有真实团队就填：<b style="color: var(--text);">姓名、学校/院系、角色、具体分工</b>，会原样写进团队章节。
+                        <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--wb-txt-muted);">
+                            强烈建议填真人：<b style="color: var(--text);">姓名、学校/院系、角色、具体分工</b>，会原样写进团队章节。
                             评委最想看到的是「人」，不填就只出「角色 + 职责」的通用模板。
                         </div>
                     </div>
@@ -494,7 +558,7 @@
                     </div>
                     <div id="advParamBody" style="display: none;">
                         <div style="margin: 2px 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
-                            跳过也能生成。只有想让写法更贴近某一类范文、或想去掉「AI 味」时才需要动这里。
+                            跳过也能生成。只有想让写法更贴近某一类范文、或想去掉「模板腔」时才需要动这里。
                         </div>
                         <label style="display:block; font-size:12px; color:var(--text-mute); margin-bottom:4px;">关键词</label>
                         <input type="text" id="keywords" aria-label="关键词" placeholder="如 苏轼文旅, web网站, 4人团队" style="width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: var(--surface-2); color: var(--text);">
@@ -513,16 +577,16 @@
                                 </select>
                                 <span onclick="wbChartThemeGuess()" style="font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">按我的创意推荐</span>
                             </div>
-                            <div id="chartThemeHint" style="margin-top: 4px; font-size: 11.5px; color: var(--text-mute);">默认柔和：白底 + 低饱和点缀，交材料不刺眼。</div>
+                            <div id="chartThemeHint" style="margin-top: 4px; font-size: 11.5px; color: var(--wb-txt-muted);">默认柔和：白底 + 低饱和点缀，交材料不刺眼。</div>
                         </div>
                         <div id="humanizeRow" style="display: none; margin-top: 12px;">
-                            <label style="display:block; font-size:12px; color:var(--text-mute); margin-bottom:4px;">文风<span style="color:var(--text-mute);">（深度版可选）</span></label><span class="wb-tip" data-tip="「去 AI 味」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。只对深度完整版生效；简洁版是「短而准」，不做这层处理。" onclick="wbShowTip(this)">?</span>
+                            <label style="display:block; font-size:12px; color:var(--text-mute); margin-bottom:4px;">文风<span style="color:var(--text-mute);">（深度版可选）</span></label><span class="wb-tip" data-tip="「去模板腔」= 只写事实、数据、案例和局限，去掉套话与排比，段落长短不一。怕查重就选它。只对深度完整版生效；简洁版是「短而准」，不做这层处理。" onclick="wbShowTip(this)">?</span>
                             <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
-                                    <input type="radio" name="humanize" value="standard" checked style="cursor: pointer;"> 标准
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer; flex: 0 0 auto;">
+                                    <input type="radio" name="humanize" value="standard" checked style="cursor: pointer; flex-shrink: 0;"> <span style="flex: 0 0 auto; min-width: 0;">标准</span>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer;">
-                                    <input type="radio" name="humanize" value="strong" style="cursor: pointer;"> 去 AI 味（强）
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer; flex: 0 0 auto;">
+                                    <input type="radio" name="humanize" value="strong" style="cursor: pointer; flex-shrink: 0;"> <span style="flex: 0 0 auto; min-width: 0;">去模板腔（强）</span>
                                 </label>
                             </div>
                         </div>
@@ -531,10 +595,10 @@
                              （不敢说"全自动脱敏"，后端对自由文本里的裸姓名有盲区，见 training_store）。 -->
                         <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);">
                             <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; line-height: 1.65;">
-                                <input type="checkbox" id="trainConsent" checked onchange="wbTrainToggle(this.checked)" style="margin-top: 3px; cursor: pointer; flex-shrink: 0;">
-                                <span>我的生成内容用于训练<span class="wb-opt">（默认开）</span>
+                                <input type="checkbox" id="trainConsent" checked onchange="wbTrainToggle(this.checked)" style="margin-top: 3px; cursor: pointer; flex-shrink: 0; width: auto; height: auto;">
+                                <span style="flex: 1 1 auto; min-width: 0; word-break: break-word;">我的生成内容用于训练<span class="wb-opt">（默认开）</span>
                                     <span style="display:block; color: var(--text-mute); font-size: 11.5px; margin-top: 2px;">
-                                        仅在评分达标且你亲手点「沉淀」时，才把内容脱敏后存入知识库；姓名/院校/电话/邮箱等会先替换成占位符。关掉后不再入库，随时可改。脱敏覆盖常见格式的个人信息，正文里的裸姓名可能识别不到，介意的话别点。
+                                        仅在你评分达标并手动点「沉淀」后，系统才会把内容脱敏留存；关掉则不再入库，随时可改。姓名、院校、电话、邮箱会先替换成占位符；正文里的裸姓名可能识别不到，介意的话别点。
                                     </span>
                                 </span>
                             </label>
@@ -584,22 +648,22 @@
                     <label class="version-card" style="display: block; padding: 16px; background: var(--surface-solid); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
                         <input type="radio" name="mode" value="fast" checked style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[0].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[0].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[1].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[1].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg> 简洁版 <span class="wb-tier-flag wb-tier-new">新手友好</span></div>
-                        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+                        <div style="font-size: 12px; color: var(--wb-txt-body); line-height: 1.8;">
                             <!-- 186 轮【P1·数据真实性】：这里的数字原来是**写死的**（具体值见 git 历史，勿再写死），
                                  时间一长就和 /api/stats 的真实分布脱节（实测已变成中位 2050 字 / 58.5 秒），
                                  评委拿页面文案对照自己实测会当场打脸——这正是「数据真实」铁律的反面教材。
                                  现在改为页面加载后从 /api/stats 动态取中位数/样本数渲染（见 app.js wbStatsFill）；
                                  样本不足时只显示定性描述，绝不编数字。 -->
-                            <b style="color: var(--c-a);" id="statFastHead">出稿快，字数精</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statFastDetail">（正在读取实测数据…）</span><br>
+                            <b style="color: var(--c-a);" id="statFastHead">出稿快，字数精</b><span style="color: var(--wb-txt-muted); font-size: 11.5px;" id="statFastDetail">（正在读取实测数据…）</span><br>
                             规则解析 · 申报书 · 竞品/商业/风险/技术 · 答辩 · PPT大纲
                         </div>
                     </label>
                     <label class="version-card" style="display: block; padding: 16px; background: var(--surface-solid); border: 2px solid var(--line); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
                         <input type="radio" name="mode" value="deep" style="cursor: pointer; margin: 0; margin-bottom: 8px;" onclick="document.querySelectorAll('.version-card')[1].style.border='2px solid var(--c-a)';document.querySelectorAll('.version-card')[1].style.background='var(--c-a-soft)';document.querySelectorAll('.version-card')[0].style.border='2px solid var(--line)';document.querySelectorAll('.version-card')[0].style.background='var(--surface-solid)';">
                         <div style="font-weight: 600; color: var(--c-a); margin-bottom: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 深度完整版 <span class="wb-tier-flag wb-tier-hot">推荐</span><span class="wb-tier-flag wb-tier-pro">老手进阶</span></div>
-                        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+                        <div style="font-size: 12px; color: var(--wb-txt-body); line-height: 1.8;">
                             <!-- 同上 186 轮：数字一律动态取，不写死（写死值已与接口实测脱节） -->
-                            <b style="color: var(--c-b);" id="statDeepHead">内容全，含图表与路演稿</b><span style="color: var(--text-mute); font-size: 11.5px;" id="statDeepDetail">（正在读取实测数据…）</span><br>
+                            <b style="color: var(--c-b);" id="statDeepHead">内容全，含图表与路演稿</b><span style="color: var(--wb-txt-muted); font-size: 11.5px;" id="statDeepDetail">（正在读取实测数据…）</span><br>
                             简洁版全部 + 多视角评审 · 8 张图表 · 路演 PPT · 12 章正文
                         </div>
                     </label>
@@ -626,6 +690,9 @@
                 <button id="startBtn" class="btn-primary" onclick="startWork()">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
                 </button>
+                <!-- 270 轮演示模式：预置样例直接渲染结果页，不调 LLM、不耗额度、不走 /api/generate。
+                     样式刻意做成描边次级按钮（非主色实心），避免被误当成真实生成。 -->
+                <button id="wbDemoBtn" class="btn-ghost" onclick="wbOpenDemo()" title="用预置样例直接看完整结果页，不消耗额度、不需等待生成" style="margin-left: 10px;">🎬 一键演示</button>
             </div>
             <div id="progressSteps" class="progress-steps" style="display: none;">
                 <!-- 简洁版进度条 -->
@@ -672,7 +739,7 @@
                 <!-- 生成失败 / 超时后露出，一点就重跑（不用重新填表单） -->
                 <div id="retryWrap" style="display: none; text-align: center; margin-top: 12px;">
                     <button onclick="wbRetry()" style="padding: 9px 20px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600;">重新生成</button>
-                    <div style="margin-top: 6px; font-size: 12px; color: var(--text-mute);">会用刚才填的内容再跑一次</div>
+                    <div style="margin-top: 6px; font-size: 12px; color: var(--text-mute);">会按当前填写的创意重新生成</div>
                 </div>
             </div>
         </div>
@@ -769,7 +836,7 @@
                 <!-- 双评分并存（第二十三/二十四/三十一轮反复刺）：本页只认这一个总分，
                      下方雷达区只做维度分解、不再给第二个总分 -->
                 <div class="score-label">智能自评参考（文档质量）/ 100<span style="display:block; font-size: 11.5px; color: var(--text-mute); font-weight: 400; margin-top: 2px;">本页唯一评分</span></div>
-                <div class="score-meta">迭代次数：<span id="revCount">1</span> 次</div>
+                <div class="score-meta" style="display: none;">迭代次数：<span id="revCount">1</span> 次</div>
                 <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
                 <!-- 174 轮「验证即沉淀」的用户侧入口：只在分数达标时露出来（不达标点了也是 422，
                      与其让用户在错误里撞墙，不如压根不显示）。 -->
@@ -814,7 +881,7 @@
                 <div style="font-weight: 700; color: var(--warn-text); margin-bottom: 6px;">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 交作品前，这三件事必须自己做
                 </div>
-                <div style="margin-top:4px;">① 查重：用「去 AI 味」重跑，补进自己的话</div>
+                <div style="margin-top:4px;">① 查重：用「去模板腔」重跑，补进自己的话</div>
                 <div style="margin-top:4px;">② 核数：正文数字逐条换成你真实的数据</div>
                 <div style="margin-top:4px;">③ 补场景：改成具体的人和具体时刻</div>
                 <!-- 第二十九轮：上面第③条让用户「写具体的人/时刻」，但生成端为双盲禁写具体人名，
@@ -887,32 +954,32 @@
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg> 竞品分析</h3>
                     <div class="content-block" id="competitorAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-coin"/></svg> 商业模式</h3>
                     <div class="content-block" id="businessModel"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 风险分析</h3>
                     <div class="content-block" id="riskAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="auto-show">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-wrench"/></svg> 技术方案</h3>
                     <div class="content-block" id="techSolution"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-calendar"/></svg> 实施计划</h3>
                     <div class="content-block" id="implementationPlan"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg> 社会价值与应用前景</h3>
                     <div class="content-block" id="socialValue"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
             </div>
 
@@ -920,7 +987,7 @@
                 <div style="padding: 20px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</h3>
                     <div style="background: var(--surface-2); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-dim); line-height: 1.7;">
-                        收录 <b>智能撰写的示范范文</b>片段并打上标签（示范性质，非真实获奖原文）。生成时会检索同标签范文作为写法参考——<b>关键词检索，不是模型微调</b>，所以持续往里加范文就能持续提升生成质量。你也可以粘贴自己打磨过的优质片段。
+                        收录 <b>智能生成的示范范文</b>片段并打上标签（示范性质，非真实获奖原文）。生成时会检索同标签范文作为写法参考——<b>关键词检索，不是模型微调</b>，所以持续往里加范文就能持续提升生成质量。你也可以粘贴自己打磨过的优质片段。
                     </div>
 
                     <div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
@@ -1071,7 +1138,7 @@
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
                     <div class="content-block" id="projectSummary"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
@@ -1081,18 +1148,18 @@
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
                     <div class="content-block" id="proposalText"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                     <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
                     <div class="content-block" id="proposalAnalysis"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
                     <div class="content-block" id="judgeFeedback"></div>
-                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体协作辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则自动撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div id="expertReviewPanel" style="margin-bottom:24px; display:none;">
                     <h3 style="color: var(--c-a); margin-bottom:12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-users"/></svg> 多视角评审</h3>
@@ -1141,6 +1208,9 @@
                         <b>不要放进提交材料</b>。导出时这一项默认不勾选。
                     </div>
                     <div class="content-block" id="defenseQuestions"></div>
+                    <!-- 271 轮答辩模拟问答：独立区块，静态预置、不调接口、不耗额度。
+                         不侵入 #defenseQuestions（那一块仍由后端填充）。 -->
+                    <div class="content-block" id="defenseQA"></div>
                 </div>
                 <div>
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> PPT 大纲</h3>
@@ -1178,7 +1248,7 @@
                     </div>
                     <div id="deckThemeHint" style="display:none; font-size:12px; color:var(--text-mute); margin-bottom:10px;"></div>
                     <!-- 页面结构：固定 8 页路演逻辑 + 申报书回填。
-                         之前页数和顺序全看智能系统心情，经常缺「痛点页」或「数据页空着」，
+                         之前页数和顺序全看随机，经常缺「痛点页」或「数据页空着」，
                          这里导出前把结构钉死，每页有几条内容直接显示出来，缺哪页一眼看到 -->
                     <div id="deckRoadWrap" style="margin-bottom: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px;">
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
@@ -1598,11 +1668,18 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260930a"></script>
-    <script src="/static/app.js?v=20260930a"></script>
+    <script src="/static/wbconst.js?v=20260930d"></script>
+    <script src="/static/app.js?v=20260930d"></script>
     <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
          它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
-    <script src="/static/wbnavig.js?v=20260930a"></script>
+    <script src="/static/wbnavig.js?v=20260930d"></script>
+<script src="/static/wbdefense.js?v=20260930d"></script>
+<script src="/static/wbkb.js?v=20260930d"></script>
+<script src="/static/wbpwa.js?v=20260930d"></script>
+<script src="/static/wbchat.js?v=20260930d"></script>
+<script src="/static/wbsync.js?v=20260930d"></script>
+<script src="/static/wbsmart.js?v=20260930d"></script>
+<script src="/static/wbdemo.js?v=20260930d"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1672,19 +1749,56 @@
     </div>
 </div>
 
-<script src="/static/wbpage.js?v=20260930a"></script>
+<script src="/static/wbpage.js?v=20260930d"></script>
+<script src="/static/wbtheme344.js?v=20260930d"></script>
+<script src="/static/wbresult339.js?v=20260930d" defer></script>
+<script>
+/* wbresult339 外挂自启动：不改动 app.js，轮询等待结果页落位后注入 */
+(function () {
+  var tries = 0, MAX = 100;
+  function data() {
+    return (window._lastData || (window.lastData) || null);
+  }
+  function tick() {
+    try {
+      var host = document.getElementById("resultArea") || document.getElementById("scorePanel");
+      if (host && window.wbResult339 && typeof window.wbResult339.init === "function") {
+        window.wbResult339.init({ data: data() });
+        return;
+      }
+    } catch (e) {}
+    if (++tries < MAX) { setTimeout(tick, 400); }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(tick, 300); });
+  } else { setTimeout(tick, 300); }
+  // 结果页是动态渲染的，观察到的 DOM 变动要重新注入
+  try {
+    var mo = new MutationObserver(function () {
+      var host = document.getElementById("resultArea") || document.getElementById("scorePanel");
+      if (host && window.wbResult339 && !document.getElementById("wb339")) {
+        try { window.wbResult339.init({ data: data() }); } catch (e) {}
+      }
+    });
+    document.addEventListener("DOMContentLoaded", function () {
+      mo.observe(document.body, { childList: true, subtree: true });
+    });
+  } catch (e) {}
+})();
+</script>
+<script src="/static/wbmenu398.js?v=20260930d"></script>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>
-    <div style="opacity: .75;">基于官方评审规则 · 多智能体协作辅助撰写 · 最终内容以你的真实项目与署名为准</div>
+    <div style="opacity: .75;">基于官方评审规则自动撰写 · 最终内容以你的真实项目与署名为准</div>
     <!-- 第二百零四轮：后台入口原来只能靠手敲 /admin/login，评委/管理员自己都找不到。
          拍板结论是「不改路径、不撤入口，安全靠登录门不靠路径保密」，所以这里放一个
          不起眼的小字链接——访客几乎不会注意，但知道的人点一下就到登录页。
          链接本身不带任何凭证，无 token/账密入前端，点了仍是登录门（401）。 -->
-    <div style="opacity: .45; margin-top: 4px;">
-        <a href="/admin/login" style="color: inherit; text-decoration: none;"
-           title="管理后台（需登录）">管理入口</a>
-    </div>
+    <!-- 第三百一十三轮：前台移除「管理入口」链接。
+         原来这里给了一个小字入口（204 轮的拍板是「不撤入口、安全靠登录门」），
+         但实测评委/用户会误点进后台登录页，观感像后台暴露。现在撤掉前台入口，
+         后台仍可通过直接访问 /admin/login 进入 —— 少一个入口不等于少一道门。 -->
     <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
          避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
     <details style="max-width: 660px; margin: 6px auto 0;">
@@ -1692,17 +1806,25 @@
                         text-decoration: underline; user-select: none; padding: 2px 0;">使用说明与免责声明</summary>
         <div style="margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px;
                     background: var(--surface-2); text-align: left; font-size: 12px; line-height: 1.95;
-                    color: var(--text-dim);">
+                    color: var(--wb-txt-body);">
+            <!-- 402 轮：7 条条款密排在页脚，手机上是一整屏浅灰小字，没人读、也压不住。
+                 改成「2 条最必要 + 查看全部条款」：默认只看必须知道的两条，其余展开才显示。
+                 字号保持 12px 不变（不靠缩小字号来省地方），用可展开代替堆砌。 -->
             <div style="margin-bottom: 7px;"><b>1. 工具定位</b>：本工具用于辅助撰写赛事材料——提供结构框架、表述优化与内容补全建议，最终内容由你确认后定稿。</div>
-            <div style="margin-bottom: 7px;"><b>2. 学术诚信</b>：请遵守所在赛事与学校关于 AI 使用的相关规定；作品的署名、原创性与提交行为由你本人负责。</div>
-            <div style="margin-bottom: 7px;"><b>3. 数据核实</b>：提交前请用权威来源核实文中引用的市场数据、测算值与文献；涉及实验、实测的部分，请以你自己的真实数据为准。</div>
-            <div style="margin-bottom: 7px;"><b>4. 结果说明</b>：评审结果取决于作品本身质量与赛事评审标准，本工具不对获奖、入围或评审结论作出承诺。</div>
-            <div style="margin-bottom: 7px;"><b>5. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
-            <!-- 第八十三轮【中】：评委/用户会关注数据去向，正面说清比含糊更可信（不写吓人条款） -->
-            <div><b>6. 数据说明</b>：你输入的创意与生成记录用于生成材料、改进本工具，仅管理员可查看；主动创建的分享链接 7 天后自动失效；历史记录可在「历史」面板随时删除。</div>
-            <!-- 174 轮「验证即沉淀」条款：知情 + 可拒绝。写明「默认开但能关、只在你亲手点时才入库、
-                 脱敏有边界（不吹全自动）」——合规的底线是别把话说满，也别让用户不知道。 -->
-            <div style="margin-top: 7px;"><b>7. 内容使用授权</b>：评分达标（≥85）的生成内容，在你于「补充信息」里开启开关并亲手点击「沉淀」后，会被脱敏（姓名、院校、电话、邮箱、学号等替换为占位符）用于知识库沉淀，以改进后续生成质量。该开关默认开启，你可随时关闭；关闭后新内容不再入库，已入库内容可联系管理员删除。脱敏覆盖常见格式化的个人信息，自由文本中的裸姓名可能无法识别，建议沉淀前自行检查。</div>
+            <div style="margin-bottom: 7px;"><b>2. 内容与隐私</b>：生成内容会保存在服务器以便你回看历史记录；请勿输入涉密信息、未公开的专利或技术细节，以及他人的敏感个人信息。</div>
+            <details style="margin-top: 4px;">
+                <summary style="cursor: pointer; color: var(--c-a); user-select: none; padding: 2px 0; font-size: 12px;">查看全部条款（学术诚信 · 数据核实 · 数据说明 · 内容使用授权）▾</summary>
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);">
+                    <div style="margin-bottom: 7px;"><b>3. 学术诚信</b>：请遵守所在赛事与学校关于 AI 使用的相关规定；作品的署名、原创性与提交行为由你本人负责。</div>
+                    <div style="margin-bottom: 7px;"><b>4. 数据核实</b>：提交前请用权威来源核实文中引用的市场数据、测算值与文献；涉及实验、实测的部分，请以你自己的真实数据为准。</div>
+                    <div style="margin-bottom: 7px;"><b>5. 结果说明</b>：评审结果取决于作品本身质量与赛事评审标准，本工具不对获奖、入围或评审结论作出承诺。</div>
+                    <!-- 第八十三轮【中】：评委/用户会关注数据去向，正面说清比含糊更可信（不写吓人条款） -->
+                    <div style="margin-bottom: 7px;"><b>6. 数据说明</b>：你输入的创意与生成记录用于生成材料、改进本工具，仅管理员可查看；主动创建的分享链接 7 天后自动失效；历史记录可在「历史」面板随时删除。</div>
+                    <!-- 174 轮「验证即沉淀」条款：知情 + 可拒绝。写明「默认开但能关、只在你亲手点时才入库、
+                         脱敏有边界（不吹全自动）」——合规的底线是别把话说满，也别让用户不知道。 -->
+                    <div><b>7. 内容使用授权</b>：评分达标（≥85）的生成内容，在你于「补充信息」里开启开关并亲手点击「沉淀」后，会被脱敏（姓名、院校、电话、邮箱、学号等替换为占位符）用于知识库沉淀，以改进后续生成质量。该开关默认开启，你可随时关闭；关闭后新内容不再入库，已入库内容可联系管理员删除。脱敏覆盖常见格式化的个人信息，自由文本中的裸姓名可能无法识别，建议沉淀前自行检查。</div>
+                </div>
+            </details>
         </div>
     </details>
 </footer>

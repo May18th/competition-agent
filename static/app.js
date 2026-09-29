@@ -423,7 +423,7 @@
                 advisor: (document.getElementById('wbAdvisor') || {}).value || ''
             };
         }
-        // 学校 / 团队 / 指导老师同样属于敏感信息（双盲赛事尤其），只存 sessionStorage
+        // 学校 / 团队 / 指导老师同样属于敏感信息（匿名评审赛事尤其），只存 sessionStorage
         function wbSaveMeta() {
             try { _wbSessSet('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
             // 旧版本存在 localStorage 里的那份就地清掉
@@ -520,6 +520,7 @@
                 if (r) safe.mode = r.value;
                 // 中性字段照旧长期保存；敏感字段只写 sessionStorage，没有内容时连键一起删掉
                 _wbStoreSet(WB_FORM_KEY, JSON.stringify(safe));
+                try { wbStatePushSoon(safe); } catch (e) {}
                 if (sensHit) _wbSessSet(WB_FORM_S_KEY, JSON.stringify(sens));
                 else _wbSessDel(WB_FORM_S_KEY);
             } catch (e) {}
@@ -616,6 +617,63 @@
             } catch (e) {}
         }
 
+        /* ---------- 292 轮：双端同步（桌面生成 → 手机历史可见；手机草稿 → 桌面接续） ----------
+           接口：GET /api/user_state 拉、POST /api/user_state 写（Codex 295 回执定稿）。
+           原则：服务端为准（启动拉一次覆盖本地）；本地改动 debounce 2s 写回；后写胜。
+           隐私：只同步中性字段（赛事 / 档位 / 勾选项）。idea、proposal_draft、keywords 等
+           敏感内容仍在 WB_FORM_SENSITIVE 里，只写 sessionStorage，绝不上传服务端。
+           失败一律静默：同步是增强，不能因为它让本机不可用。 */
+        var _wbStatePushT = null;
+        function wbStatePushSoon(safe) {
+            if (_wbStatePushT) clearTimeout(_wbStatePushT);
+            _wbStatePushT = setTimeout(function () {
+                _wbStatePushT = null;
+                try {
+                    var cel = document.getElementById('competition');
+                    var r = document.querySelector('input[name=mode]:checked');
+                    fetch('/api/user_state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            state: {
+                                draft: safe || {},
+                                competition: cel ? (cel.value || '') : '',
+                                mode: r ? (r.value || '') : ''
+                            }
+                        })
+                    }).catch(function () {});
+                } catch (e) {}
+            }, 2000);
+        }
+        window.wbStatePushSoon = wbStatePushSoon;
+
+        function wbStatePull() {
+            try {
+                fetch('/api/user_state', { method: 'GET' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (j) {
+                        if (!j || j.success !== true || !j.state) return;
+                        var st = j.state || {};
+                        var d = st.draft;
+                        // 服务端为准：有草稿就覆盖本地，再回填表单（换设备/换浏览器也能接续）
+                        if (d && typeof d === 'object' && Object.keys(d).length) {
+                            try { _wbStoreSet(WB_FORM_KEY, JSON.stringify(d)); } catch (e) {}
+                            try { wbLoadForm(); } catch (e) {}
+                        }
+                        if (st.competition) {
+                            var cel = document.getElementById('competition');
+                            if (cel && !cel.value) { cel.value = st.competition; try { wbSaveForm(); } catch (e) {} }
+                        }
+                    }).catch(function () {});
+            } catch (e) {}
+        }
+        window.wbStatePull = wbStatePull;
+
+        // 启动 300ms 后拉一次：等本地恢复先跑完，服务端内容再覆盖（避免闪烁）
+        window.addEventListener('load', function () {
+            setTimeout(function () { try { wbStatePull(); } catch (e) {} }, 300);
+        });
+
         function wbLoadForm() {
             _wbPurgeLegacySensitive();
             var d = null, ds = null;
@@ -658,10 +716,8 @@
             if (box) {
                 var tx = document.getElementById('wbRestoreText');
                 // 提示里不再出现具体时间：那等于把「你什么时候在这台电脑上写过东西」也告诉了下一个人
-                var msg = safeHit && sensHit
-                    ? '已恢复本机上次选择的赛事与档位，本页草稿也还在（关闭标签页后自动清除）'
-                    : (safeHit ? '已恢复本机上次选择的赛事与档位'
-                               : '已恢复本页上次填写的草稿（关闭标签页后自动清除）');
+                // 324 轮：只保留对用户有用的那条约定，不再复述「恢复了什么」这种内部动作
+                var msg = '赛事与档位会记住；创意和草稿只保存在当前标签页，关闭即清除';
                 if (tx) tx.textContent = msg;
                 box.style.display = 'flex';
             }
@@ -755,7 +811,7 @@
             try { wbRoadLabel(); } catch (e) {}
         })();
 
-        // 当前赛事名：后端靠它做「按官方章节排序」和「iCAN 双盲隐去学校/导师」，
+        // 当前赛事名：后端靠它做「按官方章节排序」和「iCAN 匿名评审隐去学校/导师」，
         // 不传这两件事都不生效。取输入框优先，没有再退回本轮生成时记下的赛事名。
         function wbCompName() {
             var v = (document.getElementById('competition') || {}).value || '';
@@ -859,6 +915,24 @@
                 });
                 return;
             }
+            // 290 轮：403 / 超时单独给原因——只弹「导出失败」用户分不清是权限、超时还是网站坏了
+            if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
+            if (bad && bad.res && bad.res.status === 403) {
+                var _ro = /演示模式为只读/.test(msg || '');
+                wbToast(_ro ? (label + '在演示模式下不可导出') : (label + '没有导出权限'), {
+                    type: 'warn', ms: 8000,
+                    sub: _ro ? '演示账号是只读的。想看完整效果请用「🎬 一键演示」，或登录完整账号后再导出'
+                             : '登录状态可能已过期，刷新页面重新登录后再试'
+                });
+                return;
+            }
+            if (bad && bad.err && /timeout|超时|abort|network|Failed to fetch/i.test(String((bad.err && bad.err.message) || bad.err))) {
+                wbToast(label + '导出超时', {
+                    type: 'warn', ms: 8000,
+                    sub: '文件较大或服务正在忙，页面内容和生成结果都还在，稍等一下再点一次即可'
+                });
+                return;
+            }
             if (msg) { wbToast(label + '导出失败：' + msg, { type: 'error', ms: 6000 }); return; }
             wbToast(label + '没导出成功，服务正在重启或网络抖动', {
                 type: 'error', ms: 6000,
@@ -884,6 +958,9 @@
         window.wbExportTargetOk = wbExportTargetOk;
 
         async function exportOne(id, name) {
+            // 290 轮：导出耗时可到十几秒，不给进度条用户会以为按钮没反应而反复点。
+            // ms:0 = 不自动关闭，成功/失败时显式关掉。
+            window.__wbExportLoading = wbToast('正在生成「' + name + '」文件…', { type: 'info', ms: 0 });
             // 第二百四十九轮 P0 防御：导出的目标记录必须与「当前展示的结果」是同一条。
             // 只要两边对不上，就说明状态串了（并发生成 / 回看历史 / 接口晚到都可能造成），
             // 此时继续导出会把别的内容交到用户手里——宁可拦下让用户重来，也不能静默给错文件。
@@ -924,12 +1001,21 @@
                 if (!r.ok) { await wbExportError('Word', r); return; }
                 const res = r.res;
                 const blob = await res.blob();
+                if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
                 wbSaveBlob(blob, name + ".docx");
                 wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
+                // 249b：常驻 loading 必须在这里兜底关掉。
+                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
+                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
+                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
+                if (window.__wbExportLoading) {
+                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
+                    window.__wbExportLoading = null;
+                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1026,6 +1112,14 @@
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
+                // 249b：常驻 loading 必须在这里兜底关掉。
+                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
+                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
+                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
+                if (window.__wbExportLoading) {
+                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
+                    window.__wbExportLoading = null;
+                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1069,7 +1163,7 @@
                 rich_tables: rd.rich_tables || [],
                 rich_deck: deck,
                 idea: rd.idea || (document.getElementById('idea') || {}).value || '',
-                // 打包里的 Word 同样要按赛事章节排序 / 走 iCAN 双盲，漏了就退化成默认顺序
+                // 打包里的 Word 同样要按赛事章节排序 / 走 iCAN 匿名评审脱敏，漏了就退化成默认顺序
                 competition_name: wbCompName(),
                 // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
                 theme: tk || (deck && deck.theme) || null,
@@ -1079,6 +1173,7 @@
             };
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '打包中...'; }
+            window.__wbExportLoading = wbToast('正在打包全部文件…', { type: 'info', ms: 0 });
             try {
                 // 以前直接 res.blob() 存盘：后端 400 返回的是 JSON 错误体，会被原样存成 .zip，
                 // 用户拿到「内容是错误信息的坏压缩包」，页面还提示「已打包，去下载吧」——
@@ -1088,10 +1183,18 @@
                 const res = r.res;
                 const blob = await res.blob();
                 wbSaveBlob(blob, "科创赛事项目材料包.zip");
+                if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
                 wbToast('已打包，去下载吧', { type: 'ok', ms: 3000 });
             } catch (e) {
                 wbToast('打包失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
+                // 249b：与 exportOne 同一个坑 —— 「打包」被质检打回时走的是
+                // if (!r.ok) { await wbExportError(...); return; }，
+                // 不会到成功分支那句关闭，常驻 loading 就永久挂起。
+                if (window.__wbExportLoading) {
+                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
+                    window.__wbExportLoading = null;
+                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1204,7 +1307,7 @@
         }
 
         /* ---------- 赛事结构化配置（后端 data/competition_profiles.json） ----------
-           15 个比赛的官方章节顺序 / 评分重点 / 赛事侧重 / 是否双盲都在这一份里。
+           15 个比赛的官方章节顺序 / 评分重点 / 赛事侧重 / 是否要求匿名评审都在这一份里。
            前端拉一次缓存起来，赛事卡与评分展示优先用它，避免后端改了 JSON 前端还写死旧口径。
            优先级：知识库资料索引（真实资料）> 本配置 > 前端内置 EVENT_REQ。 */
         var WB_COMP_PROFILES = null;
@@ -1442,6 +1545,12 @@
             // 默认选中第一个（iCAN 是创新赛道——它的禁忌是「别写学校/导师」，
             // 这条对任何赛道都无害，反而是不选才容易漏掉商业模式这类硬要求）
             var tracks = (base._idx && base._idx.tracks) || [];
+            // 247：赛道数据在两套源里 —— 资料索引 _idx.tracks，或 profiles 的
+            // scoring_by_track.tracks。iCAN 的赛道只写在 profiles 里（索引里 tracks=None），
+            // 只看 _idx 会永远拿不到赛道 -> 后端 track 恒为空 -> 永远走通用规则。
+            if (!tracks.length && base._prof && base._prof.scoring_by_track) {
+                tracks = base._prof.scoring_by_track.tracks || [];
+            }
             var tk = null;
             if (tracks.length) {
                 var tkey = (custom && custom.track) || '';
@@ -1529,7 +1638,7 @@
             renderEventCard();
         }
 
-        // 赛事卡默认只给重点（文档类型 / 章节前 6 / 评分权重 / 双盲），细节按需展开。
+        // 赛事卡默认只给重点（文档类型 / 章节前 6 / 评分权重 / 匿名评审），细节按需展开。
         // 一屏十几行的话用户根本不看，等于白做。
         var _evSecAll = false;
         function evToggleSections() {
@@ -1602,13 +1711,13 @@
                         }).join(' · ');
                 }
             }
-            // 赛事结构化配置带来的两条硬信息：双盲（iCAN 封面不能出现学校/导师）与官方侧重
+            // 赛事结构化配置带来的两条硬信息：匿名评审（iCAN 封面不能出现学校/导师）与官方侧重
             var pf = document.getElementById('evProfileTip');
             if (pf) {
                 var p = c._prof, h = '';
                 if (p && p.double_blind) {
                     h += '<div style="margin-top: 6px; color: var(--danger, #C0392B); font-weight: 600;">' +
-                         '⚠ 本赛事双盲评审：导出封面自动隐去学校 / 单位 / 指导老师，只保留团队信息</div>';
+                         '⚠ 本赛事为匿名评审：导出时自动去掉封面上的学校 / 单位 / 指导老师，只保留团队信息</div>';
                 }
                 if (p && p.focus) {
                     h += '<div style="margin-top: 4px; color: var(--text-dim);">赛事侧重：' + _esc(p.focus) + '</div>';
@@ -1746,16 +1855,22 @@
                 }
             }
 
-            // 一行摘要：卡片默认收起，标题后面直接说清「几章 / 几个评分维度 / 是否双盲」，
+            // 一行摘要：卡片默认收起，标题后面直接说清「几章 / 几个评分维度 / 是否要求匿名评审」，
             // 用户不展开也知道这份要求大概是什么，展开了才是全文
             var sm = document.getElementById('evSummary');
             if (sm) {
-                var bits = [];
-                bits.push((c.sections || []).length + ' 章');
-                var _sc = (c.scoring || []).filter(function (x) { return _wbPctOf(x) !== null; });
-                bits.push(_sc.length ? (_sc.length + ' 个评分维度') : '按官方规则评定');
-                if (c._prof && c._prof.double_blind) bits.push('双盲');
-                sm.textContent = ' · ' + bits.join(' · ');
+                // 262 轮：_src==='default' 表示没匹配到任何赛事（走 EV_DEFAULT 通用兜底），
+                // 此时显示「8章 · 5个评分维度」会让用户误以为所有赛事都是 5 维，
+                // 与 iCAN 官方 4 维不符。未选中时只给引导文案，不报具体数字。
+                if (c._src === 'default') {
+                    sm.textContent = ' · 选择赛事后展示评审要点';
+                } else {
+                    var bits = [];
+                    bits.push((c.sections || []).length + ' 章');
+                    var _sc = (c.scoring || []).filter(function (x) { return _wbPctOf(x) !== null; });
+                    bits.push(_sc.length ? (_sc.length + ' 个评分维度') : '按官方规则评定');
+                    sm.textContent = ' · ' + bits.join(' · ');
+                }
             }
 
             card.style.display = 'block';
@@ -2679,7 +2794,7 @@
             h3.appendChild(sp);
         }
 
-        // ---- 多视角评审面板（深度版专属，简洁版为空自动隐藏）----
+        // ---- 多视角评审（AI）面板（深度版专属，简洁版为空自动隐藏）----
         function _erColor(s) {
             s = Number(s) || 0;
             if (s >= 85) return 'var(--ok)';
@@ -3826,6 +3941,14 @@
                 wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
+                // 249b：常驻 loading 必须在这里兜底关掉。
+                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
+                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
+                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
+                if (window.__wbExportLoading) {
+                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
+                    window.__wbExportLoading = null;
+                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -3865,15 +3988,44 @@
         // 统一保存入口：内置浏览器里点了下载只会"没反应"，这里弹提示而不是静默失败；
         // 正常手机浏览器把 a 挂到 DOM 上再点（部分内核不触发游离元素的 click），
         // iOS 对 blob 下载的兼容也一般，补一句兜底提示。
-        function wbSaveBlob(blob, name) {
-            if (wbInApp()) {
-                wbUaCheck();
-                wbToast('微信 / QQ 里下载不了文件，请点右上角 ··· 用浏览器打开', {type: 'warn', ms: 4200});
-                return;
+        // 415 轮：夸克 / UC 内核（UCBrowser、UCWEB、Quark）对 blob URL + a[download] 的支持很差，
+        // 表现为「该网页请求打开外部应用」→ 点了没反应、文件管理和通知栏都找不到文件。
+        function wbIsUcKernel() {
+            return /UCBrowser|UCWEB|Quark|quark/i.test(navigator.userAgent || '');
+        }
+
+        // 415 轮 ①·补强（2026-09-30）：夸克 / UC 内核对 blob URL + a[download] 是**静默失败**
+        // （弹「该网页请求打开外部应用」后不落文件，也不报错），光加提示等于没修。
+        // 解法：把已生成的文件回传后端落盘，换一个真实的 http URL，再交给浏览器原生下载器。
+        // 真实 URL 是 UC 内核唯一能稳定落盘的形式；这一步失败才回落到原来的 blob 方案。
+        async function wbUcDownload(blob, name) {
+            try {
+                var fd = new FormData();
+                fd.append('file', blob, name);
+                fd.append('name', name);
+                var r = await fetch('/api/blob_to_url', {method: 'POST', body: fd});
+                var j = await r.json();
+                if (!j || !j.url) throw new Error((j && j.error) || '服务端未返回下载地址');
+                var a = document.createElement('a');
+                a.href = j.url; a.download = name; a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function () { try { document.body.removeChild(a); } catch (e) {} }, 5000);
+                wbToast('文件已生成，正在下载（看通知栏 / 文件管理）', {type: 'ok', ms: 4000});
+                return true;
+            } catch (e) {
+                console.warn('[wbUcDownload] 真实URL下载失败，回落 blob：', e);
+                return false;
             }
+        }
+
+        // 原 blob 直下方案，保留给 Chrome / Safari / 系统浏览器，以及 UC 新方案失败时的回落
+        function wbSaveBlobFallback(blob, name) {
             var url = URL.createObjectURL(blob);
             var a = document.createElement('a');
             a.href = url; a.download = name; a.style.display = 'none';
+            // UC 系用新窗口打开再交给浏览器自己的下载器接管，比原地 click 更容易真正落盘
+            if (wbIsUcKernel()) { a.target = '_blank'; a.rel = 'noopener'; }
             document.body.appendChild(a);
             a.click();
             setTimeout(function () { URL.revokeObjectURL(url); try { document.body.removeChild(a); } catch (e) {} }, 4000);
@@ -3882,7 +4034,105 @@
                     wbToast('没弹出下载的话：长按文件 → 选「存储到文件」', {type: 'info', ms: 5000});
                 }, 1200);
             }
+            // UC 系落盘失败是静默的（不报错、也不出文件），必须给一条可操作的出路，
+            // 不能让用户以为「点了没反应」是网站坏了。
+            if (wbIsUcKernel()) {
+                setTimeout(function () {
+                    wbToast('若没看到下载：点右上角 ··· 选「用系统浏览器打开」再下载（夸克内置内核不支持直接存文件）', {type: 'warn', ms: 5600});
+                }, 1500);
+            }
         }
+
+        function wbSaveBlob(blob, name) {
+            if (wbInApp()) {
+                wbUaCheck();
+                wbToast('微信 / QQ 里下载不了文件，请点右上角 ··· 用浏览器打开', {type: 'warn', ms: 4200});
+                return;
+            }
+            if (wbIsUcKernel()) {
+                // 多一次上传往返（通常 1-3 秒），必须给用户可见的等待，否则又是「点了没反应」
+                var _t = wbToast('正在准备文件…', {type: 'info', ms: 0});
+                wbUcDownload(blob, name).then(function (ok) {
+                    if (_t) { try { wbToastClose(_t); } catch (e) {} }
+                    if (!ok) wbSaveBlobFallback(blob, name);
+                });
+                return;
+            }
+            wbSaveBlobFallback(blob, name);
+        }
+
+        /* ---------- 415 轮：全局异常兜底（防白屏 / 防缩放后整页清空） ----------
+           夸克(UC) 双指缩放会触发 resize 与重排，未捕获的 JS 异常直接把视图状态打空，
+           表现为「页面退出、什么都没有」。这里挂最后一道防线：捕获全局 error 与
+           未处理 Promise 拒绝，只在页面真的被清空时才补一块可恢复的提示 UI，
+           内容还在就不打扰用户。 */
+        function wbCrashGuard(msg) {
+            try {
+                var b = document.body;
+                if (!b) return;
+                if (b.offsetHeight > 200) return;              // 内容还在，不是白屏
+                if (document.getElementById('__wbCrashBox')) return;
+                var box = document.createElement('div');
+                box.id = '__wbCrashBox';
+                box.setAttribute('style',
+                    'position:fixed;left:0;right:0;top:0;z-index:2147483000;padding:16px 18px;' +
+                    'background:#fff;color:#1f2937;font-size:14px;line-height:1.7;' +
+                    'box-shadow:0 6px 20px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif');
+                box.innerHTML =
+                    '<div style="font-weight:600;margin-bottom:6px">页面出了点问题，内容没能显示出来</div>' +
+                    '<div style="color:#6b7280;font-size:12.5px;margin-bottom:10px">' +
+                    (_esc(String(msg || '').slice(0, 120)) || '刷新即可恢复') + '</div>' +
+                    '<button onclick="location.reload()" style="padding:8px 16px;border:0;border-radius:8px;' +
+                    'background:#1250c4;color:#fff;font-size:14px;font-weight:600;cursor:pointer">刷新重试</button>';
+                b.appendChild(box);
+            } catch (e) {}
+        }
+        window.addEventListener('error', function (ev) {
+            wbCrashGuard((ev && (ev.message || (ev.error && ev.error.message))) || '');
+        });
+        window.addEventListener('unhandledrejection', function (ev) {
+            wbCrashGuard((ev && ev.reason && (ev.reason.message || ev.reason)) || '');
+        });
+
+        /* ---------- 417 轮 P0：生成产物底部加「智能辅助」声明 ----------
+           要求措辞温和、且禁用「AI」字样（418 轮已全站清理，官方术语除外）。
+           这里不逐个改渲染函数（改不完也容易漏），改用 MutationObserver 兜底：
+           不管内容是流式渲染、历史回看还是切 Tab 出来的，只要有文档块就补一行。
+           三重防重复：① 块内已有 .wb-assist-decl 就跳过；② 内容太短（空壳）不加；
+           ③ observer 只注册一次。 */
+        var WB_ASSIST_DECL = '本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。';
+        function wbAppendAssistDecl() {
+            try {
+                var blocks = document.querySelectorAll('.content-block');
+                for (var i = 0; i < blocks.length; i++) {
+                    var b = blocks[i];
+                    if (!b) continue;
+                    if (!b.textContent || b.textContent.replace(/\s/g, '').length < 30) continue;
+                    if (b.querySelector('.wb-assist-decl')) continue;
+                    var d = document.createElement('div');
+                    d.className = 'wb-assist-decl';
+                    d.setAttribute('style',
+                        'margin-top:16px;padding-top:10px;border-top:1px dashed rgba(128,128,128,.35);' +
+                        'font-size:12px;line-height:1.75;color:var(--text-mute,#6b7280)');
+                    d.textContent = WB_ASSIST_DECL;
+                    b.appendChild(d);
+                }
+            } catch (e) {}
+        }
+        (function () {
+            if (window.__wbAssistDeclBound) return;
+            window.__wbAssistDeclBound = true;
+            var _t = null;
+            var _run = function () { wbAppendAssistDecl(); };
+            try {
+                var _mo = new MutationObserver(function () {
+                    if (_t) clearTimeout(_t);
+                    _t = setTimeout(_run, 600);   // debounce：流式渲染时不跟着抖
+                });
+                _mo.observe(document.body, { childList: true, subtree: true });
+            } catch (e) {}
+            setTimeout(_run, 900);                // 首屏兜底
+        })();
 
         function exportSection(id, name) {
             var text = document.getElementById(id).innerText;
@@ -4417,6 +4667,24 @@
                 }
             };
             _setBar(2, '正在提交任务…');
+            // 322 轮 P0：「已用 X 秒」原先只挂在 _setBar 里更新，而 _setBar 只在轮询回调里调。
+            // 轮询一旦没跑（页面被判后台 / 请求挂住），时间就永远停在「已用 0 秒」，
+            // 用户分不清是「还在等」还是「已经死了」。这里起独立心跳，只管把时间走起来。
+            window._wbGenT0 = Date.now();
+            (function () {
+                try { clearInterval(window.__wbElapsedTimer); } catch (e) {}
+                window.__wbElapsedTimer = setInterval(function () {
+                    try {
+                        var _eb = document.getElementById('elapsedBadge');
+                        if (!_eb || !window._wbGenT0) return;
+                        var _es = Math.round((Date.now() - window._wbGenT0) / 1000);
+                        _eb.style.display = 'inline-block';
+                        _eb.innerText = _es >= 60
+                            ? ('已用 ' + Math.floor(_es / 60) + ' 分 ' + (_es % 60) + ' 秒')
+                            : ('已用 ' + _es + ' 秒');
+                    } catch (e) {}
+                }, 1000);
+            })();
             // 生成一开始就把进度区带进视野：移动端实测进度条在 y≈1500px，不滚过去等于没有。
             setTimeout(function () {
                 var _ps = document.getElementById('progressSteps');
@@ -4516,19 +4784,38 @@
                 // queued 再统一放宽到 15 分钟。
                 const WATCHDOG_MS = (mode === 'deep' ? 12 : 5) * 60 * 1000;
                 let _queuedSeen = false;
+                // 322 轮 P0：看门狗抽成独立函数。原来它写在 `if (document.hidden) return;` 之后——
+                // 移动端页面被判后台时（微信/夸克内核从后台切回常不触发 visibilitychange），
+                // 轮询每轮都在这里静默 return：已用时间永远 0 秒、看门狗永不响、既不 resolve
+                // 也不 reject，用户看到的就是「卡死且无任何提示」，点「重新生成」也一样。
+                // 现在：不可见时仍然不发请求（保留省电初衷），但看门狗照常推进。
+                var _wallT0 = Date.now();   // 墙钟：不做「不可见顺延」，超时必定报错
+                var _wdFired = false;
+                var _wdCheck = function () {
+                    if (_wdFired) return true;
+                    var _wdMs = (_queuedSeen ? 15 : (mode === 'deep' ? 12 : 5)) * 60 * 1000;
+                    // t0 会被 visibilitychange 按「不可见时长」顺延；页面若长期被判后台，
+                    // t0 会被无限顺延、看门狗永远不响。墙钟 +3 分钟兜底，保证一定会报错。
+                    var _over = (Date.now() - t0 > _wdMs) || (Date.now() - _wallT0 > _wdMs + 3 * 60 * 1000);
+                    if (_over) {
+                        _wdFired = true;
+                        try { clearInterval(tick); } catch (e) {}
+                        reject(new Error('等待超时（' + (_wdMs / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
+                        return true;
+                    }
+                    return false;
+                };
                 return new Promise((resolve, reject) => {
                     // 167 轮：原来是每 800ms 打一次 /api/status（还外加 speech_stream），
                     // 手机上连续几分钟的高频请求 + 重渲染是发烫主因之一。改为：
                     //   ① 前台 2s 一次（流式预览仍然连贯）；② 页面切到后台完全不请求；
                     //   ③ 回到前台立刻补拉一次，不用等下一个 tick。
                     const _poll = () => {
-                        // 切后台/锁屏时彻底停手：省电、省流量，也不给后端添无意义负载
-                        if (document.hidden) return;
-                        if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
-                            clearInterval(tick);
-                            reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
-                            return;
-                        }
+                        // 切后台/锁屏时不发请求：省电、省流量，也不给后端添无意义负载。
+                        // 322 轮 P0：但不能「静默 return」——看门狗必须照常推进，否则移动端
+                        // 一旦被判后台就永久停在「已用 0 秒」且没有任何报错。
+                        if (document.hidden) { try { _wdCheck(); } catch (e) {} return; }
+                        if (_wdCheck()) return;
                         fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)))
                             .then(r => r.json())
                             .then(res2 => {
@@ -4645,11 +4932,18 @@
                     document.addEventListener('visibilitychange', function () {
                         if (!document.hidden) { try { _poll(); } catch (e) {} }
                     });
+                    // 322 轮：移动端（微信 / 夸克 / iOS Safari）从后台或 bfcache 回来时，
+                    // visibilitychange 常常不触发，页面一直被当成 hidden、轮询一直空转。
+                    // 补 pageshow 与 focus 两路：只要用户真的在看页面，就立刻把轮询拉起来。
+                    window.addEventListener('pageshow', function () { try { _poll(); } catch (e) {} });
+                    window.addEventListener('focus', function () { try { _poll(); } catch (e) {} });
                 });
             })
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
+                // 322 轮：生成结束就撤掉「已用时间」心跳，别让它一直跑
+                try { clearInterval(window.__wbElapsedTimer); window.__wbElapsedTimer = 0; } catch (e) {}
                 window._wbGenerating = false;
                 // 整轮跑完才亮出下载条；生成中的局部提示撤掉
                 try {
@@ -4766,8 +5060,11 @@
                             document.getElementById('defenseTab').style.display = 'block';
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
+                                // 333 轮：字数与章节数不再写死——前者运行时取 /api/stats，
+                                // 后者因赛事而异（每个赛事的官方章节数不同），写死必然对不上。
+                                var _deepFact = _wbTierFact('deep');
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
+                                    ['proposalText', '升级深度版：申报书篇幅更完整' + (_deepFact ? '（' + _deepFact + '）' : '') + '，自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家视角评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>智能路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
@@ -4973,6 +5270,8 @@
             })
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
+                // 322 轮：「已用时间」心跳必须在这里撤掉，否则失败后它还在后台一直跑
+                try { clearInterval(window.__wbElapsedTimer); window.__wbElapsedTimer = 0; } catch (e) {}
                 streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
                 try { wbAgentFinish(false); } catch (e) {}
                 document.getElementById('skeletonArea').style.display = 'none';
@@ -5004,9 +5303,17 @@
                     });
                 } else if (err && err.isCreateFail) {
                     // 任务根本没建立起来：不是生成质量问题，别让人去改创意
-                    wbToast('生成服务暂不可用：' + (err.message || '未知原因') + '，请重试', {
+                    // 311 轮：① 后端文案有时自带句号，直接拼「，请重试」会出现「。，」连排，
+                    // 先清掉尾部标点；② 技术状态码（HTTP 403/500）不出现在界面上，
+                    // 只在控制台留痕，方便排查又不吓唬用户。
+                    var _raw = String((err && err.message) || '未知原因');
+                    var _clean = _raw.replace(/[\u3002\uff0c,\u3001\uff1b;\s]+$/, '');
+                    if (err && err.httpStatus) {
+                        try { console.warn('[生成失败] HTTP ' + err.httpStatus + ' ' + _raw); } catch (e) {}
+                    }
+                    wbToast('生成服务暂不可用：' + _clean + '，请重试', {
                         type: 'error',
-                        sub: (err.httpStatus ? ('HTTP ' + err.httpStatus + ' · ') : '') + '已填内容都还在，改好后点「开始生成」即可'
+                        sub: '已填内容都还在，改好后点「开始生成」即可'
                     });
                 } else {
                     var _net = String((err && err.message) || err || '');
@@ -5186,14 +5493,28 @@
             return !!(byUa || byPad || byWidth);
         })();
 
+        /* 333 轮前端口径：任何字数 / 时长文案都从这里运行时取 /api/stats，绝不写死。
+           样本不足或拿不到数据就返回空串，调用方退回定性描述 —— 不补一个好看的数字。 */
+        function _wbTierFact(mode) {
+            var s = (window.WB_STATS && window.WB_STATS[mode]) || null;
+            var n = s ? (parseInt(s.sample_count, 10) || 0) : 0;
+            var med = s ? (parseInt(s.chars_median, 10) || 0) : 0;
+            var sec = s ? (parseFloat(s.duration_median_sec) || 0) : 0;
+            if (!s || n < 20 || !med || sec <= 0) return '';
+            var mn = sec / 60;
+            var dur = sec < 60 ? (Math.round(sec) + ' 秒')
+                               : ((mn < 10 ? (Math.round(mn * 10) / 10) : Math.round(mn)) + ' 分钟');
+            return '实测 ' + n + ' 次的用时中位约 ' + dur + '、正文中位约 ' + (Math.round(med / 100) * 100) + ' 字';
+        }
+
         function _introSteps() {
             return [
                 ['① 填创意', WB_IS_MOBILE
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多视角评审（实测字数与用时见档位卡）'],
+                    ? '简洁版出稿快、篇幅精；深度版内容更全，多出竞品 / 商业 / 风险分析 + 图表 + PPT（字数与用时见档位卡）'
+                    : '简洁版出稿快、篇幅精；深度版内容更全，多出竞品 / 商业 / 风险分析 + 图表 + PPT + 答辩预测（字数与用时见档位卡）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -5942,8 +6263,8 @@
         /* 205 轮·组件语言统一：弹窗半径/阴影跟 .modal 对齐（原 14px 且无阴影，与 intro/历史/图表弹窗不同档） */
         d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; width: 92%; max-width: 460px; box-shadow: 0 26px 70px rgba(0,0,0,.6);">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">反馈 / 建议</div>' +
-            '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">遇到问题或有好想法都可以说，会直接进后台、用于改进工具。</div>' +
-            '<textarea id="wbFeedbackTxt" placeholder="例如：XX 按钮点了没反应 / 希望支持 XX 赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
+            '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">吐槽、夸夸、许愿都行——每一条都在帮我们做得更好</div>' +
+            '<textarea id="wbFeedbackTxt" placeholder="说说遇到的问题、想法或想要的赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
             '<div style="display: flex; gap: 8px; margin-top: 12px;">' +
             '<button onclick="wbFeedbackSubmit()" style="flex: 1; padding: 11px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;">提交</button>' +
             '<button onclick="document.getElementById(\'wbFeedbackModal\').remove()" style="padding: 11px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;">关闭</button>' +
@@ -5963,7 +6284,17 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: txt })
-        }).then(function (r) { return r.ok ? r.json() : null; })
+        }).then(function (r) {
+            // 297 轮：403 / 其它错误码也必须读 body。原来 r.ok 为 false 时直接返回 null，
+            // 会一路走到下面「感谢你的反馈」——用户以为提交成功，实际一条都没进后台（假成功，
+            // 比生硬报错更糟）。演示只读会话提交反馈正是 403（Codex 已给友好文案）。
+            if (r.ok) return r.json();
+            return r.json().catch(function () { return null; }).then(function (j) {
+                if (j && j.error) throw new Error(j.error);
+                if (r.status === 403) throw new Error('当前会话没有提交权限（演示账号为只读，登录完整账号后可提交）');
+                throw new Error('提交失败（HTTP ' + r.status + '）');
+            });
+          })
           .then(function (j) {
               if (j && j.success === false) throw new Error(j.error || '提交失败');
               var m = document.getElementById('wbFeedbackModal');
@@ -6216,8 +6547,8 @@
                 if (_locList.length) {
                     list.innerHTML =
                         '<p style="color: var(--text-mute); text-align: center; font-size: 12.5px; line-height: 1.7; margin-bottom: 8px;">'
-                        + '以下是本机最近生成的记录（本次会话内有效），'
-                        + '换设备或登录后可跨端长期保存。</p>' +
+                        + '浏览器限制了本机存储，后端暂时查不到你的记录；下面是<b>本次会话</b>生成的，'
+                        + '换个浏览器或关掉无痕模式就能长期保存。</p>' +
                         _locList.map(function (h) {
                             return '<div class="history-item" style="cursor: pointer;" onclick="openHistory(' + h.id + ')">' +
                                 '<div class="history-info">' +
@@ -6269,16 +6600,58 @@
             html += '<button onclick="loadHistory(' + (offset + limit) + ')"' + (page >= totalPages - 1 ? ' disabled' : '') + '>下一页</button>';
             pager.innerHTML = html;
         }
+        // 270 轮：一键演示 —— 预置样例直接渲染结果页。
+        // 不调 LLM、不耗额度、不走 /api/generate，因此不受 demo 只读 403 影响；
+        // 渲染完全复用 openHistory（只是数据源换成静态 JSON），不碰生成/评分/导出主链路。
+        async function wbOpenDemo() {
+            var btn = document.getElementById('wbDemoBtn');
+            try {
+                if (btn) { btn.disabled = true; btn.textContent = '演示加载中…'; }
+                var res = await fetch('/static/demo_sample.json', { cache: 'no-cache' });
+                if (!res.ok) throw new Error('样例文件 ' + res.status);
+                var d = await res.json();
+                // 310 轮修复：样例文件顶层是 {success, data, rating, rich_deck, ...}，
+                // proposal 在 data 这一层里。原来直接判 d.proposal（顶层没有这个字段）
+                // 必然抛「演示样例数据为空」；同时 openHistory 的演示分支会再包一层
+                // {success:true, data: __wbDemoData}，所以这里必须存 data 层，
+                // 两边才对得上，否则正文渲染出来是空的。
+                var payload = (d && d.data && typeof d.data === 'object') ? d.data : d;
+                if (!payload || !payload.proposal) throw new Error('演示样例数据为空');
+                window.__wbDemoData = payload;
+                try {
+                    await openHistory((d && d.id) || (payload && payload.id) || 0);
+                } finally {
+                    // 渲染完立刻清掉，避免之后真实回看历史误用演示数据
+                    window.__wbDemoData = null;
+                }
+                try {
+                    wbToast('已载入演示样例（预置内容，非实时生成）', { type: 'info' });
+                } catch (e) {}
+            } catch (e) {
+                window.__wbDemoData = null;
+                try { wbToast('演示加载失败：' + ((e && e.message) || e), { type: 'error' }); } catch (e2) {}
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '🎬 一键演示'; }
+            }
+        }
+        window.wbOpenDemo = wbOpenDemo;
+
         // 打开一条历史记录：把服务器上存的结果回填到各 Tab
         // （之前列表只有「删除」按钮，点不开内容，历史记录等于没法用）
         async function openHistory(id) {
             var modal = document.getElementById('historyModal');
             try {
                 var d = null;
-                try {
-                    var res = await fetch('/api/history/' + id);
-                    d = await res.json();
-                } catch (e) { d = null; }
+                // 270 轮演示模式：预置样例已注入 window.__wbDemoData 时直接渲染，
+                // 不走 /api/history —— 演示不依赖后端记录，也不受 demo 只读 / uid 隔离影响。
+                if (window.__wbDemoData) {
+                    d = { success: true, data: window.__wbDemoData };
+                } else {
+                    try {
+                        var res = await fetch('/api/history/' + id);
+                        d = await res.json();
+                    } catch (e) { d = null; }
+                }
                 if (!d || !d.success || !d.data) {
                     // 后端按 uid 隔离，手机端 uid 存不住时这条会「记录不存在」。
                     // 用生成时存在本机的那份兜底，历史不至于点了打不开。
@@ -6378,7 +6751,7 @@
                 // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
                 try { switchTab(null, 'proposal'); } catch (e) {}
                 if (modal) modal.style.display = 'none';
-                if (id) { wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 }); }
+                wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
             } catch (e) {
                 wbToast('打开失败：' + ((e && e.message) || e), { type: 'error' });
             }
@@ -6462,7 +6835,7 @@
         // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
         wbLoadCompIndex();
         wbCompReorderChips();   // 老用户回来：常用赛事标签按本机使用频次排好（第一百零二轮）
-        // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
+        // 赛事结构化配置（章节顺序 / 评分口径 / 匿名评审），同样是拉一次缓存
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
         ['ruleFile', 'tplFile', 'ideaFile', 'udFile'].forEach(wbUploadGuard);
@@ -6644,9 +7017,15 @@
                     : '（样本积累中，暂不公布实测数据）';
             }
             if (wantHead) {
+                // 没有实测用时就不报时长：宁可少说，也不编一个好看的数
+                if (!dur) {
+                    return mode === 'fast'
+                        ? ('实测 ' + n + ' 次：正文中位约 ' + med + ' 字')
+                        : ('实测 ' + n + ' 次：正文中位约 ' + med + ' 字，含图表与路演稿');
+                }
                 return mode === 'fast'
-                    ? ('约 ' + (dur || '1 分钟') + '出 ' + Math.round(med / 100) * 100 + ' 字级申报书')
-                    : ('约 ' + (dur || '4 分钟') + '出 ' + Math.round(med / 1000) * 1000 + ' 字级完整方案书');
+                    ? ('约 ' + dur + '出 ' + Math.round(med / 100) * 100 + ' 字级申报书')
+                    : ('约 ' + dur + '出 ' + Math.round(med / 1000) * 1000 + ' 字级完整方案书');
             }
             return '（' + n + ' 次实测中位 ' + med + ' 字' + (dur ? ' / ' + dur : '') + '）';
         }
@@ -6716,7 +7095,7 @@
             var t = WB_CHART_THEMES[v] || WB_CHART_THEMES.soft;
             el.textContent = v === 'tech'
                 ? '科技蓝紫：深色玻璃底，与导出的图表 PNG 完全同色。'
-                : ('已选「' + t.label + '」：白底低饱和，打印/投屏都不刺眼。');
+                : ('已选「' + t.label + '」：白底低饱和，打印和投屏都友好。');
         };
         // 按创意推荐：纯词表匹配，开销可忽略（167 轮正在压耗时，这里不能再加 LLM 调用）
         window.wbChartThemeGuess = function () {
@@ -6751,7 +7130,9 @@
         checkHealth();
         // 167 轮：心跳原来是无脑 30s 一次，切后台也在打，白耗移动端电量。
         // 改为「仅页面可见才请求」+ 失败退避（30s→60s→120s，上限 5 分钟），回到前台立刻补一次。
-        var _hbBase = 30000, _hbMul = 1;
+        // 266 轮(P0)：_hbLast 原先漏声明，首次执行到 6779 行即 ReferenceError，
+        // 把心跳之后的所有代码（含历史弹窗渲染）一并中断，表现为「历史弹窗永远加载中」。
+        var _hbBase = 30000, _hbMul = 1, _hbLast = 0;
         setInterval(function () {
             if (document.hidden) return;
             if (!window._wbHealthOk && _hbMul < 10) _hbMul *= 2;   // 连续失败就拉长间隔
@@ -7284,10 +7665,36 @@
             return kill.length ? box.innerHTML : html;
         }
         // 全站 Markdown 渲染统一入口（原来散落 16 处 marked.parse，现已全部收编到这里）
+        // 287 轮：段落内单换行折叠为空格，连续空行才分段；表格/列表/标题/引用/代码块原样保留。
+        // 不这么做时，正文里被单独放在一行的关键词（如「创新性30%权重」）会渲染成孤立一行，
+        // 与上下文视觉断裂。注意不能用正则 lookbehind（老 Safari 会抛错，会掉进
+        // 下面的 catch 兜底把全文变成 <br>，反而更糟），所以走逐行扫描。
+        function wbNormText(s) {
+            s = String(s == null ? '' : s).replace(/\r\n/g, '\n');
+            var lines = s.split('\n');
+            var out = [];        // 元素 = 一个已合并好的段落，或一行结构（表格/列表/标题/代码）
+            var buf = '';        // 当前段落缓冲
+            var inFence = false;
+            function flush() { if (buf) { out.push(buf); buf = ''; } }
+            for (var i = 0; i < lines.length; i++) {
+                var cur = lines[i];
+                if (/^\s*(```|~~~)/.test(cur)) { flush(); inFence = !inFence; out.push(cur); continue; }
+                if (inFence) { out.push(cur); continue; }        // 代码块里一个字都不能动
+                var t = cur.trim();
+                // 结构行：表格行、列表项、标题、引用——它的换行是 markdown 语法，合并了就废了
+                var isStruct = t ? (/^(\||[-*+]\s|\d+[.)]\s|#{1,6}\s|>\s)/.test(t)) : false;
+                if (!t) { flush(); out.push(''); continue; }     // 空行 = 分段
+                if (isStruct) { flush(); out.push(cur); continue; }
+                // 段落内续行：用空格拼接（不是加空格再换行——那样换行还在，等于没合并）
+                buf = buf ? (buf + ' ' + t) : t;
+            }
+            flush();
+            return out.join('\n');
+        }
         function wbRenderMD(s) {
             var html;
-            try { html = marked.parse(s == null ? '' : String(s)); }
-            catch (e) { html = String(s == null ? '' : s).replace(/\n/g, '<br>'); }
+            try { html = marked.parse(wbNormText(s)); }
+            catch (e) { html = wbNormText(s == null ? '' : s).replace(/\n/g, '<br>'); }
             return wbDedupeHtml(html);
         }
         window.wbRenderMD = wbRenderMD;
