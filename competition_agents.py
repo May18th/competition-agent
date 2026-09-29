@@ -1,6 +1,6 @@
 """
 科创赛事多智能体协同创作助手
-核心工作流：规则解析 → 同质化检测 → 文稿生成 → 模拟评委 → 迭代
+核心工作流：规则解析 → 同质化检测 → 文稿生成 → 评审引擎 → 迭代
 """
 from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
@@ -748,7 +748,7 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 
 5. 去过度修饰：不要「非常」「极其」「十分」「高度」「全面」这类空泛修饰。
 ❌ 本平台具有极其先进的技术和非常强大的功能。
-✅ 它把规则解析、同质化检测、模拟评委这些环节串成一条流水线。
+✅ 它把规则解析、同质化检测、评审引擎这些环节串成一条流水线。
 
 6. 砍冗余副词：砍掉「显著地」「极大地」「有效地」「有力地」这类冗余副词，直接把结果写出来。
 ❌ 该平台显著提升了申报书写作效率。
@@ -760,7 +760,7 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 
 8. 句子节奏：长短句交错，不要连续好几个句子长度都差不多。
 ❌ 本平台采用多智能体架构。每个智能体负责一个环节。智能体之间协同工作。最终生成申报书。
-✅ 平台底层是一串智能体，有的解析规则，有的检测同质化，有的当模拟评委。它们接力跑完，输出一份完整申报书。
+✅ 平台底层是一串智能体，有的解析规则，有的检测同质化，有的当评审引擎。它们接力跑完，输出一份完整申报书。
 
 9. 去 AI 式举例：不要「例如……」「比如……」这种泛泛列举，落到本项目的具体场景。
 ❌ 本平台适用于多种场景，例如比赛、论文、报告等。
@@ -827,7 +827,7 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
 
 _SELF_TECH_HIGHLIGHTS = """【如果本项目是「AI 多智能体创作 / 申报书生成 / 竞赛辅导工具」这一类系统，请把下面这些本系统的真实技术亮点写进「项目简介 / 项目概述 / 核心创新点」章节（这些是本系统的真实能力，不是编造，可具体化但不要夸大）】
 1. 多智能体并行协作：规则解析、同质化检测、竞品分析、商业模式、风险分析、技术方案、社会价值等多个智能体节点并行生成，再汇总成完整申报书，相比串行流程明显缩短出稿时间。
-2. 定向修订闭环：生成后先由模拟评委 + 多专家评审打分挑毛病，再针对评委指出的具体章节做定点修补，而不是整篇推翻重写。
+2. 定向修订闭环：生成后先由评审引擎 + 多视角评审打分挑毛病，再针对评委指出的具体章节做定点修补，而不是整篇推翻重写。
 3. 范文库 RAG 检索：内置多赛事真实获奖范文库，按「项目简介 / 创新点 / 商业模式 / 风险分析 / 社会价值」等模块检索注入，让生成内容对标获奖作品的真实写法。
 4. 流式输出：生成过程边写边推送，前端实时预览字数与内容，不用干等全文出稿。
 5. 图表自动生成：内置 12 种图表（环形 / 柱状 / 雷达 / 象限 / 漏斗 / 甘特 / 架构 / 风险热力 / 堆叠 / 进度环 / 横向排名 / 折线），按内容自动匹配类型，导出 Word / PPT 直接可用。
@@ -2455,7 +2455,7 @@ def _dedup_text(text):
     return "\n\n".join(uniq)
 
 def judge_agent(state: CompetitionState) -> CompetitionState:
-    """⚖️ 模拟评委 Agent：只评申报书文档质量，分项加权"""
+    """⚖️ 评审引擎 Agent：只评申报书文档质量，分项加权"""
     _report_stage("judging")
     # 评分维度/权重：以规则解析出的赛事官方规则为准；无官方规则才回退前端 scoring_weights，再无回退默认五维。
     official = _official_scoring_dims(state.get("competition_name", ""), state.get("track"))
@@ -2537,13 +2537,13 @@ def judge_agent(state: CompetitionState) -> CompetitionState:
 
 
 def expert_review_agent(state: CompetitionState) -> CompetitionState:
-    """🧑‍⚖️ MedPeer 式多专家模拟评审：技术/商业/落地三视角，分维度打分 + 逐条批注"""
+    """🧑‍⚖️ MedPeer 式多视角评审：技术/商业/落地三视角，分维度打分 + 逐条批注"""
     _report_stage("expert_review")
     _dims = state.get("dims") or []
     _dims_line = "、".join(
         (str(d.get("name") or "") + " " + str(d.get("weight") or "") + "%")
         for d in _dims if isinstance(d, dict)) or "赛事官方评审维度"
-    prompt = f"""你是国家级科创赛事的评审委员会。请以「多专家视角」对下面这份申报书做一次模拟评审，就像专业同行评议（MedPeer 式）那样：不是只给一个总分，而是让不同专家从各自视角独立评审，给出分维度打分和能落地的逐条批注。
+    prompt = f"""你是国家级科创赛事的评审委员会。请以「多专家视角」对下面这份申报书做一次多视角评审，就像专业同行评议（MedPeer 式）那样：不是只给一个总分，而是让不同专家从各自视角独立评审，给出分维度打分和能落地的逐条批注。
 
 赛事：{state['competition_name']}
 官方评审维度：{_dims_line}
@@ -2593,7 +2593,7 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["expert_review"] = response.content
-    print("🧑‍⚖️ 多专家模拟评审：已生成")
+    print("🧑‍⚖️ 多视角评审：已生成")
     return {"expert_review": state["expert_review"]}
 
 

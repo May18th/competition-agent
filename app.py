@@ -2700,7 +2700,7 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">AI 模拟评分分布</div><div id="vizScore" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">AI 评分分布</div><div id="vizScore" style="height:210px;"></div></div>
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
 </div>
@@ -5044,7 +5044,7 @@ def log_error():
 
 @app.route('/api/admin/stats')
 def admin_stats():
-    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
+    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 评分分布。"""
     auto_resolve_failures()
     try:
         conn = get_db()
@@ -5349,7 +5349,7 @@ var SCORE = """ + score_json + """;
 var FEEDBACK = """ + feedback_json + """;
 var MODE = """ + mode_json + """;
 function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#94a3b8'}},yAxis:{type:'value',axisLabel:{color:'#94a3b8'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
-bar('scoreChart','AI 模拟评分分布',SCORE,'#22d3ee');
+bar('scoreChart','AI 评分分布',SCORE,'#22d3ee');
 bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 </script>
 </body></html>"""
