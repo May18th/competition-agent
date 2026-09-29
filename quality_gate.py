@@ -22,6 +22,14 @@ def check_generation(result, mode="deep"):
     for k in ("defense_questions", "ppt_outline"):
         if not result.get(k):
             issues.append(f"模块缺失：{k}")
+    # 第二百三十轮补：篇幅分层——简洁版非核心板块（竞品/商业/风险/技术）应摘要级，
+    # 超出上限即判定「篇幅与优先级倒挂」，打回精简。
+    if mode == "fast":
+        _noncore = ("competitor_analysis", "business_model", "risk_analysis", "tech_solution")
+        for _k in _noncore:
+            _v = len(re.sub(r'\s', '', result.get(_k) or ""))
+            if _v > 800:
+                issues.append(f"简洁版非核心板块篇幅过长：{_k}（{_v} 字 > 800 摘要级上限）")
     # 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版均适用）：
     # 空话段落占比 >30% 判定凑数，两档一起打回。
     _eok, _eissues = check_depth(proposal)
