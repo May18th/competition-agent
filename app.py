@@ -600,8 +600,17 @@ def _inject_role_badge(html):
     if not badge:
         return html
     if '</nav>' in html:
-        return html.replace('</nav>', badge + '</nav>', 1)
-    return html.replace('</h1>', '</h1>' + badge, 1)
+        html = html.replace('</nav>', badge + '</nav>', 1)
+    else:
+        html = html.replace('</h1>', '</h1>' + badge, 1)
+    # 256.5：演示只读会话隐藏写操作入口（蒸馏按钮所在的 .box），避免评委看到点不了的写按钮
+    if _admin_session_role() == 'readonly' and '</body>' in html:
+        _hide_js = ('<script>(function(){var b=document.querySelector(".rolebadge");'
+                    'if(b&&b.textContent.indexOf("只读")>=0){'
+                    'var xs=document.querySelectorAll(".box");'
+                    'for(var i=0;i<xs.length;i++){if(xs[i].textContent.indexOf("蒸馏")>=0){xs[i].style.display="none";}}}})();</script>')
+        html = html.replace('</body>', _hide_js + '</body>', 1)
+    return html
 
 
 def _require_admin():
@@ -735,7 +744,7 @@ __ERROR__
 <input type="password" id="pwd" name="password" autocomplete="current-password" required></div>
 <input type="hidden" name="csrf" value="__CSRF__">
 <button type="submit">登录</button>
-<div class="tip">评委请使用「演示账号」登录，进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
+<div class="tip">评委请使用「演示账号」登录（账号 <b>demo</b> / 密码 <b>123456</b>），进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
 <div class="foot">v2.0 · ©可创无限团队</div>
 </form></body></html>"""
 
