@@ -2664,7 +2664,7 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 
 {_tier_hint(state,
 "生成 3 分钟路演大纲（8～10 页），每页只写标题 + 2～3 个要点短语，不要写完整句子。",
-"生成 15～20 页路演大纲，每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。"
+"生成 8～12 页路演大纲（与最终导出的 PPT 页数一致），每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。"
 )}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -2770,6 +2770,7 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 
 项目创意：{state.get('idea', '')}
 一句话定位：{state.get('one_liner', '')}
+申报书正文（图表必须优先取这里的实测数据）：{(state.get('proposal') or '').strip()[:3000]}
 竞品分析：{state.get('competitor_analysis', '')}
 商业模式：{state.get('business_model', '')}
 风险分析：{state.get('risk_analysis', '')}
@@ -2781,7 +2782,7 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 {{"charts": {{"budget": [{{"name": "研发成本", "value": 40}}, {{"name": "硬件采购", "value": 25}}, {{"name": "市场推广", "value": 20}}, {{"name": "运营备用", "value": 15}}], "market": {{"years": ["2024", "2025", "2026", "2027", "2028"], "values": [120, 280, 560, 980, 1500]}}, "timeline": {{"stages": ["需求调研", "原型开发", "测试迭代", "上线运营", "推广拓展"], "progress": [10, 30, 55, 80, 100]}}}}, "tables": [{{"title": "竞品对比", "header": ["维度", "本项目", "竞品A", "竞品B"], "rows": [["创新性", "强", "中", "中"], ["成本", "低", "高", "中"]]}}], "deck": {{"slides": [{{"type": "cover", "title": "项目名称", "bullets": [], "metrics": [], "chart": "", "table": ""}}, {{"type": "bullets", "title": "痛点分析", "bullets": ["痛点1", "痛点2"], "metrics": [], "chart": "", "table": ""}}, {{"type": "metrics", "title": "核心数据", "bullets": [], "metrics": ["数据1", "数据2"], "chart": "", "table": ""}}, {{"type": "table", "title": "竞品对比", "bullets": [], "metrics": [], "chart": "", "table": "竞品对比"}}, {{"type": "closing", "title": "谢谢", "bullets": [], "metrics": [], "chart": "", "table": ""}}]}}}}
 
 要求：
-- charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；
+- charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；所有数值必须优先采用申报书/分析里用户给出的实测数据（真实数字），只有确实没有实测数据时才可用测算值并在表格标题后标注「（测算）」；
 - tables 生成 2-3 个（竞品对比、商业模式、实施计划等），header 和 rows 要真实具体、贴合本项目；
 - deck.slides 生成 8-12 页，type 只用 cover/section/bullets/metrics/table/closing 这些，标题和内容贴合本项目。
 - 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。

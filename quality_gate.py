@@ -109,17 +109,29 @@ def check_pptx(path):
     return (not issues), issues
 
 
-def check_pdf(path):
+def check_pdf(path, max_pages=20, max_bytes=50 * 1024 * 1024):
+    """PDF 终检：页数/体积/中文乱码。
+
+    max_pages / max_bytes 默认按 iCAN 官方口径（应用方案 PDF ≤20 页 / ≤50MB）；
+    调用方（export_pdf）可按赛事 word_requirement 传入更精确的上限。
+    """
     issues = []
     try:
         import os as _os
         sz = _os.path.getsize(path)
-        if sz > 3 * 1024 * 1024:
-            issues.append(f"PDF 体积超限（{sz // 1024}KB > 3MB）")
+        if sz > max_bytes:
+            issues.append(
+                f"PDF 体积超限（{sz // 1024}KB > {max_bytes // 1024 // 1024}MB），"
+                f"建议压缩图片或删减图表后重试")
         from pypdf import PdfReader
         r = PdfReader(path)
-        if len(r.pages) < 1:
+        n = len(r.pages)
+        if n < 1:
             issues.append("PDF 无页面")
+        elif n > max_pages:
+            issues.append(
+                f"PDF 页数超限（{n} 页 > {max_pages} 页），"
+                f"建议删减次要章节或压缩图表/表格后重试")
         _txt = ""
         for p in r.pages[:3]:
             try:

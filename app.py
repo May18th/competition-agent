@@ -667,7 +667,9 @@ def admin_logout():
 
 
 # 第三百一十三轮：演示账号强制只读名单（即使 .admin_users.json 误配成 admin，登录后也强制 readonly）
-_DEMO_READONLY_USERS = {"kcwx123", "demo"}
+# 2026-09-30 修正：原名单含 "kcwx123"，但线上 .admin_users.json 里 kcwx123 配的就是 admin，
+# 导致该管理员一登录就被降级成只读、后台永远挂「演示只读模式」。真实管理员账号不得写进此名单。
+_DEMO_READONLY_USERS = {"demo"}
 
 
 def _admin_login_verify(username, password, ip):
@@ -1524,10 +1526,10 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
     )
 
 
-# 导出件合规标注：赛事（如 iCAN）要求申报材料注明 AI 参与情况，漏标可能被认定违规。
-# 措辞必须中性——「AI 生成仅供参考」这类自降身价的说法会让评委直接给作品打折扣，
-# 所以这里只陈述事实（AI 辅助制作）与责任边界（数据自核、署名自负）。
-AI_NOTICE_LINE = "AI 辅助制作 · 文中数据、测算值与结论请在提交前自行核实，署名与提交责任由作者本人承担。"
+# 导出件合规标注：赛事（如 iCAN）要求申报材料注明智能辅助参与情况，漏标可能被认定违规。
+# 措辞必须温和中性——既不能「AI 生成仅供参考」这种自降身价，也不能生硬直白。
+# 417 轮：禁用「AI」字样，改为「智能助手辅助起草」的温和声明。
+AI_NOTICE_LINE = "本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。"
 
 
 # 导出专用清洗：网页上保留的「提醒类」措辞，出现在交给评委的正式件里就是自曝短板。
@@ -1567,6 +1569,26 @@ def _official_chapter_titles(competition_name):
         return _official_chapters({"competition_name": competition_name})
     except Exception:
         return []
+
+
+def _pdf_limits(competition_name):
+    """从赛事官方提交要求里解析 PDF 页数/体积上限（默认 iCAN 口径 20 页 / 50MB）。"""
+    max_pages, max_bytes = 20, 50 * 1024 * 1024
+    if competition_name:
+        try:
+            from competition_agents import get_competition_profile
+            prof = get_competition_profile(competition_name) or {}
+            wr = prof.get('word_requirement') or {}
+            official = wr.get('official') or ''
+            m_pages = re.search(r'(\d+)\s*页', official)
+            m_mb = re.search(r'(\d+)\s*MB', official, re.IGNORECASE)
+            if m_pages:
+                max_pages = int(m_pages.group(1))
+            if m_mb:
+                max_bytes = int(m_mb.group(1)) * 1024 * 1024
+        except Exception:
+            pass
+    return max_pages, max_bytes
 
 
 def _normalize_heading_title(s):
@@ -2133,7 +2155,8 @@ def export_pdf():
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
     try:
         from quality_gate import check_pdf
-        _ok, _issues = check_pdf(filepath)
+        _max_pages, _max_bytes = _pdf_limits(data.get('competition_name'))
+        _ok, _issues = check_pdf(filepath, max_pages=_max_pages, max_bytes=_max_bytes)
         if not _ok:
             _safe_unlink(filepath)
             return jsonify({"success": False, "code": "export_quality_fail",
@@ -3898,7 +3921,7 @@ def _run_generation(data):
         "keywords": keywords,
         "completeness": completeness,
         # 第一百五十四轮：结果区固定提示——定位是「辅助草稿」，让用户保持判断与动手能力
-        "disclaimer": "本内容为 AI 辅助生成的草稿与参考框架，请结合您的专业判断修改、完善后使用。",
+        "disclaimer": "本内容为智能助手辅助生成的草稿与参考框架，请结合您的专业判断修改、完善后使用。",
     }
 
     payload = _strip_identifying_info(payload)
@@ -4763,6 +4786,8 @@ def export_all():
     
     latest = history[0]
     data = latest["data"]
+    project = latest.get("idea") or data.get("idea") or ""
+    competition = latest.get("competition_name") or data.get("competition_name") or ""
     
     # 要导出的文件列表（减少到 5 个核心文件，更快）；第三个元素为 doc_type
     files_to_export = [
@@ -4786,15 +4811,18 @@ def export_all():
             
             # 统一走 docx_render 渲染器（真表格 + 标准格式 + 封面目录页码）
             title = filename.replace('.docx', '')
-            doc = build_docx(title, text, doc_type=doc_type)
+            subtitle = None
+            if doc_type in ('default', 'report'):
+                # 417 轮：申报书封面标题用项目名 + 副标题用赛事名（不再是「1_申报书全文」这种文件名）
+                title = project or _extract_project_name(text) or title
+                subtitle = competition or None
+            doc = build_docx(title, text, doc_type=doc_type, subtitle=subtitle)
             docx_buf = io.BytesIO()
             doc.save(docx_buf)
             docx_buf.seek(0)
             zf.writestr(filename, docx_buf.read())
     
     buf.seek(0)
-    project = latest.get("idea") or data.get("idea") or ''
-    competition = latest.get("competition_name") or data.get("competition_name") or ''
     return send_file(buf, as_attachment=True,
                      download_name=_export_filename(project, competition, '材料包', '.zip'),
                      mimetype='application/zip')
@@ -5059,12 +5087,19 @@ def export_zip():
             order = _official_chapter_titles(comp)
             if order:
                 tt = _reorder_markdown_by_chapters(tt, order)
-        d = _build_docx(title, tt, doc_type=dt,
+        # 417 轮：申报书封面主标题用项目名（非「项目申报书全文」这种泛名），页眉仍用文档类型名
+        cover_title = title
+        header_title = None
+        if is_prop:
+            cover_title = _project_name_hint(data) or _extract_project_name(text) or title
+            header_title = re.sub(r'(全文|完整)$', '', title).strip() or '项目申报书'
+        d = _build_docx(cover_title, tt, doc_type=dt,
                         subtitle=comp if is_prop else None,
                         school=data.get('school'),
                         team=data.get('team'),
                         advisor=data.get('advisor'),
-                        competition_name=comp if is_prop else None)
+                        competition_name=comp if is_prop else None,
+                        header_title=header_title)
         # 打包里的申报书同样要插图：不然单独下载有图、打包里没图，用户会以为系统不稳。
         # 图表文件是本轮生成时落在 generated/ 下的，前端通过 rich_charts 传回来。
         if is_prop and charts_in:
