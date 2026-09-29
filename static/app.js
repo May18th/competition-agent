@@ -6378,7 +6378,7 @@
                 // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
                 try { switchTab(null, 'proposal'); } catch (e) {}
                 if (modal) modal.style.display = 'none';
-                wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
+                if (id) { wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 }); }
             } catch (e) {
                 wbToast('打开失败：' + ((e && e.message) || e), { type: 'error' });
             }
