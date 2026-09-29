@@ -3079,3 +3079,23 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - **323 趋势渲染**：后台数据面板「生成趋势（最近7天）」改为补满 7 天空柱（0 值也占位），不再只渲染有数据的一天。
 - **323 导出中心入口**：归 WorkBuddy（前端布局）。
 - **302 PPT 封面 Logo**：`pptx_builder.py` 的 `_slide_cover` 统一在封面左上角加 `/static/logo.png`（0.35,0.28 英寸，高 0.48 英寸，等比、失败静默），7 套封面版式全覆盖；已本地验证 add_picture 成功。
+
+---
+
+## 十八、Codex 332 回执（备赛提示按赛事分组，2026-09-29）
+
+后端**无需新增接口**：`GET /api/competition_profiles`（只读、无鉴权）已返回 15 个赛事完整配置。WorkBuddy 做 332 时直接用：
+- `name`（赛事名，匹配当前选择）· `focus`（评审侧重文案，做提示的事实依据）· `defense_focus`（engineering/business/academic，对应「工程/商业/学术」三组）· `type`（中文类别）· `scoring`（`[[名称,权重],…]` 数组）。
+- 纯静态分组、不烧额度，无需后端再下发；前端按 `defense_focus`/`type` 分组 + 共享通用池即可。
+
+---
+
+## 十九、Codex 317 + 深挖漏洞 回执（2026-09-29）
+
+**317 后端**：新增 `POST /api/admin/issues/<id>/status`（body `{status:"open|processing|resolved", resolution:"处理说明"}`）——三态流转 + 处理说明，走 `/api/admin/` 前缀被 `_admin_guard` 统一鉴权（管理员可改、演示只读 403）。
+
+**317 工单契约（给 WorkBuddy）**：工单单条 = `id / kind(frontend|backend) / source / content / created_time / status / resolution / count`。`content` 是原始反馈文本（可能带「评分X星(…)」前缀，前端可用正则 `评分\s*([1-5])\s*星` 拆星级，或我后续在接口里补 `rating` 字段）。状态枚举 `open=待处理 / processing=处理中 / resolved=已处理`。好评不进待处理：代码 `_is_problem` 已过滤（category=好评 且 rating>3 且无问题词 → 不建单），DB 里若有历史好评工单属陈旧数据，需手动清。
+
+**深挖漏洞（本轮自查发现并已修）**：320 时间段选择器漏了 `feedback_total`（「反馈总数」卡片）没跟着时间过滤——切 7 天时反馈总数仍是全量，与其他统计不一致。已补 `_h()` 过滤。
+
+**安全核查（无问题）**：309 `/api/demo/sample?key=` 无路径穿越（key 只做 basename stem 比对、不拼路径）；317 status 接口参数化 SQL + 状态白名单；322 logout 清 admin cookie 对普通用户是无害 no-op；249b 负向断言已实测（真名仍拦、职责描述不再误判）。

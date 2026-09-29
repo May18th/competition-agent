@@ -2868,7 +2868,8 @@ def admin_dashboard():
         "SELECT AVG(rating), COUNT(*) FROM history" + _w, _p).fetchone()
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
     rated_count = avg_row[1] if avg_row else 0
-    feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    _w, _p = _h()
+    feedback_total = c.execute("SELECT COUNT(*) FROM feedback" + _w, _p).fetchone()[0]
     # 112 轮：取消「只能看 10 条」——改成可翻页查看全部反馈。
     # 204 轮：默认每页 10 条（原 50 条太多，27 条挤一页）；页码走 query string，上限 500。
     try:
@@ -3423,6 +3424,33 @@ def create_issue(kind, source, content):
         return new_id
     except Exception:
         return None
+
+
+@app.route('/api/admin/issues/<int:issue_id>/status', methods=['POST'])
+def issue_status(issue_id):
+    """第三百一十七轮：工单状态流转（open 待处理 / processing 处理中 / resolved 已处理）+ 处理说明。
+    走 /api/admin/ 前缀，已被 _admin_guard 统一鉴权（仅管理员可改，演示只读 403）。"""
+    data = request.get_json(silent=True) or {}
+    status = str(data.get('status') or '').strip()
+    if status not in ('open', 'processing', 'resolved'):
+        return jsonify({"success": False, "error": "无效状态"}), 400
+    resolution = str(data.get('resolution') or '').strip()
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"success": False, "error": "工单不存在"}), 404
+    _now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if status == 'resolved':
+        c.execute("UPDATE issues SET status='resolved', resolved_time=?, resolution=? WHERE id=?",
+                  (_now, resolution, issue_id))
+    else:
+        c.execute("UPDATE issues SET status=?, resolution=?, resolved_time=NULL WHERE id=?",
+                  (status, resolution, issue_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "id": issue_id, "status": status})
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
