@@ -17,6 +17,15 @@ import sqlite3
 import sys
 
 
+# 339/341 轮：剔除「网站自身功能/产品名自述」的样例——这些不是参赛学生项目内容。
+# 只保留强自述信号（产品名/网站专属功能），不放 Milvus/Neo4j 这类可被真实项目合法使用的技术名词。
+_SELF_REF_KEYWORDS = (
+    "创科智绘", "科创智绘", "科创赛事助手", "评审引擎", "多智能体", "智能体节点",
+    "双盲脱敏", "去AI味", "去 AI 味", "获奖范文库", "流式输出",
+    "规则打分", "模型打分", "人工校准", "186份人工标注",
+)
+
+
 def main():
     n = 5
     if len(sys.argv) > 1:
@@ -40,6 +49,7 @@ def main():
 
     seen_comp = set()
     picked = []
+    skipped_selfref = 0
     for r in rows:
         try:
             data = json.loads(r["result_data"])
@@ -50,6 +60,11 @@ def main():
             continue
         if not (data.get("rich_charts") or data.get("rich_tables") or data.get("rich_deck")):
             continue
+        # 339/341 轮：正文/创意里出现网站自身功能描述 → 跳过（防「用网站介绍冒充作品正文」）
+        _blob = json.dumps(data, ensure_ascii=False)
+        if any(k in _blob for k in _SELF_REF_KEYWORDS):
+            skipped_selfref += 1
+            continue
         comp = (r["competition_name"] or "").strip() or "未指定赛事"
         if comp in seen_comp:
             continue  # 多样性优先：同一赛事只取一条（最新）
@@ -59,8 +74,11 @@ def main():
             break
 
     if not picked:
-        print("没有可导出的完整深度版记录（需 mode=deep 且含 proposal + rich_charts/rich_tables/rich_deck）")
+        print("没有可导出的完整深度版记录（需 mode=deep 且含 proposal + rich 富媒体，且不含网站自述）")
         sys.exit(1)
+
+    if skipped_selfref:
+        print("已跳过 %d 条含「网站自身功能自述」的样例" % skipped_selfref)
 
     for i, (hid, comp, data) in enumerate(picked):
         fname = "demo_sample.json" if i == 0 else "demo_sample%d.json" % (i + 1)

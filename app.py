@@ -2322,7 +2322,7 @@ def create_share(history_id):
     if not c.fetchone():
         conn.close()
         return jsonify({"success": False, "error": "记录不存在或无权分享"}), 404
-    token = secrets.token_urlsafe(8)
+    token = secrets.token_urlsafe(16)  # 深挖加固：64bit→128bit 熵，防分享链接被爆破
     now = datetime.now()
     expires = now + timedelta(days=7)
     c.execute("INSERT OR REPLACE INTO shares (token, history_id, created_time, expires_time) VALUES (?,?,?,?)",
@@ -2560,7 +2560,9 @@ def add_feedback():
     c.execute("INSERT INTO feedback (history_id, content, created_time, category, user_id) VALUES (?, ?, ?, ?, ?)",
               (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category, _current_uid()))
     if rating is not None and history_id:
-        c.execute("UPDATE history SET rating = ? WHERE id = ?", (rating, history_id))
+        # 深挖修复：评分只允许写回本人历史，防止按 history_id 枚举覆盖他人满意度数据（越权写）。
+        c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
+                  (rating, history_id, _current_uid()))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
@@ -2775,7 +2777,7 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">AI 评分分布</div><div id="vizScore" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">智能评分分布</div><div id="vizScore" style="height:210px;"></div></div>
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
 <div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
 </div>
@@ -5236,7 +5238,7 @@ def log_error():
 
 @app.route('/api/admin/stats')
 def admin_stats():
-    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 评分分布。"""
+    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / 智能评分分布。"""
     auto_resolve_failures()
     try:
         conn = get_db()
@@ -5548,7 +5550,7 @@ var SCORE = """ + score_json + """;
 var FEEDBACK = """ + feedback_json + """;
 var MODE = """ + mode_json + """;
 function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#94a3b8'}},yAxis:{type:'value',axisLabel:{color:'#94a3b8'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
-bar('scoreChart','AI 评分分布',SCORE,'#22d3ee');
+bar('scoreChart','智能评分分布',SCORE,'#22d3ee');
 bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 </script>
 </body></html>"""
@@ -5981,6 +5983,21 @@ _CHAT_PRESET = [
      "深度版会自动生成路演 PPT 大纲（含结构页）与演讲稿，可一键下载；支持 31 套风格。"),
     (("简洁", "深度", "档位", "区别", "什么区别"),
      "简洁版=结论型（快速出稿）；深度版=论证型（竞品定量对比、风险分级矩阵、技术分步链路、财务测算、多专家评审、答辩预测）。"),
+    # 第三百三十六轮：扩充常见问题预设，降低落到 LLM 的概率、缩短响应时间（<6s）。
+    (("导出", "下载", "打包", "文件", "word", "docx", "zip"),
+     "结果页右上角「导出中心」可一键打包全部（含 10 份 Word + 项目数据图表 + 路演 PPT 共 12 个文件），也可单份下载；导出前需生成完成。"),
+    (("字数", "篇幅", "多少字", "字多", "字少"),
+     "简洁版出稿约 1300~1500 字（结论型）；深度版约 1.2 万字（论证型，含图表、财务测算与答辩预测），以档位卡实测统计为准。"),
+    (("历史", "记录", "之前", "找回", "上次"),
+     "历史记录在首页「历史记录」区，按赛事/档位可筛选，点开可回看完整结果并重新导出打包。"),
+    (("同步", "分享", "换设备", "同步码", "另一台"),
+     "在「同步码」入口查看本机 8 位同步码，在另一台设备输入即可绑定，历史/草稿/赛事选择跨设备共享（绑定后同一账号）。"),
+    (("赛事", "选哪个", "比赛", "大赛", "参赛"),
+     "先选参赛赛事，系统按该赛事官方评分维度与章节要求组织内容；未收录的赛事按通用科创结构生成。"),
+    (("演示", "样例", "体验", "例子", "一键演示"),
+     "首页「一键演示」直接载入预置样例结果（不真实生成、不耗额度），可查看完整评分/正文/图表/PPT 与导出。"),
+    (("失败", "报错", "出错", "重试", "卡住", "打不开"),
+     "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
 ]
 
 
@@ -6010,7 +6027,8 @@ def chat():
         from langchain_core.messages import HumanMessage
         prompt = ("你是「%s」智能助手，用中文回答用户问题，只谈本产品功能与赛事规则，不编造数据。"
                   "回答口吻：%s。\n用户问题：%s" % (_CHAT_NAME, _CHAT_STYLES[style]["tone"], msg))
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=400)
+        # 336 轮：聊天兜底降 token（400→200）缩短等待（目标 <6s）。
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=200)
         return jsonify({"success": True, "reply": (resp.content or '').strip(),
                         "source": "llm", "style": style})
     except Exception as e:

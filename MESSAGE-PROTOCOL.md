@@ -3115,3 +3115,39 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 2. 导出回源 `_fetch_record_from_source` 的 history_id 分支原先 `WHERE id=?` 无归属 → 任意有效 uid 可 `/api/export_word?history_id=X` 导出他人内容。已改 `WHERE id=? AND user_id=?`（分享页走 token 的 `share_export` 不受影响，它不经过此函数）。
 
 以上三处均为「按自增 id 枚举他人生成内容」的越权读取漏洞，现已封堵；`/api/history/<id>`、`/api/history/<id>/rate`、删除等本就带 `AND user_id=?`，无问题。
+
+---
+
+## 二十一、Codex 337/339/341 + 深挖续（2026-09-29）
+
+**337（AI 字样·后端）**：后端导出文件名已是「评委评审意见.docx」（无 AI），全库 py 导出文件名 grep「AI」0 命中——337 的后端部分本就合规，剩余全在 WorkBuddy 前端（app.js/wbpage.js 那 14 处）。
+
+**339/341（demo 样例真实性）**：本地 `demo_sample.json`/`demo_sample2.json` 已是真实学生项目（垃圾分类/助老机器人），无网站自述词。`export_demo_samples.py` 加「自述样例过滤」：剔除含 `创科智绘/科创智绘/评审引擎/多智能体/双盲脱敏/去AI味/获奖范文库/流式输出/规则打分/模型打分/人工校准/186份人工标注` 的记录（只放强自述信号，不放 Milvus/Neo4j 等可被真实项目合法使用的技术词）。本地 dry-run：挑出 3 个多样样例（挑战杯/iCAN/互联网+）、0 误杀。
+
+**深挖续（核查通过，无新漏洞）**：文件上传用 `secure_filename`+魔数校验+扩展名白名单（无路径穿越）；全库无 eval/exec/subprocess/pickle/yaml/shell=True（无命令注入/反序列化）；admin cookie SameSite=Strict、user cookie SameSite=Lax（CSRF 已缓解）；后台面板用户内容走 `_html_escape`（XSS 已缓解）。提示：317 的 `resolution` 字段 WorkBuddy 前端渲染时要转义。
+
+---
+
+## 【长期记忆 · 用户偏好（记死）】
+
+**任务多就多分几条线路并行完成**——同一时刻有多个独立任务时，默认拆成多条并行线同时推进（互不依赖、不冲突的才并行；改同一文件/同一函数时必须串行避免互相覆盖）。这条优先级高于「一个个来」的默认习惯。
+
+**做完自己的活必须去帮 WorkBuddy**——与 WorkBuddy 同时工作时，一旦自己的后端活干完，必须主动接手/协助 WorkBuddy 的前端活（至少给出后端字段契约、接口、数据、验证方法），不能空等或停摆。
+
+**信息必须告知清楚**——做了什么、怎么做的、改动了哪些文件/接口/字段、还差什么、需要对方做什么，都要写成文档（MESSAGE-PROTOCOL.md / docs_tmp/ 回执）明确同步给对方，不憋着、不留隔夜。
+
+---
+
+## 二十二、Codex 335-344 + 深挖（2026-09-29 晚）
+
+**本轮后端改动（app.py，均 py_compile 通过）**：
+
+1. **深挖越权写修复**：`/api/feedback` 提交时原 `UPDATE history SET rating=? WHERE id=?` **缺 user_id 归属校验**——任意用户带别人 history_id + 「评分 X 星」即可覆盖他人满意度评分（越权写，污染满意度统计）。已改 `WHERE id=? AND user_id=?`。
+
+2. **336 聊天响应提速**：`_CHAT_PRESET` 从 5 条扩到 12 条（补：导出/打包、字数口径、历史记录、同步码/分享、赛事选择、演示模式、失败重试 7 个高频问），降低落到 LLM 的概率；LLM 兜底 `max_tokens` 400→200，缩短生成等待。目标 <6s。注：`max_retries` 已确认不能作为 invoke 参数传给底层 OpenAI SDK（会进 **kwargs 报 unexpected keyword），故不传、只降 token。
+
+**深挖核查（无新漏洞）**：`training_archive`（174/182 轮）、`_fetch_record_from_source`、`get_history`/`get_history_detail`/`rate_history`/删除、`user_state` 均已带 `user_id=?` 归属校验；分享导出走 64 位随机 token（不可枚举、设计上就是要跨用户看）；`/api/status` 用 uuid4 task_id（不可枚举）。export_reviews 审计表 history_id 未校验但仅后台 admin 可见、不影响他人数据，风险可忽略，不改。
+
+**337（后端导出文件名）**：后端导出文件名是「评委评审意见.docx」（无 AI），已合规；前端 index.html:996-997 仍是「AI 评审参考意见.docx」，需 WorkBuddy 改「智能评审参考意见.docx」（并注意与后端实际文件名「评委评审意见.docx」统一语义，避免展示名和下载名不一致）。
+
+**339/341（demo 样例）**：本地 `demo_sample.json`/`demo_sample2.json` 已是干净真实学生项目（校园智能垃圾分类桶 / 独居老人智能助老终端），无任何网站自述词。部署时需把这两个文件 + `static/demo_sample.json`（前端一键演示直读）一起上服务器，覆盖服务器上旧的 222KB 含网站自述的脏样例。
