@@ -5657,8 +5657,13 @@ def demo_data():
     还带旧竞品/旧评分的脏样例；同样只读 DB、不调 LLM、不受 demo 只读 403 影响。
     """
     # 第二百七十轮：优先用仓库内预置的干净样例（评委演示质量可控、不随历史变化），
-    # 没有预置样例时回退到最新一条深度版。
-    _sample_path = os.path.join(os.path.dirname(__file__), 'demo_sample.json')
+    # 支持 ?id=0|1 切换两套样例；没有预置样例时回退到最新一条深度版。
+    try:
+        _sid = int(request.args.get('id', 0) or 0)
+    except (TypeError, ValueError):
+        _sid = 0
+    _sample_files = ('demo_sample.json', 'demo_sample2.json')
+    _sample_path = os.path.join(os.path.dirname(__file__), _sample_files[min(_sid, len(_sample_files) - 1)])
     if os.path.isfile(_sample_path):
         try:
             with open(_sample_path, encoding='utf-8') as _f:
@@ -5680,6 +5685,27 @@ def demo_data():
     except Exception:
         return jsonify({"success": False, "error": "演示数据解析失败"})
     return jsonify({"success": True, "data": data})
+
+
+@app.route('/api/demo/list')
+def demo_list():
+    """演示模式：返回可用样例清单（供前端「一键演示」下拉选择）。"""
+    samples = []
+    _base = os.path.dirname(__file__)
+    for _f in ('demo_sample.json', 'demo_sample2.json'):
+        _p = os.path.join(_base, _f)
+        if not os.path.isfile(_p):
+            continue
+        try:
+            with open(_p, encoding='utf-8') as _fh:
+                _d = json.load(_fh)
+            samples.append({
+                "name": (_d.get('one_liner') or _d.get('idea') or _f)[:40],
+                "competition_name": _d.get('competition_name', ''),
+            })
+        except Exception:
+            pass
+    return jsonify({"success": True, "samples": samples})
 
 
 @app.route('/api/health')
