@@ -1396,6 +1396,7 @@ def _slide_cover(prs, s, meta):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _clean(slide)
     _COVERS.get(V.get("cover"), _cover_gradient)(slide, meta, s)
+    _cover_logo(slide)
     # 封面底部信息（split/band 版式已在各自函数里画过，避免重复）
     if V.get("cover") in ("gradient", "center"):
         tb3, tf3 = _add_box(slide, 1.37 if V.get("cover") == "gradient" else 1.6,
@@ -1407,6 +1408,16 @@ def _slide_cover(prs, s, meta):
     if s.get("note"):
         _add_notes(slide, s.get("note"))
     return slide
+
+
+def _cover_logo(slide):
+    """第三百零二轮：封面左上角加团队 Logo（等比缩放，白底直接使用，失败静默）。"""
+    try:
+        _p = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+        if os.path.isfile(_p):
+            slide.shapes.add_picture(_p, Inches(0.35), Inches(0.28), height=Inches(0.48))
+    except Exception:
+        pass
 
 
 def _set_alpha(shape, alpha):

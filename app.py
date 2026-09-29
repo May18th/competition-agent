@@ -3054,11 +3054,15 @@ def admin_dashboard():
             '<span class="bn">%d</span></div>' % (star, pct, n))
     rating_bars_html = "".join(rating_bars)
 
-    # 生成趋势（最近 14 天，正序显示）
-    trend = list(reversed(trend))
-    max_t = max([n for _, n in trend]) if trend else 0
+    # 生成趋势（最近 7 天，正序显示；0 值也占位，避免只渲染有数据的一天）
+    _trend_map = {d: n for d, n in trend}
+    _trend_full = []
+    for _i in range(6, -1, -1):
+        _d = (_now - timedelta(days=_i)).strftime("%Y-%m-%d")
+        _trend_full.append((_d, _trend_map.get(_d, 0)))
+    max_t = max([n for _, n in _trend_full]) or 1
     trend_bars = []
-    for d, n in trend:
+    for d, n in _trend_full:
         h = int(n * 100 / max_t) if max_t else 0
         label = d[5:] if len(d) >= 10 else d
         trend_bars.append(
@@ -5786,25 +5790,85 @@ def demo_data():
     return jsonify({"success": True, "data": data})
 
 
+def _demo_sample_files():
+    """309 轮：扫描根目录 + static/ 下的演示样例 json（文件名含 demo/sample）。"""
+    _base = os.path.dirname(__file__)
+    _files = []
+    _seen = set()
+    for _d in (_base, os.path.join(_base, 'static')):
+        if not os.path.isdir(_d):
+            continue
+        for _fn in sorted(os.listdir(_d)):
+            if _fn.endswith('.json') and ('demo' in _fn.lower() or 'sample' in _fn.lower()):
+                if _fn in _seen:
+                    continue
+                _seen.add(_fn)
+                _p = os.path.join(_d, _fn)
+                _files.append(_p)
+    return _files
+
+
+def _demo_sample_inner(d):
+    """返回样例的 result_data（兼容顶层 {success,data} 包装与纯 data）。"""
+    if isinstance(d, dict) and isinstance(d.get('data'), dict):
+        return d['data']
+    return d if isinstance(d, dict) else {}
+
+
 @app.route('/api/demo/list')
 def demo_list():
-    """演示模式：返回可用样例清单（供前端「一键演示」下拉选择）。"""
-    samples = []
-    _base = os.path.dirname(__file__)
-    for _f in ('demo_sample.json', 'demo_sample2.json'):
-        _p = os.path.join(_base, _f)
-        if not os.path.isfile(_p):
-            continue
+    """309 轮：返回可用演示样例清单（key/title/competition/summary/tier/chars/updated）。"""
+    items = []
+    for _p in _demo_sample_files():
+        _key = os.path.splitext(os.path.basename(_p))[0]
         try:
-            with open(_p, encoding='utf-8') as _fh:
-                _d = json.load(_fh)
-            samples.append({
-                "name": (_d.get('one_liner') or _d.get('idea') or _f)[:40],
-                "competition_name": _d.get('competition_name', ''),
-            })
+            with open(_p, encoding='utf-8') as _f:
+                _d = json.load(_f)
+        except Exception:
+            continue
+        _inner = _demo_sample_inner(_d)
+        if not _inner.get('proposal'):
+            continue
+        _title = _inner.get('one_liner') or _inner.get('title') or _inner.get('idea') or _key
+        _summary = (_inner.get('idea') or _inner.get('one_liner') or '').strip()
+        _item = {"key": _key, "title": _title}
+        _comp = _inner.get('competition_name') or _inner.get('competition')
+        if _comp:
+            _item["competition"] = _comp
+        if _summary:
+            _item["summary"] = _summary[:80]
+        _tier = _inner.get('tier') or _inner.get('mode')
+        if _tier:
+            _item["tier"] = _tier
+        _prop = _inner.get('proposal') or ''
+        if _prop:
+            _item["chars"] = len(_prop)
+        try:
+            _item["updated"] = datetime.fromtimestamp(os.path.getmtime(_p)).strftime('%Y-%m-%d')
         except Exception:
             pass
-    return jsonify({"success": True, "samples": samples})
+        items.append(_item)
+    return jsonify({"success": True, "items": items})
+
+
+@app.route('/api/demo/sample')
+def demo_sample():
+    """309 轮：返回指定 key 的演示样例详情；key 为空返回第一份（只读、不写库）。"""
+    _key = (request.args.get('key') or '').strip()
+    _files = _demo_sample_files()
+    if _key:
+        _files = [p for p in _files if os.path.splitext(os.path.basename(p))[0] == _key]
+    if not _files:
+        return jsonify({"success": False, "error": "没有可用的演示样例"})
+    try:
+        with open(_files[0], encoding='utf-8') as _f:
+            _d = json.load(_f)
+    except Exception:
+        return jsonify({"success": False, "error": "演示样例数据解析失败"})
+    _inner = _demo_sample_inner(_d)
+    if not _inner.get('proposal'):
+        return jsonify({"success": False, "error": "演示样例数据不完整"})
+    return jsonify({"success": True, "data": _inner})
 
 
 @app.route('/api/auto_generate', methods=['GET', 'POST'])
