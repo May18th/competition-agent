@@ -4268,6 +4268,55 @@ def rewrite_paragraph():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
+@app.route('/api/revise_chapter', methods=['POST'])
+def revise_chapter():
+    """第二百四十六/二百四十七轮：提出修改——自然语言指令 → 定位章节 → 定向修改 → 返回全文。
+
+    输入：instruction（要改什么）+ history_id（或 proposal 全文）。输出：修改后的完整
+    正文 + 旧正文（供前端做版本回退）。评分与导出的联动由前端拿新正文走现有接口完成。
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    instruction = (data.get('instruction') or '').strip()
+    if not instruction:
+        return jsonify({"success": False, "error": "请说明要修改什么"}), 400
+    if _rate_limited():
+        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
+    # 取正文：优先回源 history_id，其次用提交的 proposal
+    proposal = ''
+    hid = data.get('history_id')
+    if hid:
+        _rec = _fetch_record_from_source({'history_id': hid})
+        proposal = (_rec or {}).get('proposal', '') if _rec else ''
+    if not proposal:
+        proposal = data.get('proposal') or ''
+    if not proposal or not str(proposal).strip():
+        return jsonify({"success": False, "error": "没有可修改的正文"}), 400
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = f"""你是科创赛事申报书编辑。请根据用户的修改意见，定位申报书对应章节并修改，输出完整的修改后全文。
+
+修改意见：{instruction}
+
+要求：
+1. 只修改意见指向的章节/段落，其他章节原样保留、不得丢失；
+2. 保持 Markdown 结构、章节标题与序号不变；
+3. 保留已有事实数字与「测算值/示例值」标注，不编造具体型号、院校名、人名或实测数据；
+4. 新增数字一律标「测算值/示例值」，禁止留【待填写】等占位；
+5. 直接输出完整修改后的申报书全文，不要任何解释。
+
+原文：
+{str(proposal)[:12000]}
+"""
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=8000)
+        new_proposal = (resp.content or '').strip()
+        if not new_proposal or len(new_proposal) < 200:
+            return jsonify({"success": False, "error": "修改失败，输出异常，请重试"}), 500
+        return jsonify({"success": True, "proposal": new_proposal, "old_proposal": str(proposal)})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
 @app.route('/api/proofread', methods=['POST'])
 def proofread():
     """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
@@ -5145,8 +5194,12 @@ def api_stats():
         conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
+        # 第二百四十三轮：只统计最近 7 天的记录，避免早期「字数偏高」的历史把中位数带偏，
+        # 导致前台承诺值（如 2009 字）与实际当前产出（1331~1527 字）脱节。
+        _since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M")
         rows = c.execute(
-            "SELECT mode, duration, result_data FROM history WHERE duration > 1").fetchall()
+            "SELECT mode, duration, result_data FROM history "
+            "WHERE duration > 1 AND created_time >= ?", (_since,)).fetchall()
         conn.close()
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
