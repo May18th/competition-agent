@@ -6,6 +6,9 @@
 import os, matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+# 中文字形：避免图表标题/标签渲染成方块（图表标题即结论，属质量硬约束）
+matplotlib.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial Unicode MS"]
+matplotlib.rcParams["axes.unicode_minus"] = False
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
