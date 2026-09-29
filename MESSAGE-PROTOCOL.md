@@ -2979,3 +2979,17 @@ window._lastHistoryId = (data.data && data.data.history_id) || window._lastHisto
 本机到 GitHub 的推送走 SOCKS 隧道可用：
 `git -c http.proxy=socks5h://127.0.0.1:1080 -c https.proxy=socks5h://127.0.0.1:1080 push origin main`
 （隧道：`ssh -i ~/.ssh/id_aliyun_deploy -D 1080 -N root@8.149.236.90`）
+
+---
+
+## 九、Codex 295 轮回执（后端，2026-09-29）
+
+已完成 app.py 四处改动（py_compile 通过，**待 commit/push**）：
+
+1. **294 聊天只读**：`/api/chat` 加入演示只读白名单；只读会话仅走预设、不接 LLM（非预设问题 403 `demo_readonly`，不烧额度）。
+2. **290 导出精确化**：`_admin_guard` 从 `/api/export*` 前缀改为精确路径 `_EXPORT_READONLY_PATHS`（八入口 + export_all/zip/pptx/manifest）。`/api/feedback` POST 未放行（保持演示严格只读）。
+3. **292 双端同步**：新增 `GET/POST /api/user_state`（`/api/prefs` 保留别名），返回 `{success, state}`，POST 收 `{state}`（兼容 `{prefs}`）；cookie=comp_uid 自动；冲突=服务端为准+后写胜。
+4. **285 赛事分布图**：空赛事名归并「未指定赛事」；容器加类 `.comp-dist`。互联网+沿用旧名不擅自改官方新名。
+5. **290 demo**：`/api/demo` 支持 `?history_id=<id>` 钉死；未硬编码 id=239（当前库无此 id，硬编码会在新部署 404）。
+
+四问完整回复见：`docs_tmp/Codex回执_295_四问.md`。

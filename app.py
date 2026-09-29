@@ -857,6 +857,13 @@ _ADMIN_API_EXACT = {
 }
 _ADMIN_API_PREFIXES = ("/api/admin/", "/api/kb/", "/api/distill", "/api/logs")
 
+# 第二百九十轮：演示只读会话可用的导出接口（精确路径匹配，不用前缀，避免误伤未来写接口）。
+_EXPORT_READONLY_PATHS = (
+    "/api/export_word", "/api/export_pdf", "/api/export_defense", "/api/export_ppt",
+    "/api/export_competitor", "/api/export_business", "/api/export_original_format",
+    "/api/export_zip", "/api/export_all", "/api/export_manifest", "/api/export_pptx",
+)
+
 
 @app.before_request
 def _admin_guard():
@@ -871,10 +878,12 @@ def _admin_guard():
     # 第二百六十七轮：导出接口（/api/export*）本质是「读数据生成文件」，不写库不删数据，
     # demo 只读会话也应能导出（评委演示要看导出），此处豁免，不再误伤。
     # 演示只读会话白名单：导出（读数据生成文件）与退出登录（登出不是写操作）豁免 403。
-    _readonly_whitelist = ('/api/logout', '/api/admin/logout')
+    # 第二百九十四轮：/api/chat 只答不写、不计入生成额度（预设优先，LLM 兜底在读会话被禁），
+    # 一并豁免，让演示账号也能用智能体问答。
+    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat')
     if (_admin_session_role() == 'readonly'
             and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
-            and not p.startswith('/api/export')
+            and p not in _EXPORT_READONLY_PATHS
             and p not in _readonly_whitelist):
         # 278 轮：给友好引导而非生硬 403，提示评委可看示例或用普通账号
         resp = jsonify({"success": False,
@@ -2885,10 +2894,14 @@ def admin_dashboard():
     trend = c.execute(
         "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
         "GROUP BY d ORDER BY d DESC LIMIT 7").fetchall()
-    # 赛事分布（Top 8）
-    comp_dist = c.execute(
-        "SELECT competition_name, COUNT(*) n FROM history "
-        "GROUP BY competition_name ORDER BY n DESC, competition_name LIMIT 8").fetchall()
+    # 赛事分布（Top 8）：空/空白赛事名归并到「未指定赛事」，避免图表出现空白标签（285 轮）
+    _comp_raw = c.execute(
+        "SELECT competition_name, COUNT(*) n FROM history GROUP BY competition_name").fetchall()
+    _comp_agg = {}
+    for _name, _cnt in _comp_raw:
+        _key = (_name or "").strip() or "未指定赛事"
+        _comp_agg[_key] = _comp_agg.get(_key, 0) + _cnt
+    comp_dist = sorted(_comp_agg.items(), key=lambda x: (-x[1], x[0]))[:8]
     # 反馈分类聚合
     fb_cat = c.execute(
         "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
@@ -3139,7 +3152,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 <h2 style="margin-top:0">生成趋势（最近 7 天）</h2>
 <div class="trend">%s</div>
 </div>
-<div class="box">
+<div class="box comp-dist">
 <h2 style="margin-top:0">赛事分布（Top 8）</h2>
 %s
 </div>
@@ -5685,7 +5698,22 @@ def demo_data():
 
     第二百七十轮：优先取最近一条深度版（含最新竞品/评分口径修复），避免演示到最旧那条
     还带旧竞品/旧评分的脏样例；同样只读 DB、不调 LLM、不受 demo 只读 403 影响。
+    第二百九十轮补充：支持 ?history_id=<id> 钉死到指定历史记录（评委演示可复现、不随库漂移）。
     """
+    # 第二百九十轮：显式钉死某条历史记录（优先于样例文件与最新深度版）
+    _hid = (request.args.get('history_id') or '').strip()
+    if _hid.isdigit():
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT result_data FROM history WHERE id=?", (int(_hid),)).fetchone()
+        conn.close()
+        if row:
+            try:
+                data = json.loads(row["result_data"])
+            except Exception:
+                return jsonify({"success": False, "error": "演示数据解析失败"})
+            return jsonify({"success": True, "data": data})
     # 第二百七十轮：优先用仓库内预置的干净样例（评委演示质量可控、不随历史变化），
     # 支持 ?id=0|1 切换两套样例；没有预置样例时回退到最新一条深度版。
     try:
@@ -5760,29 +5788,39 @@ def defense_faq():
     return jsonify({"success": True, "faq": _DEFENSE_FAQ})
 
 
+@app.route('/api/user_state', methods=['GET', 'POST'])
 @app.route('/api/prefs', methods=['GET', 'POST'])
 def user_prefs():
-    """第二百九十二轮：双端同步——赛事选择/档位/个性化设置等服务端存储，跨设备一致。"""
+    """第二百九十二轮：双端同步——草稿/赛事选择/档位/个性化设置等服务端存储，跨设备一致。
+    契约（供 WorkBuddy 对接）：路径 /api/user_state（/api/prefs 保留为别名）；
+    GET → {success, state}；POST body {state}（兼容旧 {prefs}）；cookie=comp_uid 自动；
+    冲突策略：服务端为准（前端启动拉一次覆盖本地，之后 debounce 写回，后写胜）。"""
     uid = _current_uid()
     conn = get_db()
     c = conn.cursor()
     if request.method == 'GET':
         row = c.execute("SELECT prefs FROM user_prefs WHERE uid=?", (uid,)).fetchone()
         conn.close()
-        prefs = {}
+        state = {}
         if row and row[0]:
             try:
-                prefs = json.loads(row[0])
+                state = json.loads(row[0])
             except Exception:
-                prefs = {}
-        return jsonify({"success": True, "prefs": prefs if isinstance(prefs, dict) else {}})
+                state = {}
+        if not isinstance(state, dict):
+            state = {}
+        return jsonify({"success": True, "state": state})
     data = request.get_json(silent=True) or {}
-    _p = data.get('prefs') if isinstance(data.get('prefs'), dict) else {}
+    _state = data.get('state')
+    if not isinstance(_state, dict):
+        _state = data.get('prefs')
+    if not isinstance(_state, dict):
+        _state = {}
     c.execute("INSERT OR REPLACE INTO user_prefs (uid, prefs) VALUES (?, ?)",
-              (uid, json.dumps(_p, ensure_ascii=False)))
+              (uid, json.dumps(_state, ensure_ascii=False)))
     conn.commit()
     conn.close()
-    return jsonify({"success": True})
+    return jsonify({"success": True, "state": _state})
 
 
 _CHAT_PRESET = [
@@ -5810,14 +5848,20 @@ def chat():
         msg = msg[:500]
     for kws, ans in _CHAT_PRESET:
         if any(k in msg for k in kws):
-            return jsonify({"success": True, "answer": ans, "source": "preset"})
+            return jsonify({"success": True, "reply": ans, "source": "preset"})
+    # 第二百九十四轮：演示只读会话「只答不写、不计入生成额度」——仅走预设，不接 LLM 兜底，
+    # 避免评委演示时把外部模型额度烧掉。
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False,
+                        "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
+                        "error_code": "demo_readonly"}), 403
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = ("你是「科创赛事助手」的客服智能体。用 2~4 句简洁中文回答用户问题，"
                   "只谈本产品功能与赛事规则，不编造数据。\n用户问题：" + msg)
         resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=400)
-        return jsonify({"success": True, "answer": (resp.content or '').strip(), "source": "llm"})
+        return jsonify({"success": True, "reply": (resp.content or '').strip(), "source": "llm"})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
