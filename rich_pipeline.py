@@ -485,6 +485,19 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             if s["type"] == "chart" and not s.get("chart"):
                 s["type"] = "bullets"
             norm.append(s)
+        # L6：把图表引用注入到匹配的页面（市场/数据/趋势/对比/规模/用户/财务/架构/流程等），
+        # 让 build_deck 能嵌入图表图片，不再「8 页全文字 0 图」。
+        _chart_keywords = ("市场", "数据", "趋势", "对比", "竞品", "规模", "增长", "用户",
+                           "财务", "架构", "流程", "痛点", "营收", "份额")
+        _chart_iter = iter(sorted(chart_ids))
+        for _s in norm:
+            if _s.get("type") == "bullets" and any(k in (_s.get("title") or "") for k in _chart_keywords):
+                try:
+                    _cid = next(_chart_iter)
+                except StopIteration:
+                    break
+                _s["type"] = "chart"
+                _s["chart"] = _cid
         if norm and norm[0].get("type") != "cover":
             norm.insert(0, {"type": "cover"})
         deck["slides"] = _clean_deck_slides(norm)

@@ -844,6 +844,19 @@ def _admin_guard():
     return None
 
 
+_UID_EXPORT_PATHS = (
+    "/api/export_word", "/api/export_pdf", "/api/export_defense", "/api/export_ppt",
+    "/api/export_competitor", "/api/export_business", "/api/export_original_format",
+)
+
+
+@app.before_request
+def _user_export_guard():
+    """M21：导出类接口要求有效 cookie（防匿名滥用）；export_all/zip/pptx 已有归属校验，不在本清单。"""
+    if request.path in _UID_EXPORT_PATHS:
+        return _require_uid()
+
+
 # ===== 媒体模块（表格 / 图表 / PPT）=====
 # 已废弃：前端早已切到 rich_pipeline + chart_renderer + export_zip 主链路，
 # media_routes/media_factory/deck_agent 是死链（nginx 0 业务调用，归档日志全是扫描器）。
@@ -1616,10 +1629,21 @@ def _reorder_markdown_by_chapters(text, ordered_titles):
     return "\n".join(out_lines).rstrip() + "\n"
 
 
+_INDEX_CACHE = {"mtime": 0.0, "content": ""}
+
+
 @app.route('/')
 def index():
-    with open('index.html', 'r', encoding='utf-8') as f:
-        resp = make_response(f.read())
+    # L4：首页 HTML 内存缓存（按文件 mtime 失效），省去每次 400KB 磁盘读，降低首字节延迟
+    try:
+        _mt = os.path.getmtime('index.html')
+    except Exception:
+        _mt = 0.0
+    if _INDEX_CACHE["mtime"] != _mt or not _INDEX_CACHE["content"]:
+        with open('index.html', 'r', encoding='utf-8') as f:
+            _INDEX_CACHE["content"] = f.read()
+        _INDEX_CACHE["mtime"] = _mt
+    resp = make_response(_INDEX_CACHE["content"])
     # 防浏览器缓存旧版前端（本次「进度条卡死」的根治）
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'
     return resp
@@ -1738,6 +1762,11 @@ def _pdf_to_text(filepath):
 
 @app.route('/api/upload_pdf', methods=['POST'])
 def upload_pdf():
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    if _upload_rate_limited():
+        return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
@@ -1814,6 +1843,11 @@ def upload_pdf():
 @app.route('/api/parse_material', methods=['POST'])
 def parse_material():
     """上传材料 → 解析文本 → LLM 提炼结构化项目画像，用于前端自动填充输入框。"""
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    if _upload_rate_limited():
+        return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     text = ""
     if 'file' in request.files and request.files['file'] and request.files['file'].filename:
         file = request.files['file']
@@ -2342,6 +2376,11 @@ def get_history_detail(history_id):
 @app.route('/api/history/<int:history_id>/rate', methods=['POST'])
 def rate_history(history_id):
     """给某条历史记录打 1-5 星（覆盖式保存，存 SQLite）。"""
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    if _rate_limited():
+        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     payload = request.get_json(silent=True) or {}
     try:
         rating = int(payload.get("rating"))
@@ -2351,7 +2390,8 @@ def rate_history(history_id):
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE history SET rating = ? WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')",
+    # M14：评分归属校验，只允许评自己记录（去掉 user_id='' 公共可见）
+    c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
               (rating, history_id, _current_uid()))
     conn.commit()
     updated = c.rowcount
@@ -5288,133 +5328,8 @@ def read_doc(filename):
 
 
 # ===== 漏洞库接口（188-190 轮）=====
-# 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
-# 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
-_VULNS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'vulns.json')
-_VULNS_MD = os.path.join(os.path.dirname(__file__), 'docs', '漏洞库.md')
-_LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
-_LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
-
-
-def _strip_status_emoji(s):
-    """去掉状态列的前缀表情符号并归一化。"""
-    s = (s or '').strip()
-    s = re.sub(r'^[✅⚠️❌🟡🟢🔴\s]+', '', s)
-    s = s.strip() or '未修复'
-    if '已修复' in s:
-        return '已修复'
-    if '部分' in s or '待收敛' in s or '收敛' in s:
-        return '部分修复'
-    if '待核实' in s:
-        return '待核实'
-    if '待确认' in s or '待定' in s:
-        return '待确认'
-    if '已确认' in s:
-        return '已确认'
-    if '已核' in s:
-        return '已核'
-    return '未修复'
-
-
-def _infer_vuln_category(name):
-    """按名称做根因/模块归因（供 /api/vulns/stats 聚合，未命中归「其他」）。"""
-    n = name or ''
-    if any(k in n for k in ('隔离', 'token', '明文', '安全', '泄露', '隐私')):
-        return '安全'
-    if any(k in n for k in ('口径', '字数', '文案', '数据', '评分', '档位', 'stats', '自认')):
-        return '数据口径'
-    if any(k in n for k in ('截断', 'Markdown', '重复', '渲染', '图标', '配色', '图片', 'PPT', '目录', '标题', '占位')):
-        return '渲染/输出质量'
-    if any(k in n for k in ('拆分', '巨石', '脚本', '死代码', 'TTFB', '体积', '性能', '健康')):
-        return '工程架构'
-    if any(k in n for k in ('移动端', '发烫', '弹窗', '遮挡', '功耗', '体验')):
-        return '体验'
-    if any(k in n for k in ('待核实', '规则', '赛道')):
-        return '规则待核实'
-    if any(k in n for k in ('文件名', 'favicon', 'robots', '细节', '缺失')):
-        return '细节'
-    return '其他'
-
-
-def _parse_vulns_md():
-    """解析 docs/漏洞库.md 的高/中/低三张表格，返回结构化列表。"""
-    items = []
-    if not os.path.isfile(_VULNS_MD):
-        return items
-    try:
-        with open(_VULNS_MD, encoding='utf-8') as f:
-            lines = f.read().splitlines()
-    except Exception:
-        return items
-    level = None
-    _md_mtime = ""
-    try:
-        _md_mtime = datetime.fromtimestamp(os.path.getmtime(_VULNS_MD)).strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        pass
-    for line in lines:
-        m = re.match(r'^##\s*([一二三])、', line)
-        if m:
-            level = _LEVEL_TAG.get(m.group(1))
-            continue
-        if not line.startswith('|'):
-            continue
-        cells = [c.strip() for c in line.strip().strip('|').split('|')]
-        if not cells or cells[0] in ('ID', '') or set(cells[0]) <= set('- '):
-            continue
-        if len(cells) < 5:
-            continue
-        # 新格式（193-195 轮新增行，7 列）：ID|漏洞|类别|状态|责任人|轮次|经验
-        # 旧格式（5 列）：ID|漏洞|状态|责任人|轮次/证据
-        if len(cells) >= 7:
-            vid, name = cells[0], cells[1]
-            _cat = cells[2]
-            status = _strip_status_emoji(cells[3])
-            owner = cells[4]
-            round_ev = cells[5]
-            experience = cells[6]
-        else:
-            vid, name = cells[0], cells[1]
-            _cat = ""
-            status = _strip_status_emoji(cells[2])
-            owner = cells[3]
-            round_ev = cells[4]
-            experience = ""
-        items.append({
-            "id": vid,
-            "level": level or "low",
-            "name": name,
-            "status": status,
-            "owner": owner,
-            "round": round_ev,
-            "evidence": round_ev,
-            "experience": experience,
-            "distilled": False,
-            "category": _cat or _infer_vuln_category(name),
-            "updated_at": _md_mtime
-        })
-    return items
-
-
-def _save_vulns(items):
-    os.makedirs(os.path.dirname(_VULNS_FILE), exist_ok=True)
-    with open(_VULNS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(items, f, ensure_ascii=False, indent=2)
-
-
-def _load_vulns():
-    """读漏洞库；无 JSON 或解析失败时回退解析 md 并落盘种子数据。"""
-    if os.path.isfile(_VULNS_FILE):
-        try:
-            with open(_VULNS_FILE, encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, list) and data:
-                return data
-        except Exception:
-            pass
-    items = _parse_vulns_md()
-    _save_vulns(items)
-    return items
+# M7 拆分：漏洞库数据层已抽到 vulns_data.py（零 Flask 依赖），这里只导入路由要用的。
+from vulns_data import _load_vulns, _save_vulns, _LEVEL_ORDER
 
 
 @app.route('/api/vulns')
