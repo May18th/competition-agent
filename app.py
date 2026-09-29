@@ -6011,6 +6011,66 @@ def consistency_check():
     return jsonify({"success": True, "issues": issues, "count": len(issues)})
 
 
+@app.route('/api/rewrite_versions', methods=['POST'])
+def rewrite_text():
+    """第三百六十八轮：正文划选改写降重——生成 3 版替换建议（保持原意与数据，去模板腔/降重）。"""
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({"success": False, "error": "请先选中要改写的文字"}), 400
+    if len(text) > 1500:
+        text = text[:1500]
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = ("把下面这段申报书正文改写降重，给出 3 个版本（保持原意与所有数据不变，去掉模板腔/套话/AI 味，"
+                  "措辞更具体）。用 Markdown 有序列表输出，每版一段。\n原文：\n" + text)
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=600)
+        return jsonify({"success": True, "versions": (resp.content or '').strip(), "source": "llm"})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/competition_match', methods=['POST'])
+def competition_match():
+    """第三百七十三轮：智能赛事匹配——按创意关键词推荐 2-3 个最适合的赛事 + 匹配理由。"""
+    data = request.get_json(silent=True) or {}
+    idea = (data.get('idea') or '').strip()
+    if not idea:
+        return jsonify({"success": False, "error": "请先输入项目创意"}), 400
+    try:
+        from competition_agents import get_competition_profiles
+        profiles = get_competition_profiles()
+    except Exception:
+        profiles = []
+    # 关键词 → 赛道倾向（工程/商业/学术/综合）
+    _kw = {
+        "工程": ("硬件", "电路", "算法", "嵌入式", "机械", "传感器", "机器人", "控制", "实现", "测试", "系统"),
+        "商业": ("市场", "商业模式", "获客", "订单", "营收", "盈利", "客户", "电商", "销售", "融资", "落地"),
+        "学术": ("研究", "学术", "调查", "文献", "实验", "理论", "论文", "数据", "模型", "分析"),
+    }
+    _hit = {k: sum(1 for w in ws if w in idea) for k, ws in _kw.items()}
+    _top = max(_hit.values()) or 0
+    _scored = []
+    for p in profiles:
+        name = p.get('name', '')
+        _type = p.get('type', '') or ''
+        _focus = (p.get('focus', '') or '') + _type
+        s = 0
+        for k, ws in _kw.items():
+            s += sum(1 for w in ws if w in _focus) * _hit.get(k, 0)
+        _scored.append((name, _type, s))
+    _scored.sort(key=lambda x: -x[2])
+    matches = [{"competition": n, "type": t,
+                "reason": "与你创意里%s相关的方向匹配（赛事类型：%s）" % (
+                    "、".join(k for k in _kw if _hit.get(k)) or "综合", t or "综合")}
+               for n, t, s in _scored[:3] if s > 0]
+    if not matches:
+        matches = [{"competition": n, "type": t, "reason": "综合推荐（可先选此赛事，后续再按官方规则调整）"}
+                   for n, t, s in _scored[:3]]
+    return jsonify({"success": True, "matches": matches})
+
+
 @app.route('/api/user_state', methods=['GET', 'POST'])
 @app.route('/api/prefs', methods=['GET', 'POST'])
 def user_prefs():
