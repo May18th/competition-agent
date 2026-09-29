@@ -2575,7 +2575,7 @@ def expert_review_agent(state: CompetitionState) -> CompetitionState:
   "consensus":["三位专家一致认可的结论，至少1条"],
   "divergence":["专家之间存在分歧的点，至少1条；没有分歧就写\"无明显分歧\""],
   "priority_actions":[{{"priority":1,"action":"最优先改的动作","reason":"为什么"}},{{"priority":2,"action":"次优先动作","reason":"为什么"}},{{"priority":3,"action":"第三优先动作","reason":"为什么"}}],
-  "disclaimer":"三位为按 {state['competition_name']} 官方评审维度模拟的评委视角（技术/商业/落地），非真人评审，仅供备赛定位薄弱与改进，不代表真人评审意见。"
+  "disclaimer":"三位为按 {state['competition_name']} 官方评审维度的评委视角（技术/商业/落地），非真人评审，仅供备赛定位薄弱与改进，不代表真人评审意见。"
 }}
 
 {_judge_paradigm_ref()}
