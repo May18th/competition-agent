@@ -3099,3 +3099,13 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 **深挖漏洞（本轮自查发现并已修）**：320 时间段选择器漏了 `feedback_total`（「反馈总数」卡片）没跟着时间过滤——切 7 天时反馈总数仍是全量，与其他统计不一致。已补 `_h()` 过滤。
 
 **安全核查（无问题）**：309 `/api/demo/sample?key=` 无路径穿越（key 只做 basename stem 比对、不拼路径）；317 status 接口参数化 SQL + 状态白名单；322 logout 清 admin cookie 对普通用户是无害 no-op；249b 负向断言已实测（真名仍拦、职责描述不再误判）。
+
+---
+
+## 二十、Codex 深挖漏洞·隐私泄露修复（2026-09-29）
+
+**发现并修复（高危）**：`/api/demo`（以及走它的 `/api/auto_generate`）原先有两条隐私泄露路径：
+1. `?history_id=<id>` 直接 `SELECT result_data FROM history WHERE id=?` **无 uid 归属校验**，任意调用者按 id 枚举即可拉取任意用户生成内容（创意/团队/正文）。
+2. 无样例时回退到「最新一条深度版」`ORDER BY id DESC LIMIT 1`，同样无鉴权暴露最新用户深度生成。
+
+**修复**：`demo_data()` 改为只返回预置样例文件（`_demo_sample_files` + `_demo_sample_inner`），彻底移除 history_id 直读与最新深度版回退；无样例时返回「暂无演示样例，请先导入样例数据」。`/api/demo/list`、`/api/demo/sample` 本就只读文件、无此问题。已用 AST/compile 验证 `demo_data` 不再含 `SELECT result_data FROM history`。

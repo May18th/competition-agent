@@ -754,7 +754,7 @@ button:hover{filter:brightness(1.05)}
 .foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
 </style></head><body>
 <form class="box" method="post" action="/admin/login">
-<img src="/static/logo.png" alt="科创赛事助手" style="height:36px;display:block;margin:0 auto 12px">
+<img src="/static/logo.png" alt="科创赛事助手" style="height:56px;display:block;margin:0 auto 12px">
 <h1>科创赛事助手 · 管理后台</h1>
 <p class="sub">请输入账号密码进入管理后台</p>
 __ERROR__
@@ -5767,55 +5767,27 @@ def api_admin_textcheck():
 
 @app.route('/api/demo')
 def demo_data():
-    """演示模式：返回一条深度版生成结果（完整数据），不走真实生成。
+    """演示模式：返回预置演示样例（只读、不真实生成、不返回用户历史，防隐私泄露）。
 
-    第二百七十轮：优先取最近一条深度版（含最新竞品/评分口径修复），避免演示到最旧那条
-    还带旧竞品/旧评分的脏样例；同样只读 DB、不调 LLM、不受 demo 只读 403 影响。
-    第二百九十轮补充：支持 ?history_id=<id> 钉死到指定历史记录（评委演示可复现、不随库漂移）。
-    """
-    # 第二百九十轮：显式钉死某条历史记录（优先于样例文件与最新深度版）
-    _hid = (request.args.get('history_id') or '').strip()
-    if _hid.isdigit():
-        conn = get_db()
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT result_data FROM history WHERE id=?", (int(_hid),)).fetchone()
-        conn.close()
-        if row:
-            try:
-                data = json.loads(row["result_data"])
-            except Exception:
-                return jsonify({"success": False, "error": "演示数据解析失败"})
-            return jsonify({"success": True, "data": data})
-    # 第二百七十轮：优先用仓库内预置的干净样例（评委演示质量可控、不随历史变化），
-    # 支持 ?id=0|1 切换两套样例；没有预置样例时回退到最新一条深度版。
+    深挖漏洞修复：原先支持 ?history_id=<id> 直接读任意历史记录、以及无样例时回退到「最新一条深度版」，
+    二者都会把用户生成内容（创意/团队/正文）无鉴权暴露给任意调用者。改为只返回预置样例文件。"""
+    _files = _demo_sample_files()
+    if not _files:
+        return jsonify({"success": False, "error": "暂无演示样例，请先导入样例数据"})
     try:
         _sid = int(request.args.get('id', 0) or 0)
     except (TypeError, ValueError):
         _sid = 0
-    _sample_files = ('demo_sample.json', 'demo_sample2.json')
-    _sample_path = os.path.join(os.path.dirname(__file__), _sample_files[min(_sid, len(_sample_files) - 1)])
-    if os.path.isfile(_sample_path):
-        try:
-            with open(_sample_path, encoding='utf-8') as _f:
-                _sample = json.load(_f)
-            if isinstance(_sample, dict) and _sample.get('proposal'):
-                return jsonify({"success": True, "data": _sample})
-        except Exception:
-            pass
-    conn = get_db()
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
-        "SELECT result_data FROM history WHERE mode='deep' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    conn.close()
-    if not row:
-        return jsonify({"success": False, "error": "暂无演示数据，请先生成一次深度版"})
+    _path = _files[min(_sid, len(_files) - 1)]
     try:
-        data = json.loads(row["result_data"])
+        with open(_path, encoding='utf-8') as _f:
+            _d = json.load(_f)
     except Exception:
-        return jsonify({"success": False, "error": "演示数据解析失败"})
-    return jsonify({"success": True, "data": data})
+        return jsonify({"success": False, "error": "演示样例数据解析失败"})
+    _inner = _demo_sample_inner(_d)
+    if not _inner.get('proposal'):
+        return jsonify({"success": False, "error": "演示样例数据不完整"})
+    return jsonify({"success": True, "data": _inner})
 
 
 def _demo_sample_files():
