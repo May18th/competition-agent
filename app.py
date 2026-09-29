@@ -887,7 +887,7 @@ def _admin_guard():
             and p not in _readonly_whitelist):
         # 278 轮：给友好引导而非生硬 403，提示评委可看示例或用普通账号
         resp = jsonify({"success": False,
-                        "error": "演示账号为只读，此操作已限制。可点「一键演示」查看完整示例，或换普通账号登录后再生成/修改。"})
+                        "error": "演示账号为只读，此操作已限制。可点「一键演示」查看完整示例，或换普通账号登录后再操作。"})
         resp.status_code = 403
         return resp
     needs_admin = False
@@ -5823,6 +5823,35 @@ def user_prefs():
     return jsonify({"success": True, "state": _state})
 
 
+# 第二百九十七轮：聊天智能体命名 + 风格选择（与生成风格独立，只影响聊天回复口吻）。
+_CHAT_NAME = "小创 · 科创赛事助手智能助手"
+_CHAT_STYLES = {
+    "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
+    "casual": {"label": "轻松幽默", "tone": "口语化、轻松幽默，可带一点趣味，但信息必须准确"},
+    "academic": {"label": "学术详细", "tone": "引用赛事规则依据、展开论证，可适当详细"},
+}
+
+
+def _chat_style_key(v):
+    """风格入参归一化：接受 concise/casual/academic 或中文标签，未知回落到 concise。"""
+    v = (v or "").strip()
+    if v in _CHAT_STYLES:
+        return v
+    for k, s in _CHAT_STYLES.items():
+        if v == s["label"]:
+            return k
+    return "concise"
+
+
+def _chat_style_lead(style):
+    """预设答案的口吻前缀，让三档在预设命中时也能看出差异（concise 默认不加）。"""
+    if style == "casual":
+        return "嘿，简单说——"
+    if style == "academic":
+        return "依据官方规则口径："
+    return ""
+
+
 _CHAT_PRESET = [
     (("评分", "打分", "维度", "权重", "多少分"),
      "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
@@ -5839,16 +5868,19 @@ _CHAT_PRESET = [
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """第二百九十四轮：智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。"""
+    """智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。
+    第二百九十七轮：支持 style（concise/casual/academic 三档）调整回复口吻，智能体命名「小创」。"""
     data = request.get_json(silent=True) or {}
     msg = (data.get('message') or '').strip()
     if not msg:
         return jsonify({"success": False, "error": "请输入问题"}), 400
     if len(msg) > 500:
         msg = msg[:500]
+    style = _chat_style_key(data.get('style'))
     for kws, ans in _CHAT_PRESET:
         if any(k in msg for k in kws):
-            return jsonify({"success": True, "reply": ans, "source": "preset"})
+            return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
+                            "source": "preset", "style": style})
     # 第二百九十四轮：演示只读会话「只答不写、不计入生成额度」——仅走预设，不接 LLM 兜底，
     # 避免评委演示时把外部模型额度烧掉。
     if _admin_session_role() == 'readonly':
@@ -5858,10 +5890,11 @@ def chat():
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
-        prompt = ("你是「科创赛事助手」的客服智能体。用 2~4 句简洁中文回答用户问题，"
-                  "只谈本产品功能与赛事规则，不编造数据。\n用户问题：" + msg)
+        prompt = ("你是「%s」智能助手，用中文回答用户问题，只谈本产品功能与赛事规则，不编造数据。"
+                  "回答口吻：%s。\n用户问题：%s" % (_CHAT_NAME, _CHAT_STYLES[style]["tone"], msg))
         resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=400)
-        return jsonify({"success": True, "reply": (resp.content or '').strip(), "source": "llm"})
+        return jsonify({"success": True, "reply": (resp.content or '').strip(),
+                        "source": "llm", "style": style})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 

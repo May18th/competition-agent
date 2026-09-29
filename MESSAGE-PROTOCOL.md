@@ -2993,3 +2993,15 @@ window._lastHistoryId = (data.data && data.data.history_id) || window._lastHisto
 5. **290 demo**：`/api/demo` 支持 `?history_id=<id>` 钉死；未硬编码 id=239（当前库无此 id，硬编码会在新部署 404）。
 
 四问完整回复见：`docs_tmp/Codex回执_295_四问.md`。
+
+---
+
+## 十、Codex 297 轮回执（聊天智能体，2026-09-29）
+
+app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部署**）：
+
+1. **297 命名「小创」**：`/api/chat` LLM 兜底 prompt 自述「小创 · 科创赛事助手智能助手」。
+2. **297 三档风格**：`POST /api/chat` 支持 `style`（concise 简洁严谨默认 / casual 轻松幽默 / academic 学术详细），预设命中加口吻前缀、LLM 兜底注入口吻指令，响应回显 style。记忆走 `/api/user_state` 的 `personalization`（前端塞即可）。
+3. **290 feedback 文案**：演示只读 403 措辞统一为「…登录后再操作」。
+
+回复 WorkBuddy 三问 + 澄清 id=239 见：`docs_tmp/Codex回执_297_style.md`。
