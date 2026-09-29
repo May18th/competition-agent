@@ -1624,10 +1624,59 @@ def _slide_closing(prs, s, meta, page_no):
 
 
 # ============ 主入口 ============
+# ===== 第二百三十五轮：交付前产物清洗 =====
+# 豆包实测深度版 PPT 两处硬伤：①第 2 页残留「路演 PPT 大纲（17页）」——那是给 LLM 看的
+# 规划页，不该出现在交付给用户的 PPT 里；②正文页残留 Markdown 标记（如「*标题：**」）。
+# 清洗放在 build_deck 入口，所有导出路径（打包 / 单独下载）统一生效。
+_WB_OUTLINE_PAT = re.compile(
+    r'(路演\s*PPT\s*大纲|PPT\s*大纲|演讲\s*大纲|内容\s*大纲|大纲\s*[（(]\s*\d+\s*页)')
+
+
+def _wb_strip_md(t):
+    """清掉单条文本里的 Markdown 残留标记。只动标记符，不动中文/数字/百分号。"""
+    if not isinstance(t, str) or not t:
+        return t
+    s = t.replace('**', '').replace('`', '')          # 加粗 / 行内代码（先去，露出裸星号）
+    s = re.sub(r'^[ \t]*#{1,6}[ \t]*', '', s)         # 行首标题符「## 」
+    s = re.sub(r'^[ \t]*[-*+][ \t]+', '', s)          # 行首列表符「* 」「- 」
+    s = re.sub(r'^[ \t]*\*+[ \t]*', '', s)            # 行首残留星号（「*标题：」）
+    s = re.sub(r'[ \t]*\*+[ \t]*$', '', s)            # 行尾孤立星号
+    return s.strip()
+
+
+def _wb_clean_slide(node):
+    """递归清洗一张 slide 的所有文本字段（title / bullets / table / metrics…）。"""
+    if isinstance(node, str):
+        return _wb_strip_md(node)
+    if isinstance(node, list):
+        return [_wb_clean_slide(x) for x in node]
+    if isinstance(node, dict):
+        return dict((k, _wb_clean_slide(v)) for k, v in node.items())
+    return node
+
+
+def _wb_drop_outline_slides(slides):
+    """丢掉「大纲/目录页」这类给 LLM 看的规划页。"""
+    kept = []
+    for s in slides or []:
+        if not isinstance(s, dict):
+            kept.append(s)
+            continue
+        blob = ' '.join(str(s.get(k) or '') for k in ('title', 'subtitle', 'kicker'))
+        if _WB_OUTLINE_PAT.search(blob):
+            continue
+        kept.append(s)
+    return kept
+
+
 def build_deck(deck, out_path, chart_paths=None):
     """chart_paths: {chart_id: png路径}
     deck 可选 theme（主题 key）与 variant（模板 key v1-v4），不传则用默认。"""
     chart_paths = chart_paths or {}
+    # 产物清洗：先丢大纲规划页，再逐字段清 Markdown 残留（第二百三十五轮）
+    deck = dict(deck or {})
+    deck["slides"] = [_wb_clean_slide(s)
+                      for s in _wb_drop_outline_slides(deck.get("slides"))]
     # 关键：把主题真正应用到本次渲染（不接这行，传了 theme 也不会生效）
     _apply_theme(deck.get("theme"))
     # 15 套精品各自定好了封面/正文/页眉/卡片，这里不再接受外部 variant 覆盖：
@@ -1638,10 +1687,12 @@ def build_deck(deck, out_path, chart_paths=None):
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
+    # 页眉/封面会反复渲染 project / one_liner / competition，这三个来自 deck 顶层而非 slides，
+    # 必须一起清洗，否则整副 PPT 每一页的页眉都挂着星号。
     meta = {
-        "project": deck.get("project", "科创项目"),
-        "one_liner": deck.get("one_liner", ""),
-        "competition": deck.get("competition", ""),
+        "project": _wb_strip_md(deck.get("project", "科创项目")),
+        "one_liner": _wb_strip_md(deck.get("one_liner", "")),
+        "competition": _wb_strip_md(deck.get("competition", "")),
     }
     page = 1
     for i, s in enumerate(deck.get("slides", [])):
