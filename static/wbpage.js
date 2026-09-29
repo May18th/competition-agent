@@ -116,7 +116,7 @@ window.addEventListener('resize', function () {
     var STAGE_LABEL = {
         start: '正在启动', parsing_rules: '解析评分规则', similarity: '检索同质化项目',
         idea_scoring: '提炼一句话定位', analysis: '分析赛题与方案', rich_assets: '生成图表与 PPT 素材',
-        writing: '撰写申报书正文', judging: 'AI 评审打分', expert_review: '多视角评审（AI）',
+        writing: '撰写申报书正文', judging: '智能评审打分', expert_review: '多视角评审',
         diagnosis: '诊断短板', revision: '按意见定向改写', defense: '预测答辩问题',
         ppt: '生成 PPT 大纲', speech: '撰写路演稿', done: '收尾'
     };

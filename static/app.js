@@ -2679,7 +2679,7 @@
             h3.appendChild(sp);
         }
 
-        // ---- 多视角评审（AI）面板（深度版专属，简洁版为空自动隐藏）----
+        // ---- 多视角评审面板（深度版专属，简洁版为空自动隐藏）----
         function _erColor(s) {
             s = Number(s) || 0;
             if (s >= 85) return 'var(--ok)';
@@ -2947,7 +2947,7 @@
 
             // 底部免责声明：专家身份是虚构的，必须写明，否则学生可能以为真有这三位评委审过
             var dcl = d.disclaimer
-                || '本评审由 AI 参考多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
+                || '本评审由智能系统参考多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
             h += '<div style="margin-top:14px; padding:10px 12px; border-radius:6px; ' +
                  'background:var(--surface-2); border:1px dashed var(--line); ' +
                  'font-size:12px; color:var(--text-mute); line-height:1.6;">' +
@@ -3932,7 +3932,7 @@
             });
             _STREAM_MAP.forEach(function (p) {
                 var el = document.getElementById(p[1]);
-                if (el) el.innerHTML = '<div class="stream-wait">AI 正在生成，内容将实时流出…</div>';
+                if (el) el.innerHTML = '<div class="stream-wait">正在生成，内容将实时流出…</div>';
             });
             var ol = document.getElementById('oneLiner');
             if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
@@ -4262,7 +4262,7 @@
         // 按已耗时轮换（跟着轮询走，不额外起定时器），4 句循环，不刷屏。
         var WB_WAIT_LINE = [
             '正在生成，可以先去做别的事',
-            '评委正在挑刺，AI 替你先挨一轮批',
+            '评委正在挑刺，智能评审替你先挨一轮批',
             '图表和 PPT 在排队，快了',
             '快了，再等半分钟就好'
         ];
@@ -4358,7 +4358,7 @@
             const btn = document.getElementById('startBtn');
             const isOptimize = proposal_draft.length > 0;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> AI正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
+            btn.innerHTML = '<span class="spinner"></span> 正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
             document.getElementById('cancelWrap').style.display = 'block';
             try { wbHideRetry(); } catch (e) {}
@@ -4569,7 +4569,7 @@
                                     // 里程碑 1/2：正文写完、评委接手。其余阶段不弹，避免刷屏
                                     if (res2.stage === 'judging' || res2.stage === 'expert_review' ||
                                         res2.stage === 'diagnosis' || res2.stage === 'revision') {
-                                        wbMileOnce('body', '正文完成，AI 评委开始挑刺…');
+                                        wbMileOnce('body', '正文完成，智能评审开始挑刺…');
                                     }
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
                                     // 剩余时间单独挂徽章，混在长句里没人看得见
@@ -4769,7 +4769,7 @@
                                 const UPSELL = [
                                     ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家视角评审</b>，逐条批注 + 优先改进清单'],
-                                    ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
+                                    ['defenseQuestions', '升级深度版：<b>智能路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
                                 ];
                                 UPSELL.forEach(p => {
@@ -5193,7 +5193,7 @@
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
                     ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
-                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多视角评审（AI）（实测字数与用时见档位卡）'],
+                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多视角评审（实测字数与用时见档位卡）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -5233,7 +5233,7 @@
             if (!m) {
                 h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">还能干什么</div>';
                 h += '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.9; margin-bottom: 18px;">' +
-                     '· <b>范文库</b>：加 AI 示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
+                     '· <b>范文库</b>：加智能示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
                      '· <b>导出中心</b>：Word / PDF / PPT / 一键打包，申报书按标准格式排版<br>' +
                      '· <b>原格式导出</b>：上传学校模板 .docx，优化后保留你原来的版式<br>' +
                      '· <b>历史记录</b>：之前生成的随时打开回看，可继续导出' +
@@ -5244,9 +5244,9 @@
             h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">上传入口，别传错</div>';
             h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，AI 自动识别并填到对应位置</div>' +
+                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，智能识别并填到对应位置</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，AI 在原文上优化</div>' +
+                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，在原文上智能优化</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
                  '· <b>导入模板</b>（草稿区）：学校/官方模板，自动识别章节按它写</div>' +
                  '<div style="padding: 6px 0;">' +
@@ -5267,7 +5267,7 @@
 
             h += '<div style="padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-mute); font-size: 12.5px; line-height: 1.7; margin-bottom: 16px;">' +
                  '创意与草稿仅用于本次生成，不做模型训练、不外传；生成内容归你所有。' +
-                 'AI 生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
+                 '生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
 
             h += '<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">' +
                  '<button onclick="closeIntro(true)" style="' + btn + ' background: var(--c-a); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; flex: 1 1 140px;">开始使用</button>' +
@@ -5637,7 +5637,7 @@
                         var scoreTxt = '';
                         if (sc !== null && !isNaN(sc)) {
                             scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
-                                'AI 质量 ' + sc + ' 分</span>';
+                                '智能评分 ' + sc + ' 分</span>';
                         }
                         // 摘要优先，没有则回退正文前 120 字（原来 60 字太短，两行就看不出是什么材料）。
                         // 这是「摘要降级」不是无声截断：下面渲染时固定带「…」明示还有后续内容。
