@@ -5908,6 +5908,30 @@ def defense_faq():
     return jsonify({"success": True, "faq": _DEFENSE_FAQ})
 
 
+@app.route('/api/defense_review', methods=['POST'])
+def defense_review():
+    """第三百五十五轮：模拟答辩——对用户某题作答做文字点评（是否切题/有无数据支撑/是否自相矛盾）。"""
+    data = request.get_json(silent=True) or {}
+    question = (data.get('question') or '').strip()
+    answer = (data.get('answer') or '').strip()
+    idea = (data.get('idea') or data.get('context') or '').strip()
+    if not question or not answer:
+        return jsonify({"success": False, "error": "请提供题目与作答"}), 400
+    if len(answer) > 2000:
+        answer = answer[:2000]
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        _ctx = ("项目创意：" + idea[:300] + "\n") if idea else ""
+        prompt = ("你是答辩评委。下面是一道答辩题、选手的项目创意与作答，请用 3~5 句点评："
+                  "①是否切题；②是否有数据/事实支撑；③是否有自相矛盾或含糊之处；④给一句改进建议。"
+                  "直接点评、不客套、不重复题干。\n" + _ctx + "题目：" + question + "\n作答：" + answer)
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=250)
+        return jsonify({"success": True, "review": (resp.content or '').strip(), "source": "llm"})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
 @app.route('/api/user_state', methods=['GET', 'POST'])
 @app.route('/api/prefs', methods=['GET', 'POST'])
 def user_prefs():

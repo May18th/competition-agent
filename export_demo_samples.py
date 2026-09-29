@@ -42,36 +42,49 @@ def main():
 
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
+    deep_rows = conn.execute(
         "SELECT id, competition_name, result_data FROM history "
         "WHERE mode='deep' ORDER BY id DESC").fetchall()
+    fast_rows = conn.execute(
+        "SELECT id, competition_name, result_data FROM history "
+        "WHERE mode='fast' ORDER BY id DESC").fetchall()
     conn.close()
 
     seen_comp = set()
     picked = []
     skipped_selfref = 0
-    for r in rows:
-        try:
-            data = json.loads(r["result_data"])
-        except Exception:
-            continue
-        # 完整样例：有正文 + 至少一种富媒体（图表/表格/PPT）
-        if not data.get("proposal"):
-            continue
-        if not (data.get("rich_charts") or data.get("rich_tables") or data.get("rich_deck")):
-            continue
-        # 339/341 轮：正文/创意里出现网站自身功能描述 → 跳过（防「用网站介绍冒充作品正文」）
-        _blob = json.dumps(data, ensure_ascii=False)
-        if any(k in _blob for k in _SELF_REF_KEYWORDS):
-            skipped_selfref += 1
-            continue
-        comp = (r["competition_name"] or "").strip() or "未指定赛事"
-        if comp in seen_comp:
-            continue  # 多样性优先：同一赛事只取一条（最新）
-        seen_comp.add(comp)
-        picked.append((r["id"], comp, data))
-        if len(picked) >= n:
+
+    def _pick(rows, need_rich=True, dedup=True):
+        nonlocal skipped_selfref
+        for r in rows:
+            try:
+                data = json.loads(r["result_data"])
+            except Exception:
+                continue
+            if not data.get("proposal"):
+                continue
+            if need_rich and not (data.get("rich_charts") or data.get("rich_tables") or data.get("rich_deck")):
+                continue
+            # 339/341 轮：正文/创意里出现网站自身功能描述 → 跳过（防「用网站介绍冒充作品正文」）
+            _blob = json.dumps(data, ensure_ascii=False)
+            if any(k in _blob for k in _SELF_REF_KEYWORDS):
+                skipped_selfref += 1
+                continue
+            comp = (r["competition_name"] or "").strip() or "未指定赛事"
+            if dedup and comp in seen_comp:
+                continue  # 多样性优先：同一赛事只取一条（最新）
+            seen_comp.add(comp)
+            picked.append((r["id"], comp, data))
+            return True
+        return False
+
+    # 352 轮：先挑深度版（按赛事去重），留 1 个位置给简洁版
+    while len(picked) < max(1, n - 1):
+        if not _pick(deep_rows, need_rich=True, dedup=True):
             break
+    # 352 轮：再补 1 条简洁版（fast，有正文即可，优先不同赛事）
+    if len(picked) < n:
+        _pick(fast_rows, need_rich=False, dedup=False)
 
     if not picked:
         print("没有可导出的完整深度版记录（需 mode=deep 且含 proposal + rich 富媒体，且不含网站自述）")
