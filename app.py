@@ -2618,10 +2618,13 @@ def admin_home():
     success_rate = round(total_gen * 100.0 / (total_gen + fail_total), 1) if (total_gen + fail_total) else 100.0
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
+    open_issue_rows = c.execute(
+        "SELECT id, kind, source, content, created_time FROM issues "
+        "WHERE status='open' ORDER BY id DESC LIMIT 5").fetchall()
     recent_fb = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
-        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
+        "SELECT error, detail, error_msg, created_time FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
     conn.close()
 
     fb_rows = "".join(
@@ -2630,8 +2633,13 @@ def admin_home():
         for r in recent_fb) or '<li class="e">暂无反馈</li>'
     fail_rows = "".join(
         '<li><span class="t">%s</span>%s</li>'
-        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        % (r["created_time"] or "", _html_escape(r["detail"] or r["error_msg"] or r["error"] or "未知原因"))
         for r in recent_fail) or '<li class="e">暂无失败</li>'
+    issue_rows = "".join(
+        '<li><span class="t">#%s · %s · %s</span>%s</li>'
+        % (r["id"], _html_escape(r["kind"] or ""), r["created_time"] or "",
+           _html_escape(r["content"] or ""))
+        for r in open_issue_rows) or '<li class="e">暂无待处理问题</li>'
 
     return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2676,6 +2684,7 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box"><h2>最近反馈</h2><ul>%s</ul></div>
 <div class="box"><h2>最近失败</h2><ul>%s</ul></div>
 </div>
+<div class="box" style="margin-top:14px"><h2>待处理工单（%d）</h2><ul>%s</ul></div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
 <div class="box" style="margin-top:14px"><h2>🧠 写作范式蒸馏</h2>
 <p style="font-size:13px;color:#64748b;margin:0 0 10px">从当前范文库重新提炼「获奖写法共性规律」，注入生成 prompt（约耗 1 次 LLM 调用）。</p>
@@ -2766,7 +2775,8 @@ loadViz();
         "good" if success_rate >= 95 else ("bad" if success_rate < 80 else ""),
         success_rate,
         "bad" if open_issue else "good", open_issue,
-        feedback_total, fb_rows, fail_rows))
+        feedback_total, fb_rows, fail_rows,
+        open_issue, issue_rows))
 
 
 @app.route('/admin/panel')
@@ -2861,18 +2871,14 @@ def admin_dashboard():
         "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
     conn.close()
 
-    # 今日大模型调用额度
-    quota_calls = 0
+    # 今日大模型调用额度（第二百五十四轮：统一走 get_quota_status，避免硬编码 500
+    # 与 env 的 QUOTA_DAILY_LIMIT 不一致，导致数据面板/动态监视/health 三处口径打架）
+    quota_remaining = 0
     try:
-        with open(os.path.join(os.path.dirname(__file__), "quota.json"),
-                  encoding="utf-8") as _f:
-            _q = json.load(_f)
-        if _q.get("date") == today:
-            quota_calls = int(_q.get("calls", 0) or 0)
+        from competition_agents import get_quota_status
+        quota_remaining = int(get_quota_status().get("remaining", 0) or 0)
     except Exception:
         pass
-    quota_limit = 500
-    quota_remaining = max(0, quota_limit - quota_calls)
 
     # 111/112 轮：反馈区从「原生 li 平铺」升级为卡片化（分类色块 + 时间人话化 +
     # 关联星级 + 超长截断悬停看全文 + hover 高亮）。内容一律 _html_escape 防注入。
@@ -3176,7 +3182,7 @@ def monitor():
         "SELECT competition_name, mode, duration, status, created_time FROM history "
         "ORDER BY id DESC LIMIT 12").fetchall()
     recent_fail = c.execute(
-        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+        "SELECT error, detail, error_msg, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
     total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
@@ -3197,7 +3203,7 @@ def monitor():
         for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
     fail_rows = "".join(
         '<tr><td>%s</td><td>%s</td></tr>'
-        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        % (r["created_time"] or "", _html_escape(r["detail"] or r["error_msg"] or r["error"] or "未知原因"))
         for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
 
     return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
