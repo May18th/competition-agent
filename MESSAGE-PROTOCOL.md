@@ -3329,3 +3329,36 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
   谁要部署，先确认服务器侧改动已提交或已备份。
 - 另注：kcwx.online 目前返回 **403 Non-compliance ICP Filing**（备案问题），线上不可访问，
   双端验收暂时拿不到线上证据，只能做本地 / 站内验证，别据此判断功能好坏。
+
+---
+
+## 二十八、⚠️ 04:52 服务器被 reset 回退事故 + 22 提交抢救 + 全站恢复（2026-09-30 收口，实测更新）
+
+### 1. 事故时间线（全为实测，非推断）
+- **04:15**：实测发现服务器 `/opt/comp-agent` HEAD=`5be290f4`，**领先 GitHub 22 个未推送提交**；index.html / app.js / style.css / knowledge_base/*.json 等大量未提交改动（详见二十六节）。
+- **04:52**：服务器被 `git reset: moving to origin/main` 回退（reflog 可证），线上 index.html 从 184030 字节 / 37 个 /static 引用 **塌缩到 174067 字节 / 12 引用**，339/344/398/401 等 P0/P1 插件**整片掉线**。
+- **04:56**：紧急抢救——把 22 提交固化为 GitHub 新分支 `rescue-20260930-22`（tip `5be290f4`）并推送；同时产本地 bundle `_rescue22_20260930.bundle`（1.26MB）双保险。
+- **05:06**：把 index.html 恢复到 184030 字节 / md5 `385185` / 含 339 的版本，curl 首页 200，关键插件全部重新接线，全站功能在线。
+
+### 2. 后续收口：339 已安全进入 main（重要更正）
+- **`ac383e7`（fix(421): 恢复d版前端）已提交并推送 origin/main**，其 index.html 实测就是 184030 字节 / md5 `385185be3223f18159d29184e1231675` / 含 `wbresult339`（3 处引用）+ app.js + style.css。
+- ✅ **因此「339 只存在于未提交 WIP、reset 会再丢」的担忧已解除**——339 现在在 main 里，有版本、可追溯。
+- 本次（收口时）SSH 实测：服务器 HEAD=`ac383e7`，工作树 index.html=184030 / md5 `385185be…` / 42 个 `/static/` 引用 / `wbresult339` 3 处，**与提交版本完全一致，无未提交漂移**。
+
+### 3. 残留风险（仍要认真对待）
+- **周期性 reset 脚本仍在**：服务器 reflog 显示，自 5be290f4 之后，又连续发生 **3 次** `reset: moving to origin/main`（目标 532da02 → 7a6feca → ac383e7×2）。说明存在自动/手动把服务器拉回 origin/main 的机制。
+  - 若它是 `git reset --hard origin/main`，**任何未提交的服务侧改动都会被静默抹掉**（339 这次侥幸因已进 main 而没事，下次未必）。
+  - 必须查清并停掉该脚本（crontab / systemd 的 ExecStart 钩子 / 部署流水线），或在 reset 前强制 `git stash` / 提交。
+- **22 提交保险仍在**：`rescue-20260930-22` 分支（GitHub）+ `_rescue22_20260930.bundle`（本地）保留着 reset 前的全部服务侧提交，万一 `ac383e7` 漏收了某段逻辑，可 `git diff` / `cherry-pick` 找回。
+- **kcwx.online 仍 403**：备案未过，线上外网不可达，验收只能做站内/本地验证（见本节末注与二十六节）。
+
+### 4. 给所有线的硬红线（重申）
+- 服务器提交 / 部署 / reset **一律由主理人收口**，任何人不得自行 `git reset --hard` 或 `git push --force`。
+- 一切服务侧改动**先 commit + push 再谈部署**，绝不允许依赖未提交 WIP 长期存活。
+- 改前端文件必须 bump `?v=`；一项一升版一回执。
+- 不碰他人在制品（`index.html` / `app.js` / `style.css` / `docx_render.py` 等未提交改动）。
+
+### 5. 待主理人拍板
+1. 查并停用周期性 reset 脚本（最高优先级，否则下次还会丢）。
+2. 确认 `ac383e7` 已含 339 全部逻辑；如有遗漏，从 `rescue-20260930-22` 补回。
+3. （延后）删重复模块 `media_factory.py` / `deck_agent.py` / `media_routes.py`。
