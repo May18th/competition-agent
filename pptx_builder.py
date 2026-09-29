@@ -1667,6 +1667,20 @@ def build_deck(deck, out_path, chart_paths=None):
             page += 1
         else:
             page = _emit_bullets(prs, s, meta, page, chart_paths, i)
+    # 417 轮：末页底部补一行智能辅助声明，与 Word/PDF 导出件同一套措辞。
+    # deck['notice'] 后端早就在塞，但 pptx_builder 一直没读它，等于 PPT 光着身子提交。
+    _notice = (deck.get("notice") or "").strip()
+    if _notice and len(prs.slides):
+        try:
+            _last = prs.slides[len(prs.slides) - 1]
+            _tb, _tf = _add_box(_last, 0.9, 6.55, 11.5, 0.55)
+            _p = _tf.paragraphs[0]
+            _p.alignment = PP_ALIGN.CENTER
+            _r = _p.add_run()
+            _r.text = _notice
+            _set_run_font(_r, 9, _sub_text())
+        except Exception as _ne:
+            print("[pptx] 末页声明写入失败（不阻断）：%r" % (_ne,))
     prs.save(out_path)
     return out_path
 

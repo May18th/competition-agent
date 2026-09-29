@@ -101,16 +101,73 @@ def check_pptx(path):
     return (not issues), issues
 
 
-def check_pdf(path):
+# 417 轮：各赛事对提交 PDF 的页数/体积限制。
+# 只放有明确依据的条目；没配到的一律走 DEFAULT_PDF_LIMIT 的宽松值，
+# 宁可放过也不能因为「没配」就把用户的正式提交件判死。
+PDF_LIMITS = [
+    # iCAN 官网要求：作品说明书（申报书）正文不超过 20 页
+    {"match": ("ican",), "max_pages": 20, "max_mb": 10,
+     "label": "iCAN 作品说明书/申报书"},
+    # 「挑战杯」中国大学生创业计划竞赛：申报书正文一般控制在 30 页内（保守值）
+    {"match": ("挑战杯", "创青春"), "max_pages": 30, "max_mb": 15,
+     "label": "挑战杯申报书"},
+]
+# 未匹配到赛事时的兜底：宽松，不误杀
+DEFAULT_PDF_LIMIT = {"max_pages": 40, "max_mb": 20, "label": "通用文档"}
+
+
+def pdf_limits_for(competition_name="", doc_title=""):
+    """按赛事名（模糊匹配）取 PDF 页数/体积限制，返回 {"max_pages","max_mb","label"}。"""
+    comp = (competition_name or "").lower()
+    doc = (doc_title or "")
+    for item in PDF_LIMITS:
+        for kw in item["match"]:
+            if kw.lower() in comp or kw in doc:
+                return {"max_pages": item["max_pages"],
+                        "max_mb": item["max_mb"], "label": item["label"]}
+    return dict(DEFAULT_PDF_LIMIT)
+
+
+def _pdf_trim_suggestions(n_pages, mb, limit):
+    """超限时的可执行删减建议——必须带数字，不许写「请精简内容」这种废话。"""
+    tips = []
+    if n_pages > limit["max_pages"]:
+        over = n_pages - limit["max_pages"]
+        tips.append("需删掉 %d 页（当前 %d 页 → 上限 %d 页）" % (over, n_pages, limit["max_pages"]))
+        tips.append("优先合并连续的数据页：把财务测算、市场规模、成本结构三张表压到 1～2 页并排排版")
+        tips.append("附录类内容（访谈记录、问卷原题、代码清单、参考文献）移出正文或改放网盘链接")
+        tips.append("每章的「小结」段落整段删掉，评委看的是数据与结论，不是总结")
+        if over >= 8:
+            tips.append("超出较多（%d 页），建议回到结果页把正文按章节重写为精简版再导出" % over)
+    if mb > limit["max_mb"]:
+        over_mb = round(mb - limit["max_mb"], 1)
+        tips.append("需压掉约 %.1fMB（当前 %.1fMB → 上限 %dMB）" % (over_mb, mb, limit["max_mb"]))
+        tips.append("图片/图表统一降到 150dpi，通常能减 30%～50% 体积")
+        tips.append("删除正文里重复出现的同一张架构图/流程图，只保留一处")
+        if n_pages and mb / max(n_pages, 1) > 0.5:
+            tips.append("当前平均每页 %.2fMB，明显是图太重；优先压图而不是删字" % (mb / n_pages))
+    return tips
+
+
+def check_pdf(path, competition_name=None, doc_title=None, detail=False):
+    """PDF 导出终检。
+
+    向后兼容：不传 competition_name/doc_title 时行为与 417 轮前完全一致，
+    只查体积 3MB / 无页面 / 中文乱码，返回 (ok, issues) 二元组。
+    detail=True 时返回 dict：{"ok","errors","warnings","suggestions","pages","mb","limit"}。
+    """
     issues = []
+    pages, mb = 0, 0.0
     try:
         import os as _os
         sz = _os.path.getsize(path)
+        mb = sz / (1024.0 * 1024.0)
         if sz > 3 * 1024 * 1024:
             issues.append(f"PDF 体积超限（{sz // 1024}KB > 3MB）")
         from pypdf import PdfReader
         r = PdfReader(path)
-        if len(r.pages) < 1:
+        pages = len(r.pages)
+        if pages < 1:
             issues.append("PDF 无页面")
         _txt = ""
         for p in r.pages[:3]:
@@ -122,7 +179,31 @@ def check_pdf(path):
             issues.append("PDF 中文乱码")
     except Exception as e:
         issues.append(f"pdf 检查失败：{e}")
-    return (not issues), issues
+
+    if not detail:
+        return (not issues), issues
+
+    # 基础检查里「3MB 体积」这条太紧：带图的申报书轻松过 3MB，但 iCAN 上限是 10MB，
+    # 拿 3MB 去卡等于误杀正式提交件。detail 路径下它降为 warning，
+    # 真正的页数/体积红线交给下面按赛事取到的限制来判。
+    errors = [x for x in issues if "体积超限" not in x]
+    warnings = [x for x in issues if "体积超限" in x]
+    suggestions = []
+    limit = pdf_limits_for(competition_name, doc_title)
+    if pages and pages > limit["max_pages"]:
+        errors.append("本 PDF 共 %d 页，超出%s要求（≤%d 页）"
+                      % (pages, limit["label"], limit["max_pages"]))
+    if mb and mb > limit["max_mb"]:
+        errors.append("本 PDF 共 %.1fMB，超出%s要求（≤%dMB）"
+                      % (mb, limit["label"], limit["max_mb"]))
+    if errors:
+        suggestions = _pdf_trim_suggestions(pages, mb, limit)
+    elif pages and pages >= limit["max_pages"] - 2:
+        warnings.append("页数已接近上限（%d/%d 页），再补充内容就会超限"
+                        % (pages, limit["max_pages"]))
+    return {"ok": not errors, "errors": errors, "warnings": warnings,
+            "suggestions": suggestions, "pages": pages,
+            "mb": round(mb, 2), "limit": limit}
 
 
 def check_zip(path, expect_count=12):

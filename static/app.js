@@ -863,6 +863,16 @@
                 });
                 return;
             }
+            // 417 轮：PDF 超页数/超大小被打回时，光说「未达标」用户不知道删哪。
+            // 后端在 suggestions 里给了带数字的删减条目，这里原样列出来。
+            if (j && j.code === 'export_quality_fail' && j.suggestions && j.suggestions.length) {
+                var _ips = j.suggestions.slice(0, 4).join('；');
+                wbToast(label + '超出该赛事提交要求，已取消导出', {
+                    type: 'warn', ms: 11000,
+                    sub: (msg ? msg + '。' : '') + '怎么改：' + _ips
+                });
+                return;
+            }
             if (msg) { wbToast(label + '导出失败：' + msg, { type: 'error', ms: 6000 }); return; }
             wbToast(label + '没导出成功，服务正在重启或网络抖动', {
                 type: 'error', ms: 6000,
@@ -1155,7 +1165,7 @@
                            "六、使用说明", "七、应用前景与商业模式", "八、团队分工与知识产权"],
                 // 官方口径（与 data/competition_profiles.json 一致）：创新性30/商业性25/技术方案25/产品介绍20
                 scoring: [["创新性", 30], ["商业性", 25], ["技术方案", 25], ["产品介绍", 20]],
-                deduct: "扣分点：AI 只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
+                deduct: "扣分点：智能能力只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
                 // 官方提交物（AI 应用创新挑战赛）：应用方案 PDF + 演示视频 + 可运行程序
                 submit: ["应用方案 PDF（≤20页、≤50MB）", "演示视频 MP4（≤5分钟）",
                          "可运行程序链接或源码", "硬件赛道另交：硬件设计说明 + 实物原型照片"]
@@ -2495,7 +2505,7 @@
                     : '<span style="color:var(--info-text);">已收录，部分章节待补充：' + (f.missing || []).map(_esc).join('、') + '</span>';
                 cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → 命中《' + _esc(row.hit[0]) + '》' + tail;
             } else {
-                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，AI 将按通用标准评审</span>';
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，将按通用标准评审</span>';
             }
             renderKbDetail();
         }
@@ -2786,11 +2796,11 @@
             var ft = document.getElementById('ideaRadarFoot');
             if (ft) {
                 // 第二十三/二十四/三十一轮反复刺：这里原来还挂一个「创意结构分 66 / 100」，
-                // 和上方「AI 模拟自评 86」形成两个总分，评委不知道信哪个。
+                // 和上方「系统模拟自评 86」形成两个总分，评委不知道信哪个。
                 // 现在只做维度分解——五个维度的分都在图上，不再汇总出第二个总分。
                 ft.innerHTML = '创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
                     + '<div style="margin-top: 5px;">这五个维度看的是<b>创意本身</b>的强弱，仅作分解参考，'
-                    + '不另设总分；页面唯一评分是上方「AI 模拟自评（文档质量）」。</div>';
+                    + '不另设总分；页面唯一评分是上方「系统模拟自评（文档质量）」。</div>';
             }
             box.style.display = 'block';
         }
@@ -2915,7 +2925,7 @@
 
             // 底部免责声明：专家身份是虚构的，必须写明，否则学生可能以为真有这三位评委审过
             var dcl = d.disclaimer
-                || '本评审由 AI 模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
+                || '本评审由系统模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
             h += '<div style="margin-top:14px; padding:10px 12px; border-radius:6px; ' +
                  'background:var(--surface-2); border:1px dashed var(--line); ' +
                  'font-size:12px; color:var(--text-mute); line-height:1.6;">' +
@@ -3570,7 +3580,7 @@
             var el = document.getElementById('deckRoadPlan');
             if (!el) return;
             if (!wbRoadshowOn()) {
-                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按 AI 原始结构导出（页数与顺序不固定）。</div>';
+                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按系统原始结构导出（页数与顺序不固定）。</div>';
                 return;
             }
             if (!deck || !deck.slides) { el.innerHTML = ''; return; }
@@ -3892,7 +3902,10 @@
                 _qcTimer = setTimeout(function () { if (btn) btn.innerHTML = '生成文件…'; }, 1500);
             }
             try {
+                // 417 轮：把大纲原文一起发给后端，后端据此校验「PPT 页数 == 大纲页数」。
+                // 之前后端只拿到重排后的 deck，无从判断页数对不对，等于校验形同虚设。
                 var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
+                                          ppt_outline: rd.ppt_outline || '',
                                           theme: deck.theme, variant: deck.variant, chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('路演 PPT', r); return; }
                 const res = r.res;
@@ -4027,7 +4040,7 @@
             });
             _STREAM_MAP.forEach(function (p) {
                 var el = document.getElementById(p[1]);
-                if (el) el.innerHTML = '<div class="stream-wait">AI 正在生成，内容将实时流出…</div>';
+                if (el) el.innerHTML = '<div class="stream-wait">内容正在生成，将实时流出…</div>';
             });
             var ol = document.getElementById('oneLiner');
             if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
@@ -4198,7 +4211,7 @@
                 })
                 .catch(function () {});
         }
-        /* ---- AI 模拟自评：面板内二级标签 ---- */
+        /* ---- 系统模拟自评：面板内二级标签 ---- */
         var WB_SUB_TABS = [['score', 'wbSubTabScore'], ['judge', 'wbSubTabJudge'], ['check', 'wbSubTabCheck']];
         function switchScoreTab(ev, name) {
             WB_SUB_TABS.forEach(function (t) {
@@ -4360,7 +4373,7 @@
             analysis:       '把赛题和你的方案对上对…',
             rich_assets:    '先把图表和 PPT 的素材备好…',
             writing:        '正在把创意变成能交的稿子…',
-            judging:        '先让 AI 自己当一次评委…',
+            judging:        '先让系统自己当一次评委…',
             expert_review:  '换几位专家轮流挑毛病…',
             diagnosis:      '找出最容易扣分的地方…',
             revision:       '按挑出来的毛病改一遍…',
@@ -4375,7 +4388,7 @@
         // 按已耗时轮换（跟着轮询走，不额外起定时器），4 句循环，不刷屏。
         var WB_WAIT_LINE = [
             '正在生成，可以先去做别的事',
-            '评委正在挑刺，AI 替你先挨一轮批',
+            '评委正在挑刺，系统替你先挨一轮批',
             '图表和 PPT 在排队，快了',
             '快了，再等半分钟就好'
         ];
@@ -4498,7 +4511,7 @@
             const btn = document.getElementById('startBtn');
             const isOptimize = proposal_draft.length > 0;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> AI正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
+            btn.innerHTML = '<span class="spinner"></span> 系统正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
             document.getElementById('cancelWrap').style.display = 'block';
             try { wbHideRetry(); } catch (e) {}
@@ -4704,7 +4717,7 @@
                                     // 里程碑 1/2：正文写完、评委接手。其余阶段不弹，避免刷屏
                                     if (res2.stage === 'judging' || res2.stage === 'expert_review' ||
                                         res2.stage === 'diagnosis' || res2.stage === 'revision') {
-                                        wbMileOnce('body', '正文完成，AI 评委开始挑刺…');
+                                        wbMileOnce('body', '正文完成，模拟评委开始挑刺…');
                                     }
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
                                     // 剩余时间单独挂徽章，混在长句里没人看得见
@@ -4901,7 +4914,7 @@
                                 const UPSELL = [
                                     ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
                                     ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
-                                    ['defenseQuestions', '升级深度版：<b>AI 路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
+                                    ['defenseQuestions', '升级深度版：<b>智能路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
                                 ];
                                 UPSELL.forEach(p => {
@@ -5373,7 +5386,7 @@
             if (!m) {
                 h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">还能干什么</div>';
                 h += '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.9; margin-bottom: 18px;">' +
-                     '· <b>范文库</b>：加 AI 示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
+                     '· <b>范文库</b>：加示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
                      '· <b>导出中心</b>：Word / PDF / PPT / 一键打包，申报书按标准格式排版<br>' +
                      '· <b>原格式导出</b>：上传学校模板 .docx，优化后保留你原来的版式<br>' +
                      '· <b>历史记录</b>：之前生成的随时打开回看，可继续导出' +
@@ -5384,9 +5397,9 @@
             h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">上传入口，别传错</div>';
             h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，AI 自动识别并填到对应位置</div>' +
+                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，系统自动识别并填到对应位置</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，AI 在原文上优化</div>' +
+                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，在原文上优化</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
                  '· <b>导入模板</b>（草稿区）：学校/官方模板，自动识别章节按它写</div>' +
                  '<div style="padding: 6px 0;">' +
@@ -5407,7 +5420,7 @@
 
             h += '<div style="padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--text-mute); font-size: 12.5px; line-height: 1.7; margin-bottom: 16px;">' +
                  '创意与草稿仅用于本次生成，不做模型训练、不外传；生成内容归你所有。' +
-                 'AI 生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
+                 '生成的内容请自行核对数据、按真实情况修改后再提交。</div>';
 
             h += '<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">' +
                  '<button onclick="closeIntro(true)" style="' + btn + ' background: var(--c-a); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; flex: 1 1 140px;">开始使用</button>' +
@@ -5790,7 +5803,7 @@
                         var scoreTxt = '';
                         if (sc !== null && !isNaN(sc)) {
                             scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
-                                'AI 质量 ' + sc + ' 分</span>';
+                                '质检 ' + sc + ' 分</span>';
                         }
                         // 摘要优先，没有则回退正文前 60 字
                         var brief = (it.summary && String(it.summary).trim())
@@ -7485,11 +7498,19 @@
             return kill.length ? box.innerHTML : html;
         }
         // 全站 Markdown 渲染统一入口（原来散落 16 处 marked.parse，现已全部收编到这里）
+        // 417 轮：所有生成文档（说明书/各分析报告/PPT 大纲/答辩问题）底部统一一行声明。
+        // 措辞与后端导出件完全同一套（app.py 的 AI_NOTICE_LINE），网页与导出件不许两套口径。
+        // 禁用「AI」字样，也不写「本内容由AI生成」这类生硬句子。
+        var WB_ASSIST_NOTE = '本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交';
         function wbRenderMD(s) {
             var html;
             try { html = marked.parse(s == null ? '' : String(s)); }
             catch (e) { html = String(s == null ? '' : s).replace(/\n/g, '<br>'); }
-            return wbDedupeHtml(html);
+            html = wbDedupeHtml(html);
+            if (html && String(html).trim()) {
+                html += '<p class="wb-assist-note">' + WB_ASSIST_NOTE + '</p>';
+            }
+            return html;
         }
         window.wbRenderMD = wbRenderMD;
 

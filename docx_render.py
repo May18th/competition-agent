@@ -890,13 +890,16 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
     :return:            python-docx Document
     """
     prof = PROFILES.get(doc_type, PROFILES['default'])
+    # 封面不能是空页：项目名取不到时退回文档类型名，至少让评委看到这是什么材料
+    title = (title or '').strip() or (header_title or '').strip() or '项目申报材料'
+    # 417 轮：封面与目录不再是「按文档类型碰运气」。用户手机实测导出的说明书
+    # 直接从「一、项目背景与痛点」开始——没有封面页也没有目录页，评委翻到的就是裸正文。
+    # 现在改成：只要调用方没显式关掉（目前没有这种调用方），一律出封面；
+    # 目录只要有 ≥2 个章节标题就出。杜绝「偶尔有偶尔没有」。
     if cover is None:
-        cover = prof['cover']
+        cover = True
     if toc is None:
-        toc = prof['toc']
-    # 短文档（简洁版约 1000-1500 字）不要目录：目录页只有 5 个条目，整页大半空白
-    if toc and len((text or '').replace('\n', '').replace(' ', '')) < 2500:
-        toc = False
+        toc = True
 
     blocks = _blocks(text or '')
     # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
@@ -905,6 +908,11 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         if blk[0] == 'h' and blk[1] <= 3:
             _bm_id += 1
             headings.append((blk[1], blk[2], '_toc_%d' % _bm_id))
+    # 目录页只有 1 条还不如不给（整页一行，观感像出错）；正文极短同理。
+    if toc and len(headings) < 2:
+        toc = False
+    if toc and len((text or '').replace('\n', '').replace(' ', '')) < 600:
+        toc = False
 
     def _assemble(toc_pages_arg):
         doc = Document()

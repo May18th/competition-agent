@@ -1313,10 +1313,11 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
     )
 
 
-# 导出件合规标注：赛事（如 iCAN）要求申报材料注明 AI 参与情况，漏标可能被认定违规。
-# 措辞必须中性——「AI 生成仅供参考」这类自降身价的说法会让评委直接给作品打折扣，
-# 所以这里只陈述事实（AI 辅助制作）与责任边界（数据自核、署名自负）。
-AI_NOTICE_LINE = "AI 辅助制作 · 文中数据、测算值与结论请在提交前自行核实，署名与提交责任由作者本人承担。"
+# 导出件合规标注：赛事（如 iCAN）要求申报材料注明智能辅助参与情况，漏标可能被认定违规。
+# 417 轮改版：全站禁用「AI」字样（正当官方术语除外），且措辞不能像「本内容由AI生成」
+# 这么生硬——那等于自降身价，评委一眼就给作品打折扣。
+# 现在这版只陈述事实（智能助手辅助起草）+ 责任边界（以团队真实情况核对后提交）。
+AI_NOTICE_LINE = "本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。"
 
 
 # 导出专用清洗：网页上保留的「提醒类」措辞，出现在交给评委的正式件里就是自曝短板。
@@ -1342,7 +1343,7 @@ def _append_ai_notice(text):
     text = (text or "").rstrip()
     if not text:
         return ""
-    if AI_NOTICE_LINE[:12] in text:
+    if AI_NOTICE_LINE[:10] in text:
         return text + "\n"
     return text + "\n\n" + AI_NOTICE_LINE + "\n"
 
@@ -1824,12 +1825,14 @@ def export_word():
                             "error": "导出质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
         pass
-    # 第一百七十六轮：Word 目录规范检测——长文档必须含可刷新 TOC 域（短文档按 docx_render 规则本就不出目录）
+    # 417 轮：Word 封面/目录检测——凡是过了 600 字的导出件，必须带封面页 + 目录页。
+    # 旧门槛 2500 字 + 只认 TOC 域，把简洁版说明书整段放过、长文档又误杀，
+    # 结果就是用户手机打开的 Word 直接从「一、项目背景与痛点」开始。
     try:
         from export_guard import check_word_toc
         _toc = check_word_toc(filepath)
         _doc_chars = len(text.replace('\n', '').replace(' ', ''))
-        if (not _toc.get("ok")) and _doc_chars >= 2500:
+        if (not _toc.get("ok")) and _doc_chars >= 600:
             _safe_unlink(filepath)
             return jsonify({"success": False, "code": "export_toc_fail",
                             "error": "目录缺失（长文档需含可刷新目录）：" + "；".join(_toc.get("errors", []))}), 422
@@ -1873,19 +1876,42 @@ def export_pdf():
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
+    # 417 轮：补上「按赛事查页数/体积」并给出可执行的删减建议——
+    # 之前只丢一句「质量未达标」就把文件删了，用户不知道该删哪儿。
     try:
         from quality_gate import check_pdf
-        _ok, _issues = check_pdf(filepath)
-        if not _ok:
+        _pdf = check_pdf(filepath,
+                         competition_name=data.get('competition_name') or '',
+                         doc_title=title, detail=True)
+        _issues = list(_pdf.get('errors') or [])
+        if not _pdf.get('ok'):
             _safe_unlink(filepath)
+            _tips = list(_pdf.get('suggestions') or [])
             return jsonify({"success": False, "code": "export_quality_fail",
-                            "error": "PDF 质量未达标：" + "；".join(_issues[:3])}), 422
+                            "error": "；".join(_issues[:3]),
+                            "suggestions": _tips,
+                            "pages": _pdf.get('pages'),
+                            "mb": _pdf.get('mb'),
+                            "limit": _pdf.get('limit')}), 422
     except Exception:
         pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return send_file(filepath, as_attachment=True,
-                     download_name=_export_filename(project, competition, title, '.pdf'))
+    # 417 轮：把实际页数/体积/该赛事上限回给前端。前端早就有读 X-PDF-* 的分支，
+    # 但后端一直没发这几个头，那段提示等于死代码，超限文件照样静默下载。
+    try:
+        from quality_gate import check_pdf as _cpdf2
+        _d2 = _cpdf2(filepath, competition_name=competition, doc_title=title, detail=True)
+        _resp = send_file(filepath, as_attachment=True,
+                          download_name=_export_filename(project, competition, title, '.pdf'))
+        _resp.headers['X-PDF-Pages'] = str(_d2.get('pages') or 0)
+        _resp.headers['X-PDF-MB'] = str(_d2.get('mb') or 0)
+        _resp.headers['X-PDF-Limit'] = str((_d2.get('limit') or {}).get('max_pages') or 0)
+        _resp.headers['Access-Control-Expose-Headers'] = 'X-PDF-Pages, X-PDF-MB, X-PDF-Limit'
+        return _resp
+    except Exception:
+        return send_file(filepath, as_attachment=True,
+                         download_name=_export_filename(project, competition, title, '.pdf'))
 
 
 @app.route('/api/export_defense')
@@ -4558,12 +4584,21 @@ def export_zip():
             order = _official_chapter_titles(comp)
             if order:
                 tt = _reorder_markdown_by_chapters(tt, order)
-        d = _build_docx(title, tt, doc_type=dt,
+        # 417 轮：打包件同样要带合规声明（以前只有单独下载有，打包里没有，等于两套标准）
+        tt = _append_ai_notice(_clean_export_text(tt))
+        # 封面放项目名，页眉放文档类型名——以前封面直接写「项目申报书全文」，
+        # 评委在打包目录里看到一堆同名封面根本分不清
+        cover_title = title
+        if is_prop:
+            cover_title = (_project_name_hint(data) or (data.get('idea') or '').strip()[:30]
+                           or title)
+        d = _build_docx(cover_title, tt, doc_type=dt,
                         subtitle=comp if is_prop else None,
                         school=data.get('school'),
                         team=data.get('team'),
                         advisor=data.get('advisor'),
-                        competition_name=comp if is_prop else None)
+                        competition_name=comp if is_prop else None,
+                        header_title=title)
         # 打包里的申报书同样要插图：不然单独下载有图、打包里没图，用户会以为系统不稳。
         # 图表文件是本轮生成时落在 generated/ 下的，前端通过 rich_charts 传回来。
         if is_prop and charts_in:
@@ -4580,6 +4615,21 @@ def export_zip():
             doc = build_doc(title, text)
             tmppath = os.path.join(tmpdir, filename)
             doc.save(tmppath)
+            # 417 轮：打包件也要过封面/目录门。申报书是正式提交件，缺封面/目录直接打回；
+            # 其它分析报告只记日志，不因为一份附件卡住整个包。
+            try:
+                from export_guard import check_word_toc as _ck
+                _r = _ck(tmppath)
+                _is_prop = ('申报书' in title)
+                _chars = len(str(text).replace('\n', '').replace(' ', ''))
+                if (not _r.get("ok")) and _chars >= 600:
+                    if _is_prop:
+                        _safe_unlink(zippath)
+                        return jsonify({"success": False, "code": "export_toc_fail",
+                                        "error": "申报书缺封面或目录：" + "；".join(_r.get("errors", [])[:3])}), 422
+                    print("[export_zip] %s 封面/目录检测未过（不影响打包）：%s" % (filename, _r.get("errors")))
+            except Exception as _e:
+                print("[export_zip] 封面/目录检测失败（不阻断）：%r" % (_e,))
             zf.write(tmppath, filename)
         # ---- 深度版附加：数据图表 docx + 路演 PPT pptx ----
         try:
@@ -5405,8 +5455,13 @@ def ppt_themes():
 def export_pptx():
     """导出自动生成的路演 PPT（.pptx）"""
     data = request.get_json(force=True, silent=True) or {}
+    # 417 轮：大纲原文先留一份。下面 _fetch_record_from_source 会用整条历史记录覆盖 data，
+    # 前端传的 ppt_outline 会被一起冲掉，页数校验就永远拿不到大纲了。
+    _outline_text = (data.get('ppt_outline') or data.get('outline') or '')
     # 与 export_zip 一致：绑定当前记录，避免「下载路演PPT」拿到别的历史记录的 deck。
     _rec = _fetch_record_from_source(data)
+    if _rec and not _outline_text:
+        _outline_text = (_rec.get('ppt_outline') or '')
     if _rec:
         _rec = dict(_rec)
         if data.get("theme"):
@@ -5428,6 +5483,8 @@ def export_pptx():
         deck['project'] = deck.get('project') or (data.get('idea', '') or '科创项目')[:30]
         deck.setdefault('one_liner', data.get('one_liner', ''))
         deck.setdefault('competition', data.get('competition', ''))
+        # 417 轮：PPT 也要带智能辅助声明（与 Word/PDF 同一套措辞，且不含「AI」字样）
+        deck['notice'] = AI_NOTICE_LINE
         deck.setdefault("theme", "tech")
         deck.setdefault("variant", "v1")
         deck.setdefault('theme', data.get('theme') or 'tech')
@@ -5455,6 +5512,26 @@ def export_pptx():
                                 "error": "PPT 质量未达标：" + "；".join(_issues[:3])}), 422
         except Exception:
             pass
+        # 417 轮：PPT 页数必须与大纲一致。默认路径（不勾选「按标准路演结构重排」）
+        # 是 1:1；勾上后会被重排成固定 8 页，与 15～20 页的大纲对不上，这里明确拦下并告知原因。
+        if _outline_text:
+            try:
+                from export_guard import check_ppt_matches_outline
+                _pm = check_ppt_matches_outline(out, _outline_text)
+                _m = re.search(r'PPT 页数 (\d+) != 大纲页数 (\d+)', '；'.join(_pm.get('errors', [])))
+                if _m:
+                    _np, _no = int(_m.group(1)), int(_m.group(2))
+                    if abs(_np - _no) >= 2:
+                        _safe_unlink(out)
+                        return jsonify({
+                            "success": False, "code": "ppt_outline_mismatch",
+                            "error": "PPT %d 页与大纲 %d 页不一致，已取消导出" % (_np, _no),
+                            "hint": "导出中心里取消勾选「按标准路演结构重排（固定 8 页）」即可按大纲逐页导出；"
+                                    "想保留 8 页结构的话，请先在结果页重写 PPT 大纲到同样页数再导出。",
+                            "ppt_pages": _np, "outline_pages": _no}), 422
+                    print("[export_pptx] 页数与大纲相差 %d 页（表格拆页等正常浮动），放行" % abs(_np - _no))
+            except Exception as _e:
+                print("[export_pptx] 大纲页数校验失败（不阻断）：%r" % (_e,))
         project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
         competition = deck.get('competition') or data.get('competition_name') or ''
         return send_file(out, as_attachment=True,

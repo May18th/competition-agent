@@ -127,6 +127,11 @@ def _gen_assets(result, competition, idea, kb_data=""):
 技术方案：{result.get('tech_solution','')[:2000]}
 实施计划：{result.get('implementation_plan','')[:1500]}
 """
+    # 417 轮：用户填的实测数据必须进图表。之前 prompt 里根本没有 user_data，
+    # 模型只能用正文的测算值/示例值，导致「我填了试点准确率 96%，图上还是编的 92%」。
+    _ud = (result.get('user_data') or '').strip()
+    if _ud:
+        material += f"\n【用户实测数据（最高优先级，直接上图）】\n{_ud[:1200]}\n"
     kb_block = f"\n【可引用的行业真实数据】\n{kb_data}\n" if kb_data else ""
     prompt = f"""你是国家级科创赛事的路演数据可视化专家。根据以下项目材料，设计 6-8 张最有说服力的图表（charts）和 2-4 张关键表格（tables），要达到「2026 国赛超精美图表 A」水准。
 
@@ -137,6 +142,11 @@ def _gen_assets(result, competition, idea, kb_data=""):
 1. 数据墨水比优先：不要 3D、不要厚重边框；网格线只留极淡虚线；关键数据点要突出。
 2. 深色科技蓝底（#0F1535），高亮主色 #818CF8，系列色 #22B8CF / #C084FC / #F59E0B / #34D399 / #FB7185 / #A3E635。
 3. 每张图都要「结论式标题 + 一句话洞察 + 数据来源」：标题直接给结论（如「目标市场规模三年翻三倍」），caption 是 20 字内的洞察，source 写来源+年份。
+0. 【数据来源优先级 —— 417 轮硬规则】①用户实测数据 > ②正文测算值 > ③上面「可引用的行业真实数据」> ④你自己推算。
+   凡「用户实测数据」里出现过的指标（如试点准确率、单件成本、响应时长、覆盖人数、营收等），
+   图上**必须原样用该实测值**并 source 写「实测」，不许替换成测算值或示例值；
+   实测数据里没有的指标才允许用测算/公开数据，且 source 必须写明「测算」或机构+年份。
+   同一张图里混用实测与测算时，caption 里点明「X 为实测，Y 为测算」，别让评委误判。
 4. 数字必须来自材料或「可引用的行业真实数据」，优先引用上面给的真实数据并标注 source；测算值标「行业测算」并写清口径。每个数据点的 source 只能是三种合法值：①团队输入 ②公开数据（机构+年份，且必须是上面「可引用的行业真实数据」里真实出现的）③测算假设（写明「测算：基于 XX 假设」）。编不出这三种来源的数字一律不准上图；图上没有真实来源的数字，评委一问就露馅。
 4-1. 预算构成、市场规模、实施时间线这三张图**必须**从「竞品分析/商业模式/技术方案/实施计划」里抽正文的具体测算值（如排队 12→7 分钟、柜口利用率 55→75%、单柜月收入 1785 元、市场规模 XXX 万），严禁用 40/25/20/15、120/280/560/980/1500、10/30/55/80/100 这类示例占位数值；正文里没有对应的数就写「测算：基于 XX 假设」推一个，不许照搬示例数字。
 5. 图表类型必须多样（至少 8 张），且硬性覆盖下面各类，缺一不可：
@@ -471,7 +481,10 @@ def build_rich_assets(result, competition="", idea="", theme=None):
         table_map = {t["id"]: t for t in tables}
         chart_ids = {c["id"] for c in charts}
         norm = []
-        for s in slides[:18]:
+        # 417 轮：原上限 18 页会静默砍掉大纲后半章节（大纲 16 页时刚好不触发，
+        # 但 20 页大纲会被砍到 18，评委对照大纲时发现缺页）。放宽到 30，
+        # 足够覆盖任何赛事大纲长度；真超了也只在 30 处截断，不会误伤常规 15～20 页大纲。
+        for s in slides[:30]:
             if not isinstance(s, dict):
                 continue
             s.setdefault("type", "bullets")
@@ -485,8 +498,15 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             if s["type"] == "chart" and not s.get("chart"):
                 s["type"] = "bullets"
             norm.append(s)
+        # 417 轮：只在「大纲第一页确实不是封面」时才补封面。
+        # 原判断只看 type，大纲首页写成「1. 项目封面」但没被标记成 cover 时会多插一页，
+        # 导致 PPT 比大纲多 1 页。这里补一道标题识别，避免页数虚增。
         if norm and norm[0].get("type") != "cover":
-            norm.insert(0, {"type": "cover"})
+            _t0 = str(norm[0].get("title") or "")
+            if re.search(r"封面|首页|标题页|扉页", _t0):
+                norm[0]["type"] = "cover"
+            else:
+                norm.insert(0, {"type": "cover"})
         deck["slides"] = _clean_deck_slides(norm)
         deck.setdefault("one_liner", result.get("one_liner", ""))
         deck.setdefault("project", _project_name(idea, result.get("one_liner", "")))

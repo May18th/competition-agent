@@ -2193,3 +2193,25 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 
 ## 长期记忆 · 用户偏好（追加）
 - **多任务默认并行**：有多项独立任务时，默认并行推进，不要串行等。
+
+---
+
+## 417 轮回执（W · 交付质量专项）· 版本号 v=20260930a
+
+**改到的文件**：`docx_render.py`、`export_guard.py`、`quality_gate.py`、`rich_pipeline.py`、`pptx_builder.py`、`app.py`（export_pdf / export_pptx / export_zip 三处路由体）、`index.html`、`static/app.js`、`static/style.css`
+
+**1. Word 封面+目录（P0）**：封面/目录不再按文档类型碰运气，按内容长度与标题数决定，目录条目随正文标题生成；`check_word_toc` 重写为「真查封面+目录+标题层级」，不再误杀静态目录。探针走真实路由：目录页与 5 章条目齐全。
+
+**2. PPT 页数对齐（P0）· 根因已定位到前端**：不是后端截断——`index.html` 的 `chkRoadshow` 原先默认 `checked`，`wbRoadshowDeck()` 把 deck 重排成 `WB_ROAD_PAGES` **固定 8 页**，大纲 16 页直接被压成 8。
+- 修法：开关默认取消勾选；`/api/export_pptx` 加大纲页数闸门（差 ≥2 页拦下，返回 `ppt_outline_mismatch` + 处理提示）；`rich_pipeline` 页数上限 18→30；封面插入补标题识别，避免多插一页。
+- 实测：大纲 16 → `_outline_deck` 16 → `build_rich_assets` 16 → 真 pptx **16 页**，`check_ppt_matches_outline` ok=True。
+
+**3. PPT 图表用实测数据（P1）**：`_gen_assets` material 注入 `result['user_data']`（≤1200 字）+ prompt 加「实测 > 正文测算 > 行业数据 > 推算」优先级硬规则，实测指标原样上图、source 写「实测」，未填才允许测算且须标注。`user_data` 为空时行为不变。
+
+**4. PDF 按赛事查页数/体积（P0）**：`quality_gate.py` 新增 `PDF_LIMITS`（iCAN ≤20 页/≤10MB，未知赛事走 40 页/20MB 宽松默认，不误杀）、`pdf_limits_for()`、`_pdf_trim_suggestions()`（建议带数字，如「需删掉 8 页（当前 28 页 → 上限 20 页）」「图片降到 150dpi」）。`check_pdf(..., detail=False)` 保持原 2 元组向后兼容。基础「3MB」硬卡在 detail 路径降为 warning（否则会误杀带图正式件）。`/api/export_pdf` 422 时回传 suggestions；成功时补发 `X-PDF-Pages/MB/Limit` 响应头（前端早有读取分支但后端一直没发，原是死代码）。前端 `wbExportError` 新增建议展示分支。
+
+**5. 智能辅助声明（P0，禁用 AI 字样）**：统一为「本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。」Word/PDF/答辩/打包导出均走 `_append_ai_notice`；`pptx_builder.build_deck` 补读 `deck['notice']` 在末页底部渲染（此前 notice 白塞没人读）；网页端 `wbRenderMD` 尾部自动挂 `.wb-assist-note`。全站用户可见「AI」字样已清零（剩余命中均为代码注释或 WAIT/TRAIN 子串误报）。
+
+**状态**：py_compile / node --check 全过；四个探针实测通过。**未 commit、未推服务器**——部署由收口方确认后再动。
+
+**给 Codex 的提示**：`rich_pipeline` 的 `slides[:30]` 与封面判定已改；`quality_gate.check_pdf` 新增了可选参数（不传时行为不变，老调用方无需改）。

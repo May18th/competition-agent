@@ -1943,3 +1943,20 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
     .wb-textbtn, #wbClearBtn { padding: 12px 14px; font-size: 12.5px; }
     label .wb-textbtn { margin-left: 12px; }
 }
+
+/* ===== 417 轮：生成文档底部的智能辅助声明 =====
+   与后端导出件同一套措辞，网页上也要能看到，避免「网页没说、导出件才说」两套口径。
+   配色走主题变量，日间/夜间都过 AA（次要文字用 --text-mute，不用更浅的自定义灰）。 */
+.wb-assist-note {
+    margin-top: 18px;
+    padding: 9px 12px;
+    background: var(--surface, rgba(255, 255, 255, .045));
+    border-left: 3px solid var(--c-a, #38bdf8);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-mute, #5f6b88);
+    font-size: 12.5px;
+    line-height: 1.7;
+}
+@media (max-width: 768px) {
+    .wb-assist-note { font-size: 12px; padding: 8px 10px; margin-top: 14px; }
+}
