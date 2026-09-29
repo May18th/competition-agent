@@ -3346,9 +3346,8 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - 本次（收口时）SSH 实测：服务器 HEAD=`ac383e7`，工作树 index.html=184030 / md5 `385185be…` / 42 个 `/static/` 引用 / `wbresult339` 3 处，**与提交版本完全一致，无未提交漂移**。
 
 ### 3. 残留风险（仍要认真对待）
-- **周期性 reset 脚本仍在**：服务器 reflog 显示，自 5be290f4 之后，又连续发生 **3 次** `reset: moving to origin/main`（目标 532da02 → 7a6feca → ac383e7×2）。说明存在自动/手动把服务器拉回 origin/main 的机制。
-  - 若它是 `git reset --hard origin/main`，**任何未提交的服务侧改动都会被静默抹掉**（339 这次侥幸因已进 main 而没事，下次未必）。
-  - 必须查清并停掉该脚本（crontab / systemd 的 ExecStart 钩子 / 部署流水线），或在 reset 前强制 `git stash` / 提交。
+- **reset 根因已定位：`deploy_guard.py`（第九十六轮「部署守卫」）**。其源码流程写死 `备份当前 py → git fetch + reset --hard origin/main → py_compile → reload`。即只要有人跑 `python deploy_guard.py`，就会把工作树硬重置到 origin/main，**未提交的 index.html / static/ 等前端改动会被整片抹掉**（它只备份列出的 .py 文件）。服务器 reflog 里 04:52 及之后的连续 `reset: moving to origin/main` 就是它被多次执行留下的。crontab / systemd 里**没有**自动 reset，是人工/半自动调用此脚本导致。
+  - 修复方向（待主理人收口执行，属服务器域）：①把 `deploy_guard.py` 的 `reset --hard origin/main` 改为「有未提交改动先 `git stash` 再 reset，部署完 `git stash pop`」或干脆去掉 reset、改为只 `git pull`；②所有前端改动必须先 commit + merge 进 origin/main，再跑守卫；③在 reset 前对 index.html / static/ 也做备份。
 - **22 提交保险仍在**：`rescue-20260930-22` 分支（GitHub）+ `_rescue22_20260930.bundle`（本地）保留着 reset 前的全部服务侧提交，万一 `ac383e7` 漏收了某段逻辑，可 `git diff` / `cherry-pick` 找回。
 - **kcwx.online 仍 403**：备案未过，线上外网不可达，验收只能做站内/本地验证（见本节末注与二十六节）。
 
