@@ -3363,6 +3363,7 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
   - 新脚本 md5 `0357f3946b172e5b77c33693bd977862`、服务器端 `py_compile` 通过；
   - 新逻辑：先 `git stash push -u` 保护未提交改动 → 再 reset → 部署完 `git stash pop` 还原；`index.html` / `static/` 也纳入备份与回滚。今后跑守卫不再丢前端。
   - ⚠️ 未实际执行守卫（=一次真部署），需主理人择机跑一次验证 stash 还原；若新版有问题，`cp` 回 `.bak` 即可。
+  - **该安全版现已提交进仓库（e00342a），危险旧版不再存在于任何权威位置**；未来 clone / `reset --hard origin/main` 均只会拿到安全版，事故不再可逆回旧版。
 - **死链重复模块已删除并推送（bbc241c）**：`media_factory.py` / `deck_agent.py` / `media_routes.py` + 失效注册脚本 `patch_register_media.py`，共删 1822 行。
   - 实测依据：app.py 对三模块的注册段（~953-956）已是注释、运行时零导入；主链路 `pptx_builder.py` 不引用；`test_backend.py` 不引用；仅三模块内部互引 + 独立 patch 脚本引用。删除安全，不打断测试。
   - 服务器侧这些文件会在下次部署（守卫 `reset --hard origin/main`）时一并清除，无需手动删。
