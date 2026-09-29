@@ -881,7 +881,9 @@ def _admin_guard():
     # 演示只读会话白名单：导出（读数据生成文件）与退出登录（登出不是写操作）豁免 403。
     # 第二百九十四轮：/api/chat 只答不写、不计入生成额度（预设优先，LLM 兜底在读会话被禁），
     # 一并豁免，让演示账号也能用智能体问答。
-    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat')
+    # 第三百零八轮：/api/analyze_segment 演示只读态由接口内部给「登录后可深度解读」友好提示，
+    # 故也豁免 _admin_guard 的通用 403，走接口自己的 readonly 分支。
+    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat', '/api/analyze_segment')
     if (_admin_session_role() == 'readonly'
             and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
             and p not in _EXPORT_READONLY_PATHS
@@ -5896,6 +5898,33 @@ def chat():
         resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=400)
         return jsonify({"success": True, "reply": (resp.content or '').strip(),
                         "source": "llm", "style": style})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/analyze_segment', methods=['POST'])
+def analyze_segment():
+    """第三百零八轮：段落「智能解读」——对正文某段做 2~4 句通俗解读（要点/术语/评分支撑）。
+    独立接口，不改生成/导出主链路；演示只读态不接 LLM；计入生成额度（llm.invoke 自动计数）。"""
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    if not text:
+        return jsonify({"success": False, "error": "缺少需要解读的正文段落"}), 400
+    if len(text) > 3000:
+        text = text[:3000]
+    # 演示只读会话：不接 LLM，给预设提示（不烧额度）
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False,
+                        "error": "演示账号不接入外部模型，登录后可深度解读",
+                        "error_code": "demo_readonly"}), 403
+    try:
+        from competition_agents import llm
+        from langchain_core.messages import HumanMessage
+        prompt = ("你是「%s」智能助手。请用 2~4 句通俗中文解读下面这段申报书正文："
+                  "提炼要点、解释专业术语、提示它对哪些评分维度的支撑。不编造、不评价优劣、不扩写原文。\n"
+                  "正文：\n%s" % (_CHAT_NAME, text))
+        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=300)
+        return jsonify({"success": True, "analysis": (resp.content or '').strip(), "source": "llm"})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 

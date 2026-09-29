@@ -3015,3 +3015,9 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 - `POST /api/bind_uid` `{code}`（绑到另一台设备 uid，重签 cookie）
 
 绑定后两台设备共享同一 uid，user_state / 历史 / 草稿 / 赛事 / 档位全同步。后端无需改，只差前端「展示同步码 + 输入他人码」的 UI。契约已写好，转 WorkBuddy：`docs_tmp/接口契约_304_同步码UI_Codex对WB.md`。
+
+---
+
+## 十二、Codex 308 回执（段落智能解读，2026-09-29）
+
+后端已实现 `POST /api/analyze_segment`（入参 `{text}`，LLM 2~4 句通俗解读，计入额度，演示只读态返「登录后可深度解读」403，失败优雅降级），并加入演示只读白名单走接口自己的 readonly 分支。前端契约转 WorkBuddy：`docs_tmp/接口契约_308_智能解读_Codex对WB.md`（按钮名「智能解读」，规避「AI」字样，见 308b）。
