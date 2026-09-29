@@ -5932,6 +5932,20 @@ def defense_review():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
+@app.route('/api/judge_preview', methods=['POST'])
+def judge_preview():
+    """第三百六十七轮：评委预审报告——10 项常见扣分点检查（纯规则、不调 LLM、不写库）。"""
+    data = request.get_json(silent=True) or {}
+    proposal = (data.get('proposal') or '').strip()
+    mode = (data.get('mode') or 'deep').strip()
+    title = (data.get('title') or '').strip()
+    try:
+        from quality_gate import preview_report
+        return jsonify({"success": True, "report": preview_report(proposal, mode, title)})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
 @app.route('/api/demo_script', methods=['POST'])
 def demo_script():
     """第三百六十轮：5 分钟演示视频方案——分镜脚本 + 讲稿 + 操作步骤 + 预计秒数。"""
@@ -6069,6 +6083,178 @@ def competition_match():
         matches = [{"competition": n, "type": t, "reason": "综合推荐（可先选此赛事，后续再按官方规则调整）"}
                    for n, t, s in _scored[:3]]
     return jsonify({"success": True, "matches": matches})
+
+
+@app.route('/api/history/search')
+def history_search():
+    """第三百八十九轮：历史搜索——按关键词/赛事/时间段过滤（仅本人归属）。"""
+    q = (request.args.get('q') or '').strip()
+    comp = (request.args.get('competition') or '').strip()
+    _days = {'3d': 2, '7d': 6, '30d': 29}.get((request.args.get('range') or '').strip())
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    sql = "SELECT id, idea, competition_name, mode, created_time, rating FROM history WHERE user_id=?"
+    params = [_current_uid()]
+    if q:
+        sql += " AND (idea LIKE ? OR result_data LIKE ?)"
+        params += ['%' + q + '%', '%' + q + '%']
+    if comp:
+        sql += " AND competition_name LIKE ?"
+        params.append('%' + comp + '%')
+    if _days is not None:
+        _since = (datetime.now() - timedelta(days=_days)).strftime('%Y-%m-%d')
+        sql += " AND created_time >= ?"
+        params.append(_since)
+    sql += " ORDER BY id DESC LIMIT 50"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    items = [{"id": r["id"], "idea": r["idea"] or "", "competition_name": r["competition_name"] or "",
+              "mode": r["mode"] or "", "created_time": r["created_time"] or "", "score": r["rating"] or 0} for r in rows]
+    return jsonify({"success": True, "items": items})
+
+
+@app.route('/api/history_score_series')
+def history_score_series():
+    """第三百八十二轮：评分历史曲线——同一项目多次生成的评分变化。"""
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    hid = (request.args.get('history_id') or '').strip()
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    idea = None
+    if hid.isdigit():
+        row = conn.execute("SELECT idea FROM history WHERE id=? AND user_id=?",
+                           (int(hid), _current_uid())).fetchone()
+        idea = row["idea"] if row else None
+    if idea:
+        rows = conn.execute(
+            "SELECT id, created_time, json_extract(result_data,'$.score') AS score FROM history "
+            "WHERE user_id=? AND idea=? ORDER BY id ASC", (_current_uid(), idea)).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, created_time, json_extract(result_data,'$.score') AS score FROM history "
+            "WHERE user_id=? ORDER BY id DESC LIMIT 1", (_current_uid(),)).fetchall()
+    conn.close()
+    points = []
+    for r in rows:
+        try:
+            s = float(r["score"]) if r["score"] is not None else None
+        except (TypeError, ValueError):
+            s = None
+        if s is not None:
+            points.append({"id": r["id"], "score": s, "created_time": r["created_time"] or ""})
+    return jsonify({"success": True, "points": points})
+
+
+@app.route('/api/health_score', methods=['POST'])
+def health_score():
+    """第三百七十四轮：作品健康度四合一总览（评分/查重/一致性/预审）。"""
+    data = request.get_json(silent=True) or {}
+    proposal = (data.get('proposal') or '').strip()
+    if not proposal:
+        return jsonify({"success": False, "error": "缺少正文"}), 400
+    try:
+        _s = float(data.get('score')) if data.get('score') is not None else 0
+    except (TypeError, ValueError):
+        _s = 0
+    score_item = {"status": "pass" if _s >= 80 else ("warn" if _s >= 60 else "fail"),
+                  "value": _s, "label": "评分"}
+    _sim = data.get('similarity') or data.get('similarity_report')
+    if isinstance(_sim, dict):
+        _pct = _sim.get('percent')
+    elif isinstance(_sim, (int, float)):
+        _pct = _sim
+    else:
+        _pct = (_similarity_check(proposal) or {}).get('percent') or 0
+    sim_item = {"status": "pass" if (_pct or 0) <= 10 else ("warn" if (_pct or 0) <= 20 else "fail"),
+                "value": _pct, "label": "查重"}
+    _cons = 1 if ('中国国际互联网+' in proposal and '中国国际大学生创新大赛' in proposal) else 0
+    cons_item = {"status": "pass" if _cons == 0 else "warn", "value": _cons, "label": "一致性"}
+    pre_item = {"status": "warn", "value": None, "label": "预审（待接入）"}
+    return jsonify({"success": True,
+                    "health": {"score": score_item, "similarity": sim_item,
+                               "consistency": cons_item, "precheck": pre_item}})
+
+
+@app.route('/api/admin/alert_status')
+def alert_status():
+    """第三百七十七轮：监控告警——额度/失败率/工单滞留三类阈值。"""
+    try:
+        from competition_agents import get_quota_status
+        _q = get_quota_status()
+        _ratio = _q.get('calls', 0) / max(_q.get('limit', 1), 1)
+    except Exception:
+        _ratio = 0
+    conn = get_db()
+    succ = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    fail = conn.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
+    stale = conn.execute("SELECT COUNT(*) FROM issues WHERE status='open' AND created_time < datetime('now','-2 day')").fetchone()[0]
+    conn.close()
+    _fr = fail / (succ + fail) if (succ + fail) else 0
+    return jsonify({"success": True, "alerts": {
+        "quota_low": {"triggered": _ratio >= 0.9, "detail": "今日额度剩余 %.0f%%" % max(0, (1 - _ratio) * 100)},
+        "fail_rate_high": {"triggered": _fr > 0.2, "detail": "失败率 %.1f%%" % (_fr * 100)},
+        "issue_stale": {"triggered": stale > 0, "detail": "%d 条工单滞留超 48 小时" % stale}}})
+
+
+@app.route('/api/admin/diagnose')
+def diagnose():
+    """第三百九十二轮：服务诊断——核心接口 ping 状态与耗时。"""
+    import time as _t
+    items = []
+    with app.test_client() as c:
+        for name, path in (("health", "/api/health"), ("user_state", "/api/user_state"),
+                            ("history", "/api/history"), ("feedback", "/api/feedback"),
+                            ("quota", "/api/quota")):
+            _t0 = _t.time()
+            try:
+                r = c.get(path)
+                items.append({"name": name, "status": "ok" if r.status_code < 400 else "error",
+                              "code": r.status_code, "latency_ms": int((_t.time() - _t0) * 1000)})
+            except Exception:
+                items.append({"name": name, "status": "error", "code": None,
+                              "latency_ms": int((_t.time() - _t0) * 1000)})
+    mem = {"total": -1, "used": -1, "percent": -1}
+    try:
+        import psutil
+        _m = psutil.virtual_memory()
+        mem = {"total": _m.total, "used": _m.used, "percent": _m.percent}
+    except Exception:
+        pass
+    return jsonify({"success": True, "items": items, "memory": mem})
+
+
+@app.route('/api/admin/export_csv')
+def export_csv():
+    """第三百七十九轮：数据导出 CSV——生成记录/反馈/工单三张表。"""
+    import csv, io
+    from flask import Response
+    table = (request.args.get('table') or 'history').strip()
+    _days = {'3d': 2, '7d': 6, '30d': 29}.get((request.args.get('range') or '').strip())
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    _where, _params = "", []
+    if _days is not None:
+        _since = (datetime.now() - timedelta(days=_days)).strftime('%Y-%m-%d')
+        _where, _params = " WHERE created_time >= ?", [_since]
+    if table == 'feedback':
+        rows = conn.execute("SELECT id, history_id, content, category, created_time FROM feedback" + _where, _params).fetchall()
+        header = ["id", "history_id", "content", "category", "created_time"]
+    elif table == 'issues':
+        rows = conn.execute("SELECT id, kind, source, content, status, created_time FROM issues" + _where, _params).fetchall()
+        header = ["id", "kind", "source", "content", "status", "created_time"]
+    else:
+        rows = conn.execute("SELECT id, competition_name, idea, mode, duration, status, created_time FROM history" + _where, _params).fetchall()
+        header = ["id", "competition_name", "idea", "mode", "duration", "status", "created_time"]
+    conn.close()
+    _buf = io.StringIO()
+    _w = csv.writer(_buf)
+    _w.writerow(header)
+    for r in rows:
+        _w.writerow([r[k] for k in header])
+    return Response(_buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=%s.csv" % table})
 
 
 @app.route('/api/user_state', methods=['GET', 'POST'])

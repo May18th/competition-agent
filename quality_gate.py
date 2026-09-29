@@ -367,3 +367,121 @@ def score_export(result, mode="deep"):
 
     score = max(0, sum(dims.values()))
     return score, dims, reasons
+
+
+# ============ 367 评委预审报告（10 项扣分点，纯规则启发式） ============
+def preview_report(proposal="", mode="deep", title=""):
+    """评委视角预审：10 项常见扣分点，每项 pass/doubt/missing + 一句判据。
+
+    纯规则启发式、不调 LLM、不查库；供 /api/judge_preview 直接复用。
+    返回 dict：{total, pass, items:[{key,label,status,note}], summary}
+    """
+    txt = proposal or ""
+    body = re.sub(r'[#*`>\[\]()（）\s]', '', txt)
+    items = []
+
+    def _verdict(ok, missing):
+        if ok:
+            return "pass"
+        return "missing" if missing else "doubt"
+
+    # 1 项目名一眼看懂
+    name = (title or "").strip()
+    name_ok = 2 <= len(name) <= 20 and not re.search(r'[A-Za-z]{6,}', name)
+    items.append({
+        "key": "project_name", "label": "项目名一眼看懂",
+        "status": _verdict(name_ok, not name),
+        "note": "项目名 2~20 字且无长英文串" if name_ok else ("未提供项目名" if not name else "项目名偏长或含长英文，建议口语化"),
+    })
+
+    # 2 痛点量化（背景段有数字/百分比）
+    pain_ok = bool(re.search(r'(\d+(\.\d+)?[%％]|\d+\s*(人|元|万|亿|次|小时|分钟|天|件|家))', txt))
+    items.append({
+        "key": "pain_quantified", "label": "痛点量化",
+        "status": _verdict(pain_ok, False),
+        "note": "背景/痛点含量化数字" if pain_ok else "痛点缺少数字支撑，建议补充规模/占比/频次",
+    })
+
+    # 3 实测数据
+    measured = re.findall(r'(实测|测试|实验|仿真|试点|验证)[^。；\n]{0,30}?\d', txt)
+    measured_ok = len(measured) > 0
+    items.append({
+        "key": "measured_data", "label": "实测数据",
+        "status": _verdict(measured_ok, False),
+        "note": f"命中 {len(measured)} 处实测/验证数据" if measured_ok else "未见实测/验证数据，建议补充真实测试或试点结果",
+    })
+
+    # 4 竞品对比
+    comp_ok = bool(re.search(r'(竞品|对比|现有方案|传统|市面|同类|优于|相比|行业)', txt))
+    items.append({
+        "key": "competitor", "label": "竞品对比",
+        "status": _verdict(comp_ok, False),
+        "note": "含竞品/现有方案对比" if comp_ok else "缺少竞品对比，建议列出同类方案并说明差异",
+    })
+
+    # 5 版权与AI披露
+    disc_ok = bool(re.search(r'(版权|授权|许可|开源|AI|人工智能|算法|大模型|生成式|数据来源)', txt))
+    items.append({
+        "key": "disclosure", "label": "版权与AI披露",
+        "status": _verdict(disc_ok, False),
+        "note": "含版权/技术来源披露" if disc_ok else "建议说明数据来源、版权授权与是否使用AI生成",
+    })
+
+    # 6 团队真实
+    team_ok = bool(re.search(r'(团队|成员|分工|负责人|指导老师|队长)', txt))
+    fict = any(k in txt for k in ('李然', '张明', '小李', '王雨桐', '王明', '刘洋'))
+    items.append({
+        "key": "team", "label": "团队真实",
+        "status": "doubt" if fict else _verdict(team_ok, not team_ok),
+        "note": "疑似虚构人名，需替换" if fict else ("含团队/分工说明" if team_ok else "缺少团队信息，建议补充真实成员与分工"),
+    })
+
+    # 7 财务可信
+    fin_ok = bool(re.search(r'(成本|营收|收入|利润|预算|融资|单价|售价|ROI|毛利)[^\n]{0,30}?\d', txt))
+    items.append({
+        "key": "finance", "label": "财务可信",
+        "status": _verdict(fin_ok, False),
+        "note": "财务/成本有数字支撑" if fin_ok else "财务数据缺失或无数值，建议补充成本/营收估算",
+    })
+
+    # 8 字数达标
+    n = len(body)
+    minc, maxc = (6000, 20000) if mode == "deep" else (800, 3000)
+    wc_ok = minc <= n <= maxc
+    items.append({
+        "key": "word_count", "label": "字数达标",
+        "status": _verdict(wc_ok, False),
+        "note": f"{n} 字（{mode} 档 {minc}~{maxc}）" if wc_ok else f"{n} 字，偏离 {mode} 档 {minc}~{maxc} 区间",
+    })
+
+    # 9 格式规范
+    h2 = len(re.findall(r'^#{1,3}\s+\S', txt, re.M))
+    placeholder = re.search(r'(待填写|待补充|TBD|TODO)', txt)
+    fmt_ok = h2 >= 3 and not placeholder
+    items.append({
+        "key": "format", "label": "格式规范",
+        "status": _verdict(fmt_ok, False),
+        "note": f"{h2} 个标题，无占位符" if fmt_ok else ("存在占位符（待填写/TODO）" if placeholder else f"章节标题不足 3 个（{h2}）"),
+    })
+
+    # 10 查重过关（基础自检：10 字以上中文串重复率）
+    dup_ratio = 0.0
+    runs = re.findall(r'[\u4e00-\u9fa5]{10,}', txt)
+    if runs:
+        from collections import Counter
+        c = Counter(runs)
+        dup_ratio = sum(v - 1 for v in c.values() if v > 1) / max(len(runs), 1)
+    plag_ok = dup_ratio < 0.08
+    items.append({
+        "key": "plagiarism", "label": "查重过关",
+        "status": _verdict(plag_ok, False),
+        "note": f"自检重复率 {dup_ratio:.0%}" if plag_ok else f"自检重复率 {dup_ratio:.0%} 偏高，建议改写重复段",
+    })
+
+    passed = sum(1 for it in items if it["status"] == "pass")
+    return {
+        "total": 10,
+        "pass": passed,
+        "items": items,
+        "summary": f"10 项中 {passed} 项通过，{10 - passed} 项需关注",
+    }
