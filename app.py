@@ -3689,13 +3689,13 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times
+        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
                    "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
             if isinstance(payload.get(_k), str) and payload[_k]:
-                payload[_k] = _strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))
+                payload[_k] = _fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k])))))
     except Exception:
         pass
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
