@@ -884,6 +884,9 @@
                         // 171 轮：把用户在「高级参数」里选的图表配色带过去，
                         // 后端接上后导出的图表 PNG 与前台同色（未接上也不影响，后端忽略未知字段）
                         chart_theme: wbChartThemeKey(),
+                        // 第二百三十五轮：后端打分门按档位评分，前端必须如实告知当前档位，
+                        // 否则后端默认「深度版」标准，简洁版一律被拦（导出 422）。
+                        mode: (document.querySelector('input[name="mode"]:checked') || {}).value || 'fast',
                         school: m.school, team: m.team, advisor: m.advisor};
                 var r = await wbExportFetch('/api/export_word', payload);
                 if (!r.ok) { await wbExportError('Word', r); return; }

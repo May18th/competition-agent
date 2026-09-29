@@ -35,13 +35,19 @@ def check_word_toc(docx_path):
     has_toc = ('w:fldSimple' in xml and 'TOC' in xml) or re.search(r'<w:instrText[^>]*>\s*TOC\b', xml) is not None
     if not has_toc:
         errors.append("缺少可刷新目录（TOC 域）")
-    # 标题层级：Heading1 至少 1 个；Heading2 至少 1 个（长文档）
-    h1 = len(re.findall(r'w:val="Heading1"', xml))
-    h2 = len(re.findall(r'w:val="Heading2"', xml))
-    if h1 == 0:
-        errors.append("无 Heading1 章节标题")
-    if h2 == 0:
-        warnings.append("无 Heading2 小节标题（长文档应有）")
+    # 标题层级：按「实际存在的最高层级」判定，不再硬要求 Heading1。
+    # 第二百三十五轮：渲染器把正文的「## 章节」挂成 Heading2，全文没有 Heading1 是
+    # 正常的（文档主名在封面、正文一级章节即 ##），旧规则一律误判「无 Heading1」。
+    # 只要任一 Heading 层级存在，TOC 域就抓得到内容，不该判死。
+    counts = {lv: len(re.findall(r'w:val="Heading%d"' % lv, xml)) for lv in (1, 2, 3, 4)}
+    if not any(counts.values()):
+        errors.append("无 Heading 章节标题（正文未挂标题样式，目录域抓不到内容）")
+    else:
+        top = min(lv for lv, n in counts.items() if n)
+        if top > 1:
+            warnings.append("最高层级标题为 Heading%d（正文一级章节即此层），目录按其生成" % top)
+        if counts.get(2) == 0 and sum(counts.values()) > 3:
+            warnings.append("无 Heading2 小节标题（长文档通常应有）")
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 
 

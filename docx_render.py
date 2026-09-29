@@ -559,11 +559,48 @@ def _paginate_headings(doc, headings):
         return None
 
 
-def _add_toc(doc, headings, toc_pages=None):
-    """目录页：逐条列出真实标题，页码写死真实数字（不再依赖 PAGEREF 域刷新）。
+def _toc_field_begin(doc):
+    """开一个 TOC 域（begin + instrText + separate），之后写入的段落即「域结果缓存」。
 
-    WPS / 手机预览不会像 Word 那样自动更新域，PAGEREF 会一直显示占位「1」，
-    所以这里由 build_docx 先渲染算出真实页码后，直接写静态数字。
+    这样做一次满足两端：Word 打开可按 F9 刷新成自动目录；WPS / 手机不刷新域时
+    直接显示下面的静态缓存（含真实页码），不会出现空目录或占位「1」。
+    """
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    r = p.add_run()
+    fc = OxmlElement('w:fldChar')
+    fc.set(qn('w:fldCharType'), 'begin')
+    r._r.append(fc)
+    r = p.add_run()
+    it = OxmlElement('w:instrText')
+    it.set(qn('xml:space'), 'preserve')
+    it.text = r'TOC \o "1-2" \h \z \u'
+    r._r.append(it)
+    r = p.add_run()
+    fs = OxmlElement('w:fldChar')
+    fs.set(qn('w:fldCharType'), 'separate')
+    r._r.append(fs)
+    return p
+
+
+def _toc_field_end(doc):
+    """闭合上面开的 TOC 域。"""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    r = p.add_run()
+    fe = OxmlElement('w:fldChar')
+    fe.set(qn('w:fldCharType'), 'end')
+    r._r.append(fe)
+    return p
+
+
+def _add_toc(doc, headings, toc_pages=None):
+    """目录页：TOC 域 + 静态页码结果缓存。
+
+    WPS / 手机预览不会像 Word 那样自动更新域，所以静态目录（真实页码）作为
+    TOC 域的结果缓存写进去 —— 不刷新时照常可读，Word 里按 F9 即刷新为自动目录。
     toc_pages 拿不到某条页码时，该条只写标题、不写页码（绝不出现「1」）。
     """
     toc_pages = toc_pages or {}
@@ -571,6 +608,9 @@ def _add_toc(doc, headings, toc_pages=None):
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_after = Pt(16)
     _font(p.add_run('目  录'), SZ_ER, CN_HEI, bold=True)
+
+    # 第二百三十五轮：导出门禁要「可刷新目录（TOC 域）」，此前只有静态段落 → 一律判缺。
+    _toc_field_begin(doc)
 
     for level, text, mark in headings:
         p = doc.add_paragraph()
@@ -598,6 +638,8 @@ def _add_toc(doc, headings, toc_pages=None):
             tr = p.add_run()
             tr._r.append(OxmlElement('w:tab'))
             _font(p.add_run(str(page)), SZ_XIAOSI, CN_SONG)
+
+    _toc_field_end(doc)
 
 
 # ============ 各类块渲染 ============
