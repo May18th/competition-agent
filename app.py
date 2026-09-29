@@ -1945,7 +1945,7 @@ def parse_material():
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
-    # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，<80 打回
+    # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，按档位打回（深度 85 / 简洁 80）
     # 第二百三十五轮：必须按档位评分——此前签名默认 mode="deep"，简洁版被深度版标准
     # 拦死（导出 422）。前端现在会传 mode；拿不到时按 fast 放行，宁可宽松也不误杀。
     _gate_mode = (data.get('mode') or 'fast')
