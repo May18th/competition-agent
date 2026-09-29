@@ -860,7 +860,11 @@ def _admin_guard():
     # 演示只读会话（200 轮验收修复）：全局拦截所有写操作，返回 403。
     # 原实现只在「管理路由」分支内拦截，导致 demo 访问 /api/restyle 等用户面写接口时
     # 落到参数校验层返回 400「内容为空」，而非 403，既暴露接口行为又没体现只读语义。
-    if _admin_session_role() == 'readonly' and request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+    # 第二百六十七轮：导出接口（/api/export*）本质是「读数据生成文件」，不写库不删数据，
+    # demo 只读会话也应能导出（评委演示要看导出），此处豁免，不再误伤。
+    if (_admin_session_role() == 'readonly'
+            and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
+            and not p.startswith('/api/export')):
         resp = jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"})
         resp.status_code = 403
         return resp
@@ -1103,14 +1107,20 @@ import json
 from datetime import datetime
 
 def _row_to_item(row):
-    rid, comp, idea, mode, result_data, created_time, rating = row
+    """历史列表条目：只含摘要字段，不加载完整 result_data（第二百六十六轮，防列表卡死）。"""
+    rid, comp, idea, mode, created_time, rating, score = row
     try:
-        data = json.loads(result_data)
-    except Exception:
-        data = {}
+        if isinstance(score, str):
+            score = float(score) if score.strip() else ""
+        elif isinstance(score, (int, float)):
+            pass
+        else:
+            score = ""
+    except (TypeError, ValueError):
+        score = ""
     return {
         "id": rid, "time": created_time, "competition_name": comp,
-        "idea": idea, "mode": mode, "score": data.get("score", ""), "data": data,
+        "idea": idea, "mode": mode, "score": score,
         "rating": rating or 0,
     }
 
@@ -1122,7 +1132,8 @@ def load_history(limit=200, offset=0, q=None, uid=None):
     """
     conn = get_db()
     c = conn.cursor()
-    sql = "SELECT id, competition_name, idea, mode, result_data, created_time, rating FROM history"
+    sql = ("SELECT id, competition_name, idea, mode, created_time, rating, "
+           "json_extract(result_data, '$.score') AS score FROM history")
     params = []
     conds = []
     if q:
