@@ -3219,3 +3219,64 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 3. 404 备份可赛后补，不阻塞交付
 
 > 提醒：改 static 文件必须同步 bump index.html 全站 `?v=`；每完成一项回执「版本号 v=XXX + 双端截图」，别攒批。
+
+---
+
+## 二十五、⚠️ 339/402 真相更正（WorkBuddy 2026-09-30 03:30 实测，推翻二十四节判断）
+
+**结论：339、402 早已实现并部署上线，只是从未进 git。二十四节把它们记成「❌ 未做」是误判——误判的根源是「本地仓库缺文件」被当成了「功能没做」。**
+
+### 误判根因（务必记住这个坑）
+`index.html` 引用了 11 个 `/static/` 外挂文件，但**仓库从未跟踪过它们**。任何人在本地 `grep` 都搜不到 → 看起来像"功能没做"，实际是本地检出全是 404 死链，与线上服务器严重漂移。
+
+### 实测证据链（全为实测，非推断）
+1. **服务器已部署**：`/opt/comp-agent/static/` 有 `wbresult339.js` 41.7KB、`wbtheme344.js` 38.5KB 等全部文件（mtime 00:42 / 01:07，并行线产出）。
+2. **线上 HTTP 实测**：`curl http://127.0.0.1:8080/static/wbresult339.js` → **200**，字节数与磁盘一致；339/344 均正常。
+   （注意：服务端口是 **8080 gunicorn**，不是 5000；`kcwx.online` 目前返回 403「Non-compliance ICP Filing」，外网不可达。）
+3. **339 运行时实测**（Node 桩 DOM 实跑 `wbresult339.js`）：
+   `api.init()` → `inited=true`，四灯 = 评分/查重/一致性/预审，`outlineRendered=true`，根节点 `wb339-root.wb339` 成功挂进 `#resultArea`。
+   接线完整：`index.html:1757` 自启动脚本轮询 + MutationObserver 双重注入，`data` 取 `window._lastData`。
+4. **402 运行时实测**（Node 桩 DOM 实跑 `wbtheme344.js` 的 402-3 IIFE，行 632–691）：
+   控件 `#wbContrast344` 已创建、3 个选项、定位 `top:16px left:66px`（运行时贴 `#themeToggle` 自适应，不写死坐标）；
+   切「最高」→ `html` 拿到 `contrast-max` 且写 `localStorage`；切回「标准」→ 类移除；预置 `high` 重跑 → 刷新后恢复 `contrast-high`。
+   三档变量由 `static/style.css:53-65` 定义，`html.contrast-high/max` 夜间与日间双主题都已覆盖。
+
+### 已做的处置
+- 以**服务器版本为准**拉回本地（不覆盖他人成果；我自己写的 5KB 简化版已备份到临时目录并弃用）。
+- 补齐 26 个缺失静态资源 → commit `b08f633` → 已 push `origin/main`（4fe64d3..b08f633）。
+- 死链清零：index.html 的 **37 个 `/static/` 引用全部命中真实文件**（此前 11 个 404）。
+- 10 个 JS 外挂 `node --check` 语法全过。
+
+### 给 WB / Codex 的硬提醒
+1. **判断"做没做"必须看服务器或线上，不能只看本地 grep**——本地缺文件 ≠ 功能没做。
+2. **新增 static 文件必须 `git add`**，否则下一个人又会看到一堆 404 死链。
+3. 339/402 已交付，**不要重复造**；剩余真正未做的是二十四节里的 P1：398/399/400/401/405/404。
+
+---
+
+## 二十五、339 / 402 真实现状核查 + 402 开关补齐（2026-09-30 03:30，WorkBuddy 收口）
+
+结论先说：**两项 P0 都已落地；402 此前真正缺的是「开关」这一环。**
+
+### 1. 339 关键结论聚合区 —— 早已实现，此前只是从没进 git
+- 服务器 `/opt/comp-agent/static/wbresult339.js` 是完整实现（约 41KB），
+  契约 `window.wbResult339.init({ data })`，index.html 末尾的引导脚本会轮询调用。
+- 但该文件**从未 git add**，本地仓库长期缺失 → 本地跑起来是 404 死链，容易误判成「没做」。
+- 已随 b08f633（补齐 26 个缺失静态资源）入库并推送 origin/main。
+
+### 2. 402 全局对比度 —— CSS 齐全，但全库没有任何脚本切换 class（真缺口）
+- `static/style.css` 已定义 `html.contrast-high` / `html.contrast-max`，夜间与日间都覆盖，三档变量齐全。
+- 但对 `static/*.js` 全量 grep：**没有任何一处**切换这两个 class。
+  `wbtheme344.js` 里的 contrast 只是 WCAG 对比度计算函数（自检用），不是开关。
+  → 等于「有样式、没入口」，用户根本触发不了，属于半交付。
+- 已在 `static/wbtheme344.js` 与 `wbtheme344.css` 末尾追加独立 IIFE 开关（不动其原有主题逻辑）：
+  三档互斥切换 + localStorage 记忆 + 运行时贴 `#themeToggle` 自适应定位（不写死坐标，避免重叠）。
+  实测方式：Node + 桩 DOM 真跑，创建 / 切 high / 切 max / 回标准 / 非法值兜底 五项全对。
+
+### 3. 给所有线的硬警告：服务器有漂移，禁止直接 reset --hard
+- 服务器 HEAD 是 `5be290f4`（"落库前端全部改动防 reset 丢失"），**领先本地**；
+  此外还有 app.py / index.html / static/app.js / static/style.css / knowledge_base/*.json 等未提交改动。
+- 此刻在服务器执行 `git fetch && git reset --hard origin/main` **会抹掉这些在改的东西**。
+  谁要部署，先确认服务器侧改动已提交或已备份。
+- 另注：kcwx.online 目前返回 **403 Non-compliance ICP Filing**（备案问题），线上不可访问，
+  双端验收暂时拿不到线上证据，只能做本地 / 站内验证，别据此判断功能好坏。
