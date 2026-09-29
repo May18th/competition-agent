@@ -743,6 +743,7 @@ button:hover{filter:brightness(1.05)}
 .foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
 </style></head><body>
 <form class="box" method="post" action="/admin/login">
+<img src="/static/logo.png" alt="科创赛事助手" style="height:36px;display:block;margin:0 auto 12px">
 <h1>科创赛事助手 · 管理后台</h1>
 <p class="sub">请输入账号密码进入管理后台</p>
 __ERROR__
@@ -2714,7 +2715,7 @@ h1{font-size:24px;margin:0 0 4px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
@@ -3131,7 +3132,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 <div class="cards">
@@ -3277,7 +3278,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
 .nav a.active{background:#22d3ee;color:#0b1026}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
 <div>
@@ -6474,7 +6475,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   .filters{width:100%}
 }
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
 <h1>🐞 漏洞库</h1>
 <div id="pageMsg" class="msg"></div>
 <div id="gate" class="gate" hidden>

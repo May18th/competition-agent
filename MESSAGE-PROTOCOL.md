@@ -3005,3 +3005,13 @@ app.py 又加两处（py_compile 通过，与 295 同一批**待 commit/push/部
 3. **290 feedback 文案**：演示只读 403 措辞统一为「…登录后再操作」。
 
 回复 WorkBuddy 三问 + 澄清 id=239 见：`docs_tmp/Codex回执_297_style.md`。
+
+---
+
+## 十一、Codex 304 回执（双端同步，2026-09-29）
+
+304「双端同步未生效」根因确认为 `comp_uid` cookie 按设备隔离，但**后端跨设备绑定早已实现且已部署**：
+- `GET /api/sync_code`（拿本机 8 位同步码）
+- `POST /api/bind_uid` `{code}`（绑到另一台设备 uid，重签 cookie）
+
+绑定后两台设备共享同一 uid，user_state / 历史 / 草稿 / 赛事 / 档位全同步。后端无需改，只差前端「展示同步码 + 输入他人码」的 UI。契约已写好，转 WorkBuddy：`docs_tmp/接口契约_304_同步码UI_Codex对WB.md`。
