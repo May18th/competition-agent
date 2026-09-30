@@ -633,7 +633,7 @@ _ADMIN_LOGIN_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="u
 background:linear-gradient(160deg,#F0F4FF,#FFFFFF);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
 .box{background:#fff;border-radius:16px;padding:42px 36px;width:100%;max-width:400px;box-shadow:0 8px 26px rgba(30,41,59,.07);border:1px solid #E6EBF5}
 h1{font-size:20px;margin:10px 0 6px;color:#1a1a2e;text-align:center}
-.sub{font-size:13px;color:#6b7280;margin:0 0 24px;text-align:center}
+.sub{font-size:13px;color:#4b5563;margin:0 0 24px;text-align:center}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:9px 12px;font-size:13px;margin-bottom:14px}
 label{font-size:13px;color:#374151;display:block;margin:0 0 6px}
 input[type=text],input[type=password]{width:100%;padding:11px 13px;border:1px solid #D8E0EC;border-radius:9px;font-size:15px;color:#1f2937;outline:none;background:#fff}
@@ -641,10 +641,11 @@ input[type=text]:focus,input[type=password]:focus{border-color:#7B9BFA;box-shado
 .field{margin-bottom:14px}
 button{margin-top:8px;width:100%;background:linear-gradient(135deg,#5B7CFA,#8A6BFA);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
 button:hover{filter:brightness(1.05)}
-.tip{margin-top:14px;font-size:12px;color:#9ca3af;line-height:1.7}
-.foot{margin-top:18px;font-size:11px;color:#b0b6c0;text-align:center}
+.tip{margin-top:14px;font-size:12px;color:#57606e;line-height:1.7}
+.foot{margin-top:18px;font-size:11px;color:#4b5563;text-align:center}
 </style></head><body>
 <form class="box" method="post" action="/admin/login">
+<img src="/static/logo_full.png?v=20260930b" alt="logo" style="display:block;width:76px;height:auto;margin:0 auto 10px;">
 <h1>科创赛事助手 · 管理后台</h1>
 <p class="sub">请输入账号密码进入管理后台</p>
 __ERROR__
@@ -2848,33 +2849,33 @@ h1{font-size:22px;margin:0 0 18px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:22px}
 .card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .num{font-size:26px;font-weight:700;color:#2563eb}
-.label{font-size:12px;color:#6b7280;margin-top:4px}
+.label{font-size:12px;color:#4b5563;margin-top:4px}
 .banner{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:10px;padding:12px 14px;font-size:15px;font-weight:600;margin-bottom:16px}
 h2{font-size:16px;margin:18px 0 10px}
 ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
-li .t{font-size:12px;color:#9ca3af;margin-bottom:4px}
-li.empty{color:#9ca3af;text-align:center;padding:22px}
+li .t{font-size:12px;color:#57606e;margin-bottom:4px}
+li.empty{color:#57606e;text-align:center;padding:22px}
 .box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
 .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
 .barrow .bl{width:110px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
 .barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
-.barrow .bn{width:34px;font-size:13px;color:#6b7280;flex-shrink:0}
+.barrow .bn{width:34px;font-size:13px;color:#4b5563;flex-shrink:0}
 .trend{display:flex;align-items:flex-end;gap:12px;height:130px;padding-top:6px}
 .tcol{flex:1;display:flex;flex-direction:column;align-items:center}
-.tcol .tv{font-size:11px;color:#6b7280}
+.tcol .tv{font-size:11px;color:#4b5563}
 .tcol .tbar{width:100%%;height:80px;display:flex;align-items:flex-end}
 .tcol .tfill{width:100%%;background:#2563eb;border-radius:4px 4px 0 0;min-height:2px}
-.tcol .td{font-size:10px;color:#9ca3af;margin-top:4px}
+.tcol .td{font-size:10px;color:#57606e;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
-.empty{color:#9ca3af;text-align:center;padding:16px}
+.empty{color:#57606e;text-align:center;padding:16px}
 /* 111/112 轮：反馈卡片化。白卡+圆角+淡阴影+hover 高亮，分类色块拉齐视觉层级 */
 .fblist{list-style:none;padding:0;margin:0}
 .fbcard{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .15s,transform .15s}
 .fbcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
-.fbmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#6b7280;margin-bottom:6px}
-.fbid{color:#9ca3af;font-variant-numeric:tabular-nums}
+.fbmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#4b5563;margin-bottom:6px}
+.fbid{color:#57606e;font-variant-numeric:tabular-nums}
 .fbcat{border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .fbcat-good{background:#dcfce7;color:#15803d}
 .fbcat-idea{background:#dbeafe;color:#1d4ed8}
@@ -2906,7 +2907,7 @@ li.empty{color:#9ca3af;text-align:center;padding:22px}
 .fbpager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px}
 .fbpager .fbpg{background:#fff;color:#374151;text-decoration:none;padding:6px 12px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .fbpager .fbpg.dis{opacity:.45;pointer-events:none}
-.fbpager .fbnow{color:#6b7280}
+.fbpager .fbnow{color:#4b5563}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
@@ -5944,17 +5945,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 background:#f5f6f8;color:#1a1a2e;margin:0;padding:24px 16px 40px;line-height:1.6}
 .wrap{max-width:1180px;margin:0 auto}
 h1{font-size:21px;margin:0 0 14px}
-.msg{font-size:13px;color:#6b7280;margin-bottom:10px}
+.msg{font-size:13px;color:#4b5563;margin-bottom:10px}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:10px 12px;font-size:13.5px;margin:10px 0}
 .gate{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.06);max-width:600px}
 .gate h2{font-size:16px;margin:0 0 8px}
 .gate input{width:100%;padding:10px 12px;border:1px solid #dbe3ee;border-radius:8px;font-size:14px;color:#1f2937;box-sizing:border-box}
 .gate button{margin-top:10px;background:#2563eb;color:#fff;border:0;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer}
-.tip{font-size:12.5px;color:#6b7280;margin-top:8px;line-height:1.7}
+.tip{font-size:12.5px;color:#4b5563;margin-top:8px;line-height:1.7}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .card{background:#fff;border-radius:10px;padding:15px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .card .num{font-size:26px;font-weight:700;color:#2563eb}
-.card .label{font-size:12px;color:#6b7280;margin-top:3px}
+.card .label{font-size:12px;color:#4b5563;margin-top:3px}
 .card.c-high .num{color:#dc2626}
 .card.c-mid .num{color:#d97706}
 .card.c-low .num{color:#0891b2}
@@ -5970,11 +5971,11 @@ h1{font-size:21px;margin:0 0 14px}
 .barrow .bl{width:120px;flex-shrink:0;font-size:12.5px;color:#374151;text-align:right;word-break:break-word;line-height:1.35}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:13px;overflow:hidden}
 .barrow .bfill{display:block;height:100%;border-radius:6px;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa)}
-.barrow .bn{width:104px;flex-shrink:0;font-size:12px;color:#6b7280;text-align:left;word-break:break-word;line-height:1.35}
-.empty{color:#9ca3af;text-align:center;padding:14px;font-size:13px}
+.barrow .bn{width:104px;flex-shrink:0;font-size:12px;color:#4b5563;text-align:left;word-break:break-word;line-height:1.35}
+.empty{color:#57606e;text-align:center;padding:14px;font-size:13px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .filters select,.filters button{font-size:13px;padding:7px 10px;border:1px solid #dbe3ee;border-radius:8px;background:#fff;color:#374151;cursor:pointer}
-.filters label.f{font-size:12.5px;color:#6b7280}
+.filters label.f{font-size:12.5px;color:#4b5563}
 .filters button.primary{background:#2563eb;color:#fff;border-color:#2563eb}
 .tblwrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
