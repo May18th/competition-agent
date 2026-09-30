@@ -1,0 +1,156 @@
+"""阶段上报独立模块（app.py 与 competition_agents.py 共享，避免循环导入）。
+
+app.py 与 competition_agents.py 互相 import 会循环导入，所以把「任务状态」和「阶段上报」
+下沉到这个零依赖模块，两边都只依赖本模块：
+
+- app.py：创建任务条目、标记当前任务 id、读取 tasks 返回给前端；
+- competition_agents.py：每个 Agent 节点调用 report_stage(stage) 上报阶段。
+"""
+
+# ---- 阶段元数据表（中文文案 + 完成百分比）----
+# 代号与《协作_进度条stage约定.md》第四节**完全一致**，由这个文件统一维护。
+# 前端不要自己再写一份中文映射，直接用 /api/status 返回的 stage_label 和 pct。
+STAGE_META = {
+    "start":          ("多智能体协作启动",              2),
+    "parsing_rules":  ("规则解析智能体·解析评分规则",     8),
+    "similarity":     ("检索智能体·检索同质化项目",      16),
+    "idea_scoring":   ("创意评估智能体·评估定位",        25),
+    "analysis":       ("分析智能体·综合分析方案",        36),
+    "rich_assets":    ("图表智能体·生成图表与PPT素材",    46),   # 仅深度版
+    "writing":        ("写作智能体·撰写申报书正文",      58),
+    "judging":        ("评审智能体·评审引擎打分",        70),
+    "expert_review":  ("评审智能体·多视角评审",          74),   # 仅深度版
+    "diagnosis":      ("诊断智能体·诊断申报书短板",      78),
+    "revision":       ("改写智能体·按意见定向改写",      84),   # 仅低分迭代时出现
+    "defense":        ("答辩智能体·预测答辩问题",        90),
+    "ppt":            ("PPT智能体·生成PPT大纲",         95),
+    "speech":         ("路演智能体·撰写路演演讲稿",      98),
+    "done":           ("全部完成",                      100),
+    "error":          ("生成中断",                       -1),
+}
+
+
+def stage_meta(stage):
+    """取 (中文文案, 百分比)。未登记的代号原样返回，前端自行降级显示。"""
+    return STAGE_META.get(stage, (stage, 0))
+
+
+import time
+import threading
+
+# 所有异步任务的状态字典（key=task_id，value 结构见 app.py 的 generate_async）
+tasks = {}
+
+# 当前正在执行的任务 id（app.py 的 worker 线程内设置）。
+# 用线程本地存储：并发生成时（MAX_CONCURRENT_GEN 16）多个 worker 线程同时跑，
+# 之前用全局变量会把 A 任务的上报串到 B 任务上，导致阶段显示错乱。
+_tls = threading.local()
+
+# 已取消的任务 id 集合（单一真相源，progress.py 转发到这里）
+_cancelled = set()
+
+
+class TaskCancelled(Exception):
+    """生成被用户取消，用于中断 langgraph 节点循环。"""
+
+
+def set_current_task(task_id):
+    """标记当前正在执行的任务（app.py 的 worker 线程调用）。"""
+    _tls.task_id = task_id
+
+
+def clear_current_task():
+    """清除当前任务标记（worker 线程结束时调用）。"""
+    _tls.task_id = None
+
+
+def current_task_id():
+    """返回当前正在执行的任务 id（供 Agent 内部读取，用于流式缓冲区）。"""
+    return getattr(_tls, "task_id", None)
+
+
+def set_partial(partial):
+    """把当前任务的已产出字段写进 tasks['partial']，供 /api/status 流式下发。"""
+    tid = current_task_id()
+    if tid and tid in tasks:
+        tasks[tid]["partial"] = partial
+        tasks[tid]["updated_at"] = time.time()
+
+
+def set_partial_field(field, text):
+    """单字段增量写入 partial（合并式，不清掉其它字段）。
+
+    供 Agent 内部边生成边推送用：LLM 每吐出一批 token 就调一次，
+    前端轮询即可看到正文逐字增长，而不是等整个节点跑完才一次性出现。
+    """
+    tid = current_task_id()
+    if not tid or tid not in tasks or not text:
+        return
+    p = tasks[tid].get("partial")
+    if not isinstance(p, dict):
+        p = {}
+        tasks[tid]["partial"] = p
+    p[field] = text
+    tasks[tid]["updated_at"] = time.time()
+
+
+def set_stage_meta(key, value):
+    """写入当前任务的可展示元数据（已检索知识库数 / 命中评分标准数 / 当前写作章节名等）。
+
+    供 Agent 内部边生成边上报，前端 /api/status 的 meta 字段直接透传；无数据时返回空值不报错。
+    """
+    tid = current_task_id()
+    if not tid or tid not in tasks:
+        return
+    t = tasks[tid]
+    if not isinstance(t.get("meta"), dict):
+        t["meta"] = {}
+    t["meta"][key] = value
+    t["updated_at"] = time.time()
+
+
+# 演讲稿流式缓冲区（task_id -> 已生成的文本，供前端实时预览）
+_speech_stream = {}
+
+
+def set_speech_stream(task_id, text):
+    _speech_stream[task_id] = text
+
+
+def get_speech_stream(task_id):
+    return _speech_stream.get(task_id, "")
+
+
+def clear_speech_stream(task_id):
+    _speech_stream.pop(task_id, None)
+
+
+def cancel_task(task_id):
+    """标记取消：report_stage 会抛 TaskCancelled 中断生成。"""
+    _cancelled.add(task_id)
+    t = tasks.get(task_id)
+    if isinstance(t, dict):
+        t["status"] = "cancelled"
+        t["updated_at"] = time.time()
+
+
+def is_cancelled(task_id=None):
+    """检查任务是否已取消（不传则查当前任务）。"""
+    tid = task_id or current_task_id()
+    return bool(tid) and tid in _cancelled
+
+
+def clear_cancel(task_id):
+    """清除取消标记。"""
+    _cancelled.discard(task_id)
+
+
+def report_stage(stage):
+    """上报当前阶段（competition_agents.py 的 Agent 节点调用）。"""
+    tid = current_task_id()
+    if tid and tid in _cancelled:
+        raise TaskCancelled()
+    t = tasks.get(tid) if tid else None
+    if isinstance(t, dict):
+        t["stage"] = stage
+        t["updated_at"] = time.time()

@@ -4498,6 +4498,7 @@
         // 点了完全没反应。这是本项目第 N 次踩同一个坑，所以这一簇必须显式挂出去。
         // 校验方式：全仓库 grep 'window.wbMat' 必须命中 3 处，否则按钮必死。
         window.wbMatOpen = wbMatOpen;
+window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClose=wbUaClose;window.wbUaCopy=wbUaCopy;
         window.wbMatClose = wbMatClose;
         window.wbMatGo = wbMatGo;
 

@@ -22,7 +22,7 @@
     --text-soft:#aeb8d8;
     /* 第一百零七轮 WCAG AA：夜间次要文字在 #0b1030 上提亮（5.94 → 9.25 / 3.45 → 6.48） */
     --text-dim:#a9b7d9;
-    --text-mute:#8b98bd;
+    --text-mute:#9aa7cc;
     --surface:rgba(255,255,255,.045);
     --surface-2:rgba(255,255,255,.07);
     --surface-3:rgba(255,255,255,.10);
@@ -131,9 +131,9 @@ body.light {
     --c-a-soft:rgba(14,116,144,.12);
     --text:#1a2340;
     --text-soft:#2a3558;
-    --text-dim:#55618a;
+    --text-dim:#47527a;
     /* 第一百零七轮 WCAG AA：原本 #8490b0 在白底只有 3.18:1（不达标）→ 加深到 5.32:1 */
-    --text-mute:#5f6b88;
+    --text-mute:#4a5575;
     --surface:rgba(20,30,70,.035);
     --surface-2:rgba(20,30,70,.06);
     --surface-3:rgba(20,30,70,.10);
@@ -457,9 +457,12 @@ body {
 .hero p.wb-hero-tech .wb-ico { width: 13px; height: 13px; }
 /* 图形标志：hero 的视觉锚点。svg / img 同一套样式，logo 定稿后直接换标签 */
 .hero .wb-hero-logo{
-    display: block; width: 54px; height: 54px; margin: 0 auto 12px;
+    display: block; width: 72px; height: auto; margin: 0 auto 12px;
     border-radius: 13px;
     box-shadow: 0 8px 22px rgba(var(--c-a-rgb, 56,189,248), .30);
+}
+body:not(.light) .hero .wb-hero-logo{
+    filter: drop-shadow(0 0 10px rgba(56,189,248,.35)) saturate(1.05);
 }
 .wb-hero-tech .wb-dot { flex: none; }
 /* ---------- 档位标识 ---------- */
@@ -1858,7 +1861,7 @@ body.light .btn-primary:hover:not(:disabled) {
 /* 4) 移动端首屏压缩：hero 让位给创意输入框，第一屏就能开写 */
 @media (max-width: 768px) {
     .hero { padding: 10px 16px 4px; margin-bottom: 6px; }
-    .hero .wb-hero-logo { width: 36px; height: 36px; margin-bottom: 5px; border-radius: 9px; }
+    .hero .wb-hero-logo { width: 56px; height: auto; margin-bottom: 5px; border-radius: 9px; }
     .hero h1 { font-size: 23px; margin-bottom: 3px; }
     .hero p { font-size: 12.5px; }
     .hero p.wb-hero-tech { font-size: 11px; margin-top: 3px; }

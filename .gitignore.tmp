@@ -1,0 +1,4 @@
+/.venv/
+_deploy.bundle
+*.pyc
+__pycache__/

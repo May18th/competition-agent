@@ -9,13 +9,13 @@
          标签页也永远是空白图标。直接复用 logo.png，零风险。
          193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
          png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
-    <link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
-    <link rel="icon" type="image/png" href="/static/logo.png?v=20260930d">
-    <link rel="apple-touch-icon" href="/static/logo.png?v=20260930d">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png?v=20260930d">
+    <link rel="icon" href="/static/favicon.ico?v=20260930f" sizes="any">
+    <link rel="icon" type="image/png" href="/static/logo.png?v=20260930f">
+    <link rel="apple-touch-icon" href="/static/logo.png?v=20260930f">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png?v=20260930f">
     <!-- 273 轮 PWA：移动端可「添加到主屏幕」。
          只声明可安装性 + 注册离线壳的 SW；不改任何页面结构，桌面端无感。 -->
-    <link rel="manifest" href="/static/manifest.json?v=20260930d">
+    <link rel="manifest" href="/static/manifest.json?v=20260930f">
     <meta name="theme-color" content="#0e7490">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,25 +31,25 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260930d">
+    <link rel="stylesheet" href="/static/style.css?v=20260930f">
     <!-- 283 轮：全站按钮统一规范。拆成三个独立文件（基础族 / 结果页 / 历史弹窗+后台），
          由三条线并行产出，互不覆盖；必须排在 style.css 之后才能盖住既有规则。 -->
-    <link rel="stylesheet" href="/static/wbbtn-base.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbbtn-result.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbbtn-base.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbbtn-result.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260930f">
     <!-- 286 轮：移动端表单步骤顺序（≤480px 恢复自然文档顺序） -->
-    <link rel="stylesheet" href="/static/wbsteps.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbsteps.css?v=20260930f">
     <!-- 295 轮：293 导出中心按钮统一 + 289 结果页 tabs 溢出/图标/浮动按钮/对比度 -->
-    <link rel="stylesheet" href="/static/wbfix295.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbfab302.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbsmart.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbfix295.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbfab302.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbsmart.css?v=20260930f">
     <!-- 307/318 轮：顶部工具入口与 hero 新手步骤的双端增强，保持最后加载以覆盖旧样式。 -->
-    <link rel="stylesheet" href="/static/wbtools307.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbdemo.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbtheme344.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbmenu398.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbresult339.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wblogo412.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbtools307.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbdemo.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbtheme344.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbmenu398.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wbresult339.css?v=20260930f">
+    <link rel="stylesheet" href="/static/wblogo412.css?v=20260930f">
     <!-- 402 轮：首页浅底小字对比度。
          只在本文件内定义两个私有变量，不动任何公共样式表（另一条线在统一收 css）：
          .light 下给出实测达标的固定值，夜间模式继续沿用主题自带的 --text / --text-mute，
@@ -183,9 +183,9 @@
         <!-- 338/342 轮：正式 logo 已定稿（docs/logo_正式版_20260929.png，519×397），
              已由它程序化生成 512×512 的 /static/logo.png 以及 icon-180/192/512、icon-maskable-512、
              favicon.ico（16/32/48 三帧），原来的内联 SVG 占位整段换成 <img>。
-             文件名不变，引用处统一加 ?v=20260930d 破 CDN 缓存。 -->
+             文件名不变，引用处统一加 ?v=20260930f 破 CDN 缓存。 -->
         <div class="hero">
-            <img src="/static/logo.png?v=20260930d" class="wb-hero-logo" alt="科创赛事助手" width="84">
+            <img src="/static/logo_full.png?v=20260930f" class="wb-hero-logo" alt="科创赛事助手" width="72" height="76">
             <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 科创赛事助手」统一。
                  之前页面内叫「赛创助手」、标签页叫「科创赛事助手」，同一产品两个名字，
                  评委截图/口口相传时会以为是两家东西 -->
@@ -1253,7 +1253,7 @@
                     <div id="deckRoadWrap" style="margin-bottom: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px;">
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
                             <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
-                                <input type="checkbox" id="chkRoadshow" checked onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
+                                <input type="checkbox" id="chkRoadshow" onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
                                 <span id="roadTitle">按标准路演结构导出（固定 8 页）</span>
                             </label>
                             <span id="roadFlow" style="font-size:12px; color:var(--text-mute);">封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢，缺内容的页自动从申报书补</span>
@@ -1668,18 +1668,19 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260930d"></script>
-    <script src="/static/app.js?v=20260930d"></script>
+    <script src="/static/wbconst.js?v=20260930f"></script>
+    <script src="/static/errshield.js"></script>
+    <script src="/static/app.js?v=20260930f"></script>
     <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
          它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
-    <script src="/static/wbnavig.js?v=20260930d"></script>
-<script src="/static/wbdefense.js?v=20260930d"></script>
-<script src="/static/wbkb.js?v=20260930d"></script>
-<script src="/static/wbpwa.js?v=20260930d"></script>
-<script src="/static/wbchat.js?v=20260930d"></script>
-<script src="/static/wbsync.js?v=20260930d"></script>
-<script src="/static/wbsmart.js?v=20260930d"></script>
-<script src="/static/wbdemo.js?v=20260930d"></script>
+    <script src="/static/wbnavig.js?v=20260930f"></script>
+<script src="/static/wbdefense.js?v=20260930f"></script>
+<script src="/static/wbkb.js?v=20260930f"></script>
+<script src="/static/wbpwa.js?v=20260930f"></script>
+<script src="/static/wbchat.js?v=20260930f"></script>
+<script src="/static/wbsync.js?v=20260930f"></script>
+<script src="/static/wbsmart.js?v=20260930f"></script>
+<script src="/static/wbdemo.js?v=20260930f"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1749,9 +1750,9 @@
     </div>
 </div>
 
-<script src="/static/wbpage.js?v=20260930d"></script>
-<script src="/static/wbtheme344.js?v=20260930d"></script>
-<script src="/static/wbresult339.js?v=20260930d" defer></script>
+<script src="/static/wbpage.js?v=20260930f"></script>
+<script src="/static/wbtheme344.js?v=20260930f"></script>
+<script src="/static/wbresult339.js?v=20260930f" defer></script>
 <script>
 /* wbresult339 外挂自启动：不改动 app.js，轮询等待结果页落位后注入 */
 (function () {
@@ -1786,7 +1787,7 @@
   } catch (e) {}
 })();
 </script>
-<script src="/static/wbmenu398.js?v=20260930d"></script>
+<script src="/static/wbmenu398.js?v=20260930f"></script>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>

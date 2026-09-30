@@ -936,11 +936,19 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         cover = prof['cover']
     if toc is None:
         toc = prof['toc']
-    # 短文档（简洁版约 1000-1500 字）不要目录：目录页只有 5 个条目，整页大半空白
-    if toc and len((text or '').replace('\n', '').replace(' ', '')) < 2500:
-        toc = False
-
     blocks = _blocks(text or '')
+    # 2026-09-30 417-1 残留修复：短文档静默丢目录
+    # 旧逻辑：正文 <2500 字一律关目录 -> 简洁版/短申报书导出后无目录（豆包 P0-1 投诉场景）。
+    # 新逻辑：有封面的正式文档(cover=True) 按「章节数 >=3」出目录，不受字数限制；
+    #         无封面的简洁文档仍按字数阈值，避免目录页大半空白。
+    if toc:
+        _plain_len = len((text or '').replace('\n', '').replace(' ', ''))
+        _h_cnt = 0
+        for _b in blocks:
+            if _b[0] == 'h' and _b[1] <= 3:
+                _h_cnt += 1
+        if not (cover and _h_cnt >= 3) and _plain_len < 2500:
+            toc = False
     # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
     headings, _bm_id = [], 0
     for blk in blocks:
