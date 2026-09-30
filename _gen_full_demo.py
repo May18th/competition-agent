@@ -53,7 +53,8 @@ F_META = font(17)
 F_INTRO_T = font(60, True)
 F_INTRO_S = font(24)
 
-hero = Image.open(os.path.join(VID, "hero_desktop.png")).convert("RGB")
+hero = Image.open(os.path.join(VID, "hero_clean.png")).convert("RGB")
+# 真实 UI 截图当前因 headless SVG 渲染异常，暂用干净生成底图保证演示视频不乱
 desk = Image.open(os.path.join(VID, "real_ui_desktop.png")).convert("RGB")
 mob = Image.open(os.path.join(VID, "real_ui_mobile.png")).convert("RGB")
 
@@ -71,6 +72,9 @@ def txt_w(d, s, f):
     return d.textlength(s, font=f)
 
 def wrap(d, s, f, maxw):
+    # 对代码标识中的 '|' 优先作为断点，避免把单词拦腰截断
+    if "|" in s and " " not in s:
+        s = s.replace("|", " | ")
     unit = txt_w(d, "测", f) or 20
     n = max(1, int(maxw // unit))
     out = []
@@ -110,10 +114,11 @@ def left_frame(kind, t, y0=0, y1=0):
         y = max(0, min(maxy, y))
         return DESK_RS.crop((0, y, LEFT_W, y + H))
     if kind == "mobile":
+        # 用手机外框 + 真实 hero 内容做 clean mockup，避免 broken SVG 长截图
         cv = gradient(LEFT_W, H, (10, 14, 30), (16, 21, 46))
         h = int(620 * (1.0 + 0.05 * e))
-        w = int(mob.width * h / mob.height)
-        im = mob.resize((w, h), Image.BILINEAR)
+        w = int(h * hero.width / hero.height)
+        im = hero.resize((w, h), Image.BILINEAR)
         m = Image.new("L", im.size, 0)
         ImageDraw.Draw(m).rounded_rectangle([0, 0, w - 1, h - 1], radius=24, fill=255)
         cv.paste(im, ((LEFT_W - w) // 2, (H - h) // 2), m)
@@ -136,10 +141,15 @@ def build_right(idx, total, name, code, bullets):
     d.rectangle([P, 64, P + int(bw * idx / total), 68], fill=ACCENT2)
     d.text((P, y), name, font=F_NAME, fill=WHITE)
     y += 52
-    cw = int(txt_w(d, code, F_CODE)) + 22
-    d.rounded_rectangle([P, y, P + cw, y + 30], radius=7, fill=(39, 46, 84))
-    d.text((P + 11, y + 5), code, font=F_CODE, fill=(165, 180, 255))
-    y += 50
+    # 代码标识：超长时自动折行，避免被右侧边缘裁断
+    code_avail = RIGHT_W - 2 * P - 12
+    code_lines = wrap(d, code, F_CODE, code_avail)
+    line_h = 22
+    chip_h = 10 + len(code_lines) * line_h
+    d.rounded_rectangle([P, y, P + code_avail, y + chip_h], radius=7, fill=(39, 46, 84))
+    for j, ln in enumerate(code_lines):
+        d.text((P + 12, y + 6 + j * line_h), ln, font=F_CODE, fill=(165, 180, 255))
+    y += chip_h + 18
     for b in bullets:
         for ln in wrap(d, b, F_BULLET, RIGHT_W - 2 * P - 26):
             d.ellipse([P + 4, y + 9, P + 11, y + 16], fill=ACCENT)
@@ -183,88 +193,88 @@ def outro_frame(t):
 
 # ---------- 功能清单：按真实流水线顺序（标识符取自 competition_agents.py / app.py）----------
 FEATURES = [
-    ("创意输入与额度管控", "/api/generate · get_quota_status", "desk", 0, 700, [
+    ("创意输入与额度管控", "/api/generate · get_quota_status", "hero", 0, 0, [
         "输入一句话创意并选择目标赛事即可启动",
         "内置每日额度与配额管控",
         "支持官方规则文档上传与解析"]),
-    ("赛制规则解析", "rule_parser", "desk", 300, 1000, [
+    ("赛制规则解析", "rule_parser", "hero", 0, 0, [
         "读取目标赛事规则与评审标准",
         "输出赛制要点与评分维度",
         "为后续生成环节统一定锚"]),
-    ("同质化检测 / 查重", "similarity_checker", "desk", 700, 1400, [
+    ("同质化检测 / 查重", "similarity_checker", "hero", 0, 0, [
         "比对历史作品库识别创意雷同",
         "给出相似度判断与规避建议",
         "赛制别名归一，跨赛事口径对齐"]),
-    ("创意可行性评估", "idea_evaluator", "desk", 1000, 1700, [
+    ("创意可行性评估", "idea_evaluator", "hero", 0, 0, [
         "对创意做多维度打分",
         "输出优势项与待补强项",
         "为深度分析提供方向"]),
-    ("一句话定位", "one_liner", "desk", 1300, 1880, [
+    ("一句话定位", "one_liner", "hero", 0, 0, [
         "把创意压缩成一句可传播的定位",
         "用于标题、路演开场与 PPT 首页"]),
-    ("综合分析", "comprehensive_analysis_agent", "desk", 0, 800, [
+    ("综合分析", "comprehensive_analysis_agent", "hero", 0, 0, [
         "整合规则、查重、评估结果形成分析底稿",
         "输出结构化分析结论"]),
-    ("竞品深度分析", "deep_competitor_agent", "desk", 500, 1200, [
+    ("竞品深度分析", "deep_competitor_agent", "hero", 0, 0, [
         "识别竞品与替代方案",
         "对比差异并给出定位建议"]),
-    ("商业可行性分析", "deep_business_agent", "desk", 900, 1600, [
+    ("商业可行性分析", "deep_business_agent", "hero", 0, 0, [
         "目标用户与商业模式推演",
         "梳理成本结构与盈利路径"]),
-    ("风险识别与对策", "deep_risk_agent", "desk", 1200, 1880, [
+    ("风险识别与对策", "deep_risk_agent", "hero", 0, 0, [
         "扫描项目潜在风险",
         "逐条给出应对建议"]),
-    ("技术路径分析", "deep_tech_agent", "desk", 0, 700, [
+    ("技术路径分析", "deep_tech_agent", "hero", 0, 0, [
         "拆解关键技术与实现路径",
         "评估成熟度并给出选型建议"]),
-    ("实施计划编排", "plan_agent", "desk", 400, 1100, [
+    ("实施计划编排", "plan_agent", "hero", 0, 0, [
         "把创意拆成可执行的阶段与里程碑",
         "明确每阶段交付物"]),
-    ("社会价值论证", "social_value_agent", "desk", 800, 1500, [
+    ("社会价值论证", "social_value_agent", "hero", 0, 0, [
         "围绕社会痛点与公共价值展开论证",
         "呼应评审对现实意义的考核"]),
-    ("要点汇总", "summary_agent", "desk", 1100, 1800, [
+    ("要点汇总", "summary_agent", "hero", 0, 0, [
         "把多维分析压缩为评审可读要点",
         "作为申报书论据骨架"]),
-    ("申报书正文写作", "deep_writer_agent / proposal_writer_agent", "desk", 0, 900, [
+    ("申报书正文写作", "deep_writer_agent / proposal_writer_agent", "hero", 0, 0, [
         "按赛制结构生成申报书正文",
         "分章节流式输出，边生成边可见"]),
-    ("定向修改", "targeted_revise_agent", "desk", 600, 1400, [
+    ("定向修改", "targeted_revise_agent", "hero", 0, 0, [
         "针对指定章节做局部重写",
         "保留其余内容，避免全文重跑"]),
-    ("评委视角评审", "judge_agent", "desk", 1000, 1800, [
+    ("评委视角评审", "judge_agent", "hero", 0, 0, [
         "按评委口径打分与点评",
         "输出失分点与改进优先级"]),
-    ("专家复审", "expert_review_agent", "desk", 0, 800, [
+    ("专家复审", "expert_review_agent", "hero", 0, 0, [
         "在评委评审后做第二轮复核",
         "核查逻辑闭环与论据充分性"]),
-    ("申报书体检与评分", "proposal_analysis_agent", "desk", 500, 1300, [
+    ("申报书体检与评分", "proposal_analysis_agent", "hero", 0, 0, [
         "完整性体检：缺项、结构告警",
         "评分依据与评分总览可视化"]),
-    ("答辩问题预判", "defense_questions_agent", "desk", 900, 1700, [
+    ("答辩问题预判", "defense_questions_agent", "hero", 0, 0, [
         "按评委常见追问生成问题库",
         "每题配套应答要点"]),
-    ("路演 PPT 大纲", "ppt_outline_agent", "desk", 1200, 1880, [
+    ("路演 PPT 大纲", "ppt_outline_agent", "hero", 0, 0, [
         "按结构编排每页标题即结论",
         "驱动 python-pptx 生成可编辑 PPTX"]),
-    ("路演演讲稿", "speech_agent", "desk", 0, 700, [
+    ("路演演讲稿", "speech_agent", "hero", 0, 0, [
         "逐页生成口播稿与时长分配",
         "含过渡句与重点强调提示"]),
-    ("图表与富媒体", "rich_media_agent", "desk", 350, 1050, [
+    ("图表与富媒体", "rich_media_agent", "hero", 0, 0, [
         "生成数据图表与配图资产",
         "图表标题即结论，统一视觉规范"]),
-    ("多格式一键导出", "/api/export_word|pdf|pptx|defense|competitor|business|all|zip", "desk", 700, 1500, [
+    ("多格式一键导出", "app.py export routes", "hero", 0, 0, [
         "Word / PDF / PPT / PPTX 逐格式导出",
         "export_all 打包、export_zip 压缩下载",
         "export_original_format 还原官方格式"]),
-    ("分享与反馈", "/api/share_export/<token> · /api/feedback/export", "desk", 1000, 1800, [
+    ("分享与反馈", "share_export / feedback", "hero", 0, 0, [
         "生成分享链接供评委 / 导师查看",
         "收集反馈并可导出"]),
-    ("质量闸门", "check_proposal_completeness · _downgrade_fabrication · _spot_check_numbers", "desk", 0, 900, [
+    ("质量闸门", "quality_gate.py / export_guard.py", "hero", 0, 0, [
         "完整性、格式、数字抽查三重校验",
         "降级虚构表述、剥离占位符",
         "重复句去重、篇幅压缩到赛制要求"]),
-    ("知识库与官方文档", "retrieve_knowledge · get_official_doc · get_industry_data", "desk", 500, 1400, [
+    ("知识库与官方文档", "retrieve_knowledge · get_official_doc · get_industry_data", "hero", 0, 0, [
         "检索召回赛制知识与行业数据",
         "官方文档入库、格式校验与状态自检"]),
     ("移动端适配", "响应式前端", "mobile", 0, 0, [
