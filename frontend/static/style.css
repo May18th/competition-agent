@@ -22,7 +22,7 @@
     --text-soft:#aeb8d8;
     /* 第一百零七轮 WCAG AA：夜间次要文字在 #0b1030 上提亮（5.94 → 9.25 / 3.45 → 6.48） */
     --text-dim:#a9b7d9;
-    --text-mute:#8b98bd;
+    --text-mute:#9aa7cc;
     --surface:rgba(255,255,255,.045);
     --surface-2:rgba(255,255,255,.07);
     --surface-3:rgba(255,255,255,.10);
@@ -112,9 +112,9 @@ body.light {
     --c-a-soft:rgba(14,116,144,.12);
     --text:#1a2340;
     --text-soft:#2a3558;
-    --text-dim:#55618a;
-    /* 第一百零七轮 WCAG AA：原本 #8490b0 在白底只有 3.18:1（不达标）→ 加深到 5.32:1 */
-    --text-mute:#5f6b88;
+    --text-dim:#47527a;
+    /* 对比度强化：原本 #8490b0 3.18 → 107轮 #5f6b88 5.32 → 现在 #4a5575 7.18:1（明显更清晰） */
+    --text-mute:#4a5575;
     --surface:rgba(20,30,70,.035);
     --surface-2:rgba(20,30,70,.06);
     --surface-3:rgba(20,30,70,.10);
