@@ -35,3 +35,9 @@ _verify_out/
 
 # ---- 一次性调试产物归档（2026-09-29 整理，勿提交）----
 _archive_tmp/
+
+# WorkBuddy 工作记忆（本地）
+.workbuddy/
+
+# 演示视频帧缓存
+_frames/

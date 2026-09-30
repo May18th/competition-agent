@@ -32,14 +32,24 @@ import progress
 import app_log
 
 
-app = Flask(__name__)
+# ---- 目录布局（2026-09-30 前后端分离重构）----
+# backend/ 是本项目根；frontend/、docs/ 在仓库根（backend 的上一级）。
+# __file__ 锚定的资源（data/、knowledge_base/、.uid_secret）都在 backend/ 内，路径不变；
+# CWD 相对资源（competition.db、uploads/、generated/、tmp_export）由 run.py / wsgi.py
+# 启动时 chdir 到本目录兜住，同样不用改。
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR = os.path.dirname(_BASE_DIR)
+FRONTEND_DIR = os.path.join(_ROOT_DIR, 'frontend')
+DOCS_DIR = os.path.join(_ROOT_DIR, 'docs')
+
+app = Flask(__name__, static_folder=os.path.join(FRONTEND_DIR, 'static'))
 START_TIME = time.time()
 
 
 @app.route('/favicon.ico')
 def favicon():
     """站点图标：优先用真实 .ico，缺失时回退内联 SVG（避免浏览器刷 404/500）。"""
-    ico_path = os.path.join(os.path.dirname(__file__), '科创赛事助手.ico')
+    ico_path = os.path.join(FRONTEND_DIR, '科创赛事助手.ico')
     if os.path.exists(ico_path):
         return send_file(ico_path, mimetype='image/x-icon')
     _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
@@ -607,7 +617,7 @@ def _admin_login_verify(username, password, ip):
 def _audit_admin_login(username, ip, ok, role):
     """登录审计（195 层6 / 198 轮）：记录用户名+IP+成功/失败+角色。"""
     try:
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+        with open(os.path.join(DOCS_DIR, '后台审计.md'), 'a', encoding='utf-8') as _f:
             _f.write("%s | login | user=%s | ip=%s | %s | role=%s\n" % (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username or '-', ip,
                 'ok' if ok else 'fail', role or '-'))
@@ -1529,7 +1539,7 @@ def _reorder_markdown_by_chapters(text, ordered_titles):
 
 @app.route('/')
 def index():
-    with open('index.html', 'r', encoding='utf-8') as f:
+    with open(os.path.join(FRONTEND_DIR, 'index.html'), 'r', encoding='utf-8') as f:
         resp = make_response(f.read())
     # 防浏览器缓存旧版前端（本次「进度条卡死」的根治）
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'
@@ -5169,7 +5179,7 @@ def list_docs():
     _a = _require_admin()
     if _a is not None:
         return _a
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(DOCS_DIR)
     try:
         files = []
         for f in sorted(os.listdir(docs_dir)):
@@ -5189,7 +5199,7 @@ def read_doc(filename):
         return _a
     if '..' in filename or filename.startswith('/'):
         return jsonify({"success": False, "error": "非法路径"}), 400
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(DOCS_DIR)
     p = os.path.join(docs_dir, filename)
     if not os.path.isfile(p) or not filename.lower().endswith(('.md', '.txt', '.json')):
         return jsonify({"success": False, "error": "文件不存在或类型不支持"}), 404
@@ -5204,7 +5214,7 @@ def read_doc(filename):
 # 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
 # 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
 _VULNS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'vulns.json')
-_VULNS_MD = os.path.join(os.path.dirname(__file__), 'docs', '漏洞库.md')
+_VULNS_MD = os.path.join(DOCS_DIR, '漏洞库.md')
 _LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
 _LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
 
