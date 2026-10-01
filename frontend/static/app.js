@@ -1814,6 +1814,17 @@
         ];
         var _coachIdx = 0;
         var _coachEnded = false;
+        var _coachRaf = 0;
+        // 2026-10-01 错位根治（用户二报）：定位只算一次的话，手机地址栏收起（视口高度突变）、
+        // #startBar sticky 重新吸附、字体加载回流、用户滚动，都会让 fixed 气泡和目标脱节——
+        // 桌面探针三步几何全对、真机仍错位，差的就是这层动态跟踪。引导期间 rAF 节流持续重算。
+        function _coachTrack() {
+            if (_coachRaf) return;
+            _coachRaf = window.requestAnimationFrame(function () {
+                _coachRaf = 0;
+                try { coachRepos(); } catch (e) {}
+            });
+        }
 
         function _coachClear() {
             var olds = document.querySelectorAll('.wb-coach-target');
@@ -1822,6 +1833,11 @@
             if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
             var tip = document.getElementById('coachTip');
             if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
+            // 跟踪监听随引导清理，防泄漏
+            try { window.removeEventListener('scroll', _coachTrack); } catch (e) {}
+            try { window.removeEventListener('resize', _coachTrack); } catch (e) {}
+            try { if (window.visualViewport) window.visualViewport.removeEventListener('resize', _coachTrack); } catch (e) {}
+            if (_coachRaf) { try { window.cancelAnimationFrame(_coachRaf); } catch (e) {} _coachRaf = 0; }
         }
 
         function _coachEsc(e) { if (e && e.key === 'Escape') coachEnd(); }
@@ -1885,7 +1901,10 @@
                     '</div>';
                 document.body.appendChild(tip);
                 coachRepos();
-                // 点被指向的元素也算「知道了」，符合「指一下就消失」
+                // 引导期间持续跟踪：滚动/视口变化（地址栏收起）/sticky 重新吸附都实时重算
+                window.addEventListener('scroll', _coachTrack, { passive: true });
+                window.addEventListener('resize', _coachTrack);
+                try { if (window.visualViewport) window.visualViewport.addEventListener('resize', _coachTrack); } catch (e) {}
                 el.addEventListener('click', function _once() {
                     el.removeEventListener('click', _once);
                     coachNext();
