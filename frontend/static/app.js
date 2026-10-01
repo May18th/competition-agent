@@ -1,5 +1,26 @@
 
 
+        /* ---------- 带超时的 fetch（2026-09-30 加） ----------
+           背景：上传 / 主题列表 / 赛事索引等请求原先没有超时，网络慢或隧道抖动时
+           按钮永久转圈、UI 卡在"加载中"，用户只能刷新。统一走 _wbFetch：
+           - 默认 30s 超时（大文件上传放宽到 120s）
+           - 超时后抛错走原有 catch 分支，提示"网络超时，请重试"
+           - AbortController 不存在时（极老浏览器）退化为普通 fetch，不影响功能 */
+        function _wbFetch(url, opt, timeoutMs) {
+            opt = opt || {};
+            var ms = timeoutMs || 30000;
+            if (typeof AbortController !== 'function') return fetch(url, opt);
+            var ctl = new AbortController();
+            var merged = {};
+            for (var k in opt) merged[k] = opt[k];
+            merged.signal = ctl.signal;
+            var timer = setTimeout(function () { ctl.abort(); }, ms);
+            return fetch(url, merged).then(
+                function (r) { clearTimeout(timer); return r; },
+                function (e) { clearTimeout(timer); throw e; }
+            );
+        }
+
         /* ---------- 本机存储降级（2026-09-28 移动端实测） ----------
            iOS Safari / 微信 / QQ 内核会拦掉本机存储，控制台报
            "Tracking Prevention blocked access to storage"，此时 localStorage 读写直接抛异常。
@@ -126,7 +147,10 @@
                     return;
                 }
                 box.value = (box.value ? box.value + '\n\n' : '') + txt;
-                wbToast('已粘贴 ' + txt.length + ' 字到草稿框');
+                window._wbDraftImported = true;   // 导入过草稿：意图明确，生成时不再弹通路选择
+                wbToast('已粘贴 ' + txt.length + ' 字到草稿框，正在自动识别项目信息…');
+                // 统一材料框架：粘贴草稿同样自动填充全部输入框
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(txt, {});
             } catch (err) {
                 box.focus();
                 wbToast('浏览器不让读剪贴板，请在草稿框里长按选择「粘贴」', { type: 'error' });
@@ -144,7 +168,7 @@
             try {
                 const fd = new FormData();
                 fd.append('file', file);
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: fd }, 120000);
                 const d = await res.json();
                 if (!d || !d.success) {
                     if (info) info.textContent = '读取失败：' + ((d && d.error) || '未知错误');
@@ -206,7 +230,7 @@
                 const fd = new FormData();
                 fd.append('file', file);
                 fd.append('purpose', 'user_data');
-                const res = await fetch('/api/upload_file', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_file', { method: 'POST', body: fd }, 120000);
                 d = await res.json();
             } catch (err) {
                 if (info) info.textContent = '识别失败：连不上服务，请稍后重试';
@@ -313,7 +337,10 @@
                     dr.value = dr.value.trim() ? dr.value.trim() + '\n\n' + p.text : p.text;
                     dr.dispatchEvent(new Event('change'));
                 }
-                wbToast('已填入申报书草稿框（追加，不覆盖已有内容）', { type: 'ok' });
+                window._wbDraftImported = true;   // 导入过草稿：意图明确，生成时不再弹通路选择
+                wbToast('已填入申报书草稿框（追加，不覆盖已有内容），正在自动识别项目信息…');
+                // 统一材料框架：路由到草稿后，其余字段（创意/团队/实测数据分格/关键词）自动填充
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(p.text, {});
             } else {
                 var ex = document.getElementById('udExtra');
                 if (ex) {
@@ -321,7 +348,13 @@
                     ex.value = ex.value.trim() ? ex.value.trim() + '\n\n' + add : add;
                     ex.dispatchEvent(new Event('change'));
                 }
-                wbToast('已合并进实测数据·其它佐证', { type: 'ok' });
+                wbToast('已合并进实测数据·其它佐证，正在自动识别试点/样本/指标/成本…');
+                // 统一材料框架：只填实测数据四个分格 + 基本信息，不覆盖刚合并进「其它佐证」的原文
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(p.text, {
+                    onlyFields: ['competition_name', 'idea', 'team',
+                                 'user_data_site', 'user_data_scale',
+                                 'user_data_metric', 'user_data_cost', 'keywords']
+                });
             }
             if (info) info.innerHTML = '已完成：《' + _esc(p.fname) + '》→ ' + (destLabel[key] || '实测数据') + '。可继续上传其它文件。';
             window._wbUdPending = null;
@@ -338,7 +371,7 @@
             try {
                 const fd = new FormData();
                 fd.append('file', file);
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: fd }, 120000);
                 const d = await res.json();
                 if (!d || !d.success) {
                     if (tip) tip.innerText = '模板识别失败：' + ((d && d.error) || '未知错误');
@@ -395,12 +428,24 @@
             const formData = new FormData();
             formData.append('file', file);
             try {
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: formData });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: formData }, 120000);
                 const data = await res.json();
                 if (data.success) {
+                    window._wbDraftImported = true;   // 导入过草稿：意图明确，生成时不再弹通路选择
                     document.getElementById('proposal_draft').value = data.text;
                     // 注意用 innerHTML：innerText 会把 SVG 图标当纯文本显示出来
-                    document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框';
+                    document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框，正在自动识别项目信息…';
+                    // 统一材料框架：导入草稿 → 一次解析自动填充创意/团队/实测数据/关键词等全部输入框
+                    if (window.wbDraftSmartFill) {
+                        window.wbDraftSmartFill(data.text, {
+                            onDone: function () {
+                                document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 导入完成：草稿已填入，项目信息已自动填充到各输入框，请核对';
+                            },
+                            onFail: function (m) {
+                                document.getElementById('ideaFileName').innerText = '草稿已填入；' + m + '，可点「从材料识别」重试';
+                            }
+                        });
+                    }
                 } else {
                     document.getElementById('ideaFileName').innerText = '上传失败：' + (data.error || '未知错误');
                     wbToast('上传失败：' + (data.error || '未知错误'), { type: 'error' });
@@ -880,6 +925,20 @@
             });
         }
 
+        // 导出成功带的非阻断提醒（X-Export-Warnings 响应头，URL-encoded JSON 数组）：文件照常下载，提醒逐条弹 warn
+        function wbShowExportWarnings(res) {
+            try {
+                var raw = res && res.headers && res.headers.get('X-Export-Warnings');
+                if (!raw) return;
+                var arr = JSON.parse(decodeURIComponent(raw));
+                if (!Array.isArray(arr)) return;
+                arr.slice(0, 5).forEach(function (w) {
+                    var m = String(w || '').trim();
+                    if (m) wbToast(m, { type: 'warn', ms: 8000 });
+                });
+            } catch (e) {}
+        }
+
         async function exportOne(id, name) {
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
@@ -909,10 +968,13 @@
                         // 171 轮：把用户在「高级参数」里选的图表配色带过去，
                         // 后端接上后导出的图表 PNG 与前台同色（未接上也不影响，后端忽略未知字段）
                         chart_theme: wbChartThemeKey(),
+                        // 2026-10-01：带上本次生成模式，后端质量门按 fast 标准评 fast 稿
+                        mode: (window._lastGenMode || 'deep'),
                         school: m.school, team: m.team, advisor: m.advisor};
                 var r = await wbExportFetch('/api/export_word', payload);
                 if (!r.ok) { await wbExportError('Word', r); return; }
                 const res = r.res;
+                wbShowExportWarnings(res);
                 const blob = await res.blob();
                 wbSaveBlob(blob, name + ".docx");
                 wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
@@ -997,6 +1059,7 @@
                         chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('PDF', r); return; }
                 const res = r.res;
+                wbShowExportWarnings(res);
                 const blob = await res.blob();
                 wbSaveBlob(blob, name + ".pdf");
                 // 官方硬性上限校验（iCAN 应用方案 ≤20 页 / ≤50MB）
@@ -1120,6 +1183,15 @@
         function _esc(s) {
             return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         }
+        /* 2026-09-30 人眼审查：接口挂掉时把英文原始错误（Unexpected end of JSON input /
+           Failed to fetch）直接甩给用户，评委看到很减分。统一转成中文人话，未知错误仍原样透出 */
+        function _friendlyErr(e) {
+            var m = (e && e.message) || String(e || '');
+            if (/Unexpected end of JSON|invalid JSON|JSON/i.test(m)) return '服务暂时无响应，请稍后重试';
+            if (/Failed to fetch|NetworkError|Load failed|net::/i.test(m)) return '网络连接失败，请检查网络后重试';
+            if (/timeout|Timed out|aborted/i.test(m)) return '请求超时，请稍后重试';
+            return m;
+        }
         // ---- 全局提示 Toast（替代 alert，所有反馈统一走这里）----
         var _toastSeq = 0;
         function wbToast(title, opt) {
@@ -1211,7 +1283,7 @@
                 var c = JSON.parse(_wbStoreGet(WB_COMP_IDX_KEY) || 'null');
                 if (c && c.items && c.items.length) WB_COMP_INDEX = c;
             } catch (e) {}
-            fetch('/static/competition_index.json', { cache: 'no-cache' })
+            _wbFetch('/static/competition_index.json', { cache: 'no-cache' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
                     if (!d || !d.items || !d.items.length) return;
@@ -1238,7 +1310,7 @@
                 var c = JSON.parse(_wbStoreGet(WB_COMP_PROF_KEY) || 'null');
                 if (c && c.length) WB_COMP_PROFILES = c;
             } catch (e) {}
-            fetch('/api/competition_profiles', { cache: 'no-cache' })
+            _wbFetch('/api/competition_profiles', { cache: 'no-cache' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
                     if (!d || !d.success || !d.competitions || !d.competitions.length) return;
@@ -1733,14 +1805,15 @@
 
         /* ---------- 分步引导：箭头指向按钮 + 一句话，点一下就走 ---------- */
         var COACH_STEPS = [
-            // 这里刻意用中文数字：表单区块已经占用了「第 1~6 步」这套阿拉伯数字编号，
-            // 引导气泡要是也写「第 3 步」，就会和表单的「第 3 步 · 补充规则」撞号，
-            // 用户分不清到底说的是哪一步。两套各用一套写法，一眼能分辨。
-            { id: 'competition', text: '第一步：选择参赛赛事。系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。' },
-            { id: 'idea', text: '第二步：填写项目创意。用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。' },
-            { id: 'startBtn', text: '第三步：选择生成档位并开始。简洁版出稿快、字数精；深度版内容更全，含图表与路演 PPT。两档的实际字数与用时见档位卡上的实测统计。' }
+            // 刻意用「先选 / 再填 / 最后」的顺序词，不用「第 N 步」：
+            // 表单的阿拉伯步骤号已随统一材料框架重排（第 1 步=导入材料、第 2 步=赛事、第 3 步=创意），
+            // 气泡里再写「第一步选赛事」会和表单第 1 步撞号，用户分不清说的是哪一步。
+            { id: 'competition', text: '先选参赛赛事：系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。有现成申报书/材料的话，先回顶部第 1 步导入，会自动填好这里。' },
+            { id: 'idea', text: '再填项目创意：用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。已经写过草稿的，用第 1 步导入即可，不用在这里手抄。' },
+            { id: 'startBtn', text: '最后选生成档位并开始：简洁版出稿快、字数精；深度版内容更全，含图表与路演 PPT。两档的实际字数与用时见档位卡上的实测统计。' }
         ];
         var _coachIdx = 0;
+        var _coachEnded = false;
 
         function _coachClear() {
             var olds = document.querySelectorAll('.wb-coach-target');
@@ -1755,6 +1828,7 @@
 
         function coachStart() {
             _coachIdx = 0;
+            _coachEnded = false;
             try { document.addEventListener('keydown', _coachEsc); } catch (e) {}
             coachShow();
         }
@@ -1765,8 +1839,14 @@
             var step = COACH_STEPS[_coachIdx];
             var el = document.getElementById(step.id);
             if (!el) { _coachIdx++; coachShow(); return; }
-            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+            // instant 而非 smooth：smooth 动画中 getBoundingClientRect 拿到中间态，380ms 后 coachRepos 按它定位就会错位（根因）
+            try { el.scrollIntoView({ behavior: 'instant', block: 'center' }); }
+            catch (e) { try { el.scrollIntoView({ block: 'center' }); } catch (e2) {} }
             setTimeout(function () {
+                // 竞态守卫：scrollIntoView 的延迟窗口内用户可能已打开使用说明/历史等弹窗
+                //（showIntro 里的 coachEnd 会清场），此时不能再重建遮罩——否则气泡压在弹窗上、
+                // 指向错位（2026-09-30 截图实测撞车）。
+                if (_coachEnded) return;
                 if (!document.getElementById('wbCoachVeil')) {
                     var veil = document.createElement('div');
                     veil.id = 'wbCoachVeil';
@@ -1796,13 +1876,13 @@
                 tip.id = 'coachTip';
                 tip.innerHTML =
                     '<div>' + step.text + '</div>' +
-                    '<div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">' +
-                        '<span style="font-size: 12px; color: var(--text-mute);">' +
+                    '<div style="margin-top: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">' +
+                        '<span style="font-size: 12.5px; color: #aab8de; flex: none;">' +
                             (_coachIdx + 1) + ' / ' + COACH_STEPS.length + '</span>' +
-                        '<button onclick="coachNext()" style="padding: 5px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">知道了</button>' +
-                        '<span onclick="coachEnd()" style="font-size: 12px; color: var(--text-mute); cursor: pointer;">跳过</span>' +
-                    '</div>' +
-                    '<div style="margin-top: 6px; font-size: 11px; color: var(--text-mute);">点击暗处任意位置或按 Esc 即可退出引导</div>';
+                        '<button onclick="coachNext()" style="padding: 6px 14px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; flex: none;">知道了</button>' +
+                        '<span onclick="coachEnd()" style="font-size: 12.5px; color: #cdd6f2; cursor: pointer; flex: none;">跳过</span>' +
+                        '<span style="font-size: 12px; color: #aab8de; flex: 1 1 100%;">点暗处或按 Esc 也可退出</span>' +
+                    '</div>';
                 document.body.appendChild(tip);
                 coachRepos();
                 // 点被指向的元素也算「知道了」，符合「指一下就消失」
@@ -1836,6 +1916,7 @@
 
         function coachEnd() {
             _coachClear();
+            _coachEnded = true;
             try { document.removeEventListener('keydown', _coachEsc); } catch (e) {}
             try { _wbStoreSet('wbCoachDone', '1'); } catch (e) {}
             // cookie 兜底：微信/QQ 内置浏览器、隐私模式下 localStorage 可能不持久，
@@ -2459,7 +2540,7 @@
         var _kbState = null;                    // 原始返回，避免重复请求
         async function loadKnowledgeStatus() {
             try {
-                const res = await fetch('/api/knowledge_status');
+                const res = await _wbFetch('/api/knowledge_status');
                 const d = await res.json();
                 if (d && d.success) _kbState = d;
             } catch (e) { _kbState = null; }
@@ -3809,7 +3890,7 @@
         async function loadThemeLib() {
             if (_themeLib) return _themeLib;
             try {
-                const res = await fetch('/api/ppt_themes');
+                const res = await _wbFetch('/api/ppt_themes');
                 const d = await res.json();
                 if (d && d.success) _themeLib = d.themes || [];
             } catch (e) { _themeLib = []; }
@@ -3913,7 +3994,7 @@
                 wbSaveBlob(blob, '路演PPT.pptx');
                 wbToast('路演 PPT 已开始下载', { type: 'ok', ms: 3000 });
             } catch (e) {
-                wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('PPT 导出失败：' + _friendlyErr(e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
@@ -4269,16 +4350,28 @@
         }
 
         /* ---------- 从材料识别：POST /api/parse_material → 自动填充 ----------
-           后端返回 profile 五个字段（competition_name / idea / team / user_data / keywords），
-           字段名为后端定死，前端只做映射。识别是一次 LLM 调用（约 1-3 秒），必须给 loading 态。
+           统一材料框架（2026-10-01）：后端 profile 扩展为 12 字段——
+           material_type（材料类型）/ competition_name / idea / team /
+           实测数据四个分格（site/scale/metric/cost）+ extra（其它佐证）/
+           keywords / sections（官方模板章节）。
            填充原则是「建议不是覆盖」：目标框已有内容就先问一句，不偷偷改用户写过的东西。 */
         var WB_MAT_MAP = [
             ['competition_name', 'competition', '赛事'],
             ['idea', 'idea', '创意'],
             ['team', 'udTeam', '团队成员'],
-            ['user_data', 'udExtra', '实测数据/佐证'],
+            ['user_data_site', 'udSite', '试点单位'],
+            ['user_data_scale', 'udScale', '样本量'],
+            ['user_data_metric', 'udMetric', '实测指标'],
+            ['user_data_cost', 'udCost', '成本'],
+            ['user_data_extra', 'udExtra', '其它佐证'],
             ['keywords', 'keywords', '关键词']
         ];
+        // 折叠区与输入框的对应关系：填了哪个框，就把它的折叠区展开，否则填了也看不见
+        var WB_MAT_FOLD = {
+            udTeam: 'teamBody', udSite: 'userDataBody', udScale: 'userDataBody',
+            udMetric: 'userDataBody', udCost: 'userDataBody', udExtra: 'userDataBody',
+            keywords: 'advParamBody'
+        };
         function wbMatOpen() {
             var m = document.getElementById('wbMatMask'), p = document.getElementById('wbMatPanel');
             // CSS 里初始是 display:none，这里必须显式写具体值（写 '' 会回落到 none，永远不显示）
@@ -4301,16 +4394,17 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> 识别中…';
             var req;
+            var _do = (typeof _wbFetch === 'function') ? _wbFetch : fetch;
             if (file) {
                 var fd = new FormData();
                 fd.append('file', file);
-                req = fetch('/api/parse_material', { method: 'POST', body: fd });
+                req = _do('/api/parse_material', { method: 'POST', body: fd }, 120000);
             } else {
-                req = fetch('/api/parse_material', {
+                req = _do('/api/parse_material', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text })
-                });
+                }, 60000);
             }
             req.then(function (r) { return r.json(); })
                 .then(function (d) {
@@ -4326,30 +4420,100 @@
                     wbToast('识别失败：' + (e && e.message ? e.message : '网络异常'), { type: 'warn', ms: 3200 });
                 });
         }
-        function wbMatApply(p) {
-            var empty = [], conflict = [], missed = [];
+        function wbMatApply(p, opts) {
+            opts = opts || {};
+            var only = opts.onlyFields || null;
+            p = p || {};
+            // 旧版 user_data 兜底：四个分格都没识别出来、但汇总 user_data 有值 → 填进「其它佐证」
+            var _splitEmpty = ['user_data_site', 'user_data_scale', 'user_data_metric',
+                'user_data_cost', 'user_data_extra'].every(function (k) {
+                    return !String(p[k] || '').trim();
+                });
+            if (_splitEmpty && String(p.user_data || '').trim() && (!only || only.indexOf('user_data_extra') >= 0)) {
+                p.user_data_extra = p.user_data;
+            }
+            var empty = [], conflict = [], missed = [], filledIds = [];
             WB_MAT_MAP.forEach(function (m) {
-                var v = String((p && p[m[0]]) || '').trim();
+                if (only && only.indexOf(m[0]) < 0) return;
+                var v = String(p[m[0]] || '').trim();
                 if (!v) { missed.push(m[2]); return; }
                 var el = document.getElementById(m[1]);
                 if (!el) return;
                 if (String(el.value || '').trim()) conflict.push([m, v]); else empty.push([m, v]);
             });
             var hit = empty.length + conflict.length;
-            if (!hit) { wbToast('材料里没找到可填的字段，请手动填写', { type: 'warn', ms: 3000 }); return; }
+            // 官方模板章节：识别出 sections 就写进赛事要求卡（生成时按模板结构写）。
+            // 必须放在 hit 早退之前——纯模板材料（只有章节、没别的字段）也要入库，不能被「没找到可填的字段」挡掉
+            var secsMsg = '';
+            if (!only && String(p.sections || '').trim() && typeof evCurrent === 'function') {
+                try {
+                    var secs = String(p.sections).split('|').map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s && s.length <= 46; });
+                    if (secs.length >= 2) {
+                        var c0 = evCurrent();
+                        c0.sections = secs.slice(0, 20);
+                        _wbStoreSet(c0.key, JSON.stringify({ sections: c0.sections }));
+                        renderEventCard();
+                        secsMsg = '、模板章节 ' + c0.sections.length + ' 个';
+                    }
+                } catch (e) {}
+            }
+            if (!hit && !secsMsg) { wbToast('材料里没找到可填的字段，请手动填写', { type: 'warn', ms: 3000 }); return; }
             var doConflict = true;
             if (conflict.length) {
                 var names = conflict.map(function (c) { return c[0][2]; }).join('、');
                 doConflict = window.confirm('这些框已经有你写过的内容：' + names + '。\n\n点「确定」用识别结果覆盖它们，点「取消」只填还空着的框。');
             }
-            empty.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
-            if (doConflict) conflict.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
+            empty.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; filledIds.push(c[0][1]); });
+            if (doConflict) conflict.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; filledIds.push(c[0][1]); });
             try { onCompetitionChange(); } catch (e) {}
+            // 填了哪个框，就展开它所在的折叠区（填了看不见等于没填）
+            Object.keys(WB_MAT_FOLD).forEach(function (id) {
+                if (filledIds.indexOf(id) < 0) return;
+                var fold = document.getElementById(WB_MAT_FOLD[id]);
+                if (fold && fold.style.display === 'none') {
+                    try { wbAdvToggle(WB_MAT_FOLD[id]); } catch (e) { fold.style.display = ''; }
+                }
+            });
             wbSaveForm();
             wbMatClose();
-            var msg = '已填充 ' + (empty.length + (doConflict ? conflict.length : 0)) + ' 项：识别自材料，请核对';
+            var msg = filledIds.length
+                ? ('已填充 ' + filledIds.length + ' 项：识别自材料，请核对' + secsMsg)
+                : ('已从材料识别' + secsMsg.replace('、', '') + '，请核对');
             if (missed.length) msg += '（未识别：' + missed.join('、') + '）';
             wbToast(msg, { type: 'ok', ms: 4200 });
+        }
+
+        /* ---------- 统一材料框架入口：任何导入（上传草稿 / 粘贴文本 / 佐证文件路由）→
+           /api/parse_material 一次解析 → wbMatApply 自动填充所有对应输入框。
+           识别失败不打断主流程（草稿原文已经填进框里），只提示可重试。
+           opts.onlyFields: 只填充指定 profile 字段（如佐证文件路由只填实测数据分格）。 */
+        function wbDraftSmartFill(text, opts) {
+            opts = opts || {};
+            var t = String(text || '').trim();
+            if (t.length < 20) {
+                if (opts.onFail) opts.onFail('文本太短，没有可识别的信息');
+                return;
+            }
+            var _do = (typeof _wbFetch === 'function') ? _wbFetch : fetch;
+            _do('/api/parse_material', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: t.slice(0, 20000) })
+            }, 60000).then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.success && d.profile) {
+                        try { wbMatApply(d.profile, opts); } catch (e) {}
+                        if (opts.onDone) opts.onDone(d.profile);
+                    } else {
+                        if (opts.onFail) opts.onFail('自动识别没返回结果');
+                        else wbToast('自动识别没返回结果，可点「从材料识别」重试', { type: 'warn', ms: 3600 });
+                    }
+                })
+                .catch(function () {
+                    if (opts.onFail) opts.onFail('自动识别失败');
+                    else wbToast('自动识别失败（不影响已填入的内容），可点「从材料识别」重试', { type: 'warn', ms: 3600 });
+                });
         }
         // 第六十九轮【高】的死按钮根因：wbMatOpen / wbMatClose / wbMatGo 都定义在本 IIFE 内，
         // 而「从材料识别」按钮和弹层里的按钮走的是内联 onclick（外层作用域）→ ReferenceError，
@@ -4358,6 +4522,8 @@
         window.wbMatOpen = wbMatOpen;
         window.wbMatClose = wbMatClose;
         window.wbMatGo = wbMatGo;
+        // wbDraftSmartFill 要被前一个 IIFE 里的 ideaFile / wbPasteDraft / wbUdApplyRoute 调用，同样必须挂出去
+        window.wbDraftSmartFill = wbDraftSmartFill;
 
         /* ===== 等待期趣味增强（Codex P3）=====
            只动「生成等待期」的文案，正文 / 表单 / 导出 / 评分权重一律不碰。
@@ -4470,13 +4636,59 @@
         }
         window.wbTeamSuggest = wbTeamSuggest;
 
+        /* 双通路选择弹窗（2026-10-01）：创意框和草稿框都有内容时弹出，
+           用户点选本次走哪条通路，避免草稿静默劫持创意输入。
+           一次性选择：选完重新走 startWork，_wbPathChoice 用后即清。 */
+        function wbPathDialog() {
+            var old = document.getElementById('wbPathDlg');
+            if (old) old.remove();
+            var veil = document.createElement('div');
+            veil.id = 'wbPathDlg';
+            veil.style.cssText = 'position:fixed;inset:0;z-index:1900;background:rgba(8,12,30,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            veil.innerHTML =
+                '<div style="max-width:420px;width:100%;background:var(--card,#fff);border:1px solid var(--line,#e3e8f5);border-radius:14px;padding:22px 20px;box-shadow:0 18px 48px rgba(0,0,0,.28);">' +
+                    '<div style="font-size:16px;font-weight:700;color:var(--text,#1a2340);margin-bottom:6px;">本次按哪条通路生成？</div>' +
+                    '<div style="font-size:13px;color:var(--text-mute,#4a5575);line-height:1.7;margin-bottom:16px;">检测到「项目创意」和「申报书草稿」都填了内容，两者不会同时使用，请指定本次的输入来源（另一个不受影响）。</div>' +
+                    '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+                        '<button id="wbPathIdea" style="flex:1;min-width:150px;padding:10px 14px;border:none;border-radius:9px;cursor:pointer;background:var(--c-a,#3b82f6);color:#fff;font-size:14px;">从创意生成</button>' +
+                        '<button id="wbPathDraft" style="flex:1;min-width:150px;padding:10px 14px;border:1px solid var(--line,#e3e8f5);border-radius:9px;cursor:pointer;background:transparent;color:var(--text,#1a2340);font-size:14px;">优化我的草稿</button>' +
+                    '</div>' +
+                    '<div style="margin-top:12px;text-align:right;"><span id="wbPathCancel" style="font-size:12.5px;color:var(--text-mute,#4a5575);cursor:pointer;">取消</span></div>' +
+                '</div>';
+            document.body.appendChild(veil);
+            var close = function () { veil.remove(); };
+            veil.addEventListener('click', function (e) { if (e.target === veil) close(); });
+            document.getElementById('wbPathCancel').onclick = close;
+            document.getElementById('wbPathIdea').onclick = function () {
+                window._wbPathChoice = 'idea'; close(); try { startWork(); } catch (e) {}
+            };
+            document.getElementById('wbPathDraft').onclick = function () {
+                window._wbPathChoice = 'draft'; close(); try { startWork(); } catch (e) {}
+            };
+        }
+        window.wbPathDialog = wbPathDialog;
+
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
             const competition = document.getElementById('competition').value;
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
+            // 双通路显式选择（2026-10-01）：创意和草稿都填了时，让用户指定本次走哪条通路。
+            // 之前 proposal_draft 有字就静默切「优化」模式、创意被忽略——两条通路不是并行是草稿劫持。
+            // 例外：本会话从第 1 步导入过草稿（上传/粘贴/佐证路由）的，意图明确是「优化我的草稿」——
+            // 此时创意框的内容本来就是系统从草稿里识别填充的，再弹窗问一遍属于自找麻烦，直接走草稿。
+            // 想改走创意：把草稿框清空即可（草稿为空时自然走创意通路）。
+            if (idea && proposal_draft && !window._wbPathChoice && !window._wbDraftImported) { wbPathDialog(); return; }
+            var _useDraft = (window._wbPathChoice === 'draft') ? true
+                          : (window._wbPathChoice === 'idea') ? false
+                          : proposal_draft.length > 0;
+            window._wbPathChoice = null;   // 一次性选择，下次再弹
+            const isOptimize = _useDraft;
+            var draftOut = _useDraft ? proposal_draft : '';   // 创意通路：草稿留在框里但本次不参与
+
             window._wbGenerating = true;   // 下载条/吸附 dock 以此为准：done 前一律不出
+            window._lastGenMode = mode;    // 导出质量门按真实模式评分（fast 不按 deep 标准误杀）
             // 赛事是必填项：后端会返回 400「请先选择赛事」，但等到那时候用户已经点了按钮、
             // 看到进度条再弹回，体验上是「网站故障」。这里当场拦下并把赛事框标出来
             var _ceEl = document.getElementById('competition');
@@ -4509,7 +4721,6 @@
             }
 
             const btn = document.getElementById('startBtn');
-            const isOptimize = proposal_draft.length > 0;
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> 系统正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
@@ -4597,7 +4808,7 @@
                 body: JSON.stringify({
                     competition_name: competition,
                     idea: idea,
-                    proposal_draft: proposal_draft,
+                    proposal_draft: draftOut,
                     mode: mode,
                     // 文风：standard=标准 / strong=去 AI 味。
                     // 与 Codex 约定：只在深度版生效，简洁版一律按 standard 传，避免和「短而准」冲突
@@ -5160,6 +5371,25 @@
             });
         }
 
+        /* 手机浮动生成按钮 #wbMobileGen（元素/样式由 index.html / style.css 提供，.wb-gen-show 控制显隐）：
+           滚动超约一屏且吸底入口条 #startBar 不在视野时显示；点击触发 startWork()。元素可能晚于本脚本插入，每次现查 DOM，查不到静默返回。 */
+        function _wbFabCheck() {
+            var fab = document.getElementById('wbMobileGen');
+            if (!fab) return;
+            var bar = document.getElementById('startBar');
+            var vis = false;
+            if (bar) { var r = bar.getBoundingClientRect(); vis = (r.bottom > 0 && r.top < (window.innerHeight || 0)); }
+            fab.classList.toggle('wb-gen-show', (window.scrollY || window.pageYOffset || 0) > (window.innerHeight || 0) && !vis);
+        }
+        window.addEventListener('scroll', _wbFabCheck, { passive: true });
+        window.addEventListener('resize', _wbFabCheck, { passive: true });
+        document.addEventListener('click', function (e) {   // 事件委托：按钮晚插入也能点上
+            var fab = document.getElementById('wbMobileGen');
+            if (fab && e.target && fab.contains(e.target)) { try { startWork(); } catch (err) {} }
+        });
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wbFabCheck);
+        else _wbFabCheck();
+
         // 档位徽章（结果区头部）：赛事固定 emoji 做视觉锚点，一眼认出是哪场比赛
         function wbTierBadgeHtml(mode, compName, deepTxt, fastTxt) {
             var isDeep = (mode === 'deep');
@@ -5451,7 +5681,7 @@
         function showIntro(force) {
             // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             var modal = document.getElementById('introModal');
             var box = document.getElementById('introBox');
@@ -5544,7 +5774,7 @@
                         '</div>';
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc((e && e.message) || e) + '</div>';
+                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc(_friendlyErr(e)) + '</div>';
             }
         }
 
@@ -5561,7 +5791,7 @@
                     _fallbackCopy(d.report, okFn, badFn);
                 }
             } catch (e) {
-                wbToast('获取报告失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('获取报告失败：' + _friendlyErr(e), { type: 'error' });
             }
         }
 
@@ -5589,7 +5819,7 @@
                         '</div>';
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc((e && e.message) || e) + '</div>';
+                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc(_friendlyErr(e)) + '</div>';
             }
         }
 
@@ -6220,7 +6450,7 @@
         function showHistory() {
             // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             document.getElementById('historyModal').style.display = 'flex';
             loadHistory(0);
@@ -6367,7 +6597,7 @@
                     renderHistoryList(d);
                 })
                 .catch(function (e) {
-                    list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc((e && e.message) || e) + '</p>';
+                    list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc(_friendlyErr(e)) + '</p>';
                 });
         }
         function renderHistoryList(d) {
@@ -6536,7 +6766,7 @@
                 if (modal) modal.style.display = 'none';
                 wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
             } catch (e) {
-                wbToast('打开失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('打开失败：' + _friendlyErr(e), { type: 'error' });
             }
         }
 
@@ -6553,7 +6783,7 @@
                     }
                 })
                 .catch(function (e) {
-                    wbToast('删除失败：' + ((e && e.message) || e), { type: 'error' });
+                    wbToast('删除失败：' + _friendlyErr(e), { type: 'error' });
                 });
         }
 
@@ -7245,6 +7475,7 @@
             wbBgApply(cfg);
             wbBgRenderSwatches();   // 选中框跟着走
             if (window.wbToast) wbToast('背景已切换：' + (id === 'user' ? '我的图片' : (WB_BG_PRESETS.filter(function (p) { return p.id === id; })[0] || {}).name || id), { type: 'ok' });
+            wbBgPanelClose();   // 切完背景自动收起，不用再去找 ×
         }
         function wbBgUpload(input) {
             var f = input && input.files && input.files[0];
@@ -7272,6 +7503,7 @@
                         wbBgRenderSwatches();   // 让「我的图片」卡出现（上传前它没有图可用）
                         input.value = '';       // 清空，否则再选同一个文件不触发 change
                         if (window.wbToast) wbToast('背景已应用（仅本机保存）', { type: 'ok' });
+                        wbBgPanelClose();   // 上传即应用，同样自动收起
                     }).catch(function () {
                         // 私密模式/老内核没有 IndexedDB：退回本次会话内可用的 blob URL，刷新后失效但不报错
                         wbBgUserUrl = URL.createObjectURL(blob);
@@ -7280,6 +7512,7 @@
                         wbBgRenderSwatches();
                         input.value = '';
                         if (window.wbToast) wbToast('已应用，但本浏览器不允许长期保存，刷新后会恢复默认', { type: 'warn' });
+                        wbBgPanelClose();
                     });
                 }, 'image/jpeg', 0.82);
             };
@@ -7297,7 +7530,7 @@
             // 首次访问的引导遮罩（#wbCoachVeil，z-index 1500）还在时，点开的面板会躺在遮罩下面，
             // 用户看到的就是「点了背景没反应」。既然用户已经在主动用页面了，引导就该让位。
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             var p = document.getElementById('wbBgPanel');
             if (!p) return;
@@ -7309,11 +7542,14 @@
             } catch (e) {}
             p.style.display = 'block';
         }
+        // 面板关闭：× 按钮、切完背景自动收起、点面板外，三条路都走这里
+        function wbBgPanelClose() { var p = document.getElementById('wbBgPanel'); if (p) p.style.display = 'none'; }
         window.wbBgPick = wbBgPick;
         window.wbBgUpload = wbBgUpload;
         window.wbBgReset = wbBgReset;
         window.wbBgSetDim = wbBgSetDim;
         window.wbBgPanelToggle = wbBgPanelToggle;
+        window.wbBgPanelClose = wbBgPanelClose;
 
         /* ---- 顶部「更多 ▾」下拉（第一百四十二 / 第一百四十七轮催办）----
            顶部原来并排四个按钮（使用说明 / 历史 / 背景 / 反馈），其中「背景」是低频装饰项，
@@ -7345,6 +7581,15 @@
             var w = document.getElementById('wbMoreWrap');
             if (w && w.contains(e.target)) return;   // 点按钮或菜单内部都不关（菜单项自己会关）
             wbMoreClose();
+        });
+        // 背景面板：点面板外自动收起。豁免面板内部（点了不该关）和 #wbMoreWrap
+        //（打开入口在「更多」下拉里，同一次点击先 toggle 展开再冒泡到这里，不豁免会秒开秒关）
+        document.addEventListener('click', function (e) {
+            var p = document.getElementById('wbBgPanel');
+            if (!p || p.style.display !== 'block') return;
+            var t = e.target;
+            if (t && t.closest && (p.contains(t) || t.closest('#wbMoreWrap'))) return;
+            wbBgPanelClose();
         });
         // 色卡预览用 background 简写（最后一层可以带 color），但应用时拆成两条
         function wbBgCss(p) {
@@ -7507,6 +7752,10 @@
             try { html = marked.parse(s == null ? '' : String(s)); }
             catch (e) { html = String(s == null ? '' : s).replace(/\n/g, '<br>'); }
             html = wbDedupeHtml(html);
+            // marked 输出的裸 <table> 没有横滑包裹，宽表会撑破正文；
+            // 统一包 .rich-table-wrap（overflow-x:auto）并补 rich-table 类，与结果区表格同一套样式
+            html = html.replace(/<table>/g, '<div class="rich-table-wrap"><table class="rich-table">')
+                       .replace(/<\/table>/g, '</table></div>');
             if (html && String(html).trim()) {
                 html += '<p class="wb-assist-note">' + WB_ASSIST_NOTE + '</p>';
             }

@@ -972,9 +972,11 @@ lock = threading.Semaphore(3)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 上传文件上限 50MB，防超大文件把服务压垮
-# 请求体全局上限 10MB（第八十九轮）：超出 Flask 自动返 413，防超大 body DoS
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+# 2026-10-01 统一上传上限：此前三处口径不一（业务闸 50MB / 全局闸 10MB / 提示文案 20MB），
+# 11MB 文件会先撞全局 413。统一为 20MB 单一常量，代码与文案从此一致。
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 上传文件上限 20MB，防超大文件把服务压垮
+# 请求体全局上限：超出 Flask 自动返 413，防超大 body DoS（与业务闸同值，不再互相打架）
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE
 
 # 存储最新结果
 latest_result = None
@@ -1456,19 +1458,45 @@ def _export_data_from_request():
     return request.get_json(force=True, silent=True) or {}
 
 
-def _export_review_gate(data, mode="deep"):
-    """系统默认评委打分门（第一百二十一轮）：导出前评分，<80 打回；记录入 export_reviews。
+def _resolve_export_mode(data):
+    """解析导出记录的生成模式：请求参数优先，缺省回查 history 表的 mode 列。
 
-    返回 (passed, score, reasons)。前台只看到「已达标/未达标」，不展示分数明细。
+    fast 稿必须按 fast 标准审（fast 链路没有图表/deck/实施计划等 deep 专属产物），
+    前端漏传 mode 时靠这里兜底，避免再出现 271 号记录式的「按 deep 标准误杀 fast」。
+    """
+    mode = str(data.get("mode") or "").strip().lower()
+    if mode in ("fast", "deep"):
+        return mode
+    hid = data.get("history_id") or request.args.get("history_id")
+    if hid:
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            row = c.execute("SELECT mode FROM history WHERE id=?", (int(hid),)).fetchone()
+            conn.close()
+            if row and str(row[0] or "").strip().lower() in ("fast", "deep"):
+                return str(row[0]).strip().lower()
+        except Exception:
+            pass
+    return "deep"
+
+
+def _export_review_gate(data, mode=None):
+    """系统默认评委打分门（第一百二十一轮）：评分并记录入 export_reviews。
+
+    2026-10-01（用户反馈「网站的功能就是帮用户修改，而不是让他们自己改」）：
+    从「拦截用户」改为「警告放行」——只有正文乱码这类「文本非法」硬错误
+    返回 blocked=True，评分不足/缺图表/占位符/双盲泄露等全部降为警告（reasons）
+    随文件放行，由调用方写入 X-Export-Warnings 响应头交给前端提示用户。
+    返回 (blocked, score, reasons)。
     """
     rec = _fetch_record_from_source(data)
     if not rec:
         # 没回源到完整记录（如只传了 text），跳过评分门，正常导出
-        return True, None, []
+        return False, None, []
     try:
         from quality_gate import score_export
-        score, dims, reasons = score_export(rec, mode)
-        passed = score >= 85
+        score, dims, reasons, hard = score_export(rec, mode or _resolve_export_mode(data))
         conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO export_reviews (history_id, score, dims, reasons, passed, created_time) "
@@ -1476,13 +1504,14 @@ def _export_review_gate(data, mode="deep"):
                   (int(data.get("history_id") or 0) or None, score,
                    json.dumps(dims, ensure_ascii=False),
                    json.dumps(reasons, ensure_ascii=False),
-                   1 if passed else 0, datetime.now().strftime("%Y-%m-%d %H:%M")))
+                   1 if (score is not None and score >= 85) else 0,
+                   datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         conn.close()
-        return passed, score, reasons
+        return bool(hard), score, reasons
     except Exception as e:
         print(f"[export_review] 评分失败，放行导出：{e}")
-        return True, None, []
+        return False, None, []
 
 
 def _reorder_markdown_by_chapters(text, ordered_titles):
@@ -1501,7 +1530,11 @@ def _reorder_markdown_by_chapters(text, ordered_titles):
     cur = {"head": None, "body": []}
     for line in text.split("\n"):
         m = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if m and m.group(1).startswith("##"):
+        # 2026-10-01 P1 修复（评委视角 E2E 实测）：原 startswith("##") 把 ###/#### 小节
+        # 也切成独立"章节块"，重排后 27 个 H3 被撕出父章节、且重建时硬编码 "## " 把
+        # 层级降级成 H2——带赛事名导出（前端必经路径）必现，Word/PDF 双中。
+        # 只按精确 H2 切块，小节留在父块 body 里原样随块移动。
+        if m and len(m.group(1)) == 2:
             if cur["head"] is not None or cur["body"]:
                 blocks.append(cur)
             cur = {"head": m.group(2).strip(), "body": []}
@@ -1701,6 +1734,9 @@ def upload_pdf():
     with open(filepath, 'wb') as f:
         f.write(data_bytes)
     text = ""
+    # 隐私（2026-10-01）：落盘只为解析，解析完（无论成败）立即删原件——
+    # uploads/ 不留任何用户文件（reference 用途也只消费解析出的 text，
+    # save_official_doc 不依赖原件；与 parse_material 的 finally 同一套逻辑）。
     try:
         if ext == '.pdf':
             text = _pdf_to_text(filepath)
@@ -1710,7 +1746,9 @@ def upload_pdf():
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
                 text = f2.read()
     except Exception as e:
-        return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+        return jsonify({"success": False, "error": "文件解析失败：" + _sanitize_error_detail(e)})
+    finally:
+        _safe_unlink(filepath)
     import re
     text = re.sub(r'\n\s*\n', '\n', text).strip()
     if not text:
@@ -1759,7 +1797,7 @@ def parse_material():
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read()
         except Exception as e:
-            return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+            return jsonify({"success": False, "error": "文件解析失败：" + _sanitize_error_detail(e)})
         finally:
             # 解析完成即删落盘文件（第九十二轮）：用户材料不留档
             _safe_unlink(filepath)
@@ -1781,12 +1819,30 @@ def parse_material():
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
-    # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，<80 打回
-    _passed, _score, _reasons = _export_review_gate(data)
-    if _passed is False:
+    # 质量门（mode 感知 + 警告放行，2026-10-01 二次误杀复盘）：
+    # 网站的本职是帮用户改稿，不是拦着不让导出。fast 稿按 fast 标准审
+    # （fast 链路没有图表/deck/实施计划等 deep 专属产物）；除「正文乱码」
+    # 这类文本非法硬错误仍拒绝外，其余质量问题（评分不足、缺图表、占位符、
+    # 数字口径冲突…）全部降级为警告，照常导出并写入 X-Export-Warnings
+    # 响应头，由前端提示用户自行核对修改。
+    _mode = _resolve_export_mode(data)
+    _warnings = []
+    _blocked, _score, _reasons = _export_review_gate(data, mode=_mode)
+    if _blocked:
         return jsonify({"success": False, "code": "quality_fail", "score": _score,
-                        "error": "内容质量未达标，请重新生成后再导出",
+                        "error": "；".join(r.replace("一票否决：", "") for r in _reasons[:3]),
                         "reasons": _reasons}), 422
+    _warnings.extend(_reasons)
+    # 总审（板块完整性 + 跨板块数字冲突）按 mode 检查，只警告不拦截：
+    # 口径冲突这类问题交给用户核对，不再作为拒绝导出的理由。
+    _rec = _fetch_record_from_source(data)
+    if _rec:
+        try:
+            from quality_gate import check_total
+            _tok, _tissues = check_total(_rec, _mode)
+            _warnings.extend(_tissues)
+        except Exception:
+            pass
     text = data.get('text', '')
     # 后端原文覆盖：前端 DOM 文本可能被串台/断网污染，传 task_id / history_id 时优先取后端原文
     _backend_text = _fetch_proposal_from_source(data)
@@ -1825,35 +1881,49 @@ def export_word():
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
-    # 三轮·导出终检（第一百二十二轮）：回读产物，中文乱码/标题层级异常则删产物打回。
-    # 暂不查 TOC（TOC 是另一处 docx_render 的活，先修乱码/标题，避免误伤现有导出）。
+    # 三轮·导出终检（第一百二十二轮）：回读产物检查。
+    # 2026-10-01：正文为空/中文乱码 = 产物不可用的硬错误仍拒绝；
+    # 标题层级这类结构问题降为警告放行，不再删用户的文件。
     try:
         from quality_gate import check_docx
         _ok, _issues = check_docx(filepath, expect_type=None)
         if not _ok:
-            _safe_unlink(filepath)
-            return jsonify({"success": False, "code": "export_quality_fail",
-                            "error": "导出质量未达标：" + "；".join(_issues[:3])}), 422
+            _hard_issues = [i for i in _issues if ("为空" in i or "乱码" in i)]
+            if _hard_issues:
+                _safe_unlink(filepath)
+                return jsonify({"success": False, "code": "export_quality_fail",
+                                "error": "；".join(_hard_issues[:3])}), 422
+            _warnings.extend(_issues)
     except Exception:
         pass
-    # 417 轮：Word 封面/目录检测——凡是过了 600 字的导出件，必须带封面页 + 目录页。
-    # 旧门槛 2500 字 + 只认 TOC 域，把简洁版说明书整段放过、长文档又误杀，
-    # 结果就是用户手机打开的 Word 直接从「一、项目背景与痛点」开始。
+    # 417 轮：Word 封面/目录检测——凡是过了 600 字的导出件，检查封面页 + 目录页。
+    # 2026-10-01：422 拦截改警告放行——文件照常交付，目录缺失提示用户在
+    # Word 里一键补齐即可，不再打回让用户重导。
     try:
         from export_guard import check_word_toc
         _toc = check_word_toc(filepath)
         _doc_chars = len(text.replace('\n', '').replace(' ', ''))
         if (not _toc.get("ok")) and _doc_chars >= 600:
-            _safe_unlink(filepath)
-            return jsonify({"success": False, "code": "export_toc_fail",
-                            "error": "目录缺失（长文档需含可刷新目录）：" + "；".join(_toc.get("errors", []))}), 422
+            _warnings.append("导出的 Word 未含可刷新的目录页，建议在 Word 中「引用 → 目录」一键插入后再提交（"
+                             + "；".join(_toc.get("errors", [])[:2]) + "）")
         print(f"[export_word] 目录规范检测：{_toc}")
     except Exception as _e:
         print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return send_file(filepath, as_attachment=True,
-                     download_name=_export_filename(project, competition, title, '.docx'))
+    _resp = send_file(filepath, as_attachment=True,
+                      download_name=_export_filename(project, competition, title, '.docx'))
+    if _warnings:
+        # 质量警告随文件放行：fetch-blob 下载可读到该响应头（GET 直链时浏览器忽略），
+        # 前端据此提示用户「文件已导出 + 待核对问题清单」。
+        try:
+            from urllib.parse import quote as _uq
+            _resp.headers['X-Export-Warnings'] = _uq(json.dumps(_warnings, ensure_ascii=False))
+            _resp.headers['Access-Control-Expose-Headers'] = 'X-Export-Warnings'
+            print(f"[export_word] 质量警告放行（{len(_warnings)} 条）：{_warnings}")
+        except Exception:
+            pass
+    return _resp
 
 
 @app.route('/api/export_pdf', methods=['GET', 'POST'])
@@ -1885,7 +1955,7 @@ def export_pdf():
         filepath = 'tmp_export.pdf'
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
-        return jsonify({"error": f"PDF 生成失败：{e}"}), 500
+        return jsonify({"error": f"PDF 生成失败：{_sanitize_error_detail(e)}"}), 500
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
     # 417 轮：补上「按赛事查页数/体积」并给出可执行的删减建议——
     # 之前只丢一句「质量未达标」就把文件删了，用户不知道该删哪儿。
@@ -2210,7 +2280,7 @@ def share_export(token):
             fp = 'tmp_share_export.pdf'
             render_markdown_to_pdf(text, fp, title=title)
         except Exception as e:
-            return jsonify({"success": False, "error": f"PDF 生成失败：{e}"}), 500
+            return jsonify({"success": False, "error": f"PDF 生成失败：{_sanitize_error_detail(e)}"}), 500
         return send_file(fp, as_attachment=True,
                          download_name=_export_filename(project, comp, '项目申报书', '.pdf'))
 
@@ -3160,16 +3230,59 @@ def create_issue(kind, source, content):
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
 def delete_history(history_id):
+    # 2026-10-01 鉴权对齐：与历史查询接口（/api/history）一致，走 comp_uid
+    # 签名 cookie 硬鉴权（401），无有效 cookie 时明确拒绝而不是退回 IP 软隔离
+    _a = _require_uid()
+    if _a is not None:
+        return _a
     conn = get_db()
     c = conn.cursor()
     # 安全对齐（第九十二轮）：仅允许删除本人记录，去掉「公共记录可被任何人删」的 OR 条件
     c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
-    conn.commit()
     deleted = c.rowcount
+    if deleted:
+        # 隐私硬要求（2026-10-01）：连带清理挂在这条记录上的分享链接/反馈/导出评分，
+        # 不然记录删了、用户内容还留在子表里能被反查
+        c.execute("DELETE FROM shares WHERE history_id = ?", (history_id,))
+        c.execute("DELETE FROM feedback WHERE history_id = ?", (history_id,))
+        c.execute("DELETE FROM export_reviews WHERE history_id = ?", (history_id,))
+    conn.commit()
     conn.close()
     if deleted:
-        return jsonify({"success": True})
+        return jsonify({"success": True, "deleted": deleted})
     return jsonify({"success": False, "error": "记录不存在"}), 404
+
+
+@app.route('/api/history', methods=['DELETE'])
+def delete_all_history():
+    """清空当前用户的全部历史记录（隐私硬要求：「我的数据我能删」）。
+
+    2026-10-01 新增。鉴权与 /api/history 查询完全一致：comp_uid 签名 cookie
+    硬鉴权（401）；只删本人（user_id）记录，他人/公共数据不可触及；连带清理
+    这些记录的分享链接（shares）、反馈（feedback）、导出评分（export_reviews），
+    避免留下可反查的孤儿数据。范文库 kb_samples 是团队共享数据，不在此列
+    （另有 /api/kb/delete/<id>）。幂等：没有记录时返回 deleted=0 也算成功。
+    """
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    uid = _current_uid()
+    conn = get_db()
+    c = conn.cursor()
+    ids = [r[0] for r in c.execute("SELECT id FROM history WHERE user_id = ?", (uid,)).fetchall()]
+    deleted = 0
+    if ids:
+        _ph = ",".join("?" * len(ids))
+        c.execute(f"DELETE FROM shares WHERE history_id IN ({_ph})", ids)
+        c.execute(f"DELETE FROM feedback WHERE history_id IN ({_ph})", ids)
+        c.execute(f"DELETE FROM export_reviews WHERE history_id IN ({_ph})", ids)
+        # feedback.user_id 兜底：挂在本人名下但没绑 history_id 的反馈一并清掉
+        c.execute("DELETE FROM feedback WHERE user_id = ?", (uid,))
+        c.execute("DELETE FROM history WHERE user_id = ?", (uid,))
+        deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "deleted": deleted})
 
 
 def _parse_expert_review(text):
@@ -3691,19 +3804,43 @@ def _extract_keywords_llm(idea):
         return []
 
 
+def _sanitize_error_detail(e, limit=200):
+    """异常摘要脱敏（2026-10-01：用户投诉「报错不说原因」，截图只有一句稍后重试）。
+
+    目标是「透出原因但不泄密」：保留异常类型 + 摘要供用户截图反馈/排查，
+    抹掉内部路径、API key、Bearer token——这些一旦出现在前端就等于把服务器
+    结构和凭据暴露出去。
+    """
+    try:
+        s = str(e) or ""
+    except Exception:
+        s = ""
+    s = re.sub(r'[A-Za-z]:\\[^\s\'"]+', '[路径]', s)                 # Windows 路径
+    s = re.sub(r'(?<![\w.])/(?:[\w.-]+/){1,}[\w.-]*', '[路径]', s)   # Unix 路径 / URL 路径
+    s = re.sub(r'sk-[A-Za-z0-9_-]{8,}', 'sk-***', s)                 # OpenAI/DeepSeek 风格 key
+    s = re.sub(r'(Bearer\s+)[A-Za-z0-9._-]+', r'\1***', s)           # Bearer token
+    s = re.sub(r'\s+', ' ', s).strip()
+    if len(s) > limit:
+        s = s[:limit] + "…"
+    return f"{type(e).__name__}: {s}" if s else type(e).__name__
+
+
 def _friendly_error(e):
     err = str(e).lower()
+    # 2026-10-01：每条兜底文案都带上脱敏后的真实原因——用户截图时能看出
+    # 到底是超时/鉴权/余额还是别的，而不是一句「稍后重试」打发。
+    _cause = _sanitize_error_detail(e)
     if "timeout" in err or "timed out" in err:
-        return "模型响应超时，请稍后重试"
+        return f"模型响应超时（{_cause}），请稍后重试"
     if "429" in err or "rate" in err or "too many" in err:
-        return "请求过于频繁，请稍后再试"
+        return f"请求过于频繁（{_cause}），请稍后再试"
     if "401" in err or "auth" in err or "api key" in err:
-        return "模型接口鉴权失败，请检查 DEEPSEEK_API_KEY"
+        return f"模型接口鉴权失败（{_cause}），请检查 DEEPSEEK_API_KEY"
     if "402" in err or "insufficient balance" in err or "payment required" in err or "余额不足" in err:
-        return "DeepSeek 账户余额不足，请充值后重试（充值后无需重启服务）"
+        return f"DeepSeek 账户余额不足（{_cause}），请充值后重试（充值后无需重启服务）"
     if "上限" in err or "配额" in err or "quota" in err:
-        return "今日调用次数已达上限，请明天再试或联系管理员调整额度"
-    return "生成失败，请稍后重试"
+        return f"今日调用次数已达上限（{_cause}），请明天再试或联系管理员调整额度"
+    return f"生成失败（{_cause}），请稍后重试或联系管理员"
 
 
 def _error_code(e):
@@ -3792,7 +3929,7 @@ def generate():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)})
+        return jsonify({"success": False, "error": _friendly_error(e), "detail": _sanitize_error_detail(e)})
 
 
 # ---- 异步任务阶段上报 ----
@@ -3904,8 +4041,9 @@ def _launch_worker(task_id):
             traceback.print_exc()
             msg = _friendly_error(last_err)
             app_log.error("generate", f"task={task_id[:8]} {msg} | {traceback.format_exc(limit=2)}")
+            # gen_failures 留原始 detail 供运维排障（admin 侧）；/api/status 面向用户，detail 走脱敏
             record_gen_failure(task_id, msg, str(last_err))
-            progress.mark_error(task_id, error=msg, detail=str(last_err))
+            progress.mark_error(task_id, error=msg, detail=_sanitize_error_detail(last_err))
             tasks[task_id]["error_code"] = last_code
         finally:
             clear_speech_stream(task_id)
@@ -4135,7 +4273,8 @@ def get_task_status(task_id):
     # 兜底超时：running 且 10 分钟没任何更新，判定为卡死，避免前端无限等待
     if t.get("status") == "running" and (time.time() - t.get("updated_at", 0)) > 600:
         t["status"] = "error"
-        t["error"] = "任务超时，请重试"
+        # 2026-10-01：超时文案带上卡住的最后阶段，用户截图就能看出断在哪一步
+        t["error"] = f"任务超时（最后阶段：{t.get('stage') or '未知'}），请重试"
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
@@ -4144,7 +4283,7 @@ def get_task_status(task_id):
     #   之前按 10 分钟判过期会把排队中的真实用户误杀（2026-09-27 自查发现）。
     if t.get("status") == "queued" and (time.time() - t.get("updated_at", 0)) > 1800:
         t["status"] = "error"
-        t["error"] = "任务排队超时，请重新生成"
+        t["error"] = "任务排队超时（超过 30 分钟未排到生成位），请重新生成"
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
@@ -4401,7 +4540,7 @@ def export_original_format():
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         )
     except Exception as e:
-        return jsonify({"success": False, "error": f"导出失败：{str(e)}"})
+        return jsonify({"success": False, "error": f"导出失败：{_sanitize_error_detail(e)}"})
 
 
 @app.route('/api/upload_file', methods=['POST'])
@@ -4412,7 +4551,8 @@ def upload_file():
     import os
     from werkzeug.utils import secure_filename
     # 194 轮 C3：文件大小白名单 + 上传限流（防匿名反复上传烧 LLM 识别额度 / 大文件拖垮内存）
-    _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+    # 2026-10-01：本地 10MB 常量并入全局 MAX_UPLOAD_SIZE（曾三处不一致）
+    _MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE
     if _upload_rate_limited():
         return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     if 'file' not in request.files:
@@ -4522,7 +4662,7 @@ def upload_file():
         return jsonify({"success": True, "text": text,
                         "file_type": file_type, "summary": summary, "key_points": key_points})
     except Exception as e:
-        return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
+        return jsonify({"success": False, "error": f"文件解析失败：{_sanitize_error_detail(e)}"})
 
 
 @app.route('/api/export_zip', methods=['GET', 'POST'])
@@ -4542,6 +4682,13 @@ def export_zip():
             _rec['theme'] = data['theme']
         if data.get('variant'):
             _rec['variant'] = data['variant']
+        # 2026-10-01：_fetch_record_from_source 只返回 result_data 原文（不含
+        # mode/history_id），直接整体覆盖会丢掉请求里的 mode → _resolve_export_mode
+        # 误判 deep → fast 记录打包 422「11<12」复发。覆盖前把这两个键补回去。
+        if data.get('mode') and not _rec.get('mode'):
+            _rec['mode'] = data['mode']
+        if data.get('history_id') and not _rec.get('history_id'):
+            _rec['history_id'] = data['history_id']
         data = _rec
     mappings = [
         ("01_赛事规则解析报告.docx", "赛事规则解析报告", data.get('parsed_rules', '')),
@@ -4695,6 +4842,20 @@ def export_zip():
                         chart_paths[c.get('id')] = img
                 build_deck(deck, os.path.join(tmpdir, '14_路演PPT.pptx'), chart_paths)
                 zf.write(os.path.join(tmpdir, '14_路演PPT.pptx'), '14_路演PPT.pptx')
+                # 2026-10-01：zip 路径此前绕过 PPT 页数校验（export_pptx 单独下载有、zip 打包没有）。
+                # 对齐大纲 + ≤20 页（iCAN 硬要求）；超限不拦下载，走 X-Export-Warnings 提示。
+                try:
+                    from pptx import Presentation as _WBPp
+                    _wb_slides = len(_WBPp(os.path.join(tmpdir, '14_路演PPT.pptx')).slides)
+                    _wb_expect = len(deck.get('slides') or [])
+                    if _wb_slides > 20:
+                        data.setdefault('_export_warnings', []).append(
+                            f"路演PPT {_wb_slides} 页超出 20 页上限（iCAN 硬要求），建议精简后重新生成")
+                    elif _wb_expect and _wb_slides != _wb_expect:
+                        data.setdefault('_export_warnings', []).append(
+                            f"路演PPT {_wb_slides} 页与大纲 {_wb_expect} 页不一致，请核对")
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[export_zip] PPT失败: {e}")
     project = data.get('idea') or data.get('project_name') or ''
@@ -4702,16 +4863,26 @@ def export_zip():
     # 导出终检（第一百二十五轮）：zip 文件数/体积
     try:
         from quality_gate import check_zip
-        _ok, _issues = check_zip(zippath, expect_count=12)
+        # 2026-10-01：期望件数按 mode 感知（deep=12 含路演 PPT / fast=11）。
+        # 写死 12 会把所有 fast 记录的「一键打包」打成 422（验证线实锤）。
+        # _resolve_export_mode 自带 history 表 mode 列兜底。
+        _ok, _issues = check_zip(zippath, mode=_resolve_export_mode(data))
         if not _ok:
             _safe_unlink(zippath)
             return jsonify({"success": False, "code": "export_quality_fail",
                             "error": "打包质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
         pass
-    return send_file(zippath, as_attachment=True,
+    _wb_resp = send_file(zippath, as_attachment=True,
                      download_name=_export_filename(project, competition, '材料包', '.zip'),
                      mimetype='application/zip')
+    # 2026-10-01：zip 导出也透出警告头（PPT 页数等），前端 wbShowExportWarnings 已接线
+    _wb_zwarns = data.get('_export_warnings') or []
+    if _wb_zwarns:
+        from urllib.parse import quote as _uq
+        _wb_resp.headers['X-Export-Warnings'] = _uq(json.dumps(_wb_zwarns, ensure_ascii=False))
+        _wb_resp.headers['Access-Control-Expose-Headers'] = 'X-Export-Warnings'
+    return _wb_resp
 
 
 # ============ 富媒体：图表图片 & PPT 导出 ============
@@ -5479,6 +5650,11 @@ def export_pptx():
             _rec["theme"] = data["theme"]
         if data.get("variant"):
             _rec["variant"] = data["variant"]
+        # 2026-10-01：同 export_zip——记录原文覆盖会丢 mode/history_id，补回防误判
+        if data.get("mode") and not _rec.get("mode"):
+            _rec["mode"] = data["mode"]
+        if data.get("history_id") and not _rec.get("history_id"):
+            _rec["history_id"] = data["history_id"]
         data = _rec
     deck = data.get('deck') or data.get('rich_deck')
     if not deck or not deck.get('slides'):
@@ -5551,7 +5727,7 @@ def export_pptx():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"PPT导出失败：{e}"}), 500
+        return jsonify({"error": f"PPT导出失败：{_sanitize_error_detail(e)}"}), 500
 
 
 # ============ 范文库管理接口 ============
@@ -5926,7 +6102,7 @@ def handle_unexpected_error(e):
     if request.path.startswith('/api/export'):
         record_gen_failure("", str(e), traceback.format_exc(limit=3)[-400:],
                            type="export", path=request.path)
-    return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
+    return jsonify({"success": False, "error": _friendly_error(e), "detail": _sanitize_error_detail(e)}), 500
 
 
 # ============ 漏洞库后台页 /admin/vulns（第 190 轮新增，整体纯追加块） ============

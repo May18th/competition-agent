@@ -2181,7 +2181,7 @@ Codex 后端代码已全部完成并部署。剩两条验收改为豆包在服�
 - **登录页升级 ✅**：`/admin/login` 改用户名+密码双输入框，白底浅蓝渐变 + 渐变按钮 + 页脚版权。
 - **审计 ✅**：`_audit_admin_login()` 记录 用户名+IP+成功/失败+角色。
 - **配置文档 ✅**：`docs/如何自定义账密.md`（账号格式/服务器配置/生成 bcrypt/回退说明）。
-- **账号已定（用户确认）**：3498414260 / 125325452652zz（admin）、admin / 123456（admin）、kcwx123 / 123456（readonly）。bcrypt 哈希见 `口令备忘.md`（gitignored）。
+- **账号已定（用户确认）**：3498414260 / 1253••••••zz（已脱敏，2026-10-01）（admin）、admin / 123456（admin）、kcwx123 / 123456（readonly）。bcrypt 哈希见 `口令备忘.md`（gitignored）。
 
 实测：管理员登录 200 role=admin、错密码 401「用户名或密码错误」、demo 登录 200 role=readonly、demo 写 403、demo GET 200；表单登录 302→/admin。
 

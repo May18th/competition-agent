@@ -9,9 +9,9 @@
          标签页也永远是空白图标。直接复用 logo.png，零风险。
          193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
          png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
-    <link rel="icon" href="/static/favicon.ico?v=20260930b" sizes="any">
-    <link rel="icon" type="image/png" href="/static/logo.png?v=20260930b">
-    <link rel="apple-touch-icon" href="/static/logo_apple.png?v=20260930b">
+    <link rel="icon" href="/static/favicon.ico?v=20261002a" sizes="any">
+    <link rel="icon" type="image/png" href="/static/logo.png?v=20261002a">
+    <link rel="apple-touch-icon" href="/static/logo_apple.png?v=20261002a">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="科创赛事助手">
     <meta property="og:title" content="可创无限・科创赛事助手">
@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20260930b">
+    <link rel="stylesheet" href="/static/style.css?v=20261002a">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -137,7 +137,7 @@
              logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
              <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手"> 即可，样式已写好 -->
         <div class="hero">
-            <img src="/static/logo_full.png?v=20260930b" class="wb-hero-logo" alt="科创赛事助手" width="72" height="76">
+            <img src="/static/logo_full.png?v=20261002a" class="wb-hero-logo" alt="科创赛事助手" width="72" height="76">
             <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 科创赛事助手」统一。
                  之前页面内叫「赛创助手」、标签页叫「科创赛事助手」，同一产品两个名字，
                  评委截图/口口相传时会以为是两家东西 -->
@@ -164,10 +164,10 @@
             <!-- 今日额度不再前端展示（用户拍板）：数字是全站剩余不是个人维度，
                  显眼了反而让用户困惑、也把运营盘子亮给评委。后端 /api/quota 接口保留，后台可查 -->
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showIntro(true)">
-                <span class="wb-dot"></span>使用说明
+                <span class="wb-dot" style="animation-delay:.25s"></span>使用说明
             </button>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="showHistory()">
-                <span class="wb-dot"></span>历史
+                <span class="wb-dot" style="animation-delay:.55s"></span>历史
             </button>
             <!-- 第一百四十二 / 第一百四十七轮催办：顶部主按钮收敛。
                  「背景」是低频装饰项（换页面底图），不该与「使用说明 / 历史 / 反馈」平级占位，
@@ -176,7 +176,7 @@
             <div id="wbMoreWrap" style="position: relative;">
                 <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
                         aria-haspopup="true" aria-expanded="false" title="更多功能">
-                    <span class="wb-dot"></span>更多 ▾
+                    <span class="wb-dot" style="animation-delay:.85s"></span>更多 ▾
                 </button>
                 <div id="wbMoreMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px);
                                             z-index: 1700; min-width: 148px; padding: 6px;
@@ -187,10 +187,25 @@
                             onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
                         <span class="wb-dot"></span>页面背景
                     </button>
+                    <button class="wb-glass-btn wb-glass-btn-sm"
+                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
+                            onclick="wbToggleTheme();wbMoreClose()" title="切换日间/夜间模式">
+                        <span class="wb-dot" style="animation-delay:.4s"></span>日间 / 夜间
+                    </button>
+                    <button class="wb-glass-btn wb-glass-btn-sm"
+                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
+                            onclick="wbHistoryOpen?wbHistoryOpen():location.hash='';wbMoreClose()" title="查看生成历史">
+                        <span class="wb-dot" style="animation-delay:.55s"></span>历史记录
+                    </button>
+                    <button class="wb-glass-btn wb-glass-btn-sm"
+                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
+                            onclick="wbFeedbackOpen();wbMoreClose()" title="反馈问题或建议">
+                        <span class="wb-dot" style="animation-delay:.7s"></span>意见反馈
+                    </button>
                 </div>
             </div>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbFeedbackOpen()" title="任何状态下都能反馈问题或建议">
-                <span class="wb-dot"></span>反馈
+                <span class="wb-dot" style="animation-delay:1.15s"></span>反馈
             </button>
         </div>
 
@@ -198,7 +213,11 @@
              上传的图只进浏览器 IndexedDB，绝不上传服务器 —— 不做公共素材库，
              避免平台替用户传播他人作品（著作权/肖像权）。 -->
         <div id="wbBgPanel" style="display: none; margin: 0 4px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); position: relative; z-index: 1600;">
-            <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px;">页面背景</div>
+            <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center;">
+                页面背景
+                <button onclick="wbBgPanelClose()" title="收起背景面板"
+                        style="margin-left: auto; width: 26px; height: 26px; line-height: 24px; text-align: center; padding: 0; background: var(--surface-3, rgba(120,130,160,.15)); color: var(--text-dim); border: 1px solid var(--line); border-radius: 50%; cursor: pointer; font-size: 15px;">×</button>
+            </div>
             <div id="wbBgSwatches" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 8px;"></div>
             <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <label style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--c-a); color: #fff; border-radius: 8px; font-size: 12.5px; cursor: pointer;">
@@ -237,8 +256,47 @@
                 信息越具体，生成内容越精准 · 赛事与档位会记住；创意和草稿只保留在当前标签页，关闭即清除
             </div>
             <div class="wb-formgrid" style="display: grid; gap: 20px;">
+                <!-- 统一材料框架主入口（2026-10-01 置顶）：导入任何材料（申报书/项目书/草稿）
+                     → 自动识别 → 一次填充下方全部输入框（赛事/创意/团队/实测数据/关键词）。
+                     从零开始的用户直接跳过往下填。 -->
+                <div class="form-group" style="padding: 14px 16px; border: 1.5px dashed var(--c-a); border-radius: 12px;">
+                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 第 1 步 · 有现成材料？导入后自动填好全表<span class="wb-opt">（没有就跳过，直接往下填）</span></label>
+                    <!-- 用户点名要讲清「创意」和「草稿」的区别：填错入口会走错生成通路 -->
+                    <div style="margin: 4px 0 10px; font-size: 12.5px; line-height: 1.8; color: var(--text-mute);">
+                        <b style="color: var(--text);">「草稿」和「创意」的区别：</b><br>
+                        · <b style="color: var(--text);">申报书草稿</b> = 你已经写过一部分申报书 → 粘贴 / 传文件，系统在原文基础上<b style="color: var(--text);">优化改写</b>，并自动把里面的创意、团队、实测数据填到下面各框；<br>
+                        · <b style="color: var(--text);">项目创意</b>（第 3 步）= 还没动笔、只有想法 → 一两句话写清做什么，系统从零写出整篇。<br>
+                        两个都填时，点生成会让你选走哪条路，不会互相覆盖。
+                    </div>
+                    <!-- 隐私承诺上移到表单区：原来只藏在页脚免责声明第 6 条，用户填材料时根本看不见 -->
+                    <div style="margin: 0 0 10px; font-size: 12px; color: var(--text-mute); line-height: 1.7;">🔒 你的创意与草稿仅用于本次生成：不做模型训练、不外传第三方，随时可删除。</div>
+                    <textarea id="proposal_draft" placeholder="把你写过的申报书 / 项目书粘贴到这里，或用下方按钮上传 PDF / Word / TXT / MD；系统会自动识别并填充下方全部输入框" rows="3" style="min-height: 80px;"></textarea>
+                    <div id="uploadRow" style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+                        <button id="btnUploadDraft" onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书
+                        </button>
+                        <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 粘贴文本
+                        </button>
+                        <button onclick="document.getElementById('tplFile').click()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;" title="上传学校/官方的申报模板，按模板章节结构生成">
+                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 导入模板
+                        </button>
+                        <!-- accept 同时给扩展名和 MIME：只写扩展名时，部分手机（尤其 iOS/微信）
+                             会把选择器退化成「照片 / 视频」，选不到 PDF 和 Word -->
+                        <input type="file" id="tplFile" accept=".docx,.doc,.pdf,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
+                        <input type="file" id="ideaFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
+                    </div>
+                    <div id="ideaFileName" style="font-size: 12px; color: var(--c-a); margin-top: 4px;"></div>
+                    <div id="mobileUploadTip" style="display: none; margin-top: 8px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; color: var(--text-dim); line-height: 1.75;">
+                        <b>手机上传说明</b>：支持 PDF / Word / TXT / Markdown。<br>
+                        ① 点上传只出现「照片 / 视频」——说明是在微信或 QQ 内置浏览器里，
+                        请点右上角 <b>···</b> → <b>用 Safari（或浏览器）打开</b> 后再传。<br>
+                        ② Safari 里选「<b>浏览</b>」→ 文件 App，就能选到 DOCX / PDF。<br>
+                        ③ 最省事：手机上长按复制文字，点上面的 <b>粘贴文本</b>。
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 第 1 步 · 赛事名称</label>
+                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-trophy"/></svg> 第 2 步 · 赛事名称</label>
                     <!-- 既能下拉选，也能自己填（手机上没法从下拉里挑未收录的赛事） -->
                     <div style="position: relative;">
                         <input type="text" id="competition" list="competitionList" autocomplete="off" aria-label="赛事名称"
@@ -398,14 +456,18 @@
                 </div>
                     </div>
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 第 2 步 · 项目创意
+                    <label style="display: flex; align-items: center; gap: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 第 3 步 · 项目创意
                         <!-- 「从材料识别」：已有申报书/材料的用户不用手抄五遍。
                              入口放在创意标题右侧（手就在这里），点开是弹层，不占首屏高度 -->
                         <button type="button" class="wb-textbtn" style="margin-left: auto;"
-                                title="上传或粘贴已有材料，自动识别后填充创意/团队/实测数据等"
+                                title="上传或粘贴已有材料，自动识别后填充全部输入框（创意/团队/实测数据等）"
                                 onclick="wbMatOpen()">从材料识别</button>
                     </label>
                     <textarea id="idea" aria-label="项目创意" placeholder="例：面向大学城学生的智能取件柜，解决快递最后 100 米取件排队问题" rows="3" style="min-height: 80px;"></textarea>
+                    <!-- 与第 1 步草稿的区别在这里再点一次：没动笔的填这里，动过笔的回第 1 步导入 -->
+                    <div style="margin-top: 6px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
+                        还没动笔、只有想法？在这里一两句话写清「做什么、解决什么问题」，系统从零写出整篇；已经写过草稿就用上面<b style="color: var(--text);">第 1 步</b>导入，系统在原文基础上优化。
+                    </div>
                 </div>
 
                 <!-- 团队成员（选填）：后端已放宽口径——用户给的真实姓名/角色/分工原样写进团队章节，
@@ -416,7 +478,7 @@
                     <div style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
                         <!-- 105-2：成员输入框全端默认展开（用户反馈「正常输入栏没有了」），文案不再写「展开填写」 -->
                         <span onclick="wbAdvToggle('teamBody')" style="color:var(--c-a); cursor:pointer; user-select:none; display:flex; align-items:center; gap:6px;">
-                            第 3 步 · 团队成员 / 分工（选填，强烈建议填真人）<span id="teamBodyArrow">▾</span>
+                            第 4 步 · 团队成员 / 分工（选填，强烈建议填真人）<span id="teamBodyArrow">▾</span>
                         </span>
                         <button type="button" class="wb-textbtn" style="margin-left:auto; font-size:12px;"
                                 title="按赛事类型给一套能直接改的分工模板，填完请改成你队友的真实姓名与分工"
@@ -490,7 +552,7 @@
                 <!-- 高级参数（关键词 / 文风）：要用的人才找得到就行，常态收成一行，不占首屏 -->
                 <div class="form-group">
                     <div onclick="wbAdvToggle('advParamBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        第 4 步 · 补充信息：关键词 / 文风（选填）<span class="wb-tier-flag wb-tier-pro">老手可选</span><span id="advParamBodyArrow">▸</span>
+                        第 5 步 · 补充信息：关键词 / 文风（选填）<span class="wb-tier-flag wb-tier-pro">老手可选</span><span id="advParamBodyArrow">▸</span>
                     </div>
                     <div id="advParamBody" style="display: none;">
                         <div style="margin: 2px 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
@@ -542,38 +604,7 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 申报书草稿<span class="wb-opt">（可选，没有就留空）</span></label>
-                    <div onclick="wbAdvToggle('draftAdvBody')" style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--c-a); cursor:pointer; user-select:none;">
-                        第 5 步 · 粘贴已有草稿 / 上传文件（选填）<span id="draftAdvBodyArrow">▾</span>
-                    </div>
-                    <div id="draftAdvBody">
-                    <textarea id="proposal_draft" placeholder="如果你已经写了一部分申报书，粘贴到这里；没有就留空，系统从创意开始写" rows="3" style="min-height: 80px;"></textarea>
-                    <div id="uploadRow" style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
-                        <button id="btnUploadDraft" onclick="document.getElementById('ideaFile').click()" style="padding: 8px 16px; background: var(--c-a); color: white; border: none; border-radius: 8px; cursor: pointer;">
-                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 上传申报书
-                        </button>
-                        <button onclick="wbPasteDraft()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
-                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 粘贴文本
-                        </button>
-                        <button onclick="document.getElementById('tplFile').click()" style="padding: 8px 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;">
-                            <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-upload"/></svg> 导入模板
-                        </button>
-                        <input type="file" id="tplFile" accept=".docx,.doc,.pdf,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
-                        <!-- accept 同时给扩展名和 MIME：只写扩展名时，部分手机（尤其 iOS/微信）
-                             会把选择器退化成「照片 / 视频」，选不到 PDF 和 Word -->
-                        <input type="file" id="ideaFile" accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
-                    </div>
-                    <div id="ideaFileName" style="font-size: 12px; color: var(--c-a); margin-top: 4px;"></div>
-                    <div id="mobileUploadTip" style="display: none; margin-top: 8px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; color: var(--text-dim); line-height: 1.75;">
-                        <b>手机上传说明</b>：支持 PDF / Word / TXT / Markdown。<br>
-                        ① 点上传只出现「照片 / 视频」——说明是在微信或 QQ 内置浏览器里，
-                        请点右上角 <b>···</b> → <b>用 Safari（或浏览器）打开</b> 后再传。<br>
-                        ② Safari 里选「<b>浏览</b>」→ 文件 App，就能选到 DOCX / PDF。<br>
-                        ③ 最省事：手机上长按复制文字，点上面的 <b>粘贴文本</b>。
-                    </div>
-                </div>
-            </div>
+                <!-- 原「第 5 步 · 粘贴已有草稿」块已整体上移为第 1 步主入口（2026-10-01 统一材料框架） -->
         </div>
 
         <!-- 按钮 -->
@@ -697,13 +728,13 @@
             </div>
             <div id="quickExportBar" style="display:none;">
                 <span class="qe-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 生成完成，可直接导出</span>
-                <button class="qe-primary" onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
-                <button class="qe-secondary" onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
-                <button class="qe-secondary" onclick="exportAll()" style="padding: 10px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
+                <button class="qe-primary" onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--c-a); color: #06283d; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
+                <button class="qe-secondary" onclick="exportOnePDF('proposalText', '项目申报书全文')" style="padding: 10px 16px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载 PDF</button>
+                <button class="qe-secondary" onclick="exportAll()" style="padding: 10px 16px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 14px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-box"/></svg> 一键打包全部</button>
                 <!-- 导出入口去重：打包接口 /api/export_zip 已含 12_路演PPT.pptx（app.py 3104 行确认），
                      独立的「PPT / 分项下载」按钮降级为打包旁边的小箭头菜单，功能保留、视觉不再重复 -->
                 <div style="position: relative; display: inline-block;">
-                    <button type="button" onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 12px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">更多 ▾</button>
+                    <button type="button" onclick="wbExpMenuToggle()" title="更多导出方式" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 10px; cursor: pointer; font-size: 13px;">更多 ▾</button>
                     <div id="wbExpMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; min-width: 200px; padding: 6px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.4); text-align: left;">
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportOnePDF('proposalText', '项目申报书全文')" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">下载 PDF</div>
                         <div onclick="document.getElementById('wbExpMenu').style.display='none';exportAll()" style="padding: 8px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px;">一键打包全部</div>
@@ -712,7 +743,7 @@
                         <div style="padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-mute); line-height: 1.6;">打包已含路演 PPT（.pptx，深度版专属）</div>
                     </div>
                 </div>
-                <button class="qe-secondary" onclick="wbShare()" title="生成一个链接，换设备也能打开这次的结果" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 8px; cursor: pointer; font-size: 13px;">分享链接</button>
+                <button class="qe-secondary" onclick="wbShare()" title="生成一个链接，换设备也能打开这次的结果" style="padding: 10px 14px; background: transparent; color: var(--c-a); border: 1px dashed var(--c-a); border-radius: 10px; cursor: pointer; font-size: 13px;">分享链接</button>
                 <span class="qe-note">Word 可编辑，PDF 排版固定，PPT 只有深度版有</span>
             </div>
 
@@ -1495,19 +1526,56 @@
     <!-- 第八十轮【中】marked 本地化：原来走 jsdelivr CDN（国内不稳，抽风时 marked 加载失败
          → 结果页渲染抛错、看起来像「生成卡住」）。本地 /static/marked.min.js 早就在服务器上，
          直接把顺序倒过来：本地优先，CDN 只作兜底 —— 少一个跨境请求，也不会白屏。 -->
-    <script src="/static/marked.min.js"></script>
-    <script>window.marked || document.write('<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>');</script>
+    <script src="/static/marked.min.js?v=20261002a"></script>
+    <!-- 【P0】CDN 兜底去同步写文档（原 document[.]write 写法）：老内核（夸克/微信/豆包 WebView）
+         里页面解析完成后再同步写文档会破坏文档流，直接导致"打不开"。兜底链改为全程非阻塞：
+         本地静态文件（主源，见上）→ 失败时下方纯文本 polyfill 先顶上（保证能出内容不抛错）
+         → window load 后异步从 CDN 拉真身，拉到就替换 polyfill 并重排版（见下方 wbCdnRescue）。 -->
     <!-- echarts 不再同步加载：它有 1MB，首页根本用不到却阻塞首屏渲染。
          改成按需拉（见下方 wbLoadEcharts），只在真要画示例图表时才下载 -->
-    <script src="/static/purify.min.js"></script>
-    <script>window.DOMPurify || document.write('<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"><\/script>');</script>
+    <script src="/static/purify.min.js?v=20261002a"></script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
     <script>
     if (typeof marked === 'undefined') {
-        window.marked = { parse: function (t) {
-            return '<pre style="white-space:pre-wrap">' + String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
+        // __wbPlain 标记这是纯文本兜底（真 marked 没有此标记），wbCdnRescue 靠它识别要不要补拉 CDN；
+        // 输出的 <pre data-wb-plain> 也是同样用途：真 marked 到位后好把这些纯文本块重新排版。
+        window.marked = { __wbPlain: true, parse: function (t) {
+            return '<pre data-wb-plain="1" style="white-space:pre-wrap">' + String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
         } };
     }
+    // CDN 异步兜底（替代原同步写文档式 CDN 回退，老内核不再白屏）：
+    // window load 后本地脚本若没拉到真身，才 createElement 动态注入 CDN；
+    // marked 拉到后重包裹 parse（XSS 过滤 + 占位符高亮）并把纯文本兜底块重排版，拉不到就维持兜底。
+    (function () {
+        function wbCdnRescue() {
+            if (window.marked && window.marked.__wbPlain) {
+                var s1 = document.createElement('script');
+                s1.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+                s1.async = true;
+                s1.onload = function () {
+                    if (!window.marked || window.marked.__wbPlain) return; // CDN 也没给出真身，维持纯文本兜底
+                    if (window.__wbWrapMarked) window.__wbWrapMarked();     // 重新套 XSS 过滤 + 占位符高亮
+                    var pres = document.querySelectorAll('pre[data-wb-plain]');
+                    for (var i = 0; i < pres.length; i++) {
+                        try { pres[i].outerHTML = window.marked.parse(pres[i].textContent); } catch (e) {}
+                    }
+                };
+                s1.onerror = function () {};  // 维持纯文本兜底，正文照样可读
+                document.head.appendChild(s1);
+            }
+            // DOMPurify 无同步 polyfill；marked.parse 每次调用都动态检测 window.DOMPurify，
+            // 这里加载成功即自动生效，失败则走 parse 内置的正则兜底过滤
+            if (!window.DOMPurify) {
+                var s2 = document.createElement('script');
+                s2.src = 'https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js';
+                s2.async = true;
+                s2.onerror = function () {};
+                document.head.appendChild(s2);
+            }
+        }
+        if (document.readyState === 'complete') { wbCdnRescue(); }
+        else { window.addEventListener('load', wbCdnRescue); }
+    })();
     // echarts 按需加载：先挂一个带 __noop 标记的空壳（任何直接访问都不至于 ReferenceError），
     // 真要画图时用 wbLoadEcharts() 拉真身（本地静态文件优先，CDN 兜底），加载失败就继续用空壳，
     // 结果是图表区空着、正文照常出，不会整页报错卡住。
@@ -1535,7 +1603,7 @@
                 s.onerror = fallback;
                 document.head.appendChild(s);
             }
-            load('/static/echarts.min.js', function () {
+            load('/static/echarts.min.js?v=20261002a', function () {
                 load('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js', function () { done(false); });
             });
         });
@@ -1563,8 +1631,10 @@
     // 占位符高亮：后端「严禁编造假数据」后，拿不准的数字会写成【待你填写：xxx】/【示例值，需核实】。
     // 这些必须让学生一眼看见——混在正文里被当成真数据交上去，比没有更危险。
     // 这里包一层 marked.parse，全站 17 处调用自动生效，不用逐个改。
-    (function () {
-        if (!window.marked || !window.marked.parse) return;
+    // 挂成命名函数：CDN 兜底拉到真 marked 后（见上方 wbCdnRescue）要对新对象重新包裹一次。
+    window.__wbWrapMarked = function () {
+        if (!window.marked || !window.marked.parse || window.marked.__wbWrapped) return;
+        window.marked.__wbWrapped = true;   // 防重复包裹：占位符高亮叠两层 mark 会花屏
         var _origParse = window.marked.parse.bind(window.marked);
         var PH_RE = /【[^】]{2,60}】/g;
         window.marked.parse = function (t) {
@@ -1595,9 +1665,10 @@
         window.wbCountPlaceholders = function () {
             return document.querySelectorAll('mark.wb-ph').length;
         };
-    })();
+    };
+    window.__wbWrapMarked();
     </script>
-    <script src="/static/app.js?v=20260930a"></script>
+    <script src="/static/app.js?v=20261002a"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1729,9 +1800,10 @@ function wbAdvInit() {
     var m = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
     // kbAdvBody（规则区）已按 P0-2 首页精简降级为全端默认折叠，不在这个列表里——
     // 放进来的话桌面端 resize 时会被重新展开，首屏又冒出规则上传入口
-    // 105-2（阻塞级）：用户反馈「正常输入栏没有了」——团队成员是第 3 步关键输入栏，
-    // 从折叠列表移除，全端默认展开；折叠只留给低频选填项（草稿/实测数据）
-    ['draftAdvBody', 'userDataBody'].forEach(function (id) {
+    // 105-2（阻塞级）：用户反馈「正常输入栏没有了」——团队成员是关键输入栏，
+    // 从折叠列表移除，全端默认展开；折叠只留给低频选填项（实测数据）。
+    // 草稿区（原 draftAdvBody）已上移为第 1 步主入口，不再折叠
+    ['userDataBody'].forEach(function (id) {
         var b = document.getElementById(id);
         var a = document.getElementById(id + 'Arrow');
         if (!b) return;
@@ -2419,6 +2491,12 @@ window.addEventListener('resize', function () {
     window.wbWaitKit = { start: allStart, stop: allStop };
 })();
 </script>
+<!-- 内置赛事知识库清单：15 个赛事名与后端 data/competition_profiles.json 及 data/*.txt
+     知识文件一一对应（2026-09 更新），静态列出覆盖范围，评委不用猜我们懂哪些赛事 -->
+<div style="max-width: 760px; margin: 26px auto 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 12px; color: var(--text-dim); line-height: 1.9;">
+    <b style="color: var(--text);">内置赛事知识库 · 15 项 · 更新于 2026-09</b>
+    <div style="margin-top: 6px; color: var(--text-mute);">iCAN大学生创新创业大赛 · 中国国际互联网+大学生创新创业大赛 · 挑战杯全国大学生课外学术科技作品竞赛 · 挑战杯中国大学生创业计划竞赛（小挑） · 国家级大学生创新创业训练计划 · 全国大学生数学建模竞赛 · 全国大学生电子设计竞赛 · 西门子杯中国智能制造挑战赛 · 中国大学生计算机设计大赛 · 蓝桥杯全国软件和信息技术专业人才大赛 · RoboMaster全国大学生机器人大赛 · 全国大学生信息安全竞赛 · 中国大学生服务外包创新创业大赛 · 全国大学生广告艺术大赛 · 一带一路暨金砖国家技能发展与技术创新大赛</div>
+</div>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>
@@ -2444,5 +2522,7 @@ window.addEventListener('resize', function () {
         </div>
     </details>
 </footer>
+<!-- 手机端浮动生成按钮：填表滚到下方时不用再滚回顶部才能点生成（显隐/点击逻辑在 app.js） -->
+<button id="wbMobileGen" class="wb-gen-fab" type="button" aria-label="快速生成">⚡ 生成</button>
 </body>
 </html>

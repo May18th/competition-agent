@@ -704,6 +704,12 @@ MAX_BLOCKS_WITH_METRICS = 4
 MAX_TABLE_ROWS_PER_SLIDE = 7
 # 单条要点超过这个字数就先按标点拆成多条，避免长段落被 "…" 截断
 SPLIT_BULLET_CHARS = 58
+# 全篇总页数上限（iCAN 等赛事硬要求路演 PPT ≤20 页）。
+# deck 的章节页（与大纲 1:1）构成基础页数，（续）页只能消耗「上限 - 基础页数」
+# 的预算额度；预算耗尽后宁可压缩单页内容（溢出要点转入演讲者备注），不再续页。
+# 背景：旧逻辑长要点按字符硬拆 + 图表页容量减半续页，18 页大纲实际生成 35 页，
+# 评委拿大纲对照 PPT 直接对不上（2026-10-02 修复）。
+MAX_TOTAL_SLIDES = 20
 
 # 14pt 中文字符约占 0.194 inch 宽，留一点余量
 _PT_PER_CN_CHAR = 14.0
@@ -730,43 +736,68 @@ def _fit_per_line(col_w):
     return max(min(est, MAX_CHARS_PER_LINE), 10)
 
 
-def _split_bullets(bullets, max_chars=SPLIT_BULLET_CHARS):
-    """把超长段落拆成多条要点（豆包要求：长段落拆分，而不是截断丢弃）
+def _compress_bullet(txt, max_chars=SPLIT_BULLET_CHARS):
+    """把超长要点压缩进单条：保留「**标题**：」前缀，正文按句读截到
+    max_chars 附近补 …。渲染层本就限每条 ≤MAX_LINES_PER_BULLET 行（超出补 …），
+    压缩只是把这件事提前到分页之前做，保证条数只减不增。"""
+    txt = re.sub(r"\s+", " ", str(txt)).strip()
+    if len(txt) <= max_chars:
+        return txt
+    m = re.match(r"^\*\*(.+?)\*\*[：:]\s*(.*)$", txt)
+    head = (m.group(1) or "").strip() if m else ""
+    body = (m.group(2) or "").strip() if m else txt
+    # 前缀本身太长时退回整条硬截，保证一定短于 max_chars
+    room = max_chars - (len(head) + 2 if head else 0) - 1
+    if room < 8:
+        out = txt[:max(8, max_chars - 1)] + "…"
+        return ("**%s**：%s" % (head, out)) if head else out
+    # 优先在句末标点截断（保住完整短句），其次逗号顿号，最后硬截
+    cut = 0
+    for i, ch in enumerate(body):
+        if i >= room:
+            break
+        if ch in "。；;！？!?":
+            cut = i + 1
+    if cut == 0:
+        for i, ch in enumerate(body):
+            if i >= room:
+                break
+            if ch in "，,、":
+                cut = i + 1
+    if cut == 0:
+        cut = room
+    out = body[:cut].rstrip()
+    if out != body:
+        out += "…"
+    return ("**%s**：%s" % (head, out)) if head else out
 
-    拆分顺序：句末标点（。；！？）→ 逗号顿号 → 兜底按字数硬切。
-    "**标题**：说明" 结构只在第一条保留标题，后续条继承语境。
+
+def _overflow_note(note, tail):
+    """版面容量外的要点转入演讲者备注：正文页数是硬约束（与大纲 1:1），
+    排不下的内容不当场丢掉，讲解时还能从备注里念出来。"""
+    extra = "；".join(str(t).strip() for t in (tail or []) if str(t).strip())
+    if not extra:
+        return note
+    tag = "【版面未排下，讲解时可展开】" + extra
+    base = str(note or "").strip()
+    return (base + "\n" + tag) if base else tag
+
+
+def _split_bullets(bullets, max_chars=SPLIT_BULLET_CHARS):
+    """超长要点的分页前处理（2026-10-02 页数翻倍修复改版）。
+
+    旧版按句读把长段落拆成多条要点 → 每页 blocks 超容量 →（续）页越拆越多
+    （18 页大纲实际生成 35 页）。评委拿大纲对照 PPT 是硬验收标准，页数对不上
+    比单条被截断严重得多，所以改为**只压缩不拆条**：每条超长要点压缩到
+    max_chars 以内（句读处截断补 …），条数只减不增；真正的拆页下沉到
+    _emit_bullets，仅在页数预算（MAX_TOTAL_SLIDES）允许时作为最后手段。
     """
     out = []
     for b in bullets or []:
         txt = re.sub(r"\s+", " ", str(b)).strip()
         if not txt:
             continue
-        if len(txt) <= max_chars:
-            out.append(txt)
-            continue
-        m = re.match(r"^\*\*(.+?)\*\*[：:]\s*(.*)$", txt)
-        head = (m.group(1) or "").strip() if m else ""
-        body = (m.group(2) or "").strip() if m else txt
-
-        parts = [p for p in re.split(r"(?<=[。；;！？!?])", body) if p.strip()]
-        if len(parts) == 1:
-            parts = [p for p in re.split(r"(?<=[，,、])", body) if p.strip()]
-        if len(parts) == 1:
-            parts = [body[i:i + max_chars] for i in range(0, len(body), max_chars)]
-
-        chunks, cur = [], ""
-        for p in parts:
-            p = p.strip()
-            if cur and len(cur) + len(p) > max_chars:
-                chunks.append(cur)
-                cur = p
-            else:
-                cur = (cur + p).strip()
-        if cur:
-            chunks.append(cur)
-
-        for i, c in enumerate(chunks):
-            out.append("**%s**：%s" % (head, c) if (i == 0 and head) else c)
+        out.append(_compress_bullet(txt, max_chars))
     return out
 
 
@@ -1535,6 +1566,10 @@ def _slide_bullets(prs, s, meta, page_no, chart_path=None, cont=False, idx=0):
     else:
         _bullets_body(slide, bullets, max_blocks=MAX_BLOCKS_PER_SLIDE, accent=accent)
     _footer(slide, meta.get("project", ""), page_no)
+    # 2026-10-02：要点页此前从不写演讲者备注——大纲 deck 的讲解稿（s.note）和
+    # 版面容量外的溢出要点（_overflow_note）都落在 note 里，不写就等于丢了。
+    if s.get("note"):
+        _add_notes(slide, s.get("note"))
     return slide
 
 
@@ -1565,6 +1600,8 @@ def _slide_metrics(prs, s, meta, page_no, idx=0):
         _bullets_body(slide, s["bullets"], top=4.75,
                       max_blocks=MAX_BLOCKS_WITH_METRICS, accent=accent)
     _footer(slide, meta.get("project", ""), page_no)
+    if s.get("note"):
+        _add_notes(slide, s.get("note"))
     return slide
 
 
@@ -1644,7 +1681,12 @@ def build_deck(deck, out_path, chart_paths=None):
         "competition": deck.get("competition", ""),
     }
     page = 1
-    for i, s in enumerate(deck.get("slides", [])):
+    # 页数总预算：基础页数 = deck 章节页数（与大纲 1:1），（续）页只能消耗
+    # MAX_TOTAL_SLIDES - 基础页数 的额度，用完即压缩单页内容（超限宁可少排，
+    # 不可超页数——iCAN 等赛事硬要求 ≤20 页）。
+    slides = deck.get("slides", [])
+    cont_budget = max(0, MAX_TOTAL_SLIDES - len(slides))
+    for i, s in enumerate(slides):
         stype = str(s.get("type", "bullets")).lower()
         if stype in ("cover", "title"):
             _slide_cover(prs, s, meta)
@@ -1653,11 +1695,19 @@ def build_deck(deck, out_path, chart_paths=None):
             _slide_section(prs, s, meta, page, i)
             page += 1
         elif stype == "table":
-            page = _emit_table(prs, s, meta, page, i)
+            _p = page
+            page = _emit_table(prs, s, meta, page, i, cont_budget=cont_budget)
+            cont_budget -= (page - _p - 1)
         elif stype == "metrics":
             if s.get("bullets"):
                 sub = dict(s)
-                sub["bullets"] = _split_bullets(s["bullets"])
+                _mb = _split_bullets(s["bullets"])
+                # 指标页下半屏容量有限（MAX_BLOCKS_WITH_METRICS），
+                # 排不下的要点转备注，不丢内容也不再想当然续页
+                if len(_mb) > MAX_BLOCKS_WITH_METRICS:
+                    sub["note"] = _overflow_note(s.get("note"), _mb[MAX_BLOCKS_WITH_METRICS:])
+                    _mb = _mb[:MAX_BLOCKS_WITH_METRICS]
+                sub["bullets"] = _mb
                 _slide_metrics(prs, sub, meta, page, i)
             else:
                 _slide_metrics(prs, s, meta, page, i)
@@ -1666,7 +1716,9 @@ def build_deck(deck, out_path, chart_paths=None):
             _slide_closing(prs, s, meta, page)
             page += 1
         else:
-            page = _emit_bullets(prs, s, meta, page, chart_paths, i)
+            _p = page
+            page = _emit_bullets(prs, s, meta, page, chart_paths, i, cont_budget=cont_budget)
+            cont_budget -= (page - _p - 1)
     # 417 轮：末页底部补一行智能辅助声明，与 Word/PDF 导出件同一套措辞。
     # deck['notice'] 后端早就在塞，但 pptx_builder 一直没读它，等于 PPT 光着身子提交。
     _notice = (deck.get("notice") or "").strip()
@@ -1685,18 +1737,34 @@ def build_deck(deck, out_path, chart_paths=None):
     return out_path
 
 
-def _emit_bullets(prs, s, meta, page, chart_paths, idx=0):
-    """要点页自动分页：先拆长段落，再按每页容量切片，超出生成"（续）"页"""
+def _emit_bullets(prs, s, meta, page, chart_paths, idx=0, cont_budget=0):
+    """要点页排版（2026-10-02 页数翻倍修复改版）。
+
+    ① 要点先经 _split_bullets 压缩（条数只减不增）；
+    ② 图表/指标页容量（MAX_BLOCKS_WITH_CHART/METRICS）外的要点转入演讲者备注，
+      不再生成（续）页——旧逻辑这里容量减半 + 续页是页数翻倍的主放大器；
+    ③ 纯文字页超出 MAX_BLOCKS_PER_SLIDE 时才允许（续）页，且必须落在
+      cont_budget（总页数上限 - 基础页数）预算内，超预算的尾部要点同样转备注。
+    """
     cpath = chart_paths.get(s.get("chart")) if s.get("chart") else None
     metrics = s.get("metrics") or []
     blocks = _split_bullets(s.get("bullets", []))
-    # 首页要放图表或指标卡，容量减半；续页是干净版面，按满容量排
     if cpath or metrics:
+        # 首页要放图表或指标卡，容量减半；版面外的要点进备注，不续页
         cap0 = MAX_BLOCKS_WITH_CHART if cpath else MAX_BLOCKS_WITH_METRICS
         head, tail = blocks[:cap0], blocks[cap0:]
-        chunks = [head] + (_chunk(tail, MAX_BLOCKS_PER_SLIDE) if tail else [])
+        if tail:
+            s = dict(s)
+            s["note"] = _overflow_note(s.get("note"), tail)
+        chunks = [head]
     else:
         chunks = _chunk(blocks, MAX_BLOCKS_PER_SLIDE)
+        dropped = []
+        while len(chunks) > 1 and len(chunks) - 1 > cont_budget:
+            dropped = chunks.pop() + dropped
+        if dropped:
+            s = dict(s)
+            s["note"] = _overflow_note(s.get("note"), dropped)
     if not chunks:
         chunks = [[]]
     for pi, chunk in enumerate(chunks):
@@ -1709,14 +1777,18 @@ def _emit_bullets(prs, s, meta, page, chart_paths, idx=0):
     return page
 
 
-def _emit_table(prs, s, meta, page, idx=0):
-    """表格页自动分页：每页 MAX_TABLE_ROWS_PER_SLIDE 行，表头每页重复"""
+def _emit_table(prs, s, meta, page, idx=0, cont_budget=0):
+    """表格页自动分页：每页 MAX_TABLE_ROWS_PER_SLIDE 行，表头每页重复；
+    续页受 cont_budget 预算约束，超预算的行直接舍弃（表格行进备注没有可读性）。"""
     t = s.get("table") or {}
     header, rows = t.get("header") or [], t.get("rows") or []
     if not header or not rows:
         _slide_table(prs, s, meta, page, idx=idx)
         return page + 1
-    for pi, chunk in enumerate(_chunk(rows, MAX_TABLE_ROWS_PER_SLIDE)):
+    chunks = _chunk(rows, MAX_TABLE_ROWS_PER_SLIDE)
+    while len(chunks) > 1 and len(chunks) - 1 > cont_budget:
+        chunks.pop()
+    for pi, chunk in enumerate(chunks):
         sub = dict(s)
         sub["table"] = {"header": header, "rows": chunk}
         _slide_table(prs, sub, meta, page, cont=(pi > 0), idx=idx)

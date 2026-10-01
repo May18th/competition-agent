@@ -363,7 +363,9 @@ body {
     -webkit-mask-image: radial-gradient(ellipse 92% 62% at 50% 28%, #000 20%, transparent 74%);
     animation: wbGridDrift 26s linear infinite;
 }
-.wb-orb{ position:absolute; border-radius:50%; filter: blur(90px); opacity:.42; will-change: transform; }
+/* 2026-09-30 渲染优化：去掉 blur(90px)——radial-gradient 自带软边（transparent 68%），
+   90px 实时模糊在低端机/手机上三球同动直接掉帧，去掉后视觉几乎无差、GPU 占用大降 */
+.wb-orb{ position:absolute; border-radius:50%; opacity:.42; will-change: transform; }
 .wb-orb-1{ width:520px; height:520px; left:-140px; top:-120px;
     background: radial-gradient(circle, rgba(34,211,238,.55), transparent 68%);
     animation: wbFloat1 24s ease-in-out infinite; }
@@ -376,7 +378,9 @@ body {
 .wb-scan{
     position:absolute; left:0; right:0; height:180px; top:-180px;
     background: linear-gradient(180deg, transparent, rgba(120,190,255,.055), transparent);
+    /* 2026-09-30 渲染优化：top 动画每帧触发 layout+paint，改 translateY 走合成器 */
     animation: wbScan 11s linear infinite;
+    will-change: transform;
 }
 #wbParticles{ position:absolute; inset:0; width:100%; height:100%; opacity:.75; }
 
@@ -384,7 +388,7 @@ body {
 @keyframes wbFloat1{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(90px,70px) scale(1.12); } }
 @keyframes wbFloat2{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-80px,110px) scale(1.08); } }
 @keyframes wbFloat3{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(70px,-90px) scale(1.14); } }
-@keyframes wbScan{ 0%{ top:-180px; } 100%{ top:100%; } }
+@keyframes wbScan{ 0%{ transform: translateY(0); } 100%{ transform: translateY(calc(100vh + 360px)); } }
 @keyframes wbSheen{ 0%{ background-position:-120% 0; } 100%{ background-position:220% 0; } }
 @keyframes wbGradShift{ 0%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } 100%{ background-position:0% 50%; } }
 @keyframes wbGlow{ 0%,100%{ filter: drop-shadow(0 0 10px rgba(34,211,238,.30)); } 50%{ filter: drop-shadow(0 0 22px rgba(var(--c-b-rgb, 45,212,191), .48)); } }
@@ -615,6 +619,15 @@ input, textarea, select {
     transition: border-color .25s, box-shadow .25s, background .25s;
 }
 input::placeholder, textarea::placeholder { color: var(--text-mute); }
+/* 勾选类控件豁免上面的 width:100% 全局规则：否则 checkbox/radio 被撑满整行，
+   同一 flex 行里的文字被挤成一字一行竖排（2026-10-01 用户截图实锤，训练授权开关处） */
+input[type="checkbox"], input[type="radio"] {
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    accent-color: var(--c-a);
+}
 /* 下拉框：固定高度 + 上下等距内边距，保证文字垂直居中 */
 select { height: 46px; padding: 0 14px; }
 input:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
@@ -815,11 +828,24 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
    半句（用户截图：「…打包收费，测算」后面整段没了）。
    横向滚动下沉到宽表格自身；正文盒彻底 visible，纵向无限延伸。 */
 .content-block { overflow: visible; }
+/* 2026-09-30 排版加固：AI 生成的长英文词/URL/连续数字（如指标名、链接）可能撑破列宽，
+   统一允许任意字符处断行，防横向溢出 */
+.content-block, .content-block p, .content-block li, .content-block td, .content-block th {
+    overflow-wrap: break-word; word-break: break-word;
+}
 .content-block table { overflow-x: auto; max-width: 100%; }
 /* 桌面端唯一纵向裁剪源：.card 的 overflow:hidden（1397 行只在 ≤768px 豁免过，
    所以 180 轮修完手机上好了、桌面还在切）。结果区单独豁免，不影响其它卡片裁圆角/装饰。 */
 #resultArea { overflow: visible; }
 #resultArea .result-hero, #resultArea .deck-card { overflow: visible; }
+/* 2026-10-01 问题A根治（第5轮探针实锤，用户连续四轮催办）：#resultArea 为修纵向截断
+   被豁免成 overflow:visible，但 .card::after 的右上装饰光晕 right:-70px（566 行）
+   跟着伸出 70px → 探针实测 sw-cw 恰为 70px；且伪元素不在 querySelectorAll('*')
+   扫描范围内，这是四轮元素级扫描全空、迟迟定位不到的原因。关掉结果区这张卡的
+   角落光晕（纯装饰可忽略，1169 行 .card:has(#startBar)::after 已有同样先例）。 */
+#resultArea::after { display: none; }
+/* 移动端说明文字防截断加固：长英文词/URL/数字串在窄屏把说明挤出可视区 */
+.qe-note, .sb-note, .card label, .card p, .card li, .card td, .card th { overflow-wrap: anywhere; }
 .content-block h2 { font-size: 19px; }
 .content-block h3 { font-size: 17px; }
 .content-block p { margin: 8px 0; }
@@ -874,6 +900,14 @@ table.rich-table caption {
     caption-side: bottom; padding: 7px 4px 0; font-size: 11.5px;
     color: var(--text-mute); text-align: left;
 }
+/* 2026-10-01 浅色主题对比度修复（验证线实锤第8项）：下面 6 组规则写死 #fff 白字，
+   在 body.light 浅色背景下对比度 <2:1 近乎不可见。统一走主题变量 + 压暗底色保对比。 */
+body.light .content-block h1, body.light .content-block h2, body.light .content-block h3 { color: var(--text); }
+body.light .content-block strong { color: var(--text); background: rgba(99,102,241,.14); }
+body.light .content-block th { color: var(--text); }
+body.light table.rich-table thead th { color: var(--text); background: rgba(74,85,184,.18); }
+body.light table.rich-table td:first-child { color: var(--text); }
+body.light .deck-card .dc-chip { color: var(--text); background: rgba(74,85,184,.12); border-color: rgba(74,85,184,.28); }
 
 /* ===== AI 路演 PPT 预览卡 ===== */
 .deck-card {
@@ -1069,14 +1103,17 @@ mark.wb-ph {
     z-index: 1502;
     max-width: 300px;
     padding: 12px 14px;
-    background: linear-gradient(160deg, rgba(19, 25, 58, .98), rgba(10, 14, 38, .98));
+    /* 气泡底色跟随主题（2026-10-01 用户反馈「颜色很不搭」）：固定深藏青在日间白底页面上
+       像一块贴上去的补丁。改用主题面层色：日间白底深字、夜间深底浅字，两态都协调 */
+    background: var(--surface-solid);
     border: 1px solid var(--c-a);
     border-radius: 10px;
     font-size: 13px;
     line-height: 1.7;
     color: var(--text);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
 }
+#coachTip b, #coachTip strong { color: var(--c-a); }
 #coachTip::before {
     content: "";
     position: absolute;
@@ -1086,6 +1123,32 @@ mark.wb-ph {
 }
 #coachTip.coach-below::before { top: -8px; border-bottom: 8px solid var(--c-a); }
 #coachTip.coach-above::before { bottom: -8px; border-top: 8px solid var(--c-a); }
+
+/* ---------- 手机端浮动生成入口 ---------- */
+/* #startBar 是 sticky：填表上半段它还躺在文档流原位不悬浮，用户在页面顶部
+   找不到生成入口（2026-10-01 反馈）。手机端补一个 fixed 浮动按钮：
+   startBar 吸附可见时自动隐藏（由 JS 滚动监听控制），避免双按钮叠影 */
+#wbMobileGen {
+    display: none;
+    position: fixed;
+    right: 14px;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    z-index: 950;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%);
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: .5px;
+    box-shadow: 0 10px 28px rgba(14, 116, 144, .38);
+    cursor: pointer;
+}
+#wbMobileGen:active { transform: scale(.96); }
+@media (max-width: 768px) {
+    #wbMobileGen.wb-gen-show { display: block; }
+}
 
 /* ---------- 开始生成按钮：sticky 悬浮底栏 ---------- */
 /* 长表单场景按钮原位置远超首屏（实测手机 top≈1826 / 桌面 1736，视口 744/673）。
@@ -1193,6 +1256,18 @@ body.light .hero h1 { color: var(--text); }
     box-shadow: 0 16px 48px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.09);
 }
 body.light .card { border-color: var(--line); }
+
+/* 自定义背景透出（2026-10-01 用户反馈「切换背景就只切换外面背景」）：
+   背景层在最底层、卡片面不透明，切了背景卡片内毫无变化。给卡片面加透明度，
+   让底图透进来形成整体氛围；压暗层已保证文字对比度，卡片文字仍然清晰 */
+body.wb-custom-bg .card {
+    background: linear-gradient(158deg, rgba(13, 19, 48, .80) 0%, rgba(9, 13, 36, .86) 100%);
+    backdrop-filter: blur(14px) saturate(130%);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+body.light.wb-custom-bg .card {
+    background: linear-gradient(158deg, rgba(255, 255, 255, .86) 0%, rgba(244, 247, 255, .92) 100%);
+}
 
 /* 空创意提交时的输入框提示：红描边 + 左右抖两下，1.6s 后由 JS 移除 */
 .wb-shake-hl {
@@ -1686,6 +1761,13 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     .wb-reveal { opacity: 1; transform: none; }
     .wb-bg { display: none; }
 }
+/* 2026-09-30 手机端渲染减负：网格漂移是持续 background-position 重绘，扫描线在窄屏上
+   存在感极低，第三个光球在小屏挤在一起——三者全停/隐藏，帧率立涨，视觉几乎无损 */
+@media (max-width: 768px) {
+    .wb-grid { animation: none; }
+    .wb-scan { display: none; }
+    .wb-orb-3 { display: none; }
+}
 
         /* ===== WB ICONS ===== */
         .wb-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -1704,7 +1786,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         .wb-ico-xl{ width: 1em; height: 1em; margin-right: .2em; stroke-width: 2; }
         .wb-ico-ok{ color: var(--ok); }
         .wb-ico-warn{ color: var(--warn-text); }
-        .wb-opt{ font-weight: 400; opacity: .62; font-size: .88em; }
+        .wb-opt{ font-weight: 400; opacity: .8; font-size: .88em; }
         label .wb-ico{ color: #8b95e8; }
         .tab .wb-ico{ margin-right: .34em; opacity: .85; }
         .tab.active .wb-ico{ color: var(--info-strong); opacity: 1; }

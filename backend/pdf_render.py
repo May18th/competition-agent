@@ -127,6 +127,87 @@ def _next_nonempty(lines, start):
     return None
 
 
+# ============ 章节编号注入（导出件是正式材料，章节必须带编号） ============
+# 与 docx_render._number_heading_blocks 保持同一套规则（两链路各自实现，规则必须一致）：
+#   ##  → 一、二、三、…（一级章节，中文数字）
+#   ### → （一）（二）…（二级小节，每章重新起算）
+#   已带编号的标题原样保留不重复加；#（文档主标题）与 #### 及以下不编号。
+
+_RE_NUM_HEAD = re.compile(
+    r'^(?:'
+    r'第[一二三四五六七八九十百0-9]+[章节篇部讲]'      # 第一章 / 第2章
+    r'|[一二三四五六七八九十百]+[、.．]'               # 一、 二.
+    r'|[（(][一二三四五六七八九十百]+[）)]'             # （一） (二)
+    r'|\d{1,2}(?:\.\d{1,2}){0,3}[、.．]'              # 1. / 2、 / 1.2.
+    r'|\d{1,2}(?:\.\d{1,2})+\s'                      # 1.1 / 10.2.1（多级+空格）
+    r'|[①②③④⑤⑥⑦⑧⑨⑩]'
+    r')'
+)
+
+
+def _cn_num(n):
+    """阿拉伯数字 → 中文数字（一、二、… 十一、… 二十一、…）。"""
+    digits = '零一二三四五六七八九'
+    if n <= 0:
+        return ''
+    if n >= 100:
+        return str(n)
+    if n < 10:
+        return digits[n]
+    if n == 10:
+        return '十'
+    if n < 20:
+        return '十' + digits[n - 10]
+    tens, ones = divmod(n, 10)
+    return digits[tens] + '十' + (digits[ones] if ones else '')
+
+
+def _number_headings(text):
+    """给 markdown 的 ## / ### 标题行注入中文编号；返回处理后的全文。
+
+    - 已带编号的标题（一、 / 1. / 1.1 / （一） / 第X章…）原样保留、不重复加号，
+      但照样推进计数器，保证后面的裸标题拿到与位置对应的号
+    - 代码围栏（``` … ```）内的行一律不动
+    - `# `（文档主标题，本渲染器用作题头）与 `#### ` 不编号
+    """
+    lines = (text or '').split('\n')
+    out, cn1, cn2, in_code = [], 0, 0, False
+    # 2026-10-01 P2 修复（与 docx_render._number_heading_blocks 同步）：
+    # 孤立裸标题夹在已编号章节序列中间时，按位置注入的号会与原文自带编号撞车
+    # （出现两个「五、」）。注入前只查【后文】的 H2 是否已占该号——查全量会把
+    # 编号漂移后的前文标题也算进来误伤（实测「后裸标题」被误判撞五、）。
+    _h2_titles = []
+    for _l in lines:
+        _m = re.match(r'^(#{2,3})\s+(.*)$', _l)
+        if _m and _m.group(1) == '##':
+            _h2_titles.append(_m.group(2).strip())
+    _h2_seen = -1
+    for line in lines:
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            out.append(line)
+            continue
+        if not in_code:
+            m = re.match(r'^(#{2,3})\s+(.*)$', line)
+            if m:
+                title = m.group(2).strip()
+                if m.group(1) == '##':
+                    _h2_seen += 1
+                    cn1 += 1
+                    cn2 = 0
+                    if title and not _RE_NUM_HEAD.match(title):
+                        _pref = _cn_num(cn1) + '、'
+                        # 后文已有该编号（原文自带）→ 裸标题保持不编号，防撞车
+                        if not any(t.startswith(_pref) for t in _h2_titles[_h2_seen + 1:]):
+                            line = '## %s、%s' % (_cn_num(cn1), title)
+                else:
+                    cn2 += 1
+                    if title and not _RE_NUM_HEAD.match(title):
+                        line = '### （%s）%s' % (_cn_num(cn2), title)
+        out.append(line)
+    return '\n'.join(out)
+
+
 def _flow(text):
     flow, lines, i = [], text.split("\n"), 0
     while i < len(lines):
@@ -202,6 +283,8 @@ def render_markdown_to_pdf(markdown_text, out_path, title="申报书"):
     stripped = markdown_text.lstrip()
     if not re.match(r"^#\s+", stripped):
         markdown_text = ("# %s\n\n" % (title or "申报书")) + markdown_text
+    # 章节编号注入：#（题头）不动，## → 一、二、…，### → （一）（二）…
+    markdown_text = _number_headings(markdown_text)
 
     def _footer(canvas, docobj):
         canvas.saveState()
