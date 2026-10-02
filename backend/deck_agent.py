@@ -20,7 +20,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
-from langchain_deepseek import ChatDeepSeek
+from llm_factory import build_chat_model
 from langchain_core.messages import HumanMessage
 
 load_dotenv()
@@ -51,7 +51,7 @@ C. 痛点写法：痛点由项目优势倒推，「自己解决不掉的痛点�
    写具体人物+具体时刻+具体动作+卡在哪一步，配调研数据或用户访谈原话。
 
 D. 团队章（硬要求）：只写「角色 + 职责」，须体现专业背景与项目匹配、组织分工合理；
-   严禁编造姓名，需填真人处写「姓名：待填写」。
+   严禁编造姓名，未提供真人信息时写「姓名由团队补充」或仅保留角色职责，不输出方括号占位符。
 
 E. 图表规范：每张图须「结论式标题 + 20字内洞察 + 数据来源」；
    source 只允许三种合法值（团队输入 / 公开数据「机构+年份」/ 测算「基于XX假设」）；
@@ -60,18 +60,23 @@ E. 图表规范：每张图须「结论式标题 + 20字内洞察 + 数据来源
 
 F. 防污染（最高优先级，违反即作废本次输出）：
    1. 严禁写入任何获奖作品原文、第三方文档原文或整段转载，只输出自建原创表述。
-   2. 严禁编造机构、年份、硬件型号、专利号、检测报告、合作方；拿不准写「测算：基于XX假设」或「待补」。
+   2. 严禁编造机构、年份、硬件型号、专利号、检测报告、合作方；有明确假设才写「测算：基于XX假设」，否则写「待核实：需要补充来源/实测数据」。
    3. 每个数字必须带来源标注（实测值 / 行业公开数据 / 测算值 / 设计目标值），严禁裸数字。
    4. 严禁断言已发生（已签约 / 已落地 / 已试点 / 已上线），用户没给的一律写「计划 / 拟 / 预计」。
 
 G. 文风与匿名：与上面【去 AI 味】【具体化与落地要求】同为硬性，一并遵守；
    全程严禁出现院校名称、指导老师姓名、成员真实姓名。
+
+H. 蒸馏_v3 弱项强化（2026-10-02 追加，针对对标差距报告弱项；深化自v2已核验公开来源，非获奖作品原文）：
+  H1. 佐证材料内联（弱项）：每个优势亮点后须有可指认佐证；佐证页/章须含四件套最小集——①知识产权(专利/软著，标已授权/受理中/撰写中) ②第三方检测或查新(标机构+编号/待补) ③用户反馈或试点(截图/问卷/合同，标样本量) ④合作意向或获奖(标状态)；做成「佐证卡」：左图(截图≥40%)+右文(1行说明+来源标签+状态标签)，不可只写「已申请专利」而无受理号。
+  H2. 痛点量化闭环（弱项）：痛点须含≥2个数据锚点(规模×严重度×未被满足率)+1个现有方案具体缺陷点(点名竞品)；显式交代调研过程(走访N/访谈M/问卷K，含有效回收率)，无真实调研写「测算：基于XX假设」，严禁编造；痛点→方案→被解决程度用同一组锚点回扣。
+  H3. 图表视觉复核四查（弱项）：导出前逐页四查——①标题即结论(洞察句+20字内) ②图注有来源(实测/公开机构+年份/测算基于XX假设) ③无溢出/无裁切/无压边 ④去装饰(禁3D/厚边框/Excel网格/装饰图标)；2×2象限轴须可量化并标坐标含义。
+  H4. 团队章可核验+盲审匿名（弱项）：成员=角色+职责+专业匹配+实质贡献(具体动作句式，禁空头衔)；指导老师只写理论指导专长；盲审用「成员A/B/C」，禁院校/导师/成员真名，需填真人写「姓名：待填写」。
+  H5. 答辩证据链框架（答辩维度）：高频问题预生成覆盖[核心壁垒/最大风险/为何是你/数据可复现/专利进度/首年营收预测/资金用途]；回答=结论→证据链(实测+对比基线+来源+样本量)→主动堵质疑；严格区分实测/估算/预测，三处数字(申报书/PPT/答辩)必须一致。
 """
 
 
-_llm = ChatDeepSeek(
-    model="deepseek-chat",
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
+_llm = build_chat_model(
     temperature=0.35,
     max_tokens=4000,
     request_timeout=60,
@@ -185,18 +190,19 @@ def _parse_competitor_table(text):
             for val in r[1:]:
                 val_str = str(val)
                 sc = _to_float(val_str)
-                if sc == 0:
-                    if any(k in val_str for k in ["全自动", "高", "好", "强", "优", "领先", "±", "毫米"]):
-                        sc = 8.5
-                    elif any(k in val_str for k in ["半自动", "中", "一般", "尚可"]):
-                        sc = 6.0
-                    elif any(k in val_str for k in ["人工", "无", "低", "差", "弱", "落后"]):
-                        sc = 3.5
+                # 文字等级不能未经说明换算成 8.5/6/3.5；这会把主观判断伪装成
+                # 可比较的量化评分。只有原文明确给出 0-10 数字时才进入矩阵。
+                if sc == 0 and not re.search(r"(?<![\d.])0(?:\.0+)?(?![\d.])", val_str):
+                    row_scores = []
+                    break
                 if sc > 10:
                     sc = sc / 10
                 row_scores.append(sc)
-            matrix.append(row_scores)
-        if items and matrix:
+            if row_scores and len(row_scores) == len(metrics):
+                matrix.append(row_scores)
+            elif items:
+                items.pop()
+        if items and matrix and len(items) == len(matrix):
             return {"items": items, "metrics": metrics, "matrix": matrix}
     return None
 
@@ -225,15 +231,16 @@ def _parse_finance(text):
             if m2:
                 rev = _to_float(m2.group(1))
                 tail = text[m2.end(): m2.end() + 120]
-                cost = 0.0
-                profit = 0.0
+                cost = None
+                profit = None
                 mc = re.search(r"成本[^0-9]*(\d+(?:\.\d+)?)", tail)
                 mp = re.search(r"利润[^0-9]*(-?\d+(?:\.\d+)?)", tail)
                 if mc:
                     cost = _to_float(mc.group(1))
                 if mp:
                     profit = _to_float(mp.group(1))
-                years_map[i] = (rev, cost, profit)
+                if cost is not None and profit is not None:
+                    years_map[i] = (rev, cost, profit)
                 break
     if not years_map:
         return None
@@ -267,25 +274,25 @@ def _parse_timeline(text):
                 starts.append(int(_to_float(m.group(1))) - 1)
                 ends.append(int(_to_float(m.group(2))))
     if not phases:
-        phases = ["需求调研", "原型开发", "小批量试产", "市场推广"]
-        starts = [0, 2, 5, 7]
-        ends = [2, 5, 7, 8]
+        # 没有用户/官方材料就不伪造时间线。空图比把模板周数交给评委更可靠，
+        # 上层会把该图标成待核实或跳过渲染，用户补数据后可局部重绘。
+        phases, starts, ends = [], [], []
     return {"phases": phases[:6], "start_week": starts[:6], "end_week": ends[:6]}
 
 
 def _parse_budget(text):
     """从商业模式/申报书里提取预算占比"""
-    labels = ["研发", "生产", "营销", "运营"]
+    labels = []
     values = []
-    for label in labels:
+    for label in ("研发", "生产", "营销", "运营"):
         m = re.search(label + r"[^0-9：:]{0,5}[:：]?\s*(\d{1,3}(?:\.\d+)?)\s*[%％]", text or "")
         if m:
+            labels.append(label)
             values.append(_to_float(m.group(1)))
-        else:
-            values.append(0.0)
     if sum(values) > 0:
         return {"labels": labels, "values": values}
-    return {"labels": labels, "values": [40, 30, 15, 15]}
+    # 没有预算来源时保持空数据，禁止把模板比例伪装成项目预算。
+    return {"labels": [], "values": []}
 
 
 def fallback_visuals(state):
@@ -296,8 +303,8 @@ def fallback_visuals(state):
     scores.update(_pick_scores_from_text(state.get("idea_feedback", "")))
     scores.update(_pick_scores_from_text(state.get("judge_feedback", "")))
     if len(scores) >= 3:
-        labels = ["创新性", "可行性", "市场价值", "技术壁垒", "社会价值"]
-        visuals["radar"] = {"labels": labels, "values": [scores.get(k, 70) for k in labels]}
+        labels = [k for k in ("创新性", "可行性", "市场价值", "技术壁垒", "社会价值") if k in scores]
+        visuals["radar"] = {"labels": labels, "values": [scores[k] for k in labels]}
 
     comp = _parse_competitor_table(state.get("competitor_analysis", ""))
     if comp:

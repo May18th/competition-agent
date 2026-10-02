@@ -14,7 +14,7 @@ import time
 import uuid
 
 from langchain_core.messages import HumanMessage
-from langchain_deepseek import ChatDeepSeek
+from llm_factory import build_chat_model
 
 try:
     from chart_renderer_pro import render as render_chart
@@ -38,9 +38,7 @@ def _get_llm():
             os.environ["NO_PROXY"] = ",".join(
                 x for x in _np.replace("::1", "").replace(";", ",").split(",") if x)
             os.environ["no_proxy"] = os.environ["NO_PROXY"]
-        _llm = ChatDeepSeek(
-            model="deepseek-chat",
-            api_key=os.getenv("DEEPSEEK_API_KEY"),
+        _llm = build_chat_model(
             temperature=0.2,
             max_tokens=8000,
             request_timeout=180,
@@ -113,6 +111,13 @@ F. 防污染（最高优先级，违反即作废本次输出）：
 
 G. 文风与匿名：与上面【去 AI 味】【具体化与落地要求】同为硬性，一并遵守；
    全程严禁出现院校名称、指导老师姓名、成员真实姓名。
+
+H. 蒸馏_v3 弱项强化（2026-10-02 追加，针对对标差距报告弱项；深化自v2已核验公开来源，非获奖作品原文）：
+  H1. 佐证材料内联（弱项）：每个优势亮点后须有可指认佐证；佐证页/章须含四件套最小集——①知识产权(专利/软著，标已授权/受理中/撰写中) ②第三方检测或查新(标机构+编号/待补) ③用户反馈或试点(截图/问卷/合同，标样本量) ④合作意向或获奖(标状态)；做成「佐证卡」：左图(截图≥40%)+右文(1行说明+来源标签+状态标签)，不可只写「已申请专利」而无受理号。
+  H2. 痛点量化闭环（弱项）：痛点须含≥2个数据锚点(规模×严重度×未被满足率)+1个现有方案具体缺陷点(点名竞品)；显式交代调研过程(走访N/访谈M/问卷K，含有效回收率)，无真实调研写「测算：基于XX假设」，严禁编造；痛点→方案→被解决程度用同一组锚点回扣。
+  H3. 图表视觉复核四查（弱项）：导出前逐页四查——①标题即结论(洞察句+20字内) ②图注有来源(实测/公开机构+年份/测算基于XX假设) ③无溢出/无裁切/无压边 ④去装饰(禁3D/厚边框/Excel网格/装饰图标)；2×2象限轴须可量化并标坐标含义。
+  H4. 团队章可核验+盲审匿名（弱项）：成员=角色+职责+专业匹配+实质贡献(具体动作句式，禁空头衔)；指导老师只写理论指导专长；盲审用「成员A/B/C」，禁院校/导师/成员真名，需填真人写「姓名：待填写」。
+  H5. 答辩证据链框架（答辩维度）：高频问题预生成覆盖[核心壁垒/最大风险/为何是你/数据可复现/专利进度/首年营收预测/资金用途]；回答=结论→证据链(实测+对比基线+来源+样本量)→主动堵质疑；严格区分实测/估算/预测，三处数字(申报书/PPT/答辩)必须一致。
 """
 
 CHART_FORMAT = """
@@ -192,7 +197,7 @@ def _gen_assets(result, competition, idea, kb_data=""):
    实测数据里没有的指标才允许用测算/公开数据，且 source 必须写明「测算」或机构+年份。
    同一张图里混用实测与测算时，caption 里点明「X 为实测，Y 为测算」，别让评委误判。
 4. 数字必须来自材料或「可引用的行业真实数据」，优先引用上面给的真实数据并标注 source；测算值标「行业测算」并写清口径。每个数据点的 source 只能是三种合法值：①团队输入 ②公开数据（机构+年份，且必须是上面「可引用的行业真实数据」里真实出现的）③测算假设（写明「测算：基于 XX 假设」）。编不出这三种来源的数字一律不准上图；图上没有真实来源的数字，评委一问就露馅。
-4-1. 预算构成、市场规模、实施时间线这三张图**必须**从「竞品分析/商业模式/技术方案/实施计划」里抽正文的具体测算值（如排队 12→7 分钟、柜口利用率 55→75%、单柜月收入 1785 元、市场规模 XXX 万），严禁用 40/25/20/15、120/280/560/980/1500、10/30/55/80/100 这类示例占位数值；正文里没有对应的数就写「测算：基于 XX 假设」推一个，不许照搬示例数字。
+4-1. 预算构成、市场规模、实施时间线这三张图**必须**从「竞品分析/商业模式/技术方案/实施计划」里抽取已有数据（如排队 12→7 分钟、柜口利用率 55→75%、单柜月收入 1785 元、市场规模 XXX 万），严禁用 40/25/20/15、120/280/560/980/1500、10/30/55/80/100 这类示例占位数值；正文没有对应数字且用户没有明确假设时，不生成数值，改为「待核实：需要补充来源/实测数据」并在图表 caption 标明缺口。只有假设、推导链都写清楚时，才可生成「测算值」。
 5. 图表类型必须多样（至少 8 张），且硬性覆盖下面各类，缺一不可：
    - radar 竞品/能力多维对比（1 张）
    - matrix 竞争力定位象限（1 张）
@@ -330,7 +335,8 @@ def _outline_deck(outline):
             if not title or len(title) > 40:
                 continue
             # 跳过文档级标题（「PPT 大纲」「路演大纲」「目录」等），它只是整份大纲的名字，不是某一页
-            if re.match(r"^(?:PPT|路演)?\s*大纲$|^目录$", title, re.IGNORECASE):
+            if (re.match(r"^(?:PPT|路演)?\s*大纲$|^目录$", title, re.IGNORECASE)
+                    or re.search(r"(?:路演\s*)?PPT\s*大纲$|路演\s*大纲$", title, re.IGNORECASE)):
                 continue
             if cur:
                 slides.append(cur)
@@ -361,7 +367,11 @@ def _outline_deck(outline):
 _PROMPT_LEAK_PREFIXES = (
     "用表格", "用图表", "用一段", "用数据", "用一张", "请给", "请输", "请用",
     "按如下", "按要求", "只输出", "不要任何", "不要写", "不要出现", "呈现三条",
-    "列出三条", "给出", "输出", "列出", "呈现", "每条",
+    "列出三条",
+)
+_PROMPT_LEAK_RE = re.compile(
+    r"(?:请(?:给出|提供|填写|生成|用(?:表格|图表|数据|一段|一张)?))|"
+    r"(?:用(?:表格|图表|数据|一段|一张))|(?:按(?:如下|要求))"
 )
 
 
@@ -375,7 +385,7 @@ def _looks_like_prompt_leak(t):
     s = _strip_md_bold(t)
     if not s:
         return False
-    return s.startswith(_PROMPT_LEAK_PREFIXES)
+    return s.startswith(_PROMPT_LEAK_PREFIXES) or bool(_PROMPT_LEAK_RE.search(s))
 
 
 def _clean_deck_slides(slides):
@@ -394,6 +404,12 @@ def _clean_deck_slides(slides):
             _v = s.get(_k)
             if isinstance(_v, list):
                 s[_k] = [x for x in _v if not (isinstance(x, str) and _looks_like_prompt_leak(x))]
+        st = str(s.get("type") or "bullets").lower()
+        if st not in ("cover", "closing", "thanks", "end"):
+            has_content = bool(s.get("bullets") or s.get("metrics") or s.get("chart") or s.get("table"))
+            if not has_content:
+                s["type"] = "bullets"
+                s["bullets"] = ["本页内容尚未取得可核验材料，请以申报书正文补充"]
         out.append(s)
     return out
 

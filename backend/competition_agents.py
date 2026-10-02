@@ -4,7 +4,7 @@
 """
 from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
-from langchain_deepseek import ChatDeepSeek
+from llm_factory import build_chat_model
 from langchain_core.messages import HumanMessage
 from stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
 
@@ -14,6 +14,8 @@ import os
 import re
 import math
 import threading
+import hashlib
+import time
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -28,9 +30,7 @@ if _no_proxy:
 # 默认用DeepSeek，速度快便宜
 # max_tokens=8192 是 deepseek-chat 单次输出上限：深度版申报书无硬性字数下限，以信息完整为准（通常 2500～5000 字），调小会被截断成半篇
 # request_timeout=180：输出 8192 token 需要 1～2 分钟，60 秒会超时断流
-llm = ChatDeepSeek(
-    model="deepseek-chat",
-    api_key=DEEPSEEK_API_KEY,
+llm = build_chat_model(
     temperature=0.6,
     max_tokens=8192,
     request_timeout=180,
@@ -42,9 +42,7 @@ llm = ChatDeepSeek(
 # 评分专用低温度实例（第一百九十二轮 M1 评分波动收敛）：
 # 创意评分 / 评委打分对稳定性要求高，温度从 0.6 降到 0.2、去掉 frequency/presence 惩罚，
 # 让同一材料重复打分的波动从 ±10 分收窄；生成正文仍用上面的 llm（需要多样性）。
-_score_llm = ChatDeepSeek(
-    model="deepseek-chat",
-    api_key=DEEPSEEK_API_KEY,
+_score_llm = build_chat_model(
     temperature=0.2,
     max_tokens=4096,
     request_timeout=120,
@@ -752,9 +750,9 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 
 12. 身份信息（硬性）：严禁编造任何院校名称、指导老师姓名、团队成员真实姓名；只有用户明确提供的真实团队信息才可原样写入（双盲赛事的脱敏由导出环节自动处理，生成时照写即可）。用户没给的，团队一律用「本项目团队」「参赛团队」指代，涉及指导教师一律省略。违者视为不合格。
 
-13. 数据真实（硬性）：只引用可核实的真实数据或用户已给的数据；不知道的具体数字、文献、检测报告、合作方，一律用「测算值 / 示例值 / 预计约 X」直接写出一个合理数值或区间并明确标明这是估算，段落必须完整写完、禁止留【】方括号占位符让用户补；严禁编造看似真实但未经核实的假数据。
+13. 数据真实（硬性）：只引用可核实的真实数据或用户已给的数据；不知道的具体数字、文献、检测报告、合作方，一律写「待核实：需要补充来源/实测数据」，不得自行给出任何数字或机构名。严禁编造看似真实但未经核实的假数据。
 
-14. 禁止占位符（硬性）：全文严禁出现任何【】方括号占位符、方括号提示（如【待你填写：xxx】【示例值，需核实】【需补充数据来源】）；所有段落必须一口气写完，需要估算的数字就用「测算值 / 示例值 / 预计约 X」直接写出具体数值或区间，不准留空、不准让用户填空。
+14. 允许必要的来源提示（硬性）：不得使用会伪装成事实的示例数字；可使用「待核实：需要补充来源/实测数据」或「待补来源」提示用户补齐，并在文末列出待核实清单。只有用户明确提供假设时，才能按假设推导测算值，并标明「测算值」及推导前提。
 """
 
 _HUMANIZE_BANNED = ["随着", "综上所述", "赋能", "生态", "一站式", "闭环", "深度融合"]
@@ -776,12 +774,12 @@ def _humanize_spec(state):
 _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最看重）】
 1. 用户画像 / 痛点分析 / 项目背景章节：必须写「具体人物 + 具体时刻 + 具体动作 + 卡在哪一步」四要素，
    禁止「广大大学生」「独居老人」「老年人群体」这类无场景集合名词；若用户创意里已写了具体场景，原样继承，不要泛化。
-2. 实施计划 / 商业模式 / 应用前景章节：必须给出可核对的数字字段——试点单位类型、测试用户数、留存/活跃、
-   客单价与成本结构、时间表（几月到几月、做什么、交付什么）。不知道具体数值就用「测算值 / 示例值 / 预计约 X」直接写出一个合理数值或区间并标明是估算，段落要完整写完、禁止留【待你填写】这类方括号占位符；严禁写「后续将逐步推进」「实现规模化」这类空话。
-3. 每一个自然段都必须同时包含「三要素」，缺一不可：① 至少 1 个「只属于这个项目」的具体用户场景（谁、在什么时刻、做什么、卡在哪一步）；② 至少 1 个可验证数字（真实数据、用户已给数据、或「测算值 / 示例值 / 预计」）；③ 至少 1 个具体技术名词/功能模块名。三要素缺一，这一整段必须重写，不许用形容词补、也不许留【】方括号占位符。
+2. 实施计划 / 商业模式 / 应用前景章节：必须给出可核对的字段——试点单位类型、测试用户数、留存/活跃、
+   客单价与成本结构、时间表（几月到几月、做什么、交付什么）。用户没有提供数字或明确假设时，写「待核实：需要补充来源/实测数据」，不得自行补一个看似合理的数；只有能回溯到用户假设时，才写「测算值」并同时说明推导前提。段落要完整，禁止留【待你填写】这类方括号占位符，也禁止用「后续将逐步推进」「实现规模化」这类空话掩盖缺口。
+3. 每一个自然段都必须同时包含「三要素」，缺一不可：① 至少 1 个「只属于这个项目」的具体用户场景（谁、在什么时刻、做什么、卡在哪一步）；② 至少 1 个可核验事实、用户数据或带明确前提的测算；缺少数字时必须直写「待核实」而不是编数；③ 至少 1 个具体技术名词/功能模块名。三要素缺一，这一整段必须重写，不许用形容词补、也不许留【】方括号占位符。
 4. 禁用句式与空话：依托……技术、瞄准……痛点、具有广阔的市场前景、广阔市场前景、广阔前景、显著的社会效益、显著社会价值、为……赋能、产业赋能、赋能产业、助力、降本增效、提质增效、打造……生态、全链路、一站式解决方案。
 5. 段落不低于 80 字，且每段必须含一个具体数字 + 一个具体技术名词；纯形容词、纯口号、放哪个项目都能成立的段落直接判不合格。
-6. 严禁编造假数据：所有数字、文献、检测报告、合作方、试点成果、**具体硬件型号/器件型号/框架版本号**，只能来自 ① 知识库/官方资料里的真实数据 ② 用户创意里已给出的数据 ③ 用「测算值 / 示例值 / 预计约 X」写出的合理估算。凡是拿不准的，一律写成「测算值 / 示例值」并标明是估算，段落完整写完、禁止留【】方括号占位符，绝不编一个看起来真实但实际是假的数字或型号。技术名词只写「主控芯片」「制冷片」「称重传感器」这类**通用类型名**，**不要编造 ESP32-S3、TEC1-12706 这种具体型号**；没实测过的数值严禁写「实测」二字，只能写「测算值」或「示例值」。
+6. 严禁编造假数据：所有数字、文献、检测报告、合作方、试点成果、**具体硬件型号/器件型号/框架版本号**，只能来自 ① 知识库/官方资料里的真实数据 ② 用户创意里已给出的数据 ③ 基于用户明确假设、可复核推导链的「测算值」。凡是拿不准的，一律写成「待核实：需要补充来源/实测数据」，绝不编一个看起来真实但实际是假的数字或型号。技术名词只写「主控芯片」「制冷片」「称重传感器」这类**通用类型名**，**不要编造 ESP32-S3、TEC1-12706 这种具体型号**；没实测过的数值严禁写「实测值」，只能写「测算值」并标明假设。
 7. 严禁编造「据《XX 报告 2026》显示」「教育部 2025 年数据显示」「艾瑞咨询 2026 年报告」这类具体机构+年份的引用。需要行业数据时，只能用知识库/官方资料里的真实数据（并保留其真实出处）、或用户已给的数据；拿不到出处就写「公开可查数据估算」并标明是测算值，禁止写「行业普遍认为」「公开数据显示」这类无出处的空泛套话，也不留【需补充数据来源】方括号标记。
 8. 重点标注：每个章节里，把**核心数字、关键技术名词、核心结论**用 Markdown 加粗（**xxx**）标出来，每章 2～4 处即可；不要整段整句加粗，只标真正的关键词，帮助评委/用户快速抓重点、省阅读时间。
 9. 数据来源标注（硬性）：全文每一个数字都必须有可识别的来源类型，四种合法值：
@@ -789,7 +787,7 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
    ②「行业公开数据」——写明机构+年份（只能来自知识库/官方资料，禁止编造）；
    ③「测算值」——你按合理假设推算的，写成「约 X（测算值，基于 XX 假设）」；
    ④「仿真值」——AnyLogic/离散事件仿真等软件跑出来的结果，写成「约 X（仿真值，基于 XX 模型）」。
-   标注要克制、不要满屏堆砌：估算数字统一用「（测算值）」这一种，不要在正文里混用「示例值/设计目标值/待实测」；全文只在首次出现估算数字时注明一次「示例数据，提交前请替换」，其余估算直接写「约 X（测算值）」，把「设计目标值」这类细分标注收敛掉。严禁「裸数字」（拿不准来源又不标注）。
+   标注要克制、不要满屏堆砌：有明确假设的估算数字统一用「（测算值，基于……）」；没有依据的数字直接列入待核实清单，不得用「示例数据」伪装成项目事实。严禁「裸数字」（拿不准来源又不标注）。
    **特别禁止**：仿真运行结果、推算值、文献值严禁标「实测值」——「仿真运行 10 次…（实测值）」这种前后矛盾会让评委当场质疑材料真实性；仿真/推算一律标「仿真值/测算值」，只有用户真填的实测数据才能写「实测值」三个字。
 10. 数据替换清单：正文末尾单独加一节「## 待替换数据清单」，用列表列出所有「测算值」和「设计目标值」对应的数字与所在章节，提示用户提交前替换成真实实测数据（这是清单、不是占位符，不影响正文完整性）。例如：「- 单台柜子月收入 1785 元（商业模式 · 测算值）→ 替换为真实试点收入」。
 11. 禁止编造已发生的事实（硬性）：严禁出现「已合作/已沟通/已签约/已落地/已完成试点/已达成/已上线/已获得」这类断言「已经发生」的表述，除非用户创意/草稿里明确写了；用户没给的一律写「计划/拟/预计/拟于」这类未来时表述。例：「合作社区已经初步沟通」应写「计划与 2 个社区初步沟通」；「试点已排到第 6 个月」应写「试点拟安排在第 6 个月」。
@@ -863,6 +861,13 @@ F. 防污染（最高优先级，违反即作废本次输出）：
 
 G. 文风与匿名：与上面【去 AI 味】【具体化与落地要求】同为硬性，一并遵守；
    全程严禁出现院校名称、指导老师姓名、成员真实姓名。
+
+H. 蒸馏_v3 弱项强化（2026-10-02 追加，针对对标差距报告弱项；深化自v2已核验公开来源，非获奖作品原文）：
+  H1. 佐证材料内联（弱项）：每个优势亮点后须有可指认佐证；佐证页/章须含四件套最小集——①知识产权(专利/软著，标已授权/受理中/撰写中) ②第三方检测或查新(标机构+编号/待补) ③用户反馈或试点(截图/问卷/合同，标样本量) ④合作意向或获奖(标状态)；做成「佐证卡」：左图(截图≥40%)+右文(1行说明+来源标签+状态标签)，不可只写「已申请专利」而无受理号。
+  H2. 痛点量化闭环（弱项）：痛点须含≥2个数据锚点(规模×严重度×未被满足率)+1个现有方案具体缺陷点(点名竞品)；显式交代调研过程(走访N/访谈M/问卷K，含有效回收率)，无真实调研写「测算：基于XX假设」，严禁编造；痛点→方案→被解决程度用同一组锚点回扣。
+  H3. 图表视觉复核四查（弱项）：导出前逐页四查——①标题即结论(洞察句+20字内) ②图注有来源(实测/公开机构+年份/测算基于XX假设) ③无溢出/无裁切/无压边 ④去装饰(禁3D/厚边框/Excel网格/装饰图标)；2×2象限轴须可量化并标坐标含义。
+  H4. 团队章可核验+盲审匿名（弱项）：成员=角色+职责+专业匹配+实质贡献(具体动作句式，禁空头衔)；指导老师只写理论指导专长；盲审用「成员A/B/C」，禁院校/导师/成员真名，需填真人写「姓名：待填写」。
+  H5. 答辩证据链框架（答辩维度）：高频问题预生成覆盖[核心壁垒/最大风险/为何是你/数据可复现/专利进度/首年营收预测/资金用途]；回答=结论→证据链(实测+对比基线+来源+样本量)→主动堵质疑；严格区分实测/估算/预测，三处数字(申报书/PPT/答辩)必须一致。
 """
 
 
@@ -966,10 +971,28 @@ _FULL_SPEC = """【完整档输出规格 —— 深度完整版专用】
 
 _SPEC_BY_TIER = {"fast": _BRIEF_SPEC, "deep": _FULL_SPEC}
 
+# 事实来源优先：未知数字不能被润色成“看起来真实”的事实。
+_DATA_TRUTH_SPEC = """【数据真实性硬约束】
+1. 事实、数字、时间、机构、文献、检测结果、合作关系只能来自用户输入/上传材料，或本轮明确提供的官方知识库原文；不得凭常识、行业印象或模型记忆补写。
+2. 没有可核验来源的内容不要写成既成事实。确需保留论证结构时，使用“待核实：需要补充来源/实测数据”或“待补来源”，不得自行给出数字、年份、机构名、样本量、准确率、收入、用户数、合作方。
+3. 任何测算、预算、目标、预测必须由用户给出的假设推导，并同时写出假设和“测算/预期”标签；没有假设就不生成数值。
+4. 每个数字首次出现时标注来源类型：用户实测、官方资料（机构+年份）、或基于明确假设的测算。无法标注来源的数字一律改为待核实。
+5. 不得为了让成品更完整而主观推断、补齐或编造；宁可留出“待核实”提示，也不能伪装成可靠数据。
+6. 协作边界：这是与用户共同整理材料的辅助工具，不是替用户代写或代替其作出事实判断。优先保留用户原意，输出可编辑草稿、问题清单和待核验项；不得虚构用户经历、成果、合作或观点。
+7. 不把“100%”“绝对”“零风险”“必然”“完全不会”等有限样本无法支撑的表述写成无条件结论。真实百分比可以保留，但必须同时给出来源、样本量、测试条件和适用边界；否则改为“当前样本/测试条件下”“预计/目标值”“尚需进一步验证”。
+8. 生成前后只做提醒和证据定位，不替用户确认事实；用户可以选择继续，系统仅对乱码、空文件、明显安全/合规问题等原则性风险采取阻断。
+"""
+
 _LENGTH_ADJ = {
     "brief": "【篇幅偏好：精炼】在档位要求基础上整体压到约 60% 篇幅，只留结论与关键依据，删掉铺垫与次要展开。",
     "detailed": "【篇幅偏好：详尽】在档位要求基础上整体扩到约 140% 篇幅，把推演过程、数据依据、落地细节写足。",
 }
+
+# 两档产品边界：fast 负责快速判断与可编辑起稿，deep 负责证据链、章节论证与交付级复核。
+_TIER_BOUNDARY_SPEC = """【档位边界】
+- 简洁版：速度优先，保留核心结论、必要章节和可执行下一步；不做深度外部调研，不追求长篇，不因字数不足而反复重跑。它必须能正常生成、编辑和导出。
+- 深度版：内容深度优先，按赛事章节展开证据链、逻辑推演、风险与实施细节；字数只是结果，不设凑字数目标，信息不足时输出待核实清单而不是扩写空话。
+"""
 
 
 _REVIEW_STYLES = {
@@ -991,7 +1014,7 @@ def _spec_for(state):
     _s = _SPEC_BY_TIER.get((state or {}).get("tier"), _FULL_SPEC)
     _pref = (state or {}).get("length_pref")
     _adj = _LENGTH_ADJ.get(str(_pref or "").strip().lower())
-    return (_s + "\n" + _adj) if _adj else _s
+    return (_s + "\n" + _TIER_BOUNDARY_SPEC + "\n" + _DATA_TRUTH_SPEC + "\n" + _adj) if _adj else (_s + "\n" + _TIER_BOUNDARY_SPEC + "\n" + _DATA_TRUTH_SPEC)
 
 
 def _tier_hint(state, brief, full):
@@ -1001,7 +1024,7 @@ def _tier_hint(state, brief, full):
     （评委 / 答辩 / PPT / 演讲稿 / 快速诊断）。
     """
     hint = brief if (state or {}).get("tier") == "fast" else full
-    return hint + "\n（匿名要求：严禁出现院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。）"
+    return hint + "\n（匿名要求：严禁出现院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。）\n" + _DATA_TRUTH_SPEC
 
 
 def _cjk_len(text):
@@ -1224,8 +1247,8 @@ def _expand_to_length(text, min_chars, topic, rounds=2, info_mode=False):
                 "下面是关于「%s」的一份科创赛事申报书，当前正文只有约 %d 字，"
                 "而要求是不少于 %d 字，篇幅严重不足，评委会认定内容空洞。\n\n"
                 "请在**不改变章节结构、不删减已有内容**的前提下做扩写：\n"
-                "1. 每一节补充更具体的场景、数据测算、技术参数、实施步骤与风险应对，"
-                "只补充新论据/数据/案例，不许重复已述内容；\n"
+                "1. 每一节补充更具体的场景、已有数据或基于明确假设的测算、技术参数、实施步骤与风险应对，"
+                "只补充可回溯的新论据/数据/案例，不许重复已述内容；缺少来源时写「待核实」，绝不自行补数；\n"
                 "2. 每个小节补充成一到两个完整的自然段，不要一句话一段；\n"
                 "3. 任何标题下面都必须有正文，不允许出现空小节；\n"
                 "4. 保持 Markdown 标题层级不变，中文标点用全角。%s\n\n"
@@ -1304,6 +1327,31 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
     """🔍 同质化检测 Agent：检测创意相似度"""
     _report_stage("similarity")
+    # 简洁版先做本地可解释初检，避免为一个候选相似度结论额外等待模型。
+    # 深度版仍保留模型分析，用于给出更具体的差异化策略。
+    if state.get("tier") == "fast":
+        idea = str(state.get("idea") or "").strip()
+        try:
+            from kb_samples import list_samples
+            refs = [str(x.get("content") or "") for x in list_samples(limit=500)]
+        except Exception:
+            refs = []
+        def _grams(text, n=5):
+            compact = re.sub(r"\s+", "", text or "")
+            return {compact[i:i + n] for i in range(max(0, len(compact) - n + 1))}
+        grams = _grams(idea)
+        ref_grams = set().union(*(_grams(x) for x in refs)) if refs else set()
+        overlap = round(len(grams & ref_grams) / len(grams) * 100, 1) if grams else 0.0
+        level = "低" if overlap < 8 else ("中" if overlap < 20 else "中高")
+        report = (
+            "## 本地初检\n"
+            f"同质化风险：{level}（与本地范文库中文 5-gram 重合率约 {overlap}%）。\n\n"
+            "## 结果边界\n"
+            "该结果只覆盖当前本地范文库，不等同于知网或全网正式查重；相似度高低不能直接证明抄袭。\n\n"
+            "## 差异化建议\n"
+            "优先补充用户真实的试点场景、实测数据和可验证技术指标；把与常见方案不同的动作写成可复现实验，而不是只增加宣传性表述。"
+        )
+        return {"similarity_report": report}
     prompt = f"""你是科创赛事资深评委，熟悉各类获奖项目。请检测以下创意与常见获奖项目的同质化程度。
 
 赛事：{state['competition_name']}
@@ -1662,6 +1710,13 @@ def extract_material_profile(text: str) -> dict:
         return {}
 
 
+# 进程内短缓存：深度版重试/重复提交同一份上传材料时，不重复消耗一次模型调用。
+# 只保存摘要结果和内容哈希，不落盘、不写入长期记忆；最多 64 项、10 分钟过期。
+_USER_DATA_CACHE = {}
+_USER_DATA_CACHE_LOCK = threading.Lock()
+_USER_DATA_CACHE_TTL = 600
+
+
 def _smart_extract_user_data(user_data: str) -> str:
     """把用户上传的实测数据/文件内容用 LLM 提炼成「结构化事实清单」，按章节归类。
 
@@ -1671,6 +1726,16 @@ def _smart_extract_user_data(user_data: str) -> str:
     ud = (user_data or "").strip()
     if len(ud) < 300:
         return ud
+    _cache_key = hashlib.sha256(ud.encode("utf-8", "ignore")).hexdigest()
+    _now = time.time()
+    with _USER_DATA_CACHE_LOCK:
+        _cached = _USER_DATA_CACHE.get(_cache_key)
+        if _cached and _now - _cached[0] < _USER_DATA_CACHE_TTL:
+            return _cached[1]
+        # 顺手回收过期项，避免长时间运行的进程缓慢增长。
+        for _k, _v in list(_USER_DATA_CACHE.items()):
+            if _now - _v[0] >= _USER_DATA_CACHE_TTL:
+                _USER_DATA_CACHE.pop(_k, None)
     try:
         prompt = f"""你是科创赛事数据整理专家。下面是一段用户上传的实测数据（可能来自 Excel/报告/文字）。
 请把它提炼成「结构化事实清单」，每项一行，格式：类型：指标=数值（实测值）。
@@ -1688,6 +1753,11 @@ def _smart_extract_user_data(user_data: str) -> str:
         resp = llm.invoke([HumanMessage(content=prompt)])
         out = (resp.content or "").strip()
         if out and len(out) >= 10:
+            with _USER_DATA_CACHE_LOCK:
+                if len(_USER_DATA_CACHE) >= 64:
+                    _oldest = min(_USER_DATA_CACHE, key=lambda _k: _USER_DATA_CACHE[_k][0])
+                    _USER_DATA_CACHE.pop(_oldest, None)
+                _USER_DATA_CACHE[_cache_key] = (time.time(), out)
             return out
     except Exception as e:
         print(f"[user_data] 智能提炼失败，退回原文：{e}")
@@ -2157,8 +2227,8 @@ def _fill_missing_chapters(proposal, chapters):
     miss_block = "\n".join("## " + c for c in missing)
     prompt = (
         "下面这份申报书漏了这几个章节，请补齐。\n\n"
-        "缺失章节（标题原样输出，每章都要有实质内容：数据 + 场景 + 技术名词 + 验证证据，"
-        "不允许一句话带过）：\n" + miss_block + "\n\n"
+        "缺失章节（标题原样输出，每章都要有实质内容：已有数据或明确的待核实字段 + 场景 + 技术名词 + 验证证据，"
+        "不允许一句话带过；没有来源的数字不得自行补写，必须标为待核实）：\n" + miss_block + "\n\n"
         "申报书现有结尾（供衔接上下文，不要重复已有章节）：\n" + proposal[-2500:] + "\n\n"
         "直接输出上面列出的缺失章节正文（从第一个「## 」标题开始），不要任何开场白。"
     )
@@ -2253,7 +2323,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 4. 加上比赛需要的评分点
 5. 前面分析的竞品、商业模式、风险、技术方案内容，必须全部融入到申报书对应章节里，补充用户草稿里不足的地方
 6. 每一章都要有实质内容（数据 + 场景 + 技术名词 + 验证证据），不允许任何一章被跳过或一句话带过；任何标题下面都必须有正文，不允许空小节
-7. 涉及数字时给出推算过程并标明是测算值，不要编造引用来源
+7. 涉及数字时只使用用户材料或官方资料；缺少来源就写“待核实”，只有用户给出假设时才给出测算过程并标明测算值。
 8. 严禁编造任何具体人名、昵称和虚构经历（含「李然」「王雨桐」全名，以及「小李」「小王」「小张」「李同学」等变体）；用户没提供真实案例时，一律用泛化表述（「参赛团队普遍反馈」「某高校学生」），真实案例只能来自用户输入。
 
 {_competition_focus(state)}
@@ -2263,6 +2333,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_AWARD_SPEC}
 {_humanize_spec(state)}
 {_PROPOSAL_SPEC}
+{_DATA_TRUTH_SPEC}
 """
 
     # 按当前赛事章节拆成两段写，避免单次输出撑爆 max_tokens 导致后半截被截断
@@ -2328,7 +2399,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {source}
 规则解析：{state['parsed_rules']}
 同质化分析：{state['similarity_report']}
-（本模式不做外部调研，请基于项目创意本身往下推演；涉及数字时标明是测算值，不要编造引用来源）
+（本模式不做外部调研；只整理用户材料和官方规则，缺少来源的数字写“待核实”，不得凭创意补数字）
 一句话定位：{state.get('one_liner','')}
 {_ref_block(state, '项目简介')}
 {_official_ref(state)}
@@ -2345,15 +2416,16 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 
 【质量要求】
 1. 每章写成 1～2 个完整自然段，段内有论点、有展开、有依据；严禁一句话一段、严禁空小节。
-2. 每章都要有实打实的内容：真实场景名称、具体数字（附推算或标明测算）、具体技术名词；每个自然段必须至少出现 1 个具体数字 + 1 个具体场景（谁、在何时何地、做什么）。
+2. 每章都要有实打实的内容：真实场景名称、可核验数字或明确的「待核实」字段、具体技术名词；每个自然段必须至少出现 1 个具体场景（谁、在何时何地、做什么）。缺少来源时保留待核实提示，不得为了满足数字数量而补数。
 3. 禁止「大幅提高效率」「具有广阔前景」「赋能行业」「行业普遍认为」「公开数据显示」这类没有信息量或无出处的空泛表述。
 4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
 5. 中文标点用全角。
-6. 全文禁止出现任何【】方括号占位符，段落必须完整写完，需要估算的数字直接用「测算值/示例值/预计约 X」写出。
+6. 全文不得用示例数字冒充事实；缺少来源时写“待核实”，并在文末列出需要用户补充的字段。
 {_SELF_TECH_HIGHLIGHTS}
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}
 {_competition_focus(state)}
+{_DATA_TRUTH_SPEC}
 """
     proposal, n = _expand_to_length(
         _stream_llm_guarded(prompt, "proposal"), 1100,
@@ -2683,13 +2755,21 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
 
 （匿名要求：严禁出现院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。）
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
-    state["defense_questions"] = response.content
-    print("🎤 答辩问题 Agent：已生成 10 个尖锐问题")
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        content = (getattr(response, "content", "") or "").strip()
+    except Exception as exc:
+        # 单个答辩模块失败不应拖垮整轮生成；最终编排层会放入
+        # 透明的结构化核查提纲，不会把异常伪装成事实结论。
+        print(f"🎤 答辩问题 Agent：调用失败，交由兜底模块处理：{exc}")
+        content = ""
+    state["defense_questions"] = content
+    if content:
+        print("🎤 答辩问题 Agent：已生成 10 个尖锐问题")
     # 只回传自己负责的字段：defense 与 ppt 在图上并行，若各自 return 整个 state，
     # 两者会同时写 competition_name 等公共字段，触发 LangGraph
     # InvalidUpdateError（Can receive only one value per step），导致整轮生成失败。
-    return {"defense_questions": response.content}
+    return {"defense_questions": content}
 
 
 def _media_context(state: dict) -> str:
@@ -2728,14 +2808,20 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 
 {_tier_hint(state,
 "生成 3 分钟路演大纲（8～10 页），每页只写标题 + 2～3 个要点短语，不要写完整句子。",
-"生成 15～20 页路演大纲，每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。"
+"生成约 8～10 页路演大纲，每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。封面和致谢页也要有项目定位与下一步信息，不能空白。"
 )}
 """
-    response = llm.invoke([HumanMessage(content=prompt)])
-    state["ppt_outline"] = response.content
-    print(f"📊 PPT 大纲 Agent：已生成")
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        content = (getattr(response, "content", "") or "").strip()
+    except Exception as exc:
+        print(f"📊 PPT 大纲 Agent：调用失败，交由兜底模块处理：{exc}")
+        content = ""
+    state["ppt_outline"] = content
+    if content:
+        print(f"📊 PPT 大纲 Agent：已生成")
     # 同上：ppt 与 defense 并行，不能 return 整个 state
-    return {"ppt_outline": response.content}
+    return {"ppt_outline": content}
 
 
 def speech_agent(state: CompetitionState) -> CompetitionState:
@@ -2784,6 +2870,15 @@ PPT大纲：{state['ppt_outline']}
 def one_liner_agent(state: CompetitionState) -> CompetitionState:
     """💡 一句话定位 Agent：生成路演开场一句话"""
     _report_stage("idea_scoring")
+    # 简洁版只需要一个可读定位，不必为 30 字以内的短句额外等待一次模型。
+    # 深度版仍使用模型润色，保留更强的表达质量。
+    if state.get("tier") == "fast":
+        raw = re.sub(r"[\r\n]+", " ", str(state.get("idea") or "")).strip()
+        raw = re.sub(r"^(我想做|我们做|项目是|本项目是)\s*", "", raw)
+        raw = re.split(r"[。！？!?；;]", raw, maxsplit=1)[0].strip(" ，,：:")
+        if len(raw) > 28:
+            raw = raw[:28].rstrip("，,、")
+        return {"one_liner": (raw or "围绕真实场景打造可验证的创新解决方案") + "。"}
     prompt = f"""请用一句话（30字以内）概括这个项目，用来路演开场。
 
 项目：{state['idea']}
@@ -2847,8 +2942,11 @@ def rich_media_agent(state: CompetitionState) -> CompetitionState:
 要求：
 - charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；
 - tables 生成 2-3 个（竞品对比、商业模式、实施计划等），header 和 rows 要真实具体、贴合本项目；
-- deck.slides 生成 8-12 页，type 只用 cover/section/bullets/metrics/table/closing 这些，标题和内容贴合本项目。
+- deck.slides 生成约 8-10 页，type 只用 cover/section/bullets/metrics/table/closing 这些；每页至少 3 个具体要点或 2 个有来源的数据指标，标题和内容贴合本项目，禁止空泛套话。
 - 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。
+ - 所有数字、年份、机构、竞品结论必须能在上方项目材料中找到来源；没有来源时对应数组留空或写「待核实」，不得用模板示例数字冒充项目数据。
+ - 版权优先：只学习结构和评审维度，不复制任何第三方作品原句、标题、案例或独特方案。
+{_DATA_TRUTH_SPEC}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["rich_media"] = response.content
@@ -2907,8 +3005,10 @@ workflow.add_conditional_edges("judge", should_iterate_fast)
 workflow.add_edge("revise", "judge")
 workflow.add_edge("defense", "speech")
 workflow.add_edge("ppt", "speech")
+workflow.add_edge("defense", END)
 workflow.add_edge("proposal_analysis", END)
 workflow.add_edge("speech", END)
+
 
 
 fast_app = workflow.compile()
@@ -2968,8 +3068,8 @@ deep_workflow.add_edge("expert_review", "proposal_analysis")
 deep_workflow.add_conditional_edges("proposal_analysis", should_iterate)
 deep_workflow.add_edge("revise", "judge")
 deep_workflow.add_edge("revise", "expert_review")
-deep_workflow.add_edge("defense", "speech")
 deep_workflow.add_edge("ppt", "speech")
+deep_workflow.add_edge("defense", END)
 deep_workflow.add_edge("speech", END)
 
 deep_app = deep_workflow.compile()
