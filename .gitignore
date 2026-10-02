@@ -33,6 +33,13 @@ _cover_preview/
 # ---- 验收产物 ----
 _verify_out/
 
+# 远程探针与临时测量文件（不得进入发布包）
+backend/remote_*
+backend/scripts/tmp_*
+backend/tmp_export*.pdf
+backend/tmp_share_export.*
+frontend/static/tmp_*
+
 # ---- 一次性调试产物归档（2026-09-29 整理，勿提交）----
 _archive_tmp/
 
@@ -41,3 +48,10 @@ _archive_tmp/
 
 # 演示视频帧缓存
 _frames/
+
+# Local QA and research output (keep curated reference artifacts only)
+artifacts/qa/
+artifacts/research/
+artifacts/legacy-runtime/
+logs/*.log
+tests/output/

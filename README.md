@@ -20,23 +20,24 @@
 
 ## 快速启动
 ```bash
-pip install -r requirements.txt
-python run.py
+pip install -r backend/requirements.txt
+python backend/run.py
 # 访问 http://127.0.0.1:8080
 ```
 
 ## 目录结构
 ```
-├── run.py                 # 启动入口
-├── app.py                 # Flask后端+前端页面
-├── competition_agents.py  # LangGraph多Agent工作流定义
-├── data/                  # 比赛知识库
-│   ├── iCAN大赛.txt
-│   ├── 互联网+大赛.txt
-│   ├── 挑战杯.txt
-│   └── 国创项目.txt
-└── uploads/               # 用户上传文件临时目录
+├── frontend/              # 首页 HTML、CSS、浏览器端 JS 与静态资源
+├── backend/               # Flask、智能体、导出器、知识库与运行期数据
+├── docs/                  # 架构、赛事资料、验收、交接和模板
+├── tests/                 # 可重复测试与探针
+├── artifacts/             # 演示、参考样例、研究与 QA 产物
+└── logs/                  # 运行与调试日志
 ```
+
+完整归档规则见 [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md)。运行时数据库、上传、生成和临时导出目录仍由 `backend/run.py` / `backend/wsgi.py` 固定在 `backend/`，整理文件不会改变服务路径。
+
+本地发布到线上前请按 [`docs/operations/本地到线上同步.md`](docs/operations/本地到线上同步.md) 执行备份、白名单同步、平滑重载和接口回归；不要上传本地数据库或运行期目录。
 
 ## 配置
 在环境变量中设置：
