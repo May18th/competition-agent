@@ -14,7 +14,7 @@ import time
 import uuid
 
 from langchain_core.messages import HumanMessage
-from llm_factory import build_chat_model
+from langchain_deepseek import ChatDeepSeek
 
 try:
     from chart_renderer_pro import render as render_chart
@@ -38,7 +38,9 @@ def _get_llm():
             os.environ["NO_PROXY"] = ",".join(
                 x for x in _np.replace("::1", "").replace(";", ",").split(",") if x)
             os.environ["no_proxy"] = os.environ["NO_PROXY"]
-        _llm = build_chat_model(
+        _llm = ChatDeepSeek(
+            model="deepseek-chat",
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
             temperature=0.2,
             max_tokens=8000,
             request_timeout=180,
@@ -67,6 +69,7 @@ def _extract_json(text):
 def _invoke_json(prompt):
     resp = _get_llm().invoke([HumanMessage(content=prompt)])
     return _extract_json(resp.content)
+
 
 
 
@@ -112,12 +115,12 @@ F. 防污染（最高优先级，违反即作废本次输出）：
 G. 文风与匿名：与上面【去 AI 味】【具体化与落地要求】同为硬性，一并遵守；
    全程严禁出现院校名称、指导老师姓名、成员真实姓名。
 
-H. 蒸馏_v3 弱项强化（2026-10-02 追加，针对对标差距报告弱项；深化自v2已核验公开来源，非获奖作品原文）：
-  H1. 佐证材料内联（弱项）：每个优势亮点后须有可指认佐证；佐证页/章须含四件套最小集——①知识产权(专利/软著，标已授权/受理中/撰写中) ②第三方检测或查新(标机构+编号/待补) ③用户反馈或试点(截图/问卷/合同，标样本量) ④合作意向或获奖(标状态)；做成「佐证卡」：左图(截图≥40%)+右文(1行说明+来源标签+状态标签)，不可只写「已申请专利」而无受理号。
-  H2. 痛点量化闭环（弱项）：痛点须含≥2个数据锚点(规模×严重度×未被满足率)+1个现有方案具体缺陷点(点名竞品)；显式交代调研过程(走访N/访谈M/问卷K，含有效回收率)，无真实调研写「测算：基于XX假设」，严禁编造；痛点→方案→被解决程度用同一组锚点回扣。
-  H3. 图表视觉复核四查（弱项）：导出前逐页四查——①标题即结论(洞察句+20字内) ②图注有来源(实测/公开机构+年份/测算基于XX假设) ③无溢出/无裁切/无压边 ④去装饰(禁3D/厚边框/Excel网格/装饰图标)；2×2象限轴须可量化并标坐标含义。
-  H4. 团队章可核验+盲审匿名（弱项）：成员=角色+职责+专业匹配+实质贡献(具体动作句式，禁空头衔)；指导老师只写理论指导专长；盲审用「成员A/B/C」，禁院校/导师/成员真名，需填真人写「姓名：待填写」。
-  H5. 答辩证据链框架（答辩维度）：高频问题预生成覆盖[核心壁垒/最大风险/为何是你/数据可复现/专利进度/首年营收预测/资金用途]；回答=结论→证据链(实测+对比基线+来源+样本量)→主动堵质疑；严格区分实测/估算/预测，三处数字(申报书/PPT/答辩)必须一致。
+V4. 蒸馏_v4 弱项闭环 + 生成期强制校验（2026-10-03 追加，针对 20261002 差距报告 5 项待修复；深化自 v2/v3 已核验公开来源，非获奖作品原文）：
+  V4.1 痛点量化落地（生成期强制，对应待修复①）：痛点段须含≥2个数据锚点（规模×严重度×未被满足率）+1个现有方案具体缺陷点（点名竞品，贵/慢/漏在哪，禁写「目前尚无有效解决方案」）；显式交代调研过程（走访N/访谈M/问卷K，含有效回收率），无真实调研写「测算：基于XX假设」，严禁编造；痛点→方案→该痛点被解决到什么程度用同一组锚点回扣。
+  V4.2 图表四查执行（生成期强制，对应待修复②，须导出前逐页过）：①标题即结论（洞察句+20字内）②图注有来源（实测/公开机构+年份/测算基于XX假设，混合来源点明哪条实测哪条测算）③无溢出/无裁切/无压边（headless 截图逐页复核，未过即打回）④去装饰（禁3D/厚边框/Excel网格/装饰图标）；2×2象限轴须可量化并标坐标含义，雷达图≤7维且每维对应正文一个论点。
+  V4.3 佐证内容填实（生成期强制，对应待修复③）：每个优势亮点后必须有可指认佐证；佐证章/佐证页须含四件套最小集——①知识产权(标已授权/受理中/撰写中) ②第三方检测/查新(标机构+编号/待补) ③用户反馈/试点(标样本量) ④合作意向/获奖(标状态)；「待补」项必须给「可获取路径」模板（如「实用新型专利1项（撰写中，预计X月提交）」），禁止留白即消失。
+  V4.4 财务三情景（生成期强制，对应待修复④）：商业模式/财务章必须含保守/中性/乐观三情景（各给销量/收入/毛利率/盈亏平衡月），假设回溯到试点/调研数据（如获客成本按前100个付费客户实际支出测算）；成本结构按百分比拆解+资金分配比例（如40%研发/30%市场/30%团队，每笔拆到具体动作）；年增长率>300%、毛利率>80%、市占>10%须给保守情景兜底与推导链。
+  V4.5 导出物密度自动校验（v4 新增，生成期强制，对应待修复⑤）：路演PPT每页≤100字、≤6行、≤5要点（标题36-44pt、正文18-20pt、指标60-72pt）；申报书每节≤800字；导出/保存后由脚本逐页统计字数与行数，超阈即打回重生成；tmp_export.pdf 等实时导出须做每页密度核查，超线告警。
 """
 
 CHART_FORMAT = """
@@ -164,8 +167,10 @@ def _load_kb_industry_data(competition):
     return ""
 
 
-def _gen_assets(result, competition, idea, kb_data=""):
+def _gen_assets(result, competition, idea, kb_data="", user_data=""):
     """第一步：让 LLM 设计图表 + 表格"""
+    _ud = (("\n实测数据（团队输入；图表数字优先采用这里的值，source 标「团队输入」）：\n" + user_data + "\n")
+           if user_data else "")
     material = f"""
 项目：{idea}
 赛事：{competition}
@@ -175,12 +180,7 @@ def _gen_assets(result, competition, idea, kb_data=""):
 风险评估：{result.get('risk_analysis','')[:1500]}
 技术方案：{result.get('tech_solution','')[:2000]}
 实施计划：{result.get('implementation_plan','')[:1500]}
-"""
-    # 417 轮：用户填的实测数据必须进图表。之前 prompt 里根本没有 user_data，
-    # 模型只能用正文的测算值/示例值，导致「我填了试点准确率 96%，图上还是编的 92%」。
-    _ud = (result.get('user_data') or '').strip()
-    if _ud:
-        material += f"\n【用户实测数据（最高优先级，直接上图）】\n{_ud[:1200]}\n"
+{_ud}"""
     kb_block = f"\n【可引用的行业真实数据】\n{kb_data}\n" if kb_data else ""
     prompt = f"""你是国家级科创赛事的路演数据可视化专家。根据以下项目材料，设计 6-8 张最有说服力的图表（charts）和 2-4 张关键表格（tables），要达到「2026 国赛超精美图表 A」水准。
 
@@ -191,13 +191,9 @@ def _gen_assets(result, competition, idea, kb_data=""):
 1. 数据墨水比优先：不要 3D、不要厚重边框；网格线只留极淡虚线；关键数据点要突出。
 2. 深色科技蓝底（#0F1535），高亮主色 #818CF8，系列色 #22B8CF / #C084FC / #F59E0B / #34D399 / #FB7185 / #A3E635。
 3. 每张图都要「结论式标题 + 一句话洞察 + 数据来源」：标题直接给结论（如「目标市场规模三年翻三倍」），caption 是 20 字内的洞察，source 写来源+年份。
-0. 【数据来源优先级 —— 417 轮硬规则】①用户实测数据 > ②正文测算值 > ③上面「可引用的行业真实数据」> ④你自己推算。
-   凡「用户实测数据」里出现过的指标（如试点准确率、单件成本、响应时长、覆盖人数、营收等），
-   图上**必须原样用该实测值**并 source 写「实测」，不许替换成测算值或示例值；
-   实测数据里没有的指标才允许用测算/公开数据，且 source 必须写明「测算」或机构+年份。
-   同一张图里混用实测与测算时，caption 里点明「X 为实测，Y 为测算」，别让评委误判。
 4. 数字必须来自材料或「可引用的行业真实数据」，优先引用上面给的真实数据并标注 source；测算值标「行业测算」并写清口径。每个数据点的 source 只能是三种合法值：①团队输入 ②公开数据（机构+年份，且必须是上面「可引用的行业真实数据」里真实出现的）③测算假设（写明「测算：基于 XX 假设」）。编不出这三种来源的数字一律不准上图；图上没有真实来源的数字，评委一问就露馅。
-4-1. 预算构成、市场规模、实施时间线这三张图**必须**从「竞品分析/商业模式/技术方案/实施计划」里抽取已有数据（如排队 12→7 分钟、柜口利用率 55→75%、单柜月收入 1785 元、市场规模 XXX 万），严禁用 40/25/20/15、120/280/560/980/1500、10/30/55/80/100 这类示例占位数值；正文没有对应数字且用户没有明确假设时，不生成数值，改为「待核实：需要补充来源/实测数据」并在图表 caption 标明缺口。只有假设、推导链都写清楚时，才可生成「测算值」。
+4-1. 预算构成、市场规模、实施时间线这三张图**必须**从「竞品分析/商业模式/技术方案/实施计划」里抽正文的具体测算值，严禁用 40/25/20/15、120/280/560/980/1500、10/30/55/80/100 这类示例占位数值；正文里没有对应的数就写「测算：基于 XX 假设」推一个，不许照搬示例数字。
+4-2. 【主题一致性·硬性】所有竞品/场景/数据必须与「项目」同一赛道——先判断项目属于哪个赛道（如垃圾分类/环保、快递物流、医疗、教育…），竞品必须从该赛道选同类产品，严禁跨赛道（环保项目不得出现快递柜/驿站/丰巢/灯条/末端配送等物流竞品）；数字必须来自本项目正文，不得套用其他项目（如取件柜）的排队/柜口/单柜收入等数字。
 5. 图表类型必须多样（至少 8 张），且硬性覆盖下面各类，缺一不可：
    - radar 竞品/能力多维对比（1 张）
    - matrix 竞争力定位象限（1 张）
@@ -230,6 +226,7 @@ def _gen_assets(result, competition, idea, kb_data=""):
 }}
 {CHART_FORMAT}
 要求：
+0. 【团队实测数据优先】material 中的「实测数据（团队输入）」字段是用户填写的真实试点/成本/指标/时间线，图表数字优先采用这里的值，并在 source 标「团队输入」；该字段为空时才用正文/行业数据/测算。
 1. id 从 c1/t1 开始编号；type 从上面列表里选
 2. 数字必须来自材料或行业真实数据，不能拍脑袋
 3. 每张表格 3-6 行、表头不超过 5 列；cells 内容不超过 14 字
@@ -279,16 +276,6 @@ def _gen_deck(result, competition, idea, assets):
 4. 至少 2 页用 chart（引用给定 id）、至少 1 页用 table（引用给定 id）、至少 1 页 metrics
 5. kicker 用"序号 / 章节名"格式，全篇编号连贯
 6. 每页可选加 "note"：演讲者备注，一句话讲这页想传达什么（导出后可在 PPT 备注栏看到）
-
-【路演PPT质量标杆 —— 页面结构与视觉硬约束】
-1. 默认 8 页压缩版：封面→痛点→解决方案→数据/Traction→竞争壁垒→商业模式→团队里程碑→愿景；每页只讲一个核心论点。
-2. 标题即结论；每页 ≤100 字、≤6 行、≤5 要点；要点格式「关键词：具体说明（含数字）」。
-3. 视觉系统：16:9、12列栅格；主色深海军蓝#0F1535、高亮#818CF8、正文#1A1A2E、背景#F8F8F6、数据强调#F59E0B。
-4. 产品页必须有真实产品截图/流程图；数据页必须有大数字指标卡；竞争页必须用 2×2 矩阵或 radar。
-5. 图表标题即结论，带 ≤20 字洞察和数据来源；禁用 3D/厚重边框/装饰图例。
-6. 数据三分法：真实数据标来源，测算写「测算：基于XX假设」，待补充留空；严禁编造。
-7. 结尾页不写「谢谢聆听」，写一句话定位+3条核心价值+明确下一步。
-
 7. 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代""" + _QUALITY_BENCHMARK_SPEC
     return _invoke_json(prompt)
 
@@ -304,9 +291,9 @@ def _fallback_deck(result, idea):
         if m and len(m.group(1)) <= 30:
             if cur:
                 slides.append(cur)
-            cur = {"type": "bullets", "title": m.group(1).lstrip("#* "), "bullets": []}
+            cur = {"type": "bullets", "title": m.group(1).strip().strip("#* ").strip(), "bullets": []}
         elif cur and line and len(slides) < 14:
-            clean = re.sub(r"^[-*•·]\s*", "", line)
+            clean = re.sub(r"^[-*•·]\s*", "", line).strip()
             if len(clean) <= 40:
                 cur.setdefault("bullets", []).append(clean)
     if cur:
@@ -331,12 +318,18 @@ def _outline_deck(outline):
         # 标题：## x / # x / 1. x / 第1页 x / 01 / x
         m = re.match(r"^#{1,4}\s+(.*)", line) or re.match(r"^(?:页?\d+|[（(]?\d+[）)])[.、:：\s]+(.*)", line)
         if m:
-            title = m.group(1).strip().lstrip("#* ").strip()
+            # 第二百三十五轮：标题剥掉两端 Markdown 加粗/标题标记，避免「市场规模**」这类星号残留
+            title = m.group(1).strip().strip("#* ").strip()
             if not title or len(title) > 40:
                 continue
             # 跳过文档级标题（「PPT 大纲」「路演大纲」「目录」等），它只是整份大纲的名字，不是某一页
-            if (re.match(r"^(?:PPT|路演)?\s*大纲$|^目录$", title, re.IGNORECASE)
-                    or re.search(r"(?:路演\s*)?PPT\s*大纲$|路演\s*大纲$", title, re.IGNORECASE)):
+            # 2026-09-30 417-2 残留修复：旧判据只认绝对等于「大纲/目录」，
+            # 不认「智能巡检系统 · 3分钟路演大纲」「项目PPT大纲（16页）」这类带前后缀写法，
+            # 导致文档级标题被当成一页正文 -> PPT 页数 +1、与大纲对不上（417-2 投诉场景）。
+            # 新判据：去符号空白后以「大纲」结尾（允许 PPT/路演 前缀与括号页数后缀）或等于目录类。
+            _norm = re.sub(r"[\s\u00b7\-\u2014_()（）\[\]【】]+", "", title)
+            if re.search(r"(?:PPT|路演)?大纲(?:\d+页?)?$", _norm, re.IGNORECASE) \
+                    or _norm in ("目录", "PPT目录", "目录页"):
                 continue
             if cur:
                 slides.append(cur)
@@ -367,11 +360,7 @@ def _outline_deck(outline):
 _PROMPT_LEAK_PREFIXES = (
     "用表格", "用图表", "用一段", "用数据", "用一张", "请给", "请输", "请用",
     "按如下", "按要求", "只输出", "不要任何", "不要写", "不要出现", "呈现三条",
-    "列出三条",
-)
-_PROMPT_LEAK_RE = re.compile(
-    r"(?:请(?:给出|提供|填写|生成|用(?:表格|图表|数据|一段|一张)?))|"
-    r"(?:用(?:表格|图表|数据|一段|一张))|(?:按(?:如下|要求))"
+    "列出三条", "给出", "输出", "列出", "呈现", "每条",
 )
 
 
@@ -385,7 +374,7 @@ def _looks_like_prompt_leak(t):
     s = _strip_md_bold(t)
     if not s:
         return False
-    return s.startswith(_PROMPT_LEAK_PREFIXES) or bool(_PROMPT_LEAK_RE.search(s))
+    return s.startswith(_PROMPT_LEAK_PREFIXES)
 
 
 def _clean_deck_slides(slides):
@@ -404,12 +393,6 @@ def _clean_deck_slides(slides):
             _v = s.get(_k)
             if isinstance(_v, list):
                 s[_k] = [x for x in _v if not (isinstance(x, str) and _looks_like_prompt_leak(x))]
-        st = str(s.get("type") or "bullets").lower()
-        if st not in ("cover", "closing", "thanks", "end"):
-            has_content = bool(s.get("bullets") or s.get("metrics") or s.get("chart") or s.get("table"))
-            if not has_content:
-                s["type"] = "bullets"
-                s["bullets"] = ["本页内容尚未取得可核验材料，请以申报书正文补充"]
         out.append(s)
     return out
 
@@ -461,7 +444,7 @@ def pick_theme(text):
     return best
 
 
-def build_rich_assets(result, competition="", idea="", theme=None):
+def build_rich_assets(result, competition="", idea="", theme=None, user_data=""):
     """主入口：返回 {"charts":[...], "tables":[...], "deck":{...}, "theme":...}；失败字段为空"""
     out = {"charts": [], "tables": [], "deck": None}
     os.makedirs(GEN_DIR, exist_ok=True)
@@ -487,14 +470,14 @@ def build_rich_assets(result, competition="", idea="", theme=None):
     _outline = (result.get("ppt_outline") or "").strip()
     try:
         with ThreadPoolExecutor(max_workers=2) as _ex:
-            _f_assets = _ex.submit(_gen_assets, result, competition, idea, kb_data)
+            _f_assets = _ex.submit(_gen_assets, result, competition, idea, kb_data, user_data)
             _f_deck = _ex.submit(_outline_deck, _outline)
             assets = _f_assets.result() or {}
             deck = _f_deck.result()
     except Exception as e:
         print(f"[rich] 并行设计失败，退回串行兜底：{e}")
         try:
-            assets = _gen_assets(result, competition, idea, kb_data) or {}
+            assets = _gen_assets(result, competition, idea, kb_data, user_data) or {}
         except Exception as e2:
             print(f"[rich] 图表/表格设计失败，降级：{e2}")
         try:
@@ -551,10 +534,7 @@ def build_rich_assets(result, competition="", idea="", theme=None):
         table_map = {t["id"]: t for t in tables}
         chart_ids = {c["id"] for c in charts}
         norm = []
-        # 417 轮：原上限 18 页会静默砍掉大纲后半章节（大纲 16 页时刚好不触发，
-        # 但 20 页大纲会被砍到 18，评委对照大纲时发现缺页）。放宽到 30，
-        # 足够覆盖任何赛事大纲长度；真超了也只在 30 处截断，不会误伤常规 15～20 页大纲。
-        for s in slides[:30]:
+        for s in slides[:18]:
             if not isinstance(s, dict):
                 continue
             s.setdefault("type", "bullets")
@@ -568,15 +548,21 @@ def build_rich_assets(result, competition="", idea="", theme=None):
             if s["type"] == "chart" and not s.get("chart"):
                 s["type"] = "bullets"
             norm.append(s)
-        # 417 轮：只在「大纲第一页确实不是封面」时才补封面。
-        # 原判断只看 type，大纲首页写成「1. 项目封面」但没被标记成 cover 时会多插一页，
-        # 导致 PPT 比大纲多 1 页。这里补一道标题识别，避免页数虚增。
+        # L6：把图表引用注入到匹配的页面（市场/数据/趋势/对比/规模/用户/财务/架构/流程等），
+        # 让 build_deck 能嵌入图表图片，不再「8 页全文字 0 图」。
+        _chart_keywords = ("市场", "数据", "趋势", "对比", "竞品", "规模", "增长", "用户",
+                           "财务", "架构", "流程", "痛点", "营收", "份额")
+        _chart_iter = iter(sorted(chart_ids))
+        for _s in norm:
+            if _s.get("type") == "bullets" and any(k in (_s.get("title") or "") for k in _chart_keywords):
+                try:
+                    _cid = next(_chart_iter)
+                except StopIteration:
+                    break
+                _s["type"] = "chart"
+                _s["chart"] = _cid
         if norm and norm[0].get("type") != "cover":
-            _t0 = str(norm[0].get("title") or "")
-            if re.search(r"封面|首页|标题页|扉页", _t0):
-                norm[0]["type"] = "cover"
-            else:
-                norm.insert(0, {"type": "cover"})
+            norm.insert(0, {"type": "cover"})
         deck["slides"] = _clean_deck_slides(norm)
         deck.setdefault("one_liner", result.get("one_liner", ""))
         deck.setdefault("project", _project_name(idea, result.get("one_liner", "")))
