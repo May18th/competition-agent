@@ -3428,44 +3428,84 @@
         }
 
         // ---- AI 富媒体渲染：图表 / 表格 / PPT 预览 ----
+        function wbChartIsPlaceholder(c) {
+            if (!c || typeof c !== 'object') return true;
+            var spec = c.spec || c, data = spec.data || {};
+            var vals = [];
+            ['values', 'progress'].forEach(function (k) {
+                (Array.isArray(data[k]) ? data[k] : []).forEach(function (v) {
+                    var n = Number(String(v).replace(/,/g, ''));
+                    if (isFinite(n)) vals.push(Math.round(n * 1000000) / 1000000);
+                });
+            });
+            var labels = [];
+            ['labels', 'categories', 'x', 'stages'].forEach(function (k) {
+                (Array.isArray(data[k]) ? data[k] : []).forEach(function (v) {
+                    labels.push(typeof v === 'object' && v ? (v.name || '') : String(v));
+                });
+            });
+            var title = String(c.title || spec.title || '').replace(/\s/g, '');
+            var compact = labels.join('').replace(/\s/g, '');
+            var fixed = [[45,30,15,10], [120,380,860], [120,280,560,980,1500], [10,30,55,80,100]];
+            if (fixed.some(function (x) { return x.length === vals.length && x.every(function (v, i) { return v === vals[i]; }); })) return true;
+            var ordered = vals.slice().sort(function (a, b) { return a - b; });
+            if (ordered.join(',') === '10,15,30,45' && /预算|成本|研发成本|硬件采购/.test(title + compact)) return true;
+            if (ordered.join(',') === '120,380,860' && /市场|规模|第1年|第2年|第3年/.test(title + compact)) return true;
+            if (['研发成本硬件采购市场推广运营备用', '需求调研原型开发测试迭代上线运营推广拓展', '需求调研原型开发小批量试产市场推广'].indexOf(compact) >= 0) return true;
+            if (title === '目标市场规模三年翻三倍') return true;
+            var url = String(c.url || '').toLowerCase();
+            if (!c.spec && /chart_(budget|market|timeline)\.png$/.test(url) && /^(预算构成|市场规模预测|实施进度)$/.test(title)) return true;
+            return false;
+        }
+
         function renderRich(rd, isDeep) {
-            var charts = rd.rich_charts || [];
+            var _rawCharts = Array.isArray(rd.rich_charts) ? rd.rich_charts : [];
+            // 一键演示明确使用隔离的演示记录；普通项目/历史记录必须过滤旧示例图。
+            var charts = rd.__demo ? _rawCharts : _rawCharts.filter(function (c) { return !wbChartIsPlaceholder(c); });
+            // 旧版历史记录可能还带着固定示例图；预览和导出必须共享同一份清洗后的数据。
+            var safeRd = Object.assign({}, rd, {rich_charts: charts});
             var tables = rd.rich_tables || [];
-            var deck = rd.rich_deck || wbRoadshowDeck(rd);
+            var deck = rd.rich_deck || wbRoadshowDeck(safeRd);
             // 开关开着时预览与导出都用重排后的 8 页 deck，做到"所见即所下载"
             var showDeck = deck;
             if (deck && deck.slides && deck.slides.length && wbRoadshowOn()) {
-                try { showDeck = wbRoadshowDeck(rd); } catch (e) { showDeck = deck; }
+                try { showDeck = wbRoadshowDeck(safeRd); } catch (e) { showDeck = deck; }
             }
+            var _chartIds = {};
+            charts.forEach(function (c) { if (c && c.id) _chartIds[String(c.id)] = true; });
+            [deck, showDeck].forEach(function (d) {
+                if (!d || !Array.isArray(d.slides)) return;
+                d.slides.forEach(function (s) {
+                    if (s && s.chart && !_chartIds[String(s.chart)]) {
+                        delete s.chart;
+                        if (String(s.type || '').toLowerCase() === 'chart') s.type = 'bullets';
+                    }
+                });
+            });
             var rcw = document.getElementById('richChartsWrap');
             var dcw = document.getElementById('demoChartsWrap');
             if (!rcw || !dcw) return;
             // 清掉上一轮可能留下的缩略图与表格，避免二次生成把旧数据当成本轮结果。
             var chartUnavailable = document.getElementById('demoChartsUnavailable');
             var demoChartNote = document.getElementById('demoChartsNote');
+            // 每次结果渲染都清除上一轮的示例绘图函数，避免跨项目重绘旧数字。
+            window.__wbDemoChartDraw = null;
             if (chartUnavailable) chartUnavailable.style.display = 'none';
-            if (demoChartNote) demoChartNote.style.display = 'block';
+            if (demoChartNote) demoChartNote.style.display = 'none';
             // 以实际返回的图表为准，而不是只看档位；简洁版已有图表时也要展示，
             // 二次生成/历史恢复不能因为 mode 判断变化把首轮成果隐藏。
             if (charts.length) {
                 rcw.style.display = 'block'; dcw.style.display = 'none';
             } else {
                 rcw.style.display = 'none'; dcw.style.display = 'block';
-                // 明确区分「有真实图表」和「本轮没有数据」。后者仍保留入口，
-                // 让评委知道系统没有静默丢模块，也不会把示例数字误认为项目数据。
-                if (chartUnavailable && rd.show_charts === false) {
+                // 没有真实图表时只显示可核验数据提示；绝不绘制硬编码示例数字。
+                if (chartUnavailable) {
                     chartUnavailable.style.display = 'flex';
-                    if (demoChartNote) demoChartNote.style.display = 'none';
-                    ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
-                        var node = document.getElementById(id);
-                        if (node && node.parentElement) node.parentElement.style.display = 'none';
-                    });
-                } else {
-                    ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
-                        var node = document.getElementById(id);
-                        if (node && node.parentElement) node.parentElement.style.display = '';
-                    });
                 }
+                ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
+                    var node = document.getElementById(id);
+                    if (node && node.parentElement) node.parentElement.style.display = 'none';
+                });
             }
             // 存一份索引，放大弹窗按序号取原图，避免把 url 拼进 onclick 造成引号/转义问题
             window.__chartItems = charts;
@@ -6058,115 +6098,7 @@
                                 sub: '若反复出现，请把「运行日志」里的报错发给我们'
                             });
                         }
-                        // 初始化可视化图表（有 AI 真图时不再画示例图）
-                        if (!(data.data.rich_charts || []).length && data.data.show_charts !== false) {
-                            setTimeout(async () => {
-                                // echarts 是按需加载的：这里等它到位再画（首屏不再为它买单）
-                                await wbLoadEcharts();
-                                // 两条路都没拉到 → 摆错误态，别让三个空白框挂在那儿
-                                if (window.echarts.__noop) { wbEchartsDown(); return; }
-                                await window.__wbDemoChartDraw();
-                            }, 100);
-                                // 171 轮：整套配色从所选主题取；CA 的跨端约束已收进 WB_CHART_THEMES.tech，
-                                // 选中「科技蓝紫」时仍与后端 chart_renderer_pro 的 tech 主题完全同色。
-                                // 整段抽成闭包挂 window：切主题时直接重绘，不必重新生成内容。
-                                window.__wbDemoChartDraw = async function () {
-                                var _T = WB_CHART_THEMES[wbChartThemeKey()] || WB_CHART_THEMES.soft;
-                                var _dark = !(document.body && document.body.classList.contains('light'));
-                                var _bgPair = _dark ? _T.bgD : _T.bgL;
-                                const CA_BG = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                                    colorStops: [{ offset: 0, color: _bgPair[0] }, { offset: 1, color: _bgPair[1] }] };
-                                const CA = _T.series.slice();
-                                const CBAR = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                                    colorStops: [{ offset: 0, color: _T.bar[0] }, { offset: 1, color: _T.bar[1] }] };
-                                const CTX = _T.text, CAX = _T.axis, CSPLIT = _T.split;
-                                const CTIP = { backgroundColor: _T.tip[0], borderColor: _T.tip[1], textStyle: { color: _T.tip[2] } };
-                                // 预算构成饼图（重复生成时先销毁旧实例，避免叠加）
-                                const budgetEl = document.getElementById('budgetChart');
-                                const oldBudget = echarts.getInstanceByDom(budgetEl);
-                                if (oldBudget) oldBudget.dispose();
-                                const budgetChart = echarts.init(budgetEl);
-                                budgetChart.setOption({
-                                    backgroundColor: CA_BG,
-                                    color: CA,
-                                    textStyle: { color: CTX },
-                                    tooltip: Object.assign({ trigger: 'item' }, CTIP),
-                                    legend: { bottom: 0, textStyle: { color: CTX } },
-                                    series: [{
-                                        type: 'pie',
-                                        radius: ['40%', '70%'],
-                                        data: [
-                                            {value: 40, name: '研发成本'},
-                                            {value: 25, name: '硬件采购'},
-                                            {value: 20, name: '市场推广'},
-                                            {value: 15, name: '运营备用'}
-                                        ]
-                                    }]
-                                });
-                                // 市场规模柱状图
-                                const marketEl = document.getElementById('marketChart');
-                                const oldMarket = echarts.getInstanceByDom(marketEl);
-                                if (oldMarket) oldMarket.dispose();
-                                const marketChart = echarts.init(marketEl);
-                                marketChart.setOption({
-                                    backgroundColor: CA_BG,
-                                    color: CA,
-                                    textStyle: { color: CTX },
-                                    tooltip: Object.assign({}, CTIP),
-                                    xAxis: { data: ['2024', '2025', '2026', '2027', '2028'], axisLine: { lineStyle: { color: CAX } }, axisLabel: { color: CTX } },
-                                    yAxis: { splitLine: { lineStyle: { color: CSPLIT } }, axisLabel: { color: CTX } },
-                                    series: [{
-                                        type: 'bar', data: [120, 280, 560, 980, 1500],
-                                        itemStyle: { borderRadius: [6, 6, 0, 0], color: CBAR }
-                                    }]
-                                });
-                                // 时间线
-                                const timelineEl = document.getElementById('timelineChart');
-                                const oldTimeline = echarts.getInstanceByDom(timelineEl);
-                                if (oldTimeline) oldTimeline.dispose();
-                                const timelineChart = echarts.init(timelineEl);
-                                timelineChart.setOption({
-                                    backgroundColor: CA_BG,
-                                    color: CA,
-                                    textStyle: { color: CTX },
-                                    tooltip: Object.assign({}, CTIP),
-                                    xAxis: { type: 'category', data: ['需求调研', '原型开发', '测试迭代', '上线运营', '推广拓展'], axisLine: { lineStyle: { color: CAX } }, axisLabel: { color: CTX } },
-                                    yAxis: { type: 'value', splitLine: { lineStyle: { color: CSPLIT } }, axisLabel: { color: CTX } },
-                                    series: [{ type: 'line', data: [10, 30, 55, 80, 100], smooth: true, areaStyle: { color: _T.area }, itemStyle: { color: _T.line } }]
-                                });
-                                // 窗口变化时自动重绘（只注册一次，避免每次生成都叠加监听器）
-                                if (!window.__chartsResizeBound) {
-                                    window.__chartsResizeBound = true;
-                                    window.addEventListener('resize', () => {
-                                        ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
-                                            const inst = echarts.getInstanceByDom(document.getElementById(id));
-                                            if (inst) inst.resize();
-                                        });
-                                    });
-                                }
-                                // 示例图表同样支持单击放大：把 echarts 实例导出成高清图再塞进弹窗
-                                const demoChartTitles = {budgetChart: '预算构成', marketChart: '市场规模', timelineChart: '项目实施时间线'};
-                                ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
-                                    const el = document.getElementById(id);
-                                    if (!el || el.dataset.zoomBound) return;
-                                    el.dataset.zoomBound = '1';
-                                    el.style.cursor = 'zoom-in';
-                                    el.title = '点击放大查看';
-                                    el.addEventListener('click', () => {
-                                        const inst = echarts.getInstanceByDom(el);
-                                        if (!inst) return;
-                                        try {
-                                            openChartModal(
-                                                inst.getDataURL({pixelRatio: 2, backgroundColor: '#ffffff'}),
-                                                demoChartTitles[id] || '示例图表',
-                                                '示例数据绘制，正式使用请按实际情况替换');
-                                        } catch (err) {
-                                            /* 导出失败就不放大，不能影响主流程 */
-                                        }
-                                    });
-                                });
-                            };
-                        }
+                        // 没有真实图表时由 renderRich 显示待核验状态；前端不再生成任何占位数字。
                         document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
                     } else {
                         // 后端返回的友好错误（余额不足 / 超时 / 鉴权失败等），detail 是原始报错
@@ -7707,6 +7639,7 @@
                     }
                 }
                 var data = d.data;
+                if (String(id) === 'demo') data.__demo = true;
                 wbEnsureLiteOutputs(data);
                 window._lastData = data;
                 wbRenderTrustNote(data);

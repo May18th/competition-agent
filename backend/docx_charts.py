@@ -134,7 +134,7 @@ def _new_after(doc, anchor_p):
     return new_p
 
 
-def _add_image(doc, anchor_p, img_path, title, caption, width_in):
+def _add_image(doc, anchor_p, img_path, title, caption, width_in, source=''):
     p_img = _new_after(doc, anchor_p)
     p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_img.paragraph_format.space_before = Pt(6)
@@ -147,6 +147,8 @@ def _add_image(doc, anchor_p, img_path, title, caption, width_in):
     cap = '图：%s' % (title or '数据分析')
     if caption:
         cap += '　—— %s' % caption
+    if source:
+        cap += '　｜来源：%s' % source
     p_cap = _new_after(doc, p_img)
     p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_cap.paragraph_format.space_after = Pt(8)
@@ -202,7 +204,8 @@ def inject_charts(doc, charts, width_in=5.4, per_section=2):
         while anchor_i > _s and not paras[anchor_i].text.strip():
             anchor_i -= 1
         anchor = paras[anchor_i]
-        _add_image(doc, anchor, path, c.get('title', ''), c.get('caption', ''), width_in)
+        _add_image(doc, anchor, path, c.get('title', ''), c.get('caption', ''),
+                   width_in, c.get('source', ''))
         done += 1
 
     if fallback:
@@ -218,6 +221,7 @@ def inject_charts(doc, charts, width_in=5.4, per_section=2):
         r.font.color.rgb = RGBColor(0x93, 0xa0, 0xc4)
         cur = p_t
         for c, path in fallback:
-            cur = _add_image(doc, cur, path, c.get('title', ''), c.get('caption', ''), width_in)
+            cur = _add_image(doc, cur, path, c.get('title', ''), c.get('caption', ''),
+                             width_in, c.get('source', ''))
             done += 1
     return done

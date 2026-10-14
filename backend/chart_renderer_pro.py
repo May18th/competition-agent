@@ -53,15 +53,15 @@ _THEMES = {
                  "series": ["#7A8B9A", "#B94A4A", "#D4A24C", "#6E8474", "#8B7B93", "#4F6A80", "#C68648"]},
     "medical":  {"bg": "#09332F", "card": "#062724",
                  "series": ["#0E9E8C", "#2E86C1", "#45B39D", "#F0B429", "#27AE60", "#5DADE2", "#16A085"]},
-    "edu":      {"bg": "#4A2410", "card": "#3D1E0D",
+    "edu":      {"bg": "#241A1A", "card": "#342321",
                  "series": ["#E2803A", "#F0B429", "#C0563A", "#5B8C5A", "#4A7FB5", "#A463C8", "#D45B5B"]},
-    "agri":     {"bg": "#1E3D1A", "card": "#183015",
+    "agri":     {"bg": "#13261F", "card": "#1C352B",
                  "series": ["#4E8C3A", "#C9A227", "#7BA05B", "#6B8E23", "#3E7C59", "#A0703A", "#2E6B4F"]},
     "finance":  {"bg": "#0C1A33", "card": "#091527",
                  "series": ["#2E5C8A", "#B8860B", "#40607A", "#C99700", "#5B7A99", "#8B6914", "#7A94AD"]},
     "craft":    {"bg": "#1F2A30", "card": "#182125",
                  "series": ["#5C6B73", "#E08A38", "#3D5A6C", "#A63A2F", "#7A8B5A", "#C77B3E", "#4A5D63"]},
-    "social":   {"bg": "#4A2320", "card": "#3D1C1A",
+    "social":   {"bg": "#2B1818", "card": "#3C2423",
                  "series": ["#D46A5C", "#E4A03C", "#5E8C7E", "#C2564F", "#7B6DA8", "#3E8C86", "#B5713C"]},
     "academic": {"bg": "#00254D", "card": "#001E3E",
                  "series": ["#2E75B6", "#4A7FB5", "#5B8C5A", "#8B6914", "#6B5B73", "#7E93AB", "#002FA7"]},
@@ -103,22 +103,38 @@ def _fig(t):
 
 
 def _head(fig, title, caption, t):
-    """升级点 3：标题区 = 强调色竖条 + 主标题 + 洞察底条。"""
+    """标题区统一处理结论、洞察和来源，保证导出图表可追溯。"""
     if title:
         fig.text(0.045, 0.955, "▍", fontsize=21, color=ACCENT, va="top", fontweight="bold")
-        fig.text(0.072, 0.952, str(title)[:44], fontsize=20, color=FG,
+        fig.text(0.072, 0.952, str(title)[:44], fontsize=18, color=FG,
                  va="top", fontweight="bold")
     if caption:
         fig.patches.append(
             Rectangle((0.045, 0.045), 0.91, 0.052, transform=fig.transFigure,
                       facecolor=to_rgba(ACCENT, 0.10), edgecolor=to_rgba(ACCENT, 0.34),
                       linewidth=1.0, zorder=0))
-        fig.text(0.5, 0.071, "· " + str(caption)[:64], fontsize=11.5,
+        fig.text(0.5, 0.071, "· " + str(caption)[:64], fontsize=10.5,
                  color=ACCENT, ha="center", va="center")
 
 
+def _source_note(fig, source):
+    """在图底部固定显示来源，测算数据用醒目但克制的提示色。"""
+    source = str(source or "").strip()
+    if not source:
+        return
+    estimate = any(k in source for k in ("测算", "假设", "估算", "预计", "待核验", "待核实"))
+    label = "数据来源：" + source[:46]
+    if estimate:
+        label += " · 测算/待核验"
+    fig.text(0.955, 0.018, label, fontsize=8.5,
+             color="#F6C453" if estimate else FG_DIM,
+             ha="right", va="bottom", alpha=0.98,
+             fontweight="bold" if estimate else "normal")
+
+
 def _save(fig, path):
-    fig.tight_layout(rect=(0.03, 0.13, 0.985, 0.90))
+    # 固定安全区，避免极坐标图调用 tight_layout 后挤压图例或来源。
+    fig.subplots_adjust(left=0.03, right=0.985, top=0.90, bottom=0.13)
     fig.savefig(path, facecolor=fig.get_facecolor(), dpi=DPI)
     plt.close(fig)
     return path
@@ -410,7 +426,9 @@ def _radar(fig, data, S, t):
         return False
     n = len(labels)
     ang = [i * 2 * math.pi / n for i in range(n)]
-    ax = fig.add_subplot(111, projection="polar", facecolor=t["bg"])
+    # 给标题、图例和来源留出稳定的安全区，避免图例压住雷达顶点。
+    ax = fig.add_axes([0.16, 0.18, 0.60, 0.62], projection="polar",
+                      facecolor=t["bg"])
     ax.set_facecolor(t["bg"])
     step = 0.9 / max(n - 1, 1)
     for i, s in enumerate(series[:4]):
@@ -425,15 +443,16 @@ def _radar(fig, data, S, t):
         ax.scatter(a2[:-1], v2[:-1], s=42, color=t["bg"], edgecolor=col,
                    linewidths=2.2, zorder=7)
     ax.set_xticks(ang)
-    ax.set_xticklabels(labels, fontsize=13, color=FG, fontweight="bold")
+    ax.set_xticklabels(labels, fontsize=11.5, color=FG, fontweight="bold")
     ax.tick_params(colors=FG_DIM, labelsize=10.5)
     ax.set_ylim(0, 10)
     ax.set_yticks([2, 4, 6, 8, 10])
     ax.set_yticklabels(["2", "4", "6", "8", "10"], color=FG_MUTE, fontsize=9.5)
     ax.grid(color=AXIS, linewidth=0.9, alpha=0.55)
     ax.spines["polar"].set_color(AXIS)
-    ax.legend(fontsize=11.5, frameon=True, facecolor=t["card"], edgecolor=AXIS,
-              labelcolor=FG, loc="upper right", bbox_to_anchor=(1.24, 1.14))
+    ax.legend(fontsize=10.5, frameon=True, facecolor=t["card"], edgecolor=AXIS,
+              labelcolor=FG, loc="upper left", bbox_to_anchor=(1.02, 0.88),
+              ncol=1, borderpad=0.55, columnspacing=1.2)
     return ax
 
 
@@ -610,6 +629,7 @@ def render(chart, out_dir, theme=None):
         data = chart.get("data") or {}
         title = chart.get("title")
         caption = chart.get("caption")
+        source = chart.get("source")
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"chart_{cid}.png")
 
@@ -635,13 +655,8 @@ def render(chart, out_dir, theme=None):
             if ax is False:
                 plt.close(fig)
                 return None
-            fig.text(0.045, 0.955, "▍", fontsize=21, color=ACCENT, va="top", fontweight="bold")
-            if title:
-                fig.text(0.072, 0.952, str(title)[:44], fontsize=20, color=FG,
-                         va="top", fontweight="bold")
-            if caption:
-                fig.text(0.5, 0.045, "· " + str(caption)[:64], fontsize=11.5,
-                         color=ACCENT, ha="center", va="center")
+            _head(fig, title, caption, t)
+            _source_note(fig, source)
             return _save(fig, path)
 
         if ctype in ("architecture", "arch"):
@@ -652,6 +667,7 @@ def render(chart, out_dir, theme=None):
                 plt.close(fig)
                 return None
             _head(fig, title, caption, t)
+            _source_note(fig, source)
             return _save(fig, path)
 
         fig, ax = _fig(t)
@@ -686,6 +702,7 @@ def render(chart, out_dir, theme=None):
             plt.close(fig)
             return None
         _head(fig, title, caption, t)
+        _source_note(fig, source)
         return _save(fig, path)
     except Exception as e:
         print(f"[chart_renderer_pro] render 失败：{e}")

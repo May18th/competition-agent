@@ -169,6 +169,8 @@ V6. 蒸馏_v6 官方/高校精确权重 + 路演结构字号 + 答辩实战（20
 """
 
 CHART_FORMAT = """
+下面所有格式示例仅用于说明字段结构，示例中的项目名称、类别和数字一律禁止复制到结果；
+每个值必须能在当前项目材料或当前用户输入中定位，否则不要生成该数据点。
 各 type 的 data 格式（严格遵守）：
 - bar/column: {"categories":["A","B"],"values":[123,456],"ylabel":"单位"}
 - hbar/rank: {"categories":["竞品A","竞品B","我们"],"values":[80,70,95],"xlabel":"评分/性能"}
@@ -278,6 +280,199 @@ def _gen_assets(result, competition, idea, kb_data="", user_data=""):
 4. 图表要能在路演里"一眼看懂"，标题直接给结论（如"目标市场规模三年翻三倍"）
 5. 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代""" + _QUALITY_BENCHMARK_SPEC
     return _invoke_json(prompt)
+
+
+def _fallback_assets(result, competition="", idea="", user_data=""):
+    """模型不可用或返回空 JSON 时的保守兜底。
+
+    只使用本轮已经存在的结构化分项评分，不凭空补市场、成本或实验数字。
+    图表明确标记为测算/待核验，避免把系统评审结果冒充外部事实。
+    """
+    charts, tables = [], []
+    rows = []
+    raw_scores = result.get("judge_scores") or []
+    if isinstance(raw_scores, dict):
+        raw_scores = list(raw_scores.values())
+    if isinstance(raw_scores, list):
+        for item in raw_scores:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("dimension") or "").strip()
+            try:
+                score = float(str(item.get("score")).replace(",", ""))
+            except Exception:
+                continue
+            if not name:
+                continue
+            rows.append((name, score, item.get("weight")))
+
+    # 部分旧记录只有 scores 字典，没有 judge_scores。
+    if not rows and isinstance(result.get("scores"), dict):
+        for key, item in result["scores"].items():
+            if isinstance(item, dict):
+                name = str(item.get("name") or key).strip()
+                try:
+                    score = float(item.get("score"))
+                except Exception:
+                    continue
+                rows.append((name, score, item.get("weight")))
+
+    rows = rows[:7]
+    if len(rows) >= 3:
+        # 评分可能是 0-10 或 0-100，统一转成雷达图 0-10 口径。
+        scale = 10.0 if max(x[1] for x in rows) <= 10 else 100.0
+        labels = [x[0][:10] for x in rows]
+        values = [round(max(0.0, min(10.0, x[1] / scale * 10.0)), 2) for x in rows]
+        charts.append({
+            "id": "c_fallback_scores",
+            "type": "radar",
+            "title": "评审分项得分揭示当前补强重点",
+            "caption": "系统分项结果，仅用于定位修改优先级",
+            "source": "测算：基于系统评审分项（待人工核验）",
+            "data": {"labels": labels,
+                     "series": [{"name": "本轮评审", "values": values}]},
+        })
+    if rows:
+        tables.append({
+            "id": "t_fallback_scores",
+            "title": "评审分项结果与核验状态",
+            "header": ["维度", "得分", "权重", "使用说明"],
+            "rows": [[name, f"{score:g}",
+                       (f"{float(weight):g}%" if weight not in (None, "") else "待补"),
+                       "生成结果，提交前核验"] for name, score, weight in rows[:6]],
+        })
+    return {"charts": charts, "tables": tables}
+
+
+def _is_placeholder_chart(chart, context):
+    """识别旧版提示词留下的固定示例图，防止跨项目串图。"""
+    if not isinstance(chart, dict):
+        return True
+    # 新版落盘对象把原始定义放在 spec 中；历史兼容对象则直接把 data 放在顶层。
+    # 两种形状必须用同一套规则，否则固定示例会从 spec 这一层漏过去。
+    base = chart.get("spec") if isinstance(chart.get("spec"), dict) else chart
+    text = " ".join(str(chart.get(k) or base.get(k) or "") for k in ("title", "caption", "source"))
+    data = base.get("data") or chart.get("data") or {}
+    if isinstance(data, dict):
+        for key in ("labels", "categories", "x", "stages"):
+            value = data.get(key)
+            if isinstance(value, list):
+                text += " " + " ".join(str(x.get("name") if isinstance(x, dict) else x) for x in value)
+        for key in ("values", "progress"):
+            value = data.get(key)
+            if isinstance(value, list):
+                text += " " + " ".join(str(x) for x in value)
+    normalized = re.sub(r"\s+", "", text)
+    # 旧版演示模板曾长期把这些数值写进所有项目。即使标题被模型改写、
+    # 或 chart 只从兼容接口返回，也必须按数据本身拦截，不能依赖标题命中。
+    # 这些不是项目事实，正常生成不得复用；/api/demo 走独立演示记录，不经过本过滤。
+    numeric_values = []
+    for key in ("values", "progress"):
+        value = data.get(key)
+        if isinstance(value, list):
+            for item in value:
+                try:
+                    numeric_values.append(float(str(item).replace(",", "")))
+                except Exception:
+                    pass
+    labels = []
+    for key in ("labels", "categories", "x", "stages"):
+        value = data.get(key)
+        if isinstance(value, list):
+            labels.extend(str(x.get("name") if isinstance(x, dict) else x) for x in value)
+    compact_labels = re.sub(r"\s+", "", "".join(labels))
+    rounded_values = tuple(round(x, 6) for x in numeric_values)
+    fixed_value_sets = {
+        (45.0, 30.0, 15.0, 10.0),
+        (120.0, 380.0, 860.0),
+        (120.0, 280.0, 560.0, 980.0, 1500.0),
+        (10.0, 30.0, 55.0, 80.0, 100.0),
+    }
+    if rounded_values in fixed_value_sets:
+        return True
+    ordered_fixed = tuple(sorted(rounded_values))
+    if ordered_fixed == (10.0, 15.0, 30.0, 45.0) and any(k in normalized for k in ("预算", "成本", "研发成本", "硬件采购")):
+        return True
+    if ordered_fixed == (120.0, 380.0, 860.0) and any(k in normalized for k in ("市场", "规模", "第1年", "第2年", "第3年")):
+        return True
+    if compact_labels in {
+        "研发成本硬件采购市场推广运营备用",
+        "需求调研原型开发测试迭代上线运营推广拓展",
+        "需求调研原型开发小批量试产市场推广",
+    }:
+        return True
+    signatures = (
+        "目标市场规模三年翻三倍",
+        "研发成本硬件采购市场推广运营备用",
+        "需求调研原型开发测试迭代上线运营推广拓展",
+        "1202805609801500",
+        "40252015",
+        "10305580100",
+    )
+    if not any(sig in normalized for sig in signatures):
+        return False
+    # 只有图表本身带有当前项目上下文时才允许保留同值数据。
+    ctx = re.sub(r"\s+", "", str(context or ""))
+    terms = []
+    for phrase in re.findall(r"[\u4e00-\u9fff]{2,}", ctx):
+        if len(phrase) < 3:
+            continue
+        terms.append(phrase)
+        # 项目名常被包在「面向…的…项目」中，加入 3~6 字窗口才能识别项目上下文；
+        # 去掉过于泛化的词，避免仅凭「市场规模」放行示例图。
+        for width in (6, 5, 4, 3):
+            terms.extend(phrase[i:i + width] for i in range(max(0, len(phrase) - width + 1)))
+    terms = [x for x in terms if x not in {"项目", "市场规模", "目标市场", "行业测算", "本项目"}]
+    return not any(term in normalized for term in terms)
+
+
+def sanitize_chart_payload(charts, context=""):
+    """统一清理兼容接口/历史记录中的旧版固定示例图。
+
+    新版图表带 ``spec``，旧版记录可能是 ``{budget, market, timeline}`` 或仅有
+    ``url/title``。这里保持输入形状，方便旧接口继续工作，但不让固定示例数字
+    进入普通项目结果。演示接口不调用本函数。
+    """
+    if isinstance(charts, dict):
+        out = dict(charts)
+        for key in ("budget", "market", "timeline"):
+            value = out.get(key)
+            if not value:
+                continue
+            if key == "budget":
+                pseudo = {"title": "预算构成", "data": {
+                    "labels": [x.get("name", "") for x in value if isinstance(x, dict)],
+                    "values": [x.get("value", 0) for x in value if isinstance(x, dict)],
+                }}
+            elif key == "market":
+                pseudo = {"title": "市场规模预测", "data": {
+                    "categories": value.get("years", []) if isinstance(value, dict) else [],
+                    "values": value.get("values", []) if isinstance(value, dict) else [],
+                }}
+            else:
+                pseudo = {"title": "实施进度", "data": {
+                    "stages": value.get("stages", []) if isinstance(value, dict) else [],
+                    "progress": value.get("progress", []) if isinstance(value, dict) else [],
+                }}
+            if _is_placeholder_chart(pseudo, context):
+                out.pop(key, None)
+        return out
+    if not isinstance(charts, list):
+        return charts
+    out = []
+    for chart in charts:
+        if not isinstance(chart, dict):
+            continue
+        # 旧版只有固定文件名和通用标题，无法证明与当前项目有关，直接丢弃。
+        url = str(chart.get("url") or "").lower()
+        title = str(chart.get("title") or "")
+        if not chart.get("spec") and any(name in url for name in ("chart_budget.png", "chart_market.png", "chart_timeline.png")):
+            if title in {"预算构成", "市场规模预测", "实施进度"}:
+                continue
+        if _is_placeholder_chart(chart, context):
+            continue
+        out.append(chart)
+    return out
 
 
 def _gen_deck(result, competition, idea, assets):
@@ -567,11 +762,46 @@ def build_rich_assets(result, competition="", idea="", theme=None, user_data="")
             print(f"[rich] PPT 结构生成失败，降级：{e3}")
             deck = {"slides": [], "outline_missing": True}
 
+    # 生成服务不可达、返回空 JSON 或图表字段不完整时，保留可追溯的评审分项图表。
+    # 这条兜底不制造市场/成本/实验数字，只复用本轮已有结果，避免导出件退化成纯文本。
+    if not isinstance(assets, dict) or not (assets.get("charts") or assets.get("tables")):
+        try:
+            assets = _fallback_assets(result, competition, idea, user_data) or {}
+            if assets.get("charts") or assets.get("tables"):
+                print("[rich] 模型富媒体为空，已使用结构化评审分项兜底")
+        except Exception as e:
+            print(f"[rich] 富媒体兜底失败：{e}")
+
+    _chart_context = " ".join([
+        str(idea or ""), str(competition or ""),
+        str(result.get("one_liner") or ""),
+        str(result.get("competitor_analysis") or ""),
+        str(result.get("business_model") or ""),
+        str(result.get("tech_solution") or ""),
+        str(result.get("implementation_plan") or ""),
+        str(user_data or ""),
+    ])
+    # 统一清理旧版兼容返回，避免固定示例图绕过本轮过滤。
+    if isinstance(assets, dict):
+        assets = dict(assets)
+        assets["charts"] = sanitize_chart_payload(assets.get("charts") or [], _chart_context)
+    # 先过滤旧版固定示例，再进入统一渲染循环；这样兜底图表也会走 PNG 落盘流程。
+    _raw_chart_defs = list((assets.get("charts") or []) if isinstance(assets, dict) else [])
+    _raw_chart_defs = [c for c in _raw_chart_defs if not _is_placeholder_chart(c, _chart_context)]
+    if not _raw_chart_defs and not ((assets.get("tables") or []) if isinstance(assets, dict) else []):
+        assets = _fallback_assets(result, competition, idea, user_data) or {}
+    elif isinstance(assets, dict):
+        assets = dict(assets)
+        assets["charts"] = _raw_chart_defs
+
     charts, tables = [], []
     # 图表 PNG 用本次生成唯一后缀命名，避免每次生成都写 chart_c1.png 同名覆盖——
     # 否则历史记录里的图表 url 会被后续生成覆盖成别人的图，或文件被删后变空。
     _chart_suffix = "%d_%s" % (int(time.time()), uuid.uuid4().hex[:6])
     for c in (assets.get("charts") or [])[:8]:
+        if _is_placeholder_chart(c, _chart_context):
+            print(f"[rich] 跳过与当前项目无关的示例图：{c.get('title', '')}")
+            continue
         cid = str(c.get("id") or f"c{len(charts)+1}")
         path = render_chart(dict(c, id=cid), GEN_DIR, theme=theme)
         if path:

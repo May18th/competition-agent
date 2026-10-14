@@ -1666,7 +1666,7 @@ def _fetch_record_from_source(data):
         if tid and tid in tasks:
             d = tasks[tid].get('data') or {}
             if d:
-                return _clean_legacy_record(d)
+                return _sanitize_record_charts(_clean_legacy_record(d))
         hid = data.get('history_id')
         if hid:
             import json as _json
@@ -1678,7 +1678,7 @@ def _fetch_record_from_source(data):
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
                 if rd:
-                    return _clean_legacy_record(rd)
+                    return _sanitize_record_charts(_clean_legacy_record(rd))
     except Exception as e:
         print(f"[export] 后端记录原文覆盖失败，退回前端数据：{e}")
     return None
@@ -1707,6 +1707,47 @@ def _clean_legacy_record(obj):
     if isinstance(obj, list):
         return [_clean_legacy_record(x) for x in obj]
     return obj
+
+
+def _sanitize_record_charts(record):
+    """过滤历史/兼容接口中残留的固定示例图，保持普通项目数据一致。"""
+    if not isinstance(record, dict):
+        return record
+    try:
+        from rich_pipeline import sanitize_chart_payload
+        context = " ".join(str(record.get(k) or "") for k in (
+            "idea", "competition_name", "one_liner", "project_summary",
+            "proposal", "competitor_analysis", "business_model",
+            "tech_solution", "implementation_plan", "user_data", "real_data",
+        ))
+        out = dict(record)
+        for key in ("rich_charts", "charts"):
+            if key in out:
+                cleaned = sanitize_chart_payload(out.get(key), context)
+                # 旧版 dict 结构无法携带来源与项目上下文，继续透传会让前端
+                # 把对象当数组渲染，甚至回到固定 chart_budget/chart_market 文件。
+                out[key] = cleaned if isinstance(cleaned, list) else []
+        charts = out.get("rich_charts") or out.get("charts") or []
+        chart_ids = {str(c.get("id")) for c in charts if isinstance(c, dict) and c.get("id")}
+        deck = out.get("rich_deck")
+        if isinstance(deck, dict) and isinstance(deck.get("slides"), list):
+            deck = dict(deck)
+            slides = []
+            for slide in deck["slides"]:
+                if not isinstance(slide, dict):
+                    continue
+                slide = dict(slide)
+                if slide.get("chart") and str(slide.get("chart")) not in chart_ids:
+                    slide.pop("chart", None)
+                    if str(slide.get("type") or "").lower() == "chart":
+                        slide["type"] = "bullets"
+                slides.append(slide)
+            deck["slides"] = slides
+            out["rich_deck"] = deck
+        return out
+    except Exception as exc:
+        print(f"[chart-safety] 历史图表过滤跳过：{exc}")
+        return record
 
 
 def _export_data_from_request():
@@ -2085,6 +2126,7 @@ def parse_material():
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
+    data = _sanitize_record_charts(data)
     # 质量门（mode 感知 + 警告放行，2026-10-01 二次误杀复盘）：
     # 网站的本职是帮用户改稿，不是拦着不让导出。fast 稿按 fast 标准审
     # （fast 链路没有图表/deck/实施计划等 deep 专属产物）；除「正文乱码」
@@ -2241,6 +2283,7 @@ def export_word():
 def export_pdf():
     """把申报书/说明书 Markdown 导出为 PDF（iCAN 提交用，A4 中文）"""
     data = _export_data_from_request()
+    data = _sanitize_record_charts(data)
     text = data.get('text', '')
     _warnings = []
     title = data.get('title', '申报书')
@@ -2719,6 +2762,9 @@ def get_history_detail(history_id):
         data = json.loads(row[0])
     except Exception:
         data = {}
+    # 历史记录可能来自旧版固定图表逻辑；恢复前再次按当前项目上下文清洗，
+    # 防止旧图表与正文错位地回到页面。
+    data = _sanitize_record_charts(data)
     # 富媒体随历史恢复（第一百一十八轮）：前端从历史打开结果页要能渲染图表/表格/PPT，
     # 这里把 rich_deck/rich_charts/rich_tables 显式提到顶层，前端不用再从 data 里翻。
     return jsonify({
@@ -3943,8 +3989,14 @@ def _run_generation(data):
             # 深度版追加：自动生成表格 / 图表 / 路演PPT（失败不阻断主流程）
             try:
                 from rich_pipeline import build_rich_assets
-                rich = build_rich_assets(result, data.get("competition_name", ""), idea, data.get("theme"))
-                result["rich_charts"] = rich.get("charts") or {}
+                rich = build_rich_assets(
+                    result,
+                    data.get("competition_name", ""),
+                    idea,
+                    data.get("theme"),
+                    data.get("user_data", "") or data.get("real_data", ""),
+                )
+                result["rich_charts"] = rich.get("charts") or []
                 result["rich_tables"] = rich.get("tables") or []
                 result["rich_deck"] = rich.get("deck")
             except Exception as e:
@@ -3979,12 +4031,31 @@ def _run_generation(data):
 
             if isinstance(_charts_raw, dict) and _charts_raw:
                 try:
+                    from rich_pipeline import sanitize_chart_payload
+                    _ctx = " ".join(str(result.get(k) or data.get(k) or "") for k in (
+                        "idea", "competition_name", "one_liner", "project_summary",
+                        "proposal", "competitor_analysis", "business_model",
+                        "tech_solution", "implementation_plan", "user_data", "real_data",
+                    ))
+                    _charts_raw = sanitize_chart_payload(_charts_raw, _ctx)
+                except Exception:
+                    pass
+                try:
                     from chart_renderer_pro import render_charts
                 except Exception:
                     from chart_renderer import render_charts
                 rich_charts = render_charts(_charts_raw)
             elif isinstance(_charts_raw, list):
-                rich_charts = _charts_raw
+                try:
+                    from rich_pipeline import sanitize_chart_payload
+                    _ctx = " ".join(str(result.get(k) or data.get(k) or "") for k in (
+                        "idea", "competition_name", "one_liner", "project_summary",
+                        "proposal", "competitor_analysis", "business_model",
+                        "tech_solution", "implementation_plan", "user_data", "real_data",
+                    ))
+                    rich_charts = sanitize_chart_payload(_charts_raw, _ctx)
+                except Exception:
+                    rich_charts = _charts_raw
         except Exception as _re:
             print(f"[rich] 富媒体解析失败（不影响正文）：{_re}")
         # ===== 富媒体解析结束 =====
@@ -5139,6 +5210,7 @@ def export_zip():
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from flask import send_file, jsonify
     data = _export_data_from_request()
+    data = _sanitize_record_charts(data)
     # 导出严格绑定当前记录：前端若只发 DOM 状态，三个按钮可能各拿到一条不同历史记录。
     # 有 task_id / history_id 时，以后端完整 result_data 为内容权威，前端只覆盖主题/变体。
     _rec = _fetch_record_from_source(data)
@@ -5286,6 +5358,13 @@ def export_zip():
                     if c.get('caption'):
                         cap = cdoc.add_paragraph(c['caption'])
                         cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    if c.get('source'):
+                        src = cdoc.add_paragraph('来源：' + str(c['source']))
+                        src.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        if src.runs:
+                            src.runs[0].font.size = Pt(9)
+                            src.runs[0].font.italic = True
+                            src.runs[0].font.color.rgb = RGBColor(0x6B, 0x78, 0x99)
                 cpath = os.path.join(tmpdir, '13_项目数据图表.docx')
                 cdoc.save(cpath)
                 zf.write(cpath, '13_项目数据图表.docx')
@@ -6201,6 +6280,7 @@ def ppt_themes():
 def export_pptx():
     """导出自动生成的路演 PPT（.pptx）"""
     data = request.get_json(force=True, silent=True) or {}
+    data = _sanitize_record_charts(data)
     # 417 轮：大纲原文先留一份。下面 _fetch_record_from_source 会用整条历史记录覆盖 data，
     # 前端传的 ppt_outline 会被一起冲掉，页数校验就永远拿不到大纲了。
     _outline_text = (data.get('ppt_outline') or data.get('outline') or '')
