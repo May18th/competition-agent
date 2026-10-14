@@ -7,7 +7,7 @@
 import base64, os
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-VID = os.path.join(REPO, "交付视频")
+VID = os.path.join(REPO, "artifacts", "demo-video")
 
 def b64(path):
     with open(path, "rb") as f:

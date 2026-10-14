@@ -15,6 +15,15 @@ FIX_SUGGESTIONS = {
     "internal_error": "通用内部错误，看 detail 里的堆栈定位具体模块",
 }
 
+FAILURE_LABELS = {
+    "rate_limit": "上游请求过于频繁",
+    "timeout": "模型响应超时",
+    "insufficient_balance": "模型服务余额不足",
+    "quota_exceeded": "今日调用额度已用尽",
+    "auth_error": "模型服务鉴权失败",
+    "internal_error": "系统内部处理异常",
+}
+
 
 def classify_error(error="", detail=""):
     """把错误文本归类成稳定错误码（与 app._error_code 同口径）。"""
@@ -49,6 +58,7 @@ def get_failure_patterns(limit=20):
         d = agg.setdefault(code, {
             "code": code, "count": 0, "last_seen": "", "sample": "",
             "fix": FIX_SUGGESTIONS.get(code, ""),
+            "label": FAILURE_LABELS.get(code, "系统处理异常"),
         })
         d["count"] += 1
         if not d["last_seen"]:

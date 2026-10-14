@@ -1,0 +1,41 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">
+<script>
+window.addEventListener('load', function(){
+  var f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;left:0;top:0;border:0;width:1080px;height:800px;';
+  f.src = 'http://127.0.0.1:8080/';
+  f.onload = function(){
+    setTimeout(function(){
+      var dd = f.contentDocument, win = f.contentWindow, out = {err:'', chain:[], deep:[]};
+      try {
+        var ra = dd.getElementById('resultArea');
+        ra.style.setProperty('display','block','important');
+        var tabs = dd.querySelectorAll('.tab-content');
+        for (var i=0;i<tabs.length;i++) tabs[i].classList.remove('active');
+        dd.getElementById('tab-analysis').classList.add('active');
+        var rp = ra.getBoundingClientRect();
+        var all = ra.querySelectorAll('*');
+        for (var i=0;i<all.length;i++){
+          var el = all[i], r = el.getBoundingClientRect();
+          if (r.width > 0 && (r.right > rp.right + 1 || r.left < rp.left - 1)) {
+            var cs = win.getComputedStyle(el);
+            out.deep.push({tag:el.tagName, id:el.id||'', cls:(el.className||'').toString().slice(0,34),
+              rightOver:Math.round(r.right - rp.right), leftOver:Math.round(rp.left - r.left),
+              w:Math.round(r.width), pos:cs.position, ovx:cs.overflowX,
+              txt:(el.textContent||'').trim().slice(0,50)});
+          }
+        }
+        out.deep = out.deep.slice(0, 25);
+        var cont = dd.querySelector('.container');
+        out.chain = [{label:'container', cw:cont.clientWidth, sw:cont.scrollWidth},
+                     {label:'resultArea', cw:ra.clientWidth, sw:ra.scrollWidth}];
+      } catch(e) { out.err = String(e); }
+      var pre = document.createElement('pre');
+      pre.style.display='none';
+      pre.textContent = ('WBRES'+'ULT_BEGIN') + JSON.stringify(out) + ('WBRES'+'ULT_END');
+      document.body.appendChild(pre);
+    }, 900);
+  };
+  document.body.appendChild(f);
+});
+</script></body></html>

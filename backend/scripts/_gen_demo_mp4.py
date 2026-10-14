@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-VID = os.path.join(REPO, "交付视频")
+VID = os.path.join(REPO, "artifacts", "demo-video")
 OUT = os.path.join(VID, "科创赛事助手_演示视频.mp4")
 
 W, H = 1280, 720

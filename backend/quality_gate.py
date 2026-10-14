@@ -6,6 +6,7 @@ L1 生成完整性 / L2 导出质量 / L3 内容质量 / L4 历史恢复 / L5 �
 """
 import re
 import os
+import json
 
 
 # ============ L1 生成完整性 ============
@@ -59,15 +60,24 @@ def check_depth(proposal):
 
 
 # ============ L2 导出质量 ============
+def _docx_content(doc):
+    """按文档阅读顺序粗略汇总正文与表格文字，供跨产物比对使用。"""
+    parts = [p.text for p in getattr(doc, "paragraphs", []) if (p.text or "").strip()]
+    for table in getattr(doc, "tables", []) or []:
+        for row in table.rows:
+            parts.append(" ".join(cell.text for cell in row.cells))
+    return "\n".join(parts)
+
+
 def check_docx(docx_path, expect_type="report"):
     issues = []
     try:
         from docx import Document
         doc = Document(docx_path)
-        txt = "\n".join(p.text for p in doc.paragraphs)
+        txt = _docx_content(doc)
         if not txt.strip():
             issues.append("docx 正文为空")
-        elif txt.count("?") > max(3, len(txt) * 0.3) or "？？" in txt:
+        elif txt.count("?") > max(3, len(txt) * 0.3) or "？？" in txt or "�" in txt:
             issues.append("docx 中文乱码（? 占比过高）")
         if expect_type in ("report", "default"):
             has_toc = any(("TOC" in p._p.xml) or ("fldChar" in p._p.xml) or ("PAGEREF" in p._p.xml)
@@ -80,6 +90,156 @@ def check_docx(docx_path, expect_type="report"):
     except Exception as e:
         issues.append(f"docx 检查失败：{e}")
     return (not issues), issues
+
+
+def check_pptx_detailed(path, outline_text="", charts=None, tables=None,
+                        proposal="", mode="deep"):
+    """导出后 PPT 终检，补足传统体积/指令检查遗漏的成品问题。
+
+    这是警告型检查：乱码、空页、无法读取属于 errors；密度、图表缺失、
+    标题匹配和来源问题属于 warnings。调用方可以继续交付文件，同时把具体
+    原因回传给前端，避免把“能下载”误报成“质量已达标”。
+    """
+    errors, warnings, details = [], [], {}
+    if not os.path.exists(path):
+        return {"ok": False, "errors": [f"PPT 文件不存在：{path}"], "warnings": [], "details": {}}
+    try:
+        from pptx import Presentation
+        prs = Presentation(path)
+    except Exception as e:
+        return {"ok": False, "errors": [f"PPT 读取失败：{e}"], "warnings": [], "details": {}}
+
+    slides = list(prs.slides)
+    details["slides"] = len(slides)
+    if not slides:
+        errors.append("PPT 没有幻灯片")
+    expected = []
+    if outline_text:
+        try:
+            from export_guard import _outline_pages
+            expected = _outline_pages(outline_text)
+        except Exception:
+            expected = []
+    if expected and len(slides) != len(expected):
+        warnings.append(f"PPT 页数 {len(slides)} 与规范化大纲 {len(expected)} 页不一致")
+    if len(slides) < 8 and mode == "deep":
+        warnings.append(f"深度版 PPT 仅 {len(slides)} 页，内容可能不足（建议至少 8 页）")
+
+    chart_ids = {str(c.get("id")) for c in (charts or []) if isinstance(c, dict) and c.get("id")}
+    table_ids = {str(t.get("id")) for t in (tables or []) if isinstance(t, dict) and t.get("id")}
+    image_slides = 0
+    table_slides = 0
+    title_hits = 0
+    body_chars = []
+    joined = ""
+    for i, slide in enumerate(slides):
+        texts, images, has_table = [], 0, False
+        for shape in slide.shapes:
+            try:
+                if shape.shape_type == 13:
+                    images += 1
+                if shape.has_table:
+                    has_table = True
+            except Exception:
+                pass
+            try:
+                if shape.has_text_frame and shape.text_frame.text.strip():
+                    texts.extend(x.strip() for x in shape.text_frame.text.splitlines() if x.strip())
+            except Exception:
+                pass
+        if images:
+            image_slides += 1
+        if has_table:
+            table_slides += 1
+        chars = sum(len(x) for x in texts)
+        body_chars.append(chars)
+        # 封面与致谢允许低密度，其余页为空基本就是导出损坏或数据丢失。
+        joined = " ".join(texts)
+        is_cover = i == 0 or any(k in joined for k in ("封面", "谢谢聆听", "感谢"))
+        if not joined:
+            errors.append(f"第 {i + 1} 页为空")
+        elif not is_cover and chars < 24:
+            warnings.append(f"第 {i + 1} 页文字过少（{chars} 字）")
+        elif chars > 900:
+            warnings.append(f"第 {i + 1} 页文字过密（{chars} 字，可能溢出）")
+        if expected and i < len(expected):
+            if any(expected[i] in t or t in expected[i] for t in texts):
+                title_hits += 1
+    details.update({"image_slides": image_slides, "table_slides": table_slides,
+                    "title_matches": title_hits, "body_chars": body_chars})
+    if expected and title_hits < max(1, int(len(expected) * 0.6)):
+        warnings.append(f"仅 {title_hits}/{len(expected)} 页标题与大纲可对应")
+    if mode == "deep" and charts and image_slides == 0:
+        warnings.append("深度版已有图表数据，但 PPT 未检测到图片图表嵌入")
+    if mode == "deep" and tables and table_slides == 0:
+        warnings.append("深度版已有结构化表格，但 PPT 未检测到表格页")
+    if proposal and joined:
+        # 用正文中的实体词做轻量匹配，避免只检查“有字”而把错项目内容导出。
+        terms = [x for x in re.findall(r"[\u4e00-\u9fa5]{3,8}", proposal) if x not in ("项目申报书", "本项目团队")]
+        if terms and not any(x in joined for x in terms[:80]):
+            warnings.append("PPT 文本与申报书未发现可匹配的项目实体词，请核对是否串用了其他记录")
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "details": details}
+
+
+def check_chart_assets(result, generated_dir=None, mode="deep"):
+    """检查图表结构、来源、数值形状及 deck 引用，不判断数字真假。"""
+    errors, warnings = [], []
+    charts = result.get("rich_charts") or result.get("charts") or []
+    tables = result.get("rich_tables") or result.get("tables") or []
+    deck = result.get("rich_deck") or {}
+    chart_ids = set(); table_ids = set()
+    for c in charts:
+        if not isinstance(c, dict):
+            errors.append("图表条目不是对象")
+            continue
+        cid = str(c.get("id") or "")
+        if not cid or cid in chart_ids:
+            errors.append("图表缺少唯一 id")
+        chart_ids.add(cid)
+        if not str(c.get("title") or "").strip():
+            warnings.append(f"图表 {cid or '(未知)'} 缺少结论式标题")
+        if len(str(c.get("caption") or "")) > 40:
+            warnings.append(f"图表 {cid} 洞察文字超过 40 字")
+        source = str(c.get("source") or (c.get("spec") or {}).get("source") or "").strip()
+        if not source:
+            warnings.append(f"图表 {cid} 缺少数据来源")
+        elif not re.search(r"团队输入|实测|测算|公开|行业|机构|\d{4}", source):
+            warnings.append(f"图表 {cid} 来源未标注团队输入/公开数据/测算口径：{source[:30]}")
+        spec = c.get("spec") if isinstance(c.get("spec"), dict) else c
+        data = spec.get("data") if isinstance(spec, dict) else None
+        if not isinstance(data, dict):
+            warnings.append(f"图表 {cid} 缺少结构化数据")
+        elif not re.search(r"\d", json.dumps(data, ensure_ascii=False)):
+            warnings.append(f"图表 {cid} 没有可核验数值")
+        url = str(c.get("url") or "")
+        if generated_dir and url:
+            path = os.path.join(generated_dir, os.path.basename(url))
+            if not os.path.exists(path):
+                warnings.append(f"图表 {cid} 图片文件不存在，导出时可能丢图")
+    for t in tables:
+        if not isinstance(t, dict):
+            errors.append("表格条目不是对象")
+            continue
+        tid = str(t.get("id") or "")
+        if not tid or tid in table_ids:
+            errors.append("表格缺少唯一 id")
+        table_ids.add(tid)
+        header, rows = t.get("header") or [], t.get("rows") or []
+        if not header or not rows:
+            warnings.append(f"表格 {tid or '(未知)'} 缺少表头或数据行")
+        elif any(len(row) != len(header) for row in rows if isinstance(row, list)):
+            warnings.append(f"表格 {tid} 存在列数不一致的行")
+    refs_c = {str(s.get("chart")) for s in (deck.get("slides") or []) if isinstance(s, dict) and s.get("chart")}
+    refs_t = {str(s.get("table")) for s in (deck.get("slides") or []) if isinstance(s, dict) and s.get("table")}
+    for ref in sorted(refs_c - chart_ids):
+        warnings.append(f"PPT 引用了不存在的图表 {ref}")
+    for ref in sorted(refs_t - table_ids):
+        warnings.append(f"PPT 引用了不存在的表格 {ref}")
+    if mode == "deep" and charts and not refs_c:
+        warnings.append("深度版有图表数据，但 PPT 没有引用任何图表")
+    return {"ok": not errors, "errors": errors, "warnings": warnings,
+            "charts": len(charts), "tables": len(tables),
+            "chart_refs": len(refs_c), "table_refs": len(refs_t)}
 
 
 # ============ L2 扩展：pptx / pdf / zip（第一百二十五轮） ============
@@ -166,7 +326,7 @@ def check_pdf(path, competition_name=None, doc_title=None, detail=False):
     detail=True 时返回 dict：{"ok","errors","warnings","suggestions","pages","mb","limit"}。
     """
     issues = []
-    pages, mb = 0, 0.0
+    pages, mb, image_objects = 0, 0.0, 0
     try:
         import os as _os
         sz = _os.path.getsize(path)
@@ -178,6 +338,13 @@ def check_pdf(path, competition_name=None, doc_title=None, detail=False):
         pages = len(r.pages)
         if pages < 1:
             issues.append("PDF 无页面")
+        for _page in r.pages:
+            try:
+                _res = _page.get("/Resources")
+                _xobj = _res.get("/XObject") if _res else None
+                image_objects += len(_xobj or {})
+            except Exception:
+                pass
         _txt = ""
         for p in r.pages[:3]:
             try:
@@ -212,7 +379,362 @@ def check_pdf(path, competition_name=None, doc_title=None, detail=False):
                         % (pages, limit["max_pages"]))
     return {"ok": not errors, "errors": errors, "warnings": warnings,
             "suggestions": suggestions, "pages": pages,
-            "mb": round(mb, 2), "limit": limit}
+            "mb": round(mb, 2), "limit": limit,
+            "image_objects": image_objects}
+
+
+# ============ L2 扩展：跨格式产物审计（2026-10-15） ============
+#
+# 旧的 check_docx/check_pdf/check_pptx 只回答「文件能不能打开」；这不足以
+# 发现空白页、图表没有真正嵌入、图表数值无法回溯到正文等评委可见问题。
+# audit_artifacts 是一个独立、可选的审计入口，不改变旧函数的返回契约，也
+# 不会在生成阶段引入额外模型调用。导出链路可以按需调用，先以 warnings 展示
+# 可核查项，只有明显损坏（无法读取、完全空文件、空白页、图表文件丢失）才阻断。
+
+
+def _artifact_chars(text):
+    """统计有效字符数，去掉 Markdown 标记和空白。"""
+    return len(re.sub(r"[#*`_|>\[\]（）()\s]", "", str(text or "")))
+
+
+def _artifact_numbers(text):
+    """提取可用于跨产物口径核对的数字 token。"""
+    vals = set()
+    for m in re.finditer(r"(?<![\w.])\d+(?:\.\d+)?(?:%|％|万|亿|元|万元|吨|人|家|次|天|个月|年)?", str(text or "")):
+        token = m.group(0).replace(",", "").strip()
+        if token:
+            vals.add(token)
+    return vals
+
+
+def _artifact_chart_specs(charts):
+    """统一 rich_charts 的渲染记录与原始 spec 形态。"""
+    out = []
+    for chart in charts or []:
+        if not isinstance(chart, dict):
+            continue
+        spec = chart.get("spec") if isinstance(chart.get("spec"), dict) else chart
+        data = spec.get("data") if isinstance(spec, dict) else {}
+        if not isinstance(data, dict):
+            data = {}
+        values = []
+        for key in ("values", "progress"):
+            raw = data.get(key) or []
+            if isinstance(raw, (list, tuple)):
+                values.extend(str(x) for x in raw if x not in (None, ""))
+        if isinstance(data.get("series"), list):
+            for series in data.get("series"):
+                if isinstance(series, dict) and isinstance(series.get("values"), list):
+                    values.extend(str(x) for x in series["values"] if x not in (None, ""))
+        out.append({
+            "id": str(chart.get("id") or spec.get("id") or ""),
+            "title": str(chart.get("title") or spec.get("title") or ""),
+            "source": str(chart.get("source") or spec.get("source") or ""),
+            "url": str(chart.get("url") or chart.get("path") or ""),
+            "values": values,
+        })
+    return out
+
+
+def _local_media_path(value, base_dir=None):
+    """把 /generated/xxx.png 或本地路径解析成可检查的文件路径。"""
+    if not value:
+        return ""
+    value = str(value)
+    if value.startswith("http://") or value.startswith("https://"):
+        return ""
+    if value.startswith("/") and base_dir:
+        return os.path.join(base_dir, value.lstrip("/\\"))
+    if base_dir and not os.path.isabs(value):
+        return os.path.join(base_dir, value)
+    return value
+
+
+def _audit_docx_artifact(path, result, project_name, competition_name, expected_chapters):
+    errors, warnings = [], []
+    metrics = {"paragraphs": 0, "characters": 0, "headings": 0,
+               "tables": 0, "images": 0, "toc": False}
+    if not path:
+        return metrics, errors, warnings
+    try:
+        from docx import Document
+        doc = Document(path)
+        paragraphs = [p.text.strip() for p in doc.paragraphs]
+        text = "\n".join(paragraphs)
+        metrics.update({
+            "paragraphs": len(paragraphs),
+            "characters": _artifact_chars(text),
+            "headings": sum(1 for p in doc.paragraphs
+                             if (p.style.name or "").lower().startswith("heading")),
+            "tables": len(doc.tables),
+            "images": len(getattr(doc, "inline_shapes", []) or []),
+        })
+        metrics["toc"] = any("目" in p and "录" in p for p in paragraphs)
+        if not text.strip():
+            errors.append("Word 正文为空")
+        if metrics["characters"] < 500:
+            warnings.append("Word 正文信息量偏低（有效字符少于 500）")
+        if metrics["headings"] < 3:
+            errors.append("Word 章节标题不足 3 个，层级结构不完整")
+        if not metrics["toc"]:
+            warnings.append("Word 未发现可见目录标题，手机端可能无法快速定位章节")
+        try:
+            from export_guard import check_word_structure
+            r = check_word_structure(path, expected_chapters)
+            errors.extend(r.get("errors") or [])
+            warnings.extend(r.get("warnings") or [])
+        except Exception as exc:
+            warnings.append("Word 章节顺序未完成二次校验：%s" % exc)
+        if project_name and str(project_name) not in text:
+            warnings.append("Word 未出现项目名称，需确认封面与正文是否匹配")
+        if competition_name and str(competition_name) not in text:
+            warnings.append("Word 未出现赛事名称，需确认赛事适配信息是否写入")
+        old = result.get("proposal") if isinstance(result, dict) else ""
+        if old and _artifact_chars(old) > 1000 and metrics["characters"] < _artifact_chars(old) * 0.25:
+            warnings.append("Word 正文明显短于生成结果，疑似导出时丢失段落")
+    except Exception as exc:
+        errors.append("Word 无法读取：%s" % exc)
+    return metrics, errors, warnings
+
+
+def _pdf_page_images(page):
+    """兼容 pypdf 不同版本，统计页面中的图片 XObject。"""
+    try:
+        images = getattr(page, "images", None)
+        if images is not None:
+            return len(images)
+    except Exception:
+        pass
+    try:
+        resources = page.get("/Resources") or {}
+        xobj = resources.get("/XObject") if hasattr(resources, "get") else None
+        if not xobj:
+            return 0
+        count = 0
+        for ref in xobj.values():
+            obj = ref.get_object() if hasattr(ref, "get_object") else ref
+            if obj.get("/Subtype") == "/Image":
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+
+def _audit_pdf_artifact(path, result, project_name, competition_name, doc_title):
+    errors, warnings = [], []
+    metrics = {"pages": 0, "blank_pages": [], "images": 0,
+               "characters": 0, "page_characters": []}
+    if not path:
+        return metrics, errors, warnings
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(path)
+        metrics["pages"] = len(reader.pages)
+        if not reader.pages:
+            errors.append("PDF 无页面")
+        texts = []
+        for idx, page in enumerate(reader.pages):
+            try:
+                txt = page.extract_text() or ""
+            except Exception:
+                txt = ""
+            chars = _artifact_chars(txt)
+            image_count = _pdf_page_images(page)
+            texts.append(txt)
+            metrics["page_characters"].append(chars)
+            metrics["images"] += image_count
+            # 有图的封面/图表页允许文字较少；真正完全没有文字和图片才是空白页。
+            if chars == 0 and image_count == 0:
+                metrics["blank_pages"].append(idx + 1)
+            elif chars < 35:
+                warnings.append("PDF 第 %d 页文字密度偏低（%d 字）" % (idx + 1, chars))
+        metrics["characters"] = sum(metrics["page_characters"])
+        if metrics["blank_pages"]:
+            errors.append("PDF 存在空白页：%s" % ",".join(str(x) for x in metrics["blank_pages"]))
+        if metrics["characters"] == 0 and metrics["images"] == 0:
+            errors.append("PDF 无可读文字且无图像内容")
+        # PDF 是提交物，不允许图表只存在于 Word/前端而在 PDF 中静默丢失。
+        # ReportLab 图表走图片嵌入，若本轮有结构化图表但 PDF 没有图片对象，
+        # 说明导出链路没有把同一批图表带过去，应明确标红。
+        chart_defs = (result or {}).get("rich_charts") or (result or {}).get("charts") or []
+        if chart_defs and metrics["images"] == 0:
+            errors.append("PDF 有图表数据定义，但文件未嵌入图表图片")
+        if project_name and str(project_name) not in "\n".join(texts):
+            warnings.append("PDF 未出现项目名称，需确认 PDF 是否与当前项目匹配")
+        if competition_name and str(competition_name) not in "\n".join(texts):
+            warnings.append("PDF 未出现赛事名称，需确认赛事适配信息是否写入")
+        base = check_pdf(path, competition_name, doc_title, detail=True)
+        errors.extend(base.get("errors") or [])
+        warnings.extend(base.get("warnings") or [])
+    except Exception as exc:
+        errors.append("PDF 无法读取：%s" % exc)
+    return metrics, errors, warnings
+
+
+def _audit_pptx_artifact(path, result, project_name, competition_name, outline_text):
+    errors, warnings = [], []
+    metrics = {"slides": 0, "blank_slides": [], "images": 0,
+               "tables": 0, "characters": 0, "slide_characters": [],
+               "titles": []}
+    if not path:
+        return metrics, errors, warnings
+    try:
+        from pptx import Presentation
+        prs = Presentation(path)
+        slides = list(prs.slides)
+        metrics["slides"] = len(slides)
+        if len(slides) < 8:
+            errors.append("PPT 页数过少（%d < 8）" % len(slides))
+        slide_text = []
+        for idx, slide in enumerate(slides):
+            texts, images, tables = [], 0, 0
+            for shape in slide.shapes:
+                try:
+                    if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
+                        images += 1
+                    elif shape.shape_type == 19:  # TABLE
+                        tables += 1
+                except Exception:
+                    pass
+                try:
+                    if shape.has_text_frame and shape.text_frame.text.strip():
+                        texts.append(shape.text_frame.text.strip())
+                except Exception:
+                    pass
+            combined = "\n".join(texts)
+            chars = _artifact_chars(combined)
+            metrics["slide_characters"].append(chars)
+            metrics["characters"] += chars
+            metrics["images"] += images
+            metrics["tables"] += tables
+            if texts:
+                metrics["titles"].append(texts[0].split("\n", 1)[0].strip())
+            else:
+                metrics["titles"].append("")
+            if chars == 0 and images == 0 and tables == 0:
+                metrics["blank_slides"].append(idx + 1)
+            elif chars < 45 and images == 0 and tables == 0 and idx not in (0, len(slides) - 1):
+                warnings.append("PPT 第 %d 页信息密度偏低（%d 字）" % (idx + 1, chars))
+        if metrics["blank_slides"]:
+            errors.append("PPT 存在空白页：%s" % ",".join(str(x) for x in metrics["blank_slides"]))
+        duplicate_titles = sorted({x for x in metrics["titles"] if x and metrics["titles"].count(x) > 1})
+        if duplicate_titles:
+            warnings.append("PPT 存在重复页标题：%s" % "、".join(duplicate_titles[:3]))
+        all_shapes_text = []
+        for slide in slides:
+            for shape in slide.shapes:
+                try:
+                    if shape.has_text_frame:
+                        all_shapes_text.append(shape.text_frame.text)
+                except Exception:
+                    pass
+        all_text = "\n".join(all_shapes_text)
+        if project_name and str(project_name) not in all_text:
+            warnings.append("PPT 未出现项目名称，需确认封面与项目匹配")
+        if competition_name and str(competition_name) not in all_text:
+            warnings.append("PPT 未出现赛事名称，需确认赛事适配信息是否写入")
+        deck = result.get("rich_deck") if isinstance(result, dict) else None
+        refs = set()
+        if isinstance(deck, dict):
+            for slide in deck.get("slides") or []:
+                if isinstance(slide, dict) and slide.get("chart"):
+                    refs.add(str(slide.get("chart")))
+        chart_specs = _artifact_chart_specs((result or {}).get("rich_charts") if isinstance(result, dict) else [])
+        if refs and metrics["images"] < len(refs):
+            errors.append("PPT 图表引用 %d 个，但实际嵌入图片仅 %d 个" % (len(refs), metrics["images"]))
+        if chart_specs and metrics["images"] == 0:
+            errors.append("PPT 有图表数据定义，但文件未嵌入任何图片")
+        if outline_text:
+            try:
+                from export_guard import check_ppt_matches_outline
+                r = check_ppt_matches_outline(path, outline_text)
+                errors.extend(r.get("errors") or [])
+                warnings.extend(r.get("warnings") or [])
+            except Exception as exc:
+                warnings.append("PPT 大纲对应关系未完成二次校验：%s" % exc)
+    except Exception as exc:
+        errors.append("PPT 无法读取：%s" % exc)
+    return metrics, errors, warnings
+
+
+def audit_artifacts(docx_path=None, pdf_path=None, pptx_path=None, result=None,
+                    mode="deep", competition_name="", project_name="",
+                    source_text="", base_dir=None, expected_chapters=None,
+                    doc_title="", generated_dir=None):
+    """跨格式终检：格式、内容密度、空白页、图表嵌入和匹配关系。
+
+    返回 ``{"ok", "errors", "warnings", "metrics", "verification"}``。
+    ``verification`` 明确列出需要用户补充来源或事实核验的项目，避免把
+    「模型生成/测算」误报成已证实事实。函数不联网，也不替用户做事实判断。
+    """
+    result = result if isinstance(result, dict) else {}
+    # 兼容导出层早期参数名；图片 URL 以 /generated/xxx.png 形式保存。
+    if base_dir is None and generated_dir:
+        base_dir = os.path.dirname(os.path.abspath(generated_dir))
+    source = "\n".join(str(result.get(k) or "") for k in (
+        "proposal", "project_summary", "business_model", "tech_solution",
+        "implementation_plan", "judge_feedback"))
+    source = (source_text or source).strip()
+    errors, warnings = [], []
+    metrics = {}
+    dmet, derr, dwarn = _audit_docx_artifact(
+        docx_path, result, project_name, competition_name, expected_chapters)
+    pmet, perr, pwarn = _audit_pdf_artifact(
+        pdf_path, result, project_name, competition_name, doc_title)
+    vmet, verr, vwarn = _audit_pptx_artifact(
+        pptx_path, result, project_name, competition_name, result.get("ppt_outline", ""))
+    metrics.update({"docx": dmet, "pdf": pmet, "pptx": vmet})
+    errors.extend(derr + perr + verr)
+    warnings.extend(dwarn + pwarn + vwarn)
+
+    charts = _artifact_chart_specs(result.get("rich_charts") or result.get("charts") or [])
+    consistency = {"charts_defined": len(charts), "chart_files_missing": [],
+                   "chart_values_unmatched": [], "charts_without_source": []}
+    for chart in charts:
+        local = _local_media_path(chart.get("url"), base_dir)
+        if local and not os.path.exists(local):
+            consistency["chart_files_missing"].append(chart["id"] or chart["title"] or "未命名图表")
+        if not chart.get("source"):
+            consistency["charts_without_source"].append(chart["id"] or chart["title"] or "未命名图表")
+        nums = [_artifact_numbers(v) for v in chart.get("values") or []]
+        nums = set().union(*nums) if nums else set()
+        if nums and not (nums & _artifact_numbers(source)):
+            consistency["chart_values_unmatched"].append(chart["id"] or chart["title"] or "未命名图表")
+    if consistency["chart_files_missing"]:
+        errors.append("图表文件缺失：%s" % "、".join(consistency["chart_files_missing"]))
+    if consistency["chart_values_unmatched"]:
+        warnings.append("图表数值未在正文/分析中找到对应数字，需核对来源：%s" %
+                        "、".join(consistency["chart_values_unmatched"]))
+    if consistency["charts_without_source"]:
+        warnings.append("图表缺少来源标注，不能直接视为实测数据：%s" %
+                        "、".join(consistency["charts_without_source"]))
+    # 三种导出物必须共享同一批数据；字符量差距过大通常意味着正文被截断、
+    # PDF/PPT 使用了旧记录，或导出时只留下标题壳子。
+    dchars = (metrics.get("docx") or {}).get("characters") or 0
+    pchars = (metrics.get("pdf") or {}).get("characters") or 0
+    if dchars and pchars and pchars < dchars * 0.25:
+        warnings.append("PDF 正文显著短于 Word，疑似导出时丢失内容（请核对章节与图表）")
+    metrics["consistency"] = consistency
+    verification = []
+    if charts:
+        verification.append("图表来源与原始数据仍需按赛事官方资料、实测记录或用户上传数据核验")
+    if result.get("similarity_report"):
+        verification.append("查重/相似度仅作为算法筛查结果，不等同于版权或最终查重结论")
+    if mode == "deep" and not result.get("rich_tables"):
+        warnings.append("深度版未发现结构化表格，评委阅读时可能缺少可扫描的数据证据")
+    return {"ok": not errors, "errors": errors, "warnings": warnings,
+            "metrics": metrics, "verification": verification}
+
+
+# 便于导出层按「质量审计」语义调用，保留 result-first 的导出接口，
+# 同时把详细 metrics/verification 透传给后台，不改旧导出调用方式。
+def check_artifact_bundle(result, mode="deep", docx_path=None, pdf_path=None,
+                          pptx_path=None, competition_name="", generated_dir=None):
+    return audit_artifacts(
+        docx_path=docx_path, pdf_path=pdf_path, pptx_path=pptx_path,
+        result=result, mode=mode, competition_name=competition_name,
+        base_dir=None, generated_dir=generated_dir,
+    )
 
 
 # 打包期望文件数（mode 感知，2026-10-01 fast 打包 422 修复）：
@@ -490,8 +1012,66 @@ def check_version(v):
     return False, [f"版本号非时间戳唯一：{v or '(空)'}"]
 
 
-def run_all(result=None, mode="deep", docx_path=None, history_resp=None):
-    """跑全链路质检，返回 {层级: (ok, issues)}。"""
+def _check_artifact_bundle_light(result, mode="deep", docx_path=None, pdf_path=None,
+                          pptx_path=None, competition_name="", generated_dir=None):
+    """对一条生成记录及其导出物做成品质检。
+
+    结果同时保留 errors/warnings/details，方便后台展示“为什么没达标”，
+    也方便导出接口只阻断真正损坏的文件。该函数不修改文件、不重新生成内容。
+    """
+    result = result or {}
+    errors, warnings, details = [], [], {}
+    chart_report = check_chart_assets(result, generated_dir=generated_dir, mode=mode)
+    errors.extend(chart_report.get("errors") or [])
+    warnings.extend(chart_report.get("warnings") or [])
+    details["charts"] = chart_report
+    if docx_path:
+        ok, issues = check_docx(docx_path, expect_type="report")
+        details["word"] = {"ok": ok, "issues": issues}
+        for issue in issues:
+            (errors if ("为空" in issue or "乱码" in issue or "读取失败" in issue) else warnings).append("Word：" + issue)
+        if result.get("rich_charts") or result.get("charts"):
+            try:
+                from docx import Document
+                _inline = len(Document(docx_path).inline_shapes)
+                details["word"]["inline_shapes"] = _inline
+                if _inline == 0:
+                    warnings.append("Word：记录中有图表，但文档没有嵌入图片对象")
+            except Exception:
+                pass
+    if pdf_path:
+        pdf = check_pdf(pdf_path, competition_name=competition_name,
+                        doc_title="项目申报书", detail=True)
+        details["pdf"] = pdf
+        errors.extend("PDF：" + x for x in (pdf.get("errors") or []))
+        warnings.extend("PDF：" + x for x in (pdf.get("warnings") or []))
+        if (result.get("rich_charts") or result.get("charts")) and not pdf.get("image_objects"):
+            warnings.append("PDF：记录中有图表，但 PDF 内未检测到图表对象")
+    if pptx_path:
+        ppt = check_pptx_detailed(
+            pptx_path,
+            outline_text=result.get("ppt_outline") or "",
+            charts=result.get("rich_charts") or result.get("charts") or [],
+            tables=result.get("rich_tables") or result.get("tables") or [],
+            proposal=result.get("proposal") or "",
+            mode=mode,
+        )
+        details["ppt"] = ppt
+        errors.extend("PPT：" + x for x in (ppt.get("errors") or []))
+        warnings.extend("PPT：" + x for x in (ppt.get("warnings") or []))
+    # 记录级内容门：深度版必须具备正文、图表/表格和路演 deck；fast 不误报这些 deep 专属件。
+    gen_ok, gen_issues = check_generation(result, mode)
+    details["generation"] = {"ok": gen_ok, "issues": gen_issues}
+    warnings.extend("内容：" + x for x in gen_issues)
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "details": details}
+
+
+def run_all(result=None, mode="deep", docx_path=None, history_resp=None,
+            pdf_path=None, pptx_path=None, competition_name="", generated_dir=None):
+    """跑全链路质检，返回 {层级: (ok, issues)}。
+
+    新增 pdf_path/pptx_path 后仍兼容旧调用，导出层可逐步接入成品级检查。
+    """
     report = {}
     if result is not None:
         report["L1_generation"] = check_generation(result, mode)
@@ -501,6 +1081,13 @@ def run_all(result=None, mode="deep", docx_path=None, history_resp=None):
         report["L2_docx"] = check_docx(docx_path)
     if history_resp is not None:
         report["L4_history"] = check_history_detail(history_resp)
+    if result is not None and (pdf_path or pptx_path):
+        bundle = check_artifact_bundle(
+            result, mode=mode, docx_path=docx_path, pdf_path=pdf_path,
+            pptx_path=pptx_path, competition_name=competition_name,
+            generated_dir=generated_dir,
+        )
+        report["L2_artifacts"] = (bundle["ok"], bundle["errors"] + bundle["warnings"])
     return report
 
 

@@ -1,20 +1,20 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>可创无限 · 科创赛事助手</title>
+    <title>可创无限 · 创造无限可能</title>
     <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
          标签页也永远是空白图标。直接复用 logo.png，零风险。
          193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
          png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
-    <link rel="icon" href="/static/favicon.ico?v=20261002a" sizes="any">
-    <link rel="icon" type="image/png" href="/static/logo.png?v=20261002a">
-    <link rel="apple-touch-icon" href="/static/logo_apple.png?v=20261002a">
+    <link rel="icon" href="static/favicon.ico?v=20261003a" sizes="any">
+    <link rel="icon" type="image/png" href="static/logo.png?v=20261003a">
+    <link rel="apple-touch-icon" href="static/logo_apple.png?v=20261003a">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="科创赛事助手">
-    <meta property="og:title" content="可创无限・科创赛事助手">
+    <meta property="og:site_name" content="可创无限">
+    <meta property="og:title" content="可创无限 · 创造无限可能">
     <meta property="og:description" content="输入一句项目创意，按 15 个赛事官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 旧域名国内多数网络打不开，微信/QQ 分享卡片图片一直加载失败；统一切现域名 -->
     <meta property="og:image" content="https://kechuang2026.cn/static/og-image.png">
@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20261002a">
+    <link rel="stylesheet" href="static/style.css?v=20261003o">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -137,12 +137,12 @@
              logo 定稿后把整段 <svg class="wb-hero-logo"> 换成
              <img src="/static/logo.png" class="wb-hero-logo" alt="科创赛事助手"> 即可，样式已写好 -->
         <div class="hero">
-            <img src="/static/logo_full.png?v=20261002a" class="wb-hero-logo" alt="科创赛事助手" width="72" height="76">
-            <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 科创赛事助手」统一。
+            <img src="static/logo_full.png?v=20261003c" class="wb-hero-logo" alt="可创无限" loading="eager" decoding="sync">
+            <!-- 第一百五十七轮：主标题与浏览器标签「可创无限 · 创造无限可能」统一。
                  之前页面内叫「赛创助手」、标签页叫「科创赛事助手」，同一产品两个名字，
                  评委截图/口口相传时会以为是两家东西 -->
-            <h1>科创赛事助手</h1>
-            <p>输入创意，生成符合评审规则的完整申报材料</p>
+            <h1>可创无限</h1>
+            <p>创造无限可能 · 输入创意，生成符合评审规则的完整申报材料</p>
             <!-- 技术说明降级为小字注释：评委要看的是「能帮我做什么」，技术点是背书不是卖点。
                  第一百五十七轮（137/147/151 轮反复要求，实测仍残留）：删掉框架名等技术栈名词
                  ——用户看不懂、也偏离「自主构建产品」的表述（151轮），
@@ -171,10 +171,10 @@
             </button>
             <!-- 第一百四十二 / 第一百四十七轮催办：顶部主按钮收敛。
                  「背景」是低频装饰项（换页面底图），不该与「使用说明 / 历史 / 反馈」平级占位，
-                 收进「更多 ▾」下拉；顶部常驻入口由 4 个降到 3 个，版面不再拥挤。
+                 收进「更多 ▾」下拉；下拉只保留低频或结果相关功能，避免入口重复。
                  菜单项点击后由 wbMoreClose() 关闭（见 app.js wbMoreToggle）。 -->
             <div id="wbMoreWrap" style="position: relative;">
-                <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
+                <button type="button" id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
                         aria-haspopup="true" aria-expanded="false" title="更多功能">
                     <span class="wb-dot" style="animation-delay:.85s"></span>更多 ▾
                 </button>
@@ -182,31 +182,72 @@
                                             z-index: 1700; min-width: 148px; padding: 6px;
                                             background: var(--surface-solid); border: 1px solid var(--line);
                                             border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.18);">
-                    <button class="wb-glass-btn wb-glass-btn-sm"
+                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item"
                             style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
-                            onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
+                            onclick="wbMoreClose();wbBgPanelToggle()" title="更换页面底图（图片只存本机）">
                         <span class="wb-dot"></span>页面背景
                     </button>
-                    <button class="wb-glass-btn wb-glass-btn-sm"
+                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item"
                             style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
-                            onclick="wbToggleTheme();wbMoreClose()" title="切换日间/夜间模式">
+                            onclick="wbMoreClose();wbToggleTheme()" title="切换日间/夜间模式">
                         <span class="wb-dot" style="animation-delay:.4s"></span>日间 / 夜间
                     </button>
-                    <button class="wb-glass-btn wb-glass-btn-sm"
-                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
-                            onclick="wbHistoryOpen?wbHistoryOpen():location.hash='';wbMoreClose()" title="查看生成历史">
-                        <span class="wb-dot" style="animation-delay:.55s"></span>历史记录
+                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbGoAnchor('proposal','proposalText')" title="跳到结果中的申报书正文">
+                        <span class="wb-dot"></span>结果导航
                     </button>
-                    <button class="wb-glass-btn wb-glass-btn-sm"
-                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
-                            onclick="wbFeedbackOpen();wbMoreClose()" title="反馈问题或建议">
-                        <span class="wb-dot" style="animation-delay:.7s"></span>意见反馈
+                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbLocalEditFocus()" title="只修改一个结果模块">
+                        <span class="wb-dot"></span>局部修改
                     </button>
+                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbDataTodoJump()" title="查看需要核实的数据">
+                        <span class="wb-dot"></span>数据核查
+                    </button>
+                    <a class="wb-glass-btn wb-glass-btn-sm wb-more-item" href="/admin/login" title="评委或管理员进入管理后台"
+                       style="display:flex; width:100%; justify-content:flex-start; align-items:center; border:none; background:transparent; margin-top:2px; text-decoration:none;">
+                        <span class="wb-dot"></span>管理后台
+                    </a>
                 </div>
             </div>
             <button class="wb-glass-btn wb-glass-btn-sm" onclick="wbFeedbackOpen()" title="任何状态下都能反馈问题或建议">
                 <span class="wb-dot" style="animation-delay:1.15s"></span>反馈
             </button>
+        </div>
+
+        <!-- 评委演示入口放在首屏工具区之后：评委无需滚到长表单底部即可先看完整成品。
+             这是同一个入口，不在底部重复放置；选择样例后仍可继续进入正式生成流程。 -->
+        <div id="wbDemoBar" aria-label="评委演示入口">
+            <button type="button" id="wbDemoBtn" onclick="wbDemoStart()" title="快速打开成品演示，或按所选样例生成一份">
+                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一键演示
+            </button>
+            <select id="wbDemoCase" aria-label="演示样例">
+                <option value="saved">快速展示已生成成品（最快）</option>
+                <option value="ican">智能硬件 · iCAN 样例</option>
+                <option value="internet">校园服务 · 互联网+样例</option>
+                <option value="model">运营优化 · 数模样例</option>
+            </select>
+            <span>评委可先看完整成品，再换样例体验生成。</span>
+        </div>
+
+        <!-- 首次使用三步引导：只保留行动路径，详细解释仍放在字段旁，避免首屏信息重复。 -->
+        <div id="wbGuide" aria-label="首次使用三步引导">
+            <button type="button" class="wb-guide-step" id="wbGuideStep0" onclick="wbGuideGo(0)">
+                <span class="wb-guide-num">1</span>
+                <span class="wb-guide-txt"><b>先选赛事</b>按赛事规则组织内容；没有收录的赛事也可直接输入名称。</span>
+                <span class="wb-guide-ok" aria-label="已完成">✓</span>
+            </button>
+            <button type="button" class="wb-guide-step" id="wbGuideStep1" onclick="wbGuideGo(1)">
+                <span class="wb-guide-num">2</span>
+                <span class="wb-guide-txt"><b>填创意或导入草稿</b>只有想法就写一两句；已有材料可粘贴或上传，实测数据选填。</span>
+                <span class="wb-guide-ok" aria-label="已完成">✓</span>
+            </button>
+            <button type="button" class="wb-guide-step" id="wbGuideStep2" onclick="wbGuideGo(2)">
+                <span class="wb-guide-num">3</span>
+                <span class="wb-guide-txt"><b>选档位并生成</b>简洁版更快，深度版更重视证据链；缺少来源的数据会标为待核实。</span>
+                <span class="wb-guide-ok" aria-label="已完成">✓</span>
+            </button>
+        </div>
+        <div id="wbGuideBar" role="status">
+            <span>三步已完成，可以继续修改或导出。</span>
+            <button type="button" onclick="wbGuideExpand()">重新查看三步</button>
         </div>
 
         <!-- 自定义背景面板：官方预设（程序化生成，无 IP/无真人）+ 本机上传。
@@ -501,6 +542,7 @@
                         填写试点数据 / 测试结果（可选）<span id="userDataBodyArrow">▾</span>
                     </div>
                     <div id="userDataBody">
+                        <div class="data-trust-note" role="note">数据来源规则：只把你提供或上传的数字标为实测；图表中的市场、预算、进度等无来源数字会标为待核实，替换后只更新对应数据，不需要重新生成整份材料。</div>
                         <!-- 引导前置：这块的价值（真数 vs 测算值）原先只藏在 label 的「选填」里，
                              评委视角下它是信任核心，必须让用户在展开后第一眼看到 -->
                         <div style="margin: 2px 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-mute);">
@@ -652,6 +694,20 @@
                     </span>
                 </label>
             </div>
+            <div id="versionRow" style="margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;">
+                <label for="versionCountOpt" style="display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer;">
+                    <span style="font-size:13px; color:var(--text-dim); line-height:1.55;">
+                        <b style="color:var(--text);">一次生成候选版本</b>
+                        <span class="wb-opt">（共享一轮检索，完成后自行选择）</span>
+                    </span>
+                    <select id="versionCountOpt" style="width:auto; min-width:86px; padding:7px 9px;" aria-label="候选版本数量" onchange="wbSaveForm()">
+                        <option value="1" selected>1 个</option>
+                        <option value="2">2 个</option>
+                        <option value="3">3 个</option>
+                    </select>
+                </label>
+                <div style="margin-top:6px; font-size:11.5px; color:var(--text-mute); line-height:1.55;">主版本先完成，候选版只调整表达重点，不改事实、数字和来源。候选生成失败不会影响主版本交付。</div>
+            </div>
             <!-- 主 CTA 独立成条：不再和上方任何一行贴在一起 -->
             <div id="startBar">
                 <button id="startBtn" class="btn-primary" onclick="startWork()">
@@ -726,6 +782,7 @@
             <div id="wbPartialNote" style="display:none; padding:12px 16px; margin-bottom:16px; border-radius:10px; background:var(--surface-2); border:1px dashed var(--line); font-size:13px; color:var(--text-dim);">
                 <span id="wbPartialNoteTxt">正在生成：下方是已完成章节的实时预览，全部完成后即可在此下载</span>
             </div>
+            <div id="wbVersionPicker" class="wb-version-picker" style="display:none;" aria-live="polite"></div>
             <div id="quickExportBar" style="display:none;">
                 <span class="qe-title"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 生成完成，可直接导出</span>
                 <button class="qe-primary" onclick="exportOne('proposalText', '项目申报书全文')" style="padding: 10px 18px; background: var(--c-a); color: #06283d; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 下载申报书 Word</button>
@@ -766,6 +823,8 @@
             <!-- 图表数据真实性提醒：正文里列了「待替换数据清单」才出现 -->
             <div id="dataTodoBar" style="display: none; margin-bottom: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(245,166,35,.12); border: 1px solid rgba(245,166,35,.4); font-size: 13px; color: var(--text); line-height: 1.75;">
                 <div id="dataTodoHead" style="font-weight: 600;">有 <b id="dataTodoCount">0</b> 项数据需要替换成真实值</div>
+                <div id="dataTodoKinds" class="data-todo-kinds" aria-live="polite" style="display:none;"></div>
+                <button type="button" onclick="wbReplaceEvidence()" style="margin-top:8px;padding:6px 14px;background:var(--c-a);color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:12.5px;">只替换这些数据</button>
                 <div style="color: var(--text-dim); font-size: 12.5px; margin-top: 2px;">
                     图表里的预算、市场规模等目前是<b>测算值</b>，图上已标橙色「需替换为实测」。
                     提交前按清单换成你们自己测出来的数或公开数据（写明机构与年份）。
@@ -804,12 +863,15 @@
                 <div class="score-meta">数据支撑论点：<span id="dpCount">暂无</span> 处 · 待补充：<span id="phCount">暂无</span> 项 · 本地查重 <span id="simInfo">暂无</span></div>
                 <!-- 174 轮「验证即沉淀」的用户侧入口：只在分数达标时露出来（不达标点了也是 422，
                      与其让用户在错误里撞墙，不如压根不显示）。 -->
+                <div id="simMethodNote" class="sim-method-note">本地初检：仅与当前范文库做中文片段重合比对，不等同于知网等正式查重。</div>
+                <div id="dataTrustNote" class="data-trust-note">数据可信度：生成内容中的实测数据只来自你填写或上传的材料；其余数字请按“测算值/待核实”逐条核对。</div>
+                <div id="qualityReportBox" class="quality-report-box" role="status" aria-live="polite" style="display:none;"></div>
                 <div id="trainArchiveRow" style="display: none; margin-top: 10px;"></div>
                 <!-- 用户拍板必做（第七十一/七十二轮）：同一项目两次生成 74 vs 86，队友以为出 bug。
                      波动说明必须常驻在评分大数字下方，不得省略 -->
                 <div style="margin-top: 10px; font-size: 12.5px; color: var(--text-mute); line-height: 1.6; max-width: 420px; margin-left: auto; margin-right: auto;">
                     这个分数是模拟评委给的，帮你定位薄弱部分，<b>仅作评审参考，不写进正式材料</b>。<br>
-                    同一项目重复生成，分数随内容浮动（约 ±10 分），<b>非 Bug</b>；多次生成取最高分版本提交即可。
+                    同一项目重复生成，分数可能随内容浮动（约 ±10 分），<b>非官方成绩</b>；请以证据完整、事实已核验且符合赛事要求的版本为准，不以最高分替代人工判断。
                 </div>
             </div>
             <!-- 创意评分五维雷达图：只看创意本身的强弱（创新/可行/市场/壁垒/社会），与「评分依据」的文档质量五维是两回事 -->
@@ -1097,27 +1159,70 @@
             <div id="tab-proposal" class="tab-content active">
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 项目简介<span class="wb-opt">（300字）</span></h3>
+                    <button class="wb-module-collapse" type="button" onclick="wbToggleModule('projectSummary')" aria-label="折叠或展开项目简介" title="折叠/展开"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <div class="content-block" id="projectSummary"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px; display:none;" class="deep-only">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg> 写作构思纲要 <span class="wb-opt">（正文先论证、再展开）</span></h3>
+                    <button class="wb-module-collapse" type="button" onclick="wbToggleModule('proposalOutline')" aria-label="折叠或展开写作构思" title="折叠/展开"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <div class="content-block" id="proposalOutline"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 申报书正文按此纲要展开，如需调整可据此修改创意后重新生成</div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报书全文 <button onclick="copyText('proposalText')" style="font-size: 12px; padding: 4px 8px; background: var(--btn-ghost); border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 复制</button></h3>
-                    <div class="content-block" id="proposalText"></div>
+                    <section class="wb-local-edit" id="wbLocalEdit" aria-label="局部修改">
+                        <div class="wb-local-edit-head">
+                            <div>
+                                <strong>只改一个模块</strong>
+                                <span>不会重新生成整套结果，修改后可直接导出</span>
+                            </div>
+                            <button type="button" class="wb-local-edit-toggle" onclick="wbLocalEditToggle()" aria-expanded="true">收起</button>
+                        </div>
+                        <div id="wbLocalEditBody" class="wb-local-edit-body">
+                            <div class="wb-local-edit-row">
+                                <label for="wbEditTarget">修改对象</label>
+                                <select id="wbEditTarget" onchange="wbLocalEditLoad()">
+                                    <option value="proposal">申报书正文</option>
+                                    <option value="proposal_analysis">申报书诊断</option>
+                                    <option value="judge_feedback">评委意见</option>
+                                    <option value="defense_questions">答辩问题</option>
+                                    <option value="ppt_outline">PPT大纲</option>
+                                </select>
+                            </div>
+                            <textarea id="wbEditInstruction" class="wb-local-edit-input" rows="2" placeholder="例如：把第二章的用户场景写得更具体，保留已有数据和章节结构"></textarea>
+                            <div id="wbEditPreview" class="wb-local-edit-preview">先生成结果，再选择要修改的模块</div>
+                            <div id="wbEditCompare" class="wb-edit-compare" style="display:none;">
+                                <div><b>原文</b><pre id="wbEditOriginal"></pre></div>
+                                <div><b>修改版</b><pre id="wbEditRevised"></pre></div>
+                            </div>
+                            <div class="wb-local-edit-actions">
+                                <button type="button" class="wb-local-edit-primary" onclick="wbLocalEditApply()">仅修改此模块</button>
+                                <span id="wbEditStatus" role="status"></span>
+                            </div>
+                        </div>
+                    </section>
+                    <div class="wb-proposal-reader" id="proposalReader">
+                        <aside class="wb-proposal-toc" id="proposalToc" aria-label="申报书章节导航">
+                            <div class="wb-proposal-toc-title">章节导航</div>
+                            <div id="proposalTocList" class="wb-proposal-toc-list">
+                                <span class="wb-proposal-toc-empty">生成后按章节快速定位</span>
+                            </div>
+                        </aside>
+                        <div class="content-block" id="proposalText"></div>
+                    </div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                     <div id="proposalSelfcheck" style="margin-top: 6px; font-size: 12px; color: var(--c-a); text-align: center; display: none;"></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg> 申报书诊断分析</h3>
+                    <button class="wb-module-collapse" type="button" onclick="wbToggleModule('proposalAnalysis')">折叠本模块</button>
                     <div class="content-block" id="proposalAnalysis"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
                 <div style="margin-bottom: 24px;">
                     <h3 style="color: var(--c-a); margin-bottom: 12px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-scale"/></svg> 评委意见</h3>
+                    <button class="wb-module-collapse" type="button" onclick="wbToggleModule('judgeFeedback')">折叠本模块</button>
                     <div class="content-block" id="judgeFeedback"></div>
                     <div style="margin-top: 12px; font-size: 12px; color: var(--text-mute); text-align: center;"><svg class="wb-ico wb-ico-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg> 基于官方评审规则 · 多智能体辅助撰写<span style="display:block; margin-top:2px;">最终内容以你的真实项目与署名为准</span></div>
                 </div>
@@ -1137,7 +1242,11 @@
                     <div style="display: grid; grid-template-columns: 1fr; gap: 16px;" id="richTables"></div>
                 </div>
                 <div id="demoChartsWrap">
-                <div class="wb-note" style="margin-bottom: 16px;">
+                <div id="demoChartsUnavailable" class="wb-empty-state" role="status" style="display:none; margin-bottom:16px;">
+                    <b>本轮没有可核验图表</b>
+                    <span>后端没有返回可展示的真实数据，系统不会用占位数字冒充项目结果。补充实测数据后可再次生成。</span>
+                </div>
+                <div id="demoChartsNote" class="wb-note" style="margin-bottom: 16px;">
                     <svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 以下图表为示例数据（预算占比、市场规模、时间节点均为占位数值），正式使用时请按项目实际情况替换。
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
@@ -1191,10 +1300,14 @@
                             <button onclick="exportPptx()" style="padding:8px 18px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 下载 PPT</button>
                         </div>
                     </div>
+                     <div class="ppt-export-note" role="note">
+                         <span><b>下载前快速核对：</b>系统已按当前结果自动排版，请检查图表数据、页数、字体和图片；下载文件不代表已通过正式评审，提交前仍以赛事要求和你的真实材料为准。</span>
+                     </div>
                     <!-- 15 套精品模板带缩略图：下拉里只有名字，选的时候根本不知道长什么样 -->
                     <div id="deckThemeWrap" style="margin-bottom: 14px;">
                         <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px;">PPT 模板（<span id="deckThemeCount">0</span> 套精品，点一下就换，下载前随时可改）</div>
                         <div id="deckThemeReco" style="font-size: 12px; color: var(--text-mute); margin-bottom: 8px;"></div>
+                        <div style="font-size: 11.5px; color: var(--text-mute); margin-bottom: 8px; line-height: 1.6;">版权优先：模板为程序化自绘或仅学习公开作品的配色、版式规律，不复制第三方原文、图片或素材；每套主题的来源说明可悬停查看。</div>
                         <div id="deckThemeGrid" class="wb-theme-grid"></div>
                         <!-- 旧主题不删（历史记录可能引用），但折叠进这里，不占主视觉 -->
                         <div id="deckThemeExtraWrap" style="display:none; margin-top: 10px;">
@@ -1210,13 +1323,12 @@
                     <div id="deckRoadWrap" style="margin-bottom: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px;">
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
                             <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
-                                <!-- 417 轮：默认取消勾选。勾上时 PPT 会被重排成固定 8 页，
-                                     而大纲写的是 15～20 页，评委拿大纲对照 PPT 直接对不上。
-                                     默认按大纲逐页出，页数与大纲严格一致。 -->
-                                <input type="checkbox" id="chkRoadshow" onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
-                                <span id="roadTitle">按标准路演结构重排（固定 8 页，与大纲页数不一致）</span>
+                                <!-- 默认采用紧凑路演结构；系统会把详细大纲收敛成约 8～10 页，
+                                     未入页的内容保留在备注/正文，不让评委面对冗长拆页。 -->
+                                <input type="checkbox" id="chkRoadshow" checked onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
+                                <span id="roadTitle">按标准路演结构重排（约 8～10 页）</span>
                             </label>
-                            <span id="roadFlow" style="font-size:12px; color:var(--text-mute);">不勾选时按大纲逐页导出，页数与「路演 PPT 大纲」一致；勾选后重排为 封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢</span>
+                            <span id="roadFlow" style="font-size:12px; color:var(--text-mute);">系统按封面 → 痛点 → 方案 → 功能 → 数据 → 竞品 → 团队 → 致谢组织，详细内容仍保留在申报书和演讲稿中</span>
                         </div>
                         <div id="deckRoadPlan" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
                     </div>
@@ -1318,11 +1430,35 @@
     </div>
     <!-- 回到顶部：长文档滑下去后，右下角出现小箭头一键回顶 -->
     <button id="wbTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="回到顶部">↑</button>
-    <div id="introModal" class="modal-overlay" onclick="if (event.target === this) closeIntro()" style="z-index: 1200;">
+    <div id="introModal" class="modal-overlay" onclick="if (event.target === this) wbIntroClose(event)" style="z-index: 1200;" aria-hidden="true">
         <div class="modal" id="introBox" style="max-width: 660px; max-height: 88vh; overflow-y: auto;">
-            <button class="wb-modal-x" onclick="event.stopPropagation(); closeIntro()" title="关闭" aria-label="关闭">&times;</button>
+            <button type="button" class="wb-modal-x" onclick="wbIntroClose(event)" title="关闭" aria-label="关闭">&times;</button>
             <div id="introBody"></div>
-            <button class="wb-modal-close-btn" onclick="event.stopPropagation(); closeIntro()">关闭</button>
+            <button type="button" class="wb-modal-close-btn" onclick="wbIntroClose(event)">关闭</button>
+        </div>
+    </div>
+
+    <!-- 使用说明与免责声明：独立弹窗，避免把大段条款直接撑在首页底部。 -->
+    <div id="disclaimerModal" class="modal-overlay wb-disclaimer-modal-overlay"
+         onclick="closeDisclaimer(event)" aria-hidden="true">
+        <div class="wb-disclaimer-modal" role="dialog" aria-modal="true"
+             aria-labelledby="disclaimerModalTitle">
+            <button class="wb-modal-x" type="button" onclick="closeDisclaimer()"
+                    title="关闭" aria-label="关闭">&times;</button>
+            <div class="wb-disclaimer-modal-head">
+                <svg class="wb-disclaimer-modal-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#wb-i-rocket"/>
+                </svg>
+                <div>
+                    <h2 id="disclaimerModalTitle">使用说明与免责声明</h2>
+                    <p>关于材料生成、数据核验与内容使用的说明。</p>
+                </div>
+            </div>
+            <div id="wbDisclaimerModalBody" class="wb-disclaimer-modal-body"></div>
+            <div class="wb-disclaimer-modal-foot">
+                <span>内容仅作辅助参考，提交前请核实事实、数据与赛事要求。</span>
+                <button type="button" class="wb-modal-close-btn" onclick="closeDisclaimer()">知道了</button>
+            </div>
         </div>
     </div>
 
@@ -1411,9 +1547,16 @@
                 return _raw(url, opt).then(function (res) {
                     try {
                         var u = String(url || '');
-                        if (!res.ok && u.indexOf('/api/') === 0) {
-                            // 健康检查是定时轮询，失败属预期噪音，不提示也不入账
-                            if (u.indexOf('/api/health') === 0) return res;
+                        // URL 可能是相对路径、绝对路径或 Request 对象；统一取 pathname，
+                        // 这样旧后端的 /api/memory 404 也不会被兜底层误报成阻断式错误。
+                        var path = u;
+                        try { path = new URL(u, window.location.href).pathname; } catch (e0) {}
+                        if (!res.ok && path.indexOf('/api/') === 0) {
+                            // 健康检查和长期记忆属于可选/轮询能力，失败不能遮住首页，
+                            // 尤其要兼容尚未完成滚动发布的旧后端（memory 可能暂时 404）。
+                            // `/api/me` 也属于可选的会话能力：旧部署没有这组接口时，
+                            // 不应在首页弹出「请求失败」遮挡用户主流程。
+                            if (path.indexOf('/api/health') === 0 || path.indexOf('/api/memory') === 0 || path.indexOf('/api/user_state') === 0 || path.indexOf('/api/me') === 0) return res;
                             try {
                                 res.clone().text().then(function (body) {
                                     var msg = '', j = null;
@@ -1504,13 +1647,14 @@
 
     /* Esc 统一收口：手机没有 Esc 键，桌面/外接键盘用户会按；一次只关最上面那个 */
     function wbCloseTopModal() {
-        var ids = ['chartModal', 'historyModal', 'introModal'];
+        var ids = ['chartModal', 'historyModal', 'introModal', 'disclaimerModal'];
         for (var i = 0; i < ids.length; i++) {
             var m = document.getElementById(ids[i]);
             if (m && m.style.display && m.style.display !== 'none') {
                 if (ids[i] === 'chartModal') closeChartModal();
                 else if (ids[i] === 'historyModal') closeHistory();
-                else closeIntro();
+                else if (ids[i] === 'introModal') closeIntro();
+                else if (ids[i] === 'disclaimerModal') closeDisclaimer();
                 return true;
             }
         }
@@ -1526,14 +1670,14 @@
     <!-- 第八十轮【中】marked 本地化：原来走 jsdelivr CDN（国内不稳，抽风时 marked 加载失败
          → 结果页渲染抛错、看起来像「生成卡住」）。本地 /static/marked.min.js 早就在服务器上，
          直接把顺序倒过来：本地优先，CDN 只作兜底 —— 少一个跨境请求，也不会白屏。 -->
-    <script src="/static/marked.min.js?v=20261002a"></script>
+    <script src="static/marked.min.js?v=20261003a"></script>
     <!-- 【P0】CDN 兜底去同步写文档（原 document[.]write 写法）：老内核（夸克/微信/豆包 WebView）
          里页面解析完成后再同步写文档会破坏文档流，直接导致"打不开"。兜底链改为全程非阻塞：
          本地静态文件（主源，见上）→ 失败时下方纯文本 polyfill 先顶上（保证能出内容不抛错）
          → window load 后异步从 CDN 拉真身，拉到就替换 polyfill 并重排版（见下方 wbCdnRescue）。 -->
     <!-- echarts 不再同步加载：它有 1MB，首页根本用不到却阻塞首屏渲染。
          改成按需拉（见下方 wbLoadEcharts），只在真要画示例图表时才下载 -->
-    <script src="/static/purify.min.js?v=20261002a"></script>
+    <script src="static/purify.min.js?v=20261003a"></script>
     <!-- 兜底：CDN 抽风时也要能出内容，否则生成完渲染抛错、结果区空白，看起来像"卡住" -->
     <script>
     if (typeof marked === 'undefined') {
@@ -1603,7 +1747,7 @@
                 s.onerror = fallback;
                 document.head.appendChild(s);
             }
-            load('/static/echarts.min.js?v=20261002a', function () {
+            load('static/echarts.min.js?v=20261002a', function () {
                 load('https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js', function () { done(false); });
             });
         });
@@ -1668,7 +1812,7 @@
     };
     window.__wbWrapMarked();
     </script>
-    <script src="/static/app.js?v=20261002b"></script>
+    <script src="static/app.js?v=20261003t"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1862,10 +2006,11 @@ window.addEventListener('resize', function () {
         diagnosis: '诊断短板', revision: '按意见定向改写', defense: '预测答辩问题',
         ppt: '生成 PPT 大纲', speech: '撰写路演稿', done: '收尾'
     };
-    var st = {}, timer = 0;
+    var st = {}, timer = 0, messageLog = [];
 
     function reset() {
         st = {};
+        messageLog = [];
         // 126 轮：已用时间计时归零。不归零的话第二次生成会从上次的时间接着走
         try { window._wbGenT0 = 0; } catch (e) {}
         AGENTS.forEach(function (a) { st[a.k] = { s: 'wait', label: '', t0: 0, ms: 0 }; });
@@ -1932,6 +2077,15 @@ window.addEventListener('resize', function () {
             html += '<div class="wb-agent-row ' + cls + '"><span class="wb-agent-dot">' + dot +
                 '</span><span class="wb-agent-nm">' + a.n + '</span>' + tail + '</div>';
         });
+        if (messageLog.length) {
+            html += '<div class="wb-agent-msg-hd">消息队列 · 最近 ' + Math.min(messageLog.length, 6) + ' 条</div>';
+            messageLog.slice(-6).forEach(function (m) {
+                var isMsg = m.event === 'message';
+                html += '<div class="wb-agent-msg"><span>' + ESC(m.sender || m.agent || '系统') +
+                    (isMsg ? ' → ' + ESC(m.recipient || '调度') : '') + '</span><b>' +
+                    ESC(m.kind || m.status || '') + '</b><small>第' + ESC(m.round || 0) + '轮</small></div>';
+            });
+        }
         // 169 轮：这里的 x/9 是「已完成的环节数」，和进度条上那个整体百分比是两回事——
         // 原来两侧都裸着数字（84% 和 2/9），用户以为同一个指标前后矛盾。
         // 现在各自写明口径：本面板=环节，进度条/按钮=整体进度
@@ -1939,6 +2093,12 @@ window.addEventListener('resize', function () {
             '多智能体协同流程 · 实时（环节 ' + doneCnt + '/' + AGENTS.length + '）');
         box.innerHTML = html;
         if (runCnt && !timer) timer = setTimeout(function () { timer = 0; render(); }, 1000);
+    }
+
+    function agentMessages(log) {
+        if (!Array.isArray(log)) return;
+        messageLog = log.slice(-80);
+        render();
     }
 
     /* ---------- 2. 打字机 ---------- */
@@ -1976,6 +2136,7 @@ window.addEventListener('resize', function () {
     function twPaint(o, txt) {
         var el = document.getElementById(o.id);
         if (!el) return;
+        el.removeAttribute('data-wb-empty');
         if (!window.marked) { el.textContent = txt; return; }
         // 闪屏根因（用户实测「不稳定要闪屏」）：原来每帧 el.innerHTML = marked.parse(全文)，
         // 深度版 1.2 万字时每秒整段重排约 60 次 —— 高度反复跳动就是这么来的。
@@ -2189,6 +2350,7 @@ window.addEventListener('resize', function () {
 
     // 导出给外部（paintPartial / 轮询路径直接用）
     window.wbAgentStage = stage;
+    window.wbAgentMessages = agentMessages;
     window.wbAgentFinish = finish;
     window.wbAgentReset = reset;
     window.twSet = twSet;          // paintPartial 内部调用，必须挂全局
@@ -2251,6 +2413,11 @@ window.addEventListener('resize', function () {
                 ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>'
                 : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
         }
+        try {
+            if (typeof wbBgApply === 'function' && typeof wbBgLoadCfg === 'function') {
+                wbBgApply(wbBgLoadCfg());
+            }
+        } catch (e) {}
         try { _wbStoreSet('wbLight', light ? '1' : '0'); } catch (e) {}
     }
 
@@ -2503,12 +2670,14 @@ window.addEventListener('resize', function () {
     <div style="opacity: .75;">基于官方评审规则 · 多智能体辅助撰写 · 最终内容以你的真实项目与署名为准</div>
     <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
          避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
-    <details style="max-width: 660px; margin: 6px auto 0;">
-        <summary style="cursor: pointer; text-align: center; color: var(--text-mute); opacity: .85;
+    <details id="wbDisclaimer" class="wb-disclaimer" style="max-width: 660px; margin: 6px auto 0;">
+        <summary class="wb-disclaimer-summary" aria-controls="disclaimerModal" aria-expanded="false"
+                  onclick="event.preventDefault(); if (window.wbDisclaimerToggle) { window.wbDisclaimerToggle(this); } else { this.parentElement.open = !this.parentElement.open; this.setAttribute('aria-expanded', this.parentElement.open ? 'true' : 'false'); }"
+                  style="cursor: pointer; text-align: center; color: var(--text-mute); opacity: .85;
                         text-decoration: underline; user-select: none; padding: 2px 0;">使用说明与免责声明</summary>
         <div style="margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px;
                     background: var(--surface-2); text-align: left; font-size: 12px; line-height: 1.95;
-                    color: var(--text-dim);">
+                    color: var(--text-dim);" id="wbDisclaimerBody">
             <div style="margin-bottom: 7px;"><b>1. 工具定位</b>：本工具用于辅助撰写赛事材料——提供结构框架、表述优化与内容补全建议，最终内容由你确认后定稿。</div>
             <div style="margin-bottom: 7px;"><b>2. 学术诚信</b>：请遵守所在赛事与学校关于智能辅助工具使用的相关规定；作品的署名、原创性与提交行为由你本人负责。</div>
             <div style="margin-bottom: 7px;"><b>3. 数据核实</b>：提交前请用权威来源核实文中引用的市场数据、测算值与文献；涉及实验、实测的部分，请以你自己的真实数据为准。</div>

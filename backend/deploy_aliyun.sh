@@ -59,6 +59,7 @@ if [ ! -f "$APP_DIR/.env" ]; then
     cat > "$APP_DIR/.env" <<EOF
 DEEPSEEK_API_KEY=sk-在这里填你的key
 PORT=$PORT
+MODEL_HEALTH_PROBE=off
 EOF
     chmod 600 "$APP_DIR/.env"
     echo ">>> 已生成 $APP_DIR/.env，请把 DEEPSEEK_API_KEY 换成真 key，然后："

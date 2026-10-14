@@ -234,6 +234,13 @@ _RE_NUM_HEAD = re.compile(
     r')'
 )
 
+_RE_HEADING_PREFIX = re.compile(
+    r'^(?:第[一二三四五六七八九十百0-9]+[章节篇部讲]\s*'
+    r'|[一二三四五六七八九十百]+[、.．]\s*'
+    r'|[（(][一二三四五六七八九十百0-9]+[）)]\s*'
+    r'|\d{1,2}(?:\.\d{1,2})*(?:[、.．)]|\s+)\s*)'
+)
+
 
 def _cn_num(n):
     """阿拉伯数字 → 中文数字（申报书章节惯例：一、二、… 十一、… 二十一、…）。"""
@@ -256,16 +263,17 @@ def _number_heading_blocks(blocks):
     """给正文标题注入中文编号（在渲染层做，不要求上游 LLM 输出带编号）。
 
     - H2（markdown ``##``，一级章节）→ 一、二、三、…
-    - H3（markdown ``###``，二级小节）→ （一）（二）…，遇到新的 H1/H2 章节重新起算
-    - 已带编号的标题（一、 / 1. / 1.1 / （一） / 第X章…）原样保留、不重复加号，
-      但照样推进计数器，保证后面的裸标题拿到与位置对应的号
-    - H1（文档主标题）与 H4 及以下不编号；封面/页眉/合规标注不经此函数，不受影响
+    - H2（markdown ``##``，一级章节）→ 一、二、三、…
+    - H3（markdown ``###``，二级小节）→ （1）（2）（3）…
+    - H4（markdown ``####``，三级小节）→ 1、2、3、…
+    - 无论上游是否已经编号，都先去掉旧前缀再按层级重排，避免出现「五、…」重复或乱序。
 
     必须在 build_docx 收集目录标题之前调用：目录条目和正文标题共用这份
     blocks，在这里编号一次，两边自动一致（目录是手写静态列表，跟着正文走）。
     """
     cn1 = 0        # 一级章节计数（一、二、…）
-    cn2 = 0        # 二级小节计数（（一）（二）…），每进新章重置
+    cn2 = 0        # 二级小节计数（（1）（2）…），每进新章重置
+    cn3 = 0        # 三级小节计数（1、2、3…），每进新章/二级重置
     out = []
     for _bi, blk in enumerate(blocks):
         if blk[0] != 'h':
@@ -277,24 +285,19 @@ def _number_heading_blocks(blocks):
             continue
         if level == 1:
             cn2 = 0                   # 裸「一、xxx」章也是新章，小节重新起算
+            cn3 = 0
         elif level == 2:
             cn1 += 1
             cn2 = 0
-            if not _RE_NUM_HEAD.match(text):
-                # 2026-10-01 P2 修复（评委视角实测）：孤立裸标题夹在已编号章节序列
-                # 中间时，按位置注入的号会与原文自带的下一个编号撞车（出现两个
-                # 「五、」）。注入前向后看一眼：后面的 H2 已占这个号就保持裸标题
-                # 不编号（附录式小节），计数器照常推进。
-                _pref = _cn_num(cn1) + '、'
-                if any(b[0] == 'h' and b[1] == 2 and (b[2] or '').strip().startswith(_pref)
-                       for b in blocks[_bi + 1:]):
-                    pass
-                else:
-                    text = '%s、%s' % (_cn_num(cn1), text)
+            cn3 = 0
+            text = '%s、%s' % (_cn_num(cn1), _RE_HEADING_PREFIX.sub('', text).strip())
         elif level == 3:
             cn2 += 1
-            if not _RE_NUM_HEAD.match(text):
-                text = '（%s）%s' % (_cn_num(cn2), text)
+            cn3 = 0
+            text = '（%d）%s' % (cn2, _RE_HEADING_PREFIX.sub('', text).strip())
+        elif level == 4:
+            cn3 += 1
+            text = '%d、%s' % (cn3, _RE_HEADING_PREFIX.sub('', text).strip())
         out.append(('h', level, text))
     return out
 
@@ -514,8 +517,9 @@ def _header(doc, title):
 
 
 def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=None,
-           show_school_advisor=True):
-    """封面：主标题黑体小初 / 副标题黑体二号 / 学校·团队·指导老师·日期黑体小三，全部居中。"""
+           show_school_advisor=True, team_name=None, leader=None, members=None,
+           contact=None):
+    """封面：主标题、副标题、必要的团队身份字段和日期统一居中。"""
     # 封面文字压到纵向约 1/6 处（之前 150pt 把标题推太低，顶部留一大块空白）
     sp = doc.add_paragraph()
     sp.paragraph_format.space_before = Pt(34)
@@ -536,19 +540,23 @@ def _cover(doc, title, subtitle=None, org=None, school=None, team=None, advisor=
         p.paragraph_format.line_spacing = 1.3
         _font(p.add_run(subtitle), SZ_ER, CN_HEI)
 
-    # 学校 / 团队 / 指导老师：黑体小三居中（申报书封面必备信息）
-    # iCAN 等双盲赛事不允许出现学校与指导老师，此时只保留团队（学生）信息
+    # 非双盲赛事可显示单位信息；双盲赛事只保留团队名称和负责人。
     if show_school_advisor:
-        info_lines = [x for x in (org, school, team, advisor) if x]
+        info_lines = [("单位", x) for x in (org, school) if x]
     else:
-        # org 通常也是「XX大学/单位」，双盲时一并隐藏
-        info_lines = [x for x in (team,) if x]
-    for line in info_lines:
+        info_lines = []
+    from cover_fields import cover_team_lines
+    info_lines.extend(cover_team_lines(team=team, team_name=team_name,
+                                       leader=leader, members=members,
+                                       contact=contact))
+    if show_school_advisor and advisor:
+        info_lines.append(("指导教师", advisor))
+    for label, line in info_lines:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_after = Pt(10)
         p.paragraph_format.line_spacing = 1.5
-        _font(p.add_run(line), SZ_XIAOSAN, CN_HEI)
+        _font(p.add_run("%s：%s" % (label, line)), SZ_XIAOSAN, CN_HEI)
 
     if info_lines:
         p = doc.add_paragraph()
@@ -952,7 +960,8 @@ def _render_hr(doc):
 def build_docx(title, text, subtitle=None, org=None, toc=None,
                cover=None, cover_image=False, topic=None, doc_type='report',
                school=None, team=None, advisor=None, show_school_advisor=True,
-               header_title=None, toc_pages=None):
+               header_title=None, toc_pages=None, team_name=None, leader=None,
+               members=None, contact=None):
     """生成符合格式标准的 Word 文档。
 
     :param title:       文档主标题（封面黑体小初）
@@ -1012,7 +1021,9 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
                 except Exception as e:
                     print('[docx_render] 封面背景图失败，忽略：%r' % (e,))
             _cover(doc, title, subtitle, org, school, team, advisor,
-                   show_school_advisor=show_school_advisor)
+                   show_school_advisor=show_school_advisor,
+                   team_name=team_name, leader=leader, members=members,
+                   contact=contact)
             doc.add_page_break()
 
         if toc:

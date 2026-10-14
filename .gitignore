@@ -53,5 +53,17 @@ _frames/
 artifacts/qa/
 artifacts/research/
 artifacts/legacy-runtime/
+artifacts/releases/
+artifacts/demo-video/
+artifacts/reference/
+artifacts/*.png
+artifacts/regression.*
 logs/*.log
+logs/
 tests/output/
+
+# Local inspection snapshots and cleanup archives are never runtime inputs.
+site_inspect/
+backend/archive/
+backend/chroma_db/
+tmp_export.pdf

@@ -1,0 +1,60 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">
+<script>
+window.addEventListener('load', function(){
+  // 同源：先在壳里清掉「已完成引导」标记（localStorage + cookie 双通道）
+  try { localStorage.removeItem('wbCoachDone'); } catch(e) {}
+  try { document.cookie = 'wbCoachDone=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'; } catch(e) {}
+  var f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;left:0;top:0;border:0;width:100vw;height:100vh;';
+  f.src = 'http://127.0.0.1:8080/';
+  var out = {steps: [], err: ''};
+  f.onload = function(){
+    setTimeout(function(){
+      try {
+        var dd = f.contentDocument, win = f.contentWindow;
+        function measure(label){
+          var tip = dd.getElementById('coachTip');
+          var step = (typeof win._wbCoachStep === 'function') ? null : null;
+          // 找当前 .wb-coach-target
+          var tgt = dd.querySelector('.wb-coach-target');
+          var rec = {label: label, hasTip: !!tip, hasTarget: !!tgt};
+          if (tip && tgt) {
+            var tr = tip.getBoundingClientRect(), gr = tgt.getBoundingClientRect();
+            rec.tip = {l: Math.round(tr.left), t: Math.round(tr.top), w: Math.round(tr.width), h: Math.round(tr.height)};
+            rec.tgt = {l: Math.round(gr.left), t: Math.round(gr.top), w: Math.round(gr.width), h: Math.round(gr.height)};
+            rec.arrowX = Math.round(tr.left + 22); // ::before 箭头固定 left:22px
+            rec.arrowInTargetX = rec.arrowX >= gr.left && rec.arrowX <= gr.right;
+            rec.gap = Math.round(tr.top - gr.bottom); // below 时应为 ~10
+            rec.scrollY = Math.round(win.scrollY);
+            rec.vh = win.innerHeight; rec.vw = win.innerWidth;
+            rec.tgtId = tgt.id;
+          }
+          out.steps.push(rec);
+        }
+        measure('step1_competition');
+        // 点「知道了」走到第 2 步
+        var tip = dd.getElementById('coachTip');
+        if (tip) { var btn = tip.querySelector('button'); if (btn) btn.click(); }
+        setTimeout(function(){
+          try { measure('step2_idea'); } catch(e) { out.err += '|s2:' + e; }
+          var tip2 = dd.getElementById('coachTip');
+          if (tip2) { var b2 = tip2.querySelector('button'); if (b2) b2.click(); }
+          setTimeout(function(){
+            try { measure('step3_startBtn'); } catch(e) { out.err += '|s3:' + e; }
+            var pre = document.createElement('pre');
+            pre.style.display = 'none';
+            pre.textContent = ('WBRES'+'ULT_BEGIN') + JSON.stringify(out) + ('WBRES'+'ULT_END');
+            document.body.appendChild(pre);
+          }, 900);
+        }, 900);
+      } catch(e) { out.err = String(e);
+        var pre = document.createElement('pre');
+        pre.style.display='none';
+        pre.textContent = ('WBRES'+'ULT_BEGIN') + JSON.stringify(out) + ('WBRES'+'ULT_END');
+        document.body.appendChild(pre);
+      }
+    }, 2600);
+  };
+  document.body.appendChild(f);
+});
+</script></body></html>

@@ -123,6 +123,9 @@ body.light {
     --line:rgba(40,60,120,.16);
     --line-strong:rgba(40,60,120,.32);
     --info-text:#0e7490;
+    /* 日间背景上不能使用夜间的荧光青；用于“一句话定位”等强调文字，
+       保持同一色系但达到白底可读对比度。 */
+    --info-strong:#0e7490;
     --info-bg-1:rgba(8,145,178,.10);
     --info-bg-2:rgba(8,145,178,.05);
     --warn-bg:rgba(217,119,6,.10);
@@ -408,7 +411,7 @@ body {
     font-size: clamp(28px, 4.4vw, 46px);
     font-weight: 800;
     margin-bottom: 12px;
-    letter-spacing: -.5px;
+    letter-spacing: 0;
     line-height: 1.18;
     color: #EAF2FF;
     animation: wbGlow 5s ease-in-out infinite;
@@ -442,13 +445,24 @@ body {
 .hero p.wb-hero-tech .wb-ico { width: 13px; height: 13px; }
 /* 图形标志：hero 的视觉锚点。svg / img 同一套样式，logo 定稿后直接换标签 */
 .hero .wb-hero-logo{
-    display: block; width: 72px; height: auto; margin: 0 auto 12px;
-    border-radius: 13px;
-    box-shadow: 0 8px 22px rgba(var(--c-a-rgb, 56,189,248), .30);
+    display: block; flex: none; width: 72px; height: auto !important; aspect-ratio: auto;
+    margin: 0 auto 12px; overflow: visible; clip-path: none;
+    padding: 0; box-sizing: border-box; border-radius: 0;
+    /* logo_full.png 本身是透明底。不要再给它套白色方块，否则在自定义背景、
+       日间/夜间切换时都会像一张贴图，与页面背景割裂。 */
+    background: transparent !important;
+    background-color: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    object-fit: contain;
+    mix-blend-mode: normal;
 }
-/* 421轮 logo 定稿（∞+新芽，透明底彩色）：夜间给柔光托底更醒目，日间靠浅阴影即可 */
+/* 透明底彩色 Logo：只保留轻微柔光托底，边缘与背景自然融合 */
 body:not(.light) .hero .wb-hero-logo{
-    filter: drop-shadow(0 0 10px rgba(56,189,248,.35)) saturate(1.05);
+    filter: none;
+}
+body.light .hero .wb-hero-logo {
+    filter: none;
 }
 .wb-hero-tech .wb-dot { flex: none; }
 /* ---------- 档位标识 ---------- */
@@ -533,6 +547,34 @@ body:not(.light) .hero .wb-hero-logo{
     box-shadow: 0 8px 24px rgba(34,211,238,.18);
 }
 .wb-glass-btn-sm{ margin-top: 0; padding: 8px 16px; font-size: 13px; }
+/* 更多菜单中的按钮和链接必须共享同一套排版规格。部分菜单项使用了内联布局样式，
+   单独收口字体后，日间/夜间及自定义背景下都不会出现字形、粗细、行距跳变。 */
+#wbMoreMenu .wb-more-item {
+    box-sizing: border-box;
+    min-height: 34px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: 0;
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+}
+#wbMoreMenu .wb-more-item .wb-dot { margin-inline-end: 1px; }
+#wbMoreMenu .wb-more-item:focus-visible {
+    outline: 2px solid var(--c-a);
+    outline-offset: -2px;
+}
+/* 更多菜单使用浅色面板时，不能沿用玻璃按钮的白字悬停态；
+   否则鼠标移到某一项，文字会与浅色背景融在一起，看起来像空白按钮。 */
+#wbMoreMenu .wb-glass-btn:hover{
+    color: var(--text);
+    background: var(--surface-2);
+    border-color: var(--line);
+    transform: none;
+    box-shadow: none;
+}
 .wb-dot{
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--info);
@@ -744,6 +786,13 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 }
 .score-label { font-size: 16px; color: var(--text-dim); margin-top: 10px; }
 .score-meta { margin-top: 14px; font-size: 14px; color: var(--text-mute); }
+.sim-method-note { margin: 8px auto 0; max-width: 620px; font-size: 11.5px; line-height: 1.6; color: var(--text-dim); }
+.data-trust-note {
+    margin: 8px auto 0; max-width: 760px; padding: 7px 10px;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: var(--surface-2); color: var(--text-dim);
+    font-size: 11.5px; line-height: 1.65; text-align: left;
+}
 
 /* ---------- Tab：胶囊 + 渐变激活 ---------- */
 .tabs {
@@ -781,6 +830,18 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     background: var(--grad-soft);
     font-weight: 600;
     box-shadow: inset 0 0 0 1px var(--line-strong), 0 6px 20px rgba(34,211,238,.16);
+}
+/* 日间主题：浅色激活底上使用深青文字，避免白字与浅青背景融在一起。 */
+body.light .tab.active {
+    color: #0b5268;
+    background: linear-gradient(135deg, rgba(14,116,144,.18), rgba(15,118,110,.14));
+    box-shadow: inset 0 0 0 1px rgba(14,116,144,.42), 0 5px 16px rgba(14,116,144,.14);
+}
+.tab:focus-visible,
+.wb-subtab:focus-visible,
+.his-tab:focus-visible {
+    outline: 3px solid rgba(14,116,144,.42);
+    outline-offset: 2px;
 }
 .tab-content { display: none; animation: wbFadeUp .5s cubic-bezier(.2,.7,.2,1); }
 /* AI 模拟自评面板内的二级标签：原来整个面板是一个 <details> 折叠条，
@@ -877,6 +938,229 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .content-block hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 .content-block a { color: var(--info-strong); }
 
+/* 关键模块的可读空状态：不把接口缺失伪装成空白，也不虚构项目事实。 */
+.wb-empty-state {
+    display: flex; flex-direction: column; gap: 5px; padding: 13px 14px;
+    border: 1px dashed var(--line-strong); border-radius: 8px;
+    background: rgba(148,163,184,.08); color: var(--text-dim);
+    font-size: 13px; line-height: 1.65;
+}
+.wb-empty-state b { color: var(--text); font-size: 13.5px; }
+body.light .wb-empty-state { background: #f3f7fb; color: #52637b; border-color: #9bb0c7; }
+
+/* 局部修改：把高频的小改动留在结果页，不再要求整套重跑。 */
+.wb-local-edit {
+    margin: 0 0 16px;
+    border: 1px solid rgba(56,189,248,.38);
+    border-radius: 12px;
+    background: rgba(15,23,42,.72);
+    box-shadow: 0 8px 24px rgba(0,0,0,.16);
+}
+.wb-local-edit-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 12px 14px; color: var(--text);
+}
+.wb-local-edit-head strong { display: block; font-size: 14px; }
+.wb-local-edit-head span { display: block; margin-top: 3px; color: var(--text-dim); font-size: 12px; }
+.wb-local-edit-toggle, .wb-module-collapse {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line-strong); border-radius: 7px; padding: 0;
+    color: var(--text); background: var(--surface-2); cursor: pointer; font-size: 12px;
+    transition: background .18s, border-color .18s, color .18s;
+}
+.wb-local-edit-toggle:hover, .wb-module-collapse:hover { color: var(--c-a); border-color: var(--c-a); }
+.wb-local-edit-body { padding: 0 14px 14px; }
+.wb-local-edit-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.wb-local-edit-row label { color: var(--text-dim); font-size: 12px; min-width: 54px; }
+.wb-local-edit-row select, .wb-local-edit-input {
+    box-sizing: border-box; width: 100%; border: 1px solid var(--line-strong); border-radius: 7px;
+    background: #111a3c; color: #f3f7ff; font: inherit; font-size: 13px;
+}
+.wb-local-edit-row select { flex: 1; min-height: 34px; padding: 6px 9px; }
+.wb-local-edit-input { display: block; min-height: 58px; padding: 8px 10px; resize: vertical; line-height: 1.6; }
+.wb-local-edit-input::placeholder { color: #aab7d4; }
+.wb-local-edit-preview {
+    margin-top: 8px; max-height: 92px; overflow: auto; padding: 8px 10px; border-radius: 7px;
+    background: rgba(255,255,255,.055); color: var(--text-dim); font-size: 12px; line-height: 1.55;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.wb-local-edit-actions { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+.wb-local-edit-primary { border: 0; border-radius: 7px; padding: 8px 13px; background: #0ea5e9; color: #061329; font-weight: 700; cursor: pointer; }
+.wb-local-edit-primary:disabled { opacity: .55; cursor: wait; }
+#wbEditStatus { color: var(--text-dim); font-size: 12px; }
+.wb-edit-compare { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:8px; }
+.wb-edit-compare > div { min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:7px; background:rgba(255,255,255,.04); }
+.wb-edit-compare b { display:block; margin-bottom:5px; color:var(--text); font-size:11.5px; }
+.wb-edit-compare pre { margin:0; max-height:170px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text-dim); font:inherit; font-size:11.5px; line-height:1.55; }
+@media (max-width: 600px) { .wb-edit-compare { grid-template-columns:1fr; } }
+.wb-module-collapse { float: right; margin-top: -42px; }
+body.light .wb-local-edit { background: #f8fbff; border-color: #8bc8e8; }
+body.light .wb-local-edit-row select, body.light .wb-local-edit-input { background: #fff; color: #18243a; border-color: #8fa9c4; }
+body.light .wb-local-edit-input::placeholder { color: #5b6b82; }
+body.light .wb-local-edit-preview { background: #edf4fb; color: #40536d; }
+body.light .wb-local-edit-primary { background: #0284c7; color: #fff; }
+body.wb-focus .wb-assist-note,
+body.wb-focus .wb-opt,
+body.wb-focus .wb-hero-tech,
+body.wb-focus .wb-note,
+body.wb-focus .sb-note,
+body.wb-focus .qe-note { display: none !important; }
+
+/* 长文默认更紧凑，用户可按模块收起，保留结果而不制造一条无尽页面。 */
+.wb-module-collapse + .content-block { transition: max-height .2s ease, opacity .2s ease; }
+.wb-module-collapse.is-collapsed + .content-block { max-height: 180px; overflow: hidden; opacity: .86; }
+
+/* 版本选择器：一次主生成后共享事实链，只替换正文版本。 */
+.wb-version-picker { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.wb-version-title { display:flex; align-items:baseline; gap:8px; margin-bottom:9px; color:var(--text); font-size:13px; font-weight:700; }
+.wb-version-title small { color:var(--text-mute); font-size:11.5px; font-weight:400; }
+.wb-version-list { display:flex; flex-wrap:wrap; gap:8px; }
+.wb-version-btn { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:132px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-solid); color:var(--text); cursor:pointer; text-align:left; transition: border-color .18s, background .18s, color .18s; }
+.wb-version-btn:hover, .wb-version-btn.active { border-color:var(--c-a); background:var(--c-a-soft); color:var(--text); }
+.wb-version-btn small { color:var(--text-mute); font-size:11px; font-weight:400; }
+body.light .wb-version-btn:hover, body.light .wb-version-btn.active { color:#0b5268; }
+.wb-disclaimer { color: var(--text-dim); position: relative; z-index: 1501; }
+.wb-disclaimer-summary { display: inline-block; min-height: 28px; padding: 5px 10px !important; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--text) !important; background: var(--surface-2); opacity: 1 !important; font-weight: 600; }
+.wb-disclaimer-summary { position: relative; z-index: 1502; font-family: inherit; font-size: 13px; line-height: 1.45; }
+.wb-disclaimer:not([open]) > #wbDisclaimerBody { display: none !important; }
+.wb-disclaimer[open] > #wbDisclaimerBody { display: block !important; }
+.wb-disclaimer-summary:hover, .wb-disclaimer[open] .wb-disclaimer-summary { color: var(--c-a) !important; border-color: var(--c-a); background: var(--c-a-soft); }
+.wb-disclaimer > div { color: var(--text-dim) !important; }
+footer > div { color: var(--text-dim); opacity: 1 !important; }
+body.light footer > div { color: #52637b; }
+body.light .wb-disclaimer-summary { color: #164e63 !important; background: #eef8fb; border-color: #8fb8c7; }
+/* 使用说明弹窗：内容与首页解耦，保持参考图的清晰白卡结构。 */
+.wb-disclaimer-modal-overlay {
+    z-index: 2200 !important;
+    background: rgba(12, 18, 34, .68) !important;
+    backdrop-filter: blur(10px) saturate(105%);
+    -webkit-backdrop-filter: blur(10px) saturate(105%);
+}
+.wb-disclaimer-modal {
+    position: relative;
+    width: min(900px, calc(100% - 32px));
+    max-height: min(88dvh, 820px);
+    overflow: hidden;
+    padding: 34px 38px 24px;
+    border: 1px solid rgba(255,255,255,.7);
+    border-radius: 24px;
+    background: #f8fafc;
+    color: #263653;
+    box-shadow: 0 28px 90px rgba(5, 12, 28, .38), 0 2px 0 rgba(255,255,255,.85) inset;
+}
+.wb-disclaimer-modal .wb-modal-x {
+    top: 16px; right: 18px; width: 42px; height: 42px;
+    background: #fff; border-color: #c9d4e5; color: #506180;
+    font-size: 22px; font-weight: 400;
+}
+.wb-disclaimer-modal .wb-modal-x:hover { color: #0e7490; border-color: #0e7490; transform: none; }
+.wb-disclaimer-modal-head {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding-right: 48px; margin-bottom: 22px;
+}
+.wb-disclaimer-modal-icon {
+    width: 40px; height: 40px; flex: 0 0 auto;
+    color: #263653; stroke: currentColor; fill: none; stroke-width: 1.8;
+}
+.wb-disclaimer-modal-head h2 {
+    margin: 0 0 8px; color: #1f2d49; font-size: clamp(22px, 3vw, 30px);
+    line-height: 1.25; letter-spacing: 0; font-weight: 750;
+}
+.wb-disclaimer-modal-head p {
+    margin: 0; color: #536783; font-size: 15px; line-height: 1.75;
+}
+.wb-disclaimer-modal-body {
+    max-height: min(59dvh, 530px); overflow-y: auto; padding: 2px 14px 4px 0;
+    color: #516581; font-size: 15px; line-height: 1.85;
+    scrollbar-color: #b9c6d8 transparent;
+}
+.wb-disclaimer-modal-body > div {
+    margin: 0 !important; padding: 11px 0 12px;
+    border-bottom: 1px solid #d7dfeb;
+    color: #516581 !important; font-size: inherit !important; line-height: inherit !important;
+    background: transparent !important; text-align: left !important;
+}
+.wb-disclaimer-modal-body > div:last-child { border-bottom: 0; }
+.wb-disclaimer-modal-body b { color: #1f2d49; font-weight: 750; }
+.wb-disclaimer-modal-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-top: 14px; padding-top: 15px; border-top: 1px solid #d7dfeb;
+    color: #70819a; font-size: 12.5px; line-height: 1.55;
+}
+.wb-disclaimer-modal-foot .wb-modal-close-btn {
+    flex: 0 0 auto; margin: 0; padding: 9px 20px;
+    color: #fff; background: #167b95; border-color: #167b95; font-weight: 650;
+}
+.wb-disclaimer-modal-foot .wb-modal-close-btn:hover { background: #0f6178; transform: none; }
+body:not(.light) .wb-disclaimer-modal { background: #f5f8fc; }
+body.wb-disclaimer-open { overflow: hidden; }
+@media (max-width: 768px) {
+    .wb-disclaimer-modal { width: calc(100% - 24px); max-height: 90dvh; padding: 25px 20px 17px; border-radius: 19px; }
+    .wb-disclaimer-modal .wb-modal-x { top: 11px; right: 11px; width: 36px; height: 36px; font-size: 19px; }
+    .wb-disclaimer-modal-head { gap: 11px; padding-right: 38px; margin-bottom: 13px; }
+    .wb-disclaimer-modal-icon { width: 29px; height: 29px; }
+    .wb-disclaimer-modal-head h2 { font-size: 21px; margin-bottom: 5px; }
+    .wb-disclaimer-modal-head p { font-size: 13px; line-height: 1.6; }
+    .wb-disclaimer-modal-body { max-height: 62dvh; padding-right: 7px; font-size: 13.5px; line-height: 1.75; }
+    .wb-disclaimer-modal-body > div { padding: 9px 0 10px; }
+    .wb-disclaimer-modal-foot { display: block; margin-top: 8px; padding-top: 11px; }
+    .wb-disclaimer-modal-foot .wb-modal-close-btn { width: 100%; margin-top: 10px; }
+}
+
+/* 申报书长文阅读器：正文与章节导航分栏，窄屏自动回到横向导航。 */
+.wb-proposal-reader {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(190px, 224px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.wb-proposal-toc {
+    position: sticky;
+    top: 18px;
+    max-height: min(68vh, 620px);
+    overflow: auto;
+    padding: 12px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+.wb-proposal-toc-title { margin: 0 4px 8px; color: var(--text-dim); font-size: 12px; font-weight: 700; }
+.wb-proposal-toc-list { display: grid; gap: 3px; }
+.wb-proposal-toc-btn {
+    display: block; width: 100%; padding: 7px 8px; border: 0; border-left: 2px solid transparent;
+    border-radius: 5px; background: transparent; color: var(--text-mute); cursor: pointer;
+    font: inherit; font-size: 12px; line-height: 1.45; text-align: left; overflow-wrap: anywhere;
+}
+.wb-proposal-toc-btn:hover, .wb-proposal-toc-btn.active {
+    border-left-color: var(--c-a); background: var(--c-a-soft); color: var(--text);
+}
+.wb-proposal-toc-btn[data-level="3"], .wb-proposal-toc-btn[data-level="4"] { padding-left: 16px; font-size: 11.5px; }
+.wb-proposal-toc-empty { padding: 4px; color: var(--text-mute); font-size: 11.5px; line-height: 1.5; }
+.wb-proposal-reader > .content-block { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 720px) {
+    .wb-proposal-reader { display: block; }
+    .wb-proposal-toc { position: static; max-height: none; margin-bottom: 10px; padding: 8px 10px; }
+    .wb-proposal-toc-title { margin-bottom: 5px; }
+    .wb-proposal-toc-list { display: flex; overflow-x: auto; gap: 5px; scrollbar-width: none; }
+    .wb-proposal-toc-list::-webkit-scrollbar { display: none; }
+    .wb-proposal-toc-btn { flex: 0 0 auto; width: auto; max-width: 190px; white-space: nowrap; }
+    .wb-proposal-toc-btn[data-level="3"], .wb-proposal-toc-btn[data-level="4"] { padding-left: 8px; }
+}
+@media (max-width: 560px) {
+    .container { width: 100%; }
+    #resultArea { border-radius: 12px; }
+    .tabs { margin-left: -4px; margin-right: -4px; }
+    .content-block { padding: 14px 13px; font-size: 14px; line-height: 1.8; }
+    .wb-local-edit-head { align-items: flex-start; }
+    .wb-local-edit-row { align-items: stretch; flex-direction: column; gap: 5px; }
+    .wb-local-edit-row label { min-width: 0; }
+    .wb-local-edit-actions { align-items: stretch; flex-direction: column; }
+    .wb-local-edit-primary { width: 100%; }
+    .wb-module-collapse { float: none; margin: -4px 0 8px; }
+    .deck-card { min-height: 170px; }
+}
+
 /* ===== AI 生成表格（rich_tables）=====
    独立作用域，不依赖 .content-block —— renderRich() 渲染的是裸 table，
    之前完全没吃到样式（无边框、无表头底色）。 */
@@ -902,12 +1186,17 @@ table.rich-table caption {
 }
 /* 2026-10-01 浅色主题对比度修复（验证线实锤第8项）：下面 6 组规则写死 #fff 白字，
    在 body.light 浅色背景下对比度 <2:1 近乎不可见。统一走主题变量 + 压暗底色保对比。 */
-body.light .content-block h1, body.light .content-block h2, body.light .content-block h3 { color: var(--text); }
+body.light .content-block h1, body.light .content-block h2, body.light .content-block h3,
+body.light .content-block h4 { color: var(--text); }
 body.light .content-block strong { color: var(--text); background: rgba(99,102,241,.14); }
 body.light .content-block th { color: var(--text); }
 body.light table.rich-table thead th { color: var(--text); background: rgba(74,85,184,.18); }
 body.light table.rich-table td:first-child { color: var(--text); }
 body.light .deck-card .dc-chip { color: var(--text); background: rgba(74,85,184,.12); border-color: rgba(74,85,184,.28); }
+
+/* 浅色主题下橙色待核实标记必须使用深色文字，避免在浅橙底上对比度不足。 */
+body.light mark.wb-ph { color: #a16207; background: rgba(217,119,6,.14); border-bottom-color: #b45309; }
+body.light #wbPhBar b { color: #a16207; }
 
 /* ===== AI 路演 PPT 预览卡 ===== */
 .deck-card {
@@ -1095,9 +1384,26 @@ mark.wb-ph {
     position: fixed;
     left: 0; top: 0; width: 100%; height: 100%;
     z-index: 1500;
-    background: rgba(3, 6, 20, .62);
+    /* 首次引导只做轻微退后，不把整页内容压成低对比度；目标自身由 z-index 1501 突出。 */
+    background: rgba(3, 6, 20, .18);
     cursor: pointer;
+    /* 遮罩只在用户主动查看分步说明时显示；避免首次加载竞态时压暗首页。 */
+    display: none !important;
 }
+/* 只存在 body.wb-coach-active 但没有气泡时，遮罩属于残留失败态，必须隐藏。 */
+body.wb-coach-active.wb-coach-ready #wbCoachVeil { display: block !important; }
+body.light #wbCoachVeil {
+    background: rgba(255, 255, 255, .22);
+}
+body.wb-custom-bg #wbCoachVeil {
+    background: rgba(3, 6, 20, .15);
+}
+body.light.wb-custom-bg #wbCoachVeil {
+    background: rgba(255, 255, 255, .18);
+}
+#introModal:not(.wb-intro-open) { display: none !important; }
+#introModal.wb-intro-open { display: flex !important; }
+
 #coachTip {
     position: fixed;
     z-index: 1502;
@@ -1268,6 +1574,43 @@ body.wb-custom-bg .card {
 body.light.wb-custom-bg .card {
     background: linear-gradient(158deg, rgba(255, 255, 255, .86) 0%, rgba(244, 247, 255, .92) 100%);
 }
+/* 选择背景后由自定义图层完整接管底色，避免默认渐变继续透出导致“切了但看不出变化”。 */
+body.wb-custom-bg .wb-bg { background: transparent; }
+body.wb-custom-bg .wb-bg::after { background: linear-gradient(180deg, rgba(3,7,22,.16), rgba(3,7,22,.46)); }
+body.light.wb-custom-bg .wb-bg::after { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.48)); }
+body.wb-custom-bg .wb-grid, body.wb-custom-bg .wb-orb, body.wb-custom-bg .wb-scan { opacity: .18; }
+.data-trust-note {
+    margin: 0 0 10px;
+    padding: 9px 11px;
+    border-left: 3px solid var(--c-a);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--c-a) 10%, var(--surface-2));
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.65;
+}
+body.wb-custom-bg .data-trust-note { background: rgba(255,255,255,.12); }
+.quality-report-box {
+    margin: 0 0 10px;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.65;
+    text-align: left;
+}
+.quality-report-box.is-blocked { border-color: var(--err-line); background: var(--err-bg); color: var(--err-text); }
+.quality-report-box.is-warning { border-color: rgba(245,166,35,.48); background: rgba(245,166,35,.10); }
+.quality-report-box.is-pass { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.08); }
+.quality-report-box .qr-title { font-weight: 700; margin-bottom: 2px; }
+.quality-report-box .qr-detail { font-size: 11.5px; color: var(--text-mute); }
+.quality-report-box .qr-reviewer-view { color: var(--text); font-weight: 600; margin-bottom: 3px; }
+.data-todo-kinds { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 5px; color: var(--text-dim); font-size: 12px; }
+.data-todo-kinds-label { color: var(--text-mute); margin-right: 2px; }
+.data-todo-kind { padding: 2px 7px; border: 1px solid rgba(245,166,35,.42); border-radius: 999px; background: rgba(245,166,35,.08); white-space: nowrap; }
+.data-todo-kind b { color: var(--text); font-weight: 600; }
 
 /* 空创意提交时的输入框提示：红描边 + 左右抖两下，1.6s 后由 JS 移除 */
 .wb-shake-hl {
@@ -1509,6 +1852,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     /* 5) 开始生成按钮悬浮底栏（sticky 规则在全局区，这里只收紧内边距） */
     #startBar { margin-top: 14px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
     #startBtn { display: block; width: 100%; }
+    #wbDemoBar { align-items: stretch; }
+    #wbDemoBtn, #wbDemoCase { flex: 1 1 100%; width: 100%; }
     /* 165 轮：程序化滚动（scrollIntoView / 锚点）给底部悬浮 CTA 让出 100px，
        免得滚过去的内容正好被压在按钮下面。手动滚轮的遮挡由 wbEnsureVisible 兜底 */
     html { scroll-padding-bottom: 100px; }
@@ -1534,7 +1879,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     position: relative; text-align: left;
     display: flex; align-items: flex-start; gap: 10px;
     padding: 12px 14px; border-radius: 12px; cursor: pointer;
-    background: var(--surface-2); border: 1px solid var(--line);
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit;
     transition: border-color .2s, transform .2s, opacity .2s;
 }
 .wb-guide-step:hover { border-color: var(--c-a); transform: translateY(-2px); }
@@ -1553,9 +1898,26 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 /* 折叠态：老用户只看一行，点一下可再展开 */
 #wbGuideBar { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; padding: 9px 14px; border-radius: 12px; background: var(--surface-2); border: 1px dashed var(--line); font-size: 12.5px; color: var(--text-dim); }
 #wbGuideBar button { padding: 4px 10px; font-size: 12px; background: transparent; color: var(--c-a); border: 1px solid var(--c-a); border-radius: 6px; cursor: pointer; }
+/* 教练气泡出现时暂隐同内容的三步卡，避免首屏同时呈现两套引导。 */
+body.wb-coach-active #wbGuide { visibility: hidden; }
+/* 评委演示入口：与主生成按钮并列但降低视觉权重，桌面/手机都能一眼找到。 */
+#wbDemoBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 4px 18px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+#wbDemoBtn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 8px 13px; border: 1px solid var(--c-a); border-radius: 8px; background: var(--c-a-soft); color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
+#wbDemoBtn:hover:not(:disabled) { border-color: var(--c-b); background: var(--surface-solid); }
+#wbDemoBtn:disabled { opacity: .65; cursor: wait; }
+#wbDemoCase { flex: 1 1 220px; min-width: 180px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12.5px; }
+#wbDemoBar > span { flex: 1 1 180px; color: var(--text-mute); font-size: 11.5px; line-height: 1.5; }
+.wb-agent-msg-hd{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:11px;color:var(--c-a);font-weight:700}
+.wb-agent-msg{display:grid;grid-template-columns:minmax(100px,1fr) auto auto;gap:7px;align-items:center;padding:5px 0;font-size:11px;color:var(--text-dim);border-bottom:1px solid var(--line)}
+.wb-agent-msg b{font-size:10px;color:var(--text);font-weight:600}.wb-agent-msg small{color:var(--text-mute)}
 /* 点引导卡片跳过去时，目标元素自己闪一下（不越界，卡片 overflow:hidden 也看得到） */
 .wb-guide-flash { animation: wbGuideFlash 1.6s ease; }
 @keyframes wbGuideFlash { 0%, 100% { background: transparent; } 35% { background: var(--c-a-soft); } }
+@media (max-width: 768px) {
+    /* 该覆盖必须放在引导基础样式之后，避免首屏手机被后面的 display:grid 覆盖。 */
+    #wbGuide { display: flex; overflow-x: auto; gap: 0; scroll-snap-type: x mandatory; }
+    #wbGuide .wb-guide-step { flex: 0 0 100%; margin-right: 8px; scroll-snap-align: start; }
+}
 
 /* ---------- 结果页用户打分 ---------- */
 #wbRateBox { margin-top: 22px; padding: 16px 18px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
@@ -1570,6 +1932,20 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 #quickExportBar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--c-a); }
 .qe-title { font-size: 13px; font-weight: 700; color: var(--text-dim); display: flex; align-items: center; }
 .qe-note { font-size: 12px; color: var(--text-mute); }
+
+/* PPT 局部质量提示：与顶部导出条分工，只在有 PPT 预览时出现。 */
+.ppt-export-note {
+    margin: 0 0 12px;
+    padding: 9px 12px;
+    border-left: 3px solid var(--c-a);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.65;
+}
+.ppt-export-note b { color: var(--text); font-weight: 700; }
+body.light .ppt-export-note { background: #f3f7fb; }
 
 /* ---------- PPT 主题缩略图 ---------- */
 .wb-theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(152px, 1fr)); gap: 10px; }
@@ -1613,6 +1989,183 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 #wbFabPanel { display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 12px; background: var(--surface-solid); border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, .5); }
 #wbFab.open #wbFabPanel { display: flex; }
 #wbFabPanel button { white-space: nowrap; text-align: left; padding: 9px 14px; font-size: 13px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+
+/* 交互稳定性收口：按钮不再因 hover/active 位移，避免页面一跳一跳且文字变糊。 */
+button:not(:disabled):hover, button:not(:disabled):active,
+.wb-glass-btn:hover, .wb-glass-btn:active,
+.wb-guide-step:hover, .version-card:hover { transform: none !important; }
+button:not(:disabled):hover { color: var(--text); }
+body.light button:not(:disabled):hover { color: var(--text); }
+/* 统一按钮不做位移动画；点击只改变颜色/边框，避免移动端触摸反馈像“跳动”。 */
+button, button:hover, button:active, button:focus { transform: none !important; }
+button { transition-property: background-color, background, color, border-color, box-shadow, opacity !important; }
+#wbRateStars button:hover, .wb-theme-card:hover, .version-card:hover { transform: none !important; }
+/* 兼容微信/QQ/夸克旧内核：禁用会被合成层放大的位移/淡入动画，点击只更新状态。 */
+body.in-app * { animation-duration: 0s !important; animation-delay: 0s !important; }
+@media (prefers-reduced-motion: reduce), (max-width: 768px) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; }
+}
+/* 自定义背景覆盖所有结果页层级，避免只换到最底层；每层保持半透明与文字对比度。 */
+body.wb-custom-bg .tabs,
+body.wb-custom-bg .content-block,
+body.wb-custom-bg .result-hero,
+body.wb-custom-bg #quickExportBar,
+body.wb-custom-bg .wb-proposal-toc,
+body.wb-custom-bg .wb-local-edit,
+body.wb-custom-bg .wb-version-picker,
+body.wb-custom-bg .wb-disclaimer-summary { backdrop-filter: blur(12px) saturate(125%); -webkit-backdrop-filter: blur(12px) saturate(125%); }
+body.wb-custom-bg .content-block { background: rgba(7, 13, 31, .72); color: #eef6ff; }
+body.wb-custom-bg .content-block h1,
+body.wb-custom-bg .content-block h2,
+body.wb-custom-bg .content-block h3,
+body.wb-custom-bg .content-block strong { color: #fff; }
+body.light.wb-custom-bg .content-block { background: rgba(255,255,255,.84); color: #24354d; }
+body.light.wb-custom-bg .content-block h1,
+body.light.wb-custom-bg .content-block h2,
+body.light.wb-custom-bg .content-block h3,
+body.light.wb-custom-bg .content-block strong { color: #16324f; }
+#quickExportBar { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+#quickExportBar > * { flex: 0 0 auto; }
+@media (min-width: 769px) { #quickExportBar { padding-left: 68px; } }
+@media (max-width: 768px) {
+    #quickExportBar { flex-wrap: nowrap; gap: 7px; padding: 10px; }
+    #quickExportBar .qe-title { max-width: 86px; white-space: normal; line-height: 1.35; }
+    #quickExportBar .qe-primary { flex: 0 0 auto; }
+    #quickExportBar .qe-note { display: none; }
+}
+
+/* ---------- 背景切换的全页面渲染适配 ----------
+   背景不是只铺在页面最底层：结果页、导出区、图表、弹层和输入面板都必须
+   有稳定的不透明度与文字对比度。变量集中在这里，预设背景和用户图片共用
+   同一套表面层，避免某一张图把局部面板冲成“灰底灰字”。 */
+body.wb-custom-bg {
+    --wb-bg-surface: rgba(8, 15, 36, .82);
+    --wb-bg-surface-soft: rgba(8, 15, 36, .70);
+    --wb-bg-surface-solid: rgba(7, 13, 31, .95);
+    --wb-bg-input: rgba(5, 11, 28, .88);
+    --wb-bg-fg: #f3f7ff;
+    --wb-bg-fg-dim: #d7e3f5;
+}
+body.light.wb-custom-bg {
+    --wb-bg-surface: rgba(255, 255, 255, .90);
+    --wb-bg-surface-soft: rgba(255, 255, 255, .82);
+    --wb-bg-surface-solid: rgba(255, 255, 255, .97);
+    --wb-bg-input: rgba(255, 255, 255, .94);
+    --wb-bg-fg: #18243a;
+    --wb-bg-fg-dim: #40536d;
+}
+/* 用户图片可能很亮，预设则普遍偏暗；遮罩按图片亮度档位收敛，避免文字被背景吃掉。 */
+body.wb-custom-bg .wb-bg::after {
+    background: linear-gradient(180deg, rgba(3, 7, 22, .24), rgba(3, 7, 22, .56));
+}
+body.light.wb-custom-bg .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .32), rgba(255, 255, 255, .64));
+}
+body.wb-custom-bg.wb-bg-tone-light .wb-bg::after {
+    background: linear-gradient(180deg, rgba(3, 7, 22, .40), rgba(3, 7, 22, .66));
+}
+body.light.wb-custom-bg.wb-bg-tone-light .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .48), rgba(255, 255, 255, .76));
+}
+body.wb-custom-bg.wb-bg-tone-mixed .wb-bg::after {
+    background: linear-gradient(180deg, rgba(3, 7, 22, .30), rgba(3, 7, 22, .58));
+}
+body.light.wb-custom-bg.wb-bg-tone-mixed .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, .68));
+}
+/* 统一所有常见面板：包含内联 style 的节点，故使用 !important 明确覆盖其透明度。 */
+body.wb-custom-bg .tabs,
+body.wb-custom-bg .wb-subtabs,
+body.wb-custom-bg .result-hero,
+body.wb-custom-bg #wbBgPanel,
+body.wb-custom-bg #wbMoreMenu,
+body.wb-custom-bg #wbExpMenu,
+body.wb-custom-bg #wbTipCard,
+body.wb-custom-bg #agentPanel,
+body.wb-custom-bg #eventReqCard,
+body.wb-custom-bg #kbStatusBox,
+body.wb-custom-bg #kbDetail,
+body.wb-custom-bg #ruleUploadBody,
+body.wb-custom-bg #teamBody,
+body.wb-custom-bg #userDataBody,
+body.wb-custom-bg #advParamBody,
+body.wb-custom-bg #draftAdvBody,
+body.wb-custom-bg #evTrackBox,
+body.wb-custom-bg #dataTodoBar,
+body.wb-custom-bg #qualityReportBox,
+body.wb-custom-bg #ideaRadarBox,
+body.wb-custom-bg #completenessBox,
+body.wb-custom-bg #wbPhBar,
+body.wb-custom-bg #wbBanBar,
+body.wb-custom-bg #wbKeepCard,
+body.wb-custom-bg #deckRoadWrap,
+body.wb-custom-bg #wbRateBox,
+body.wb-custom-bg #wbStyleBar,
+body.wb-custom-bg #wbFabPanel,
+body.wb-custom-bg .wb-agent-panel,
+body.wb-custom-bg .wb-ud-box,
+body.wb-custom-bg .wb-version-picker,
+body.wb-custom-bg .wb-proposal-toc,
+body.wb-custom-bg .wb-local-edit,
+body.wb-custom-bg .ppt-export-note,
+body.wb-custom-bg .wb-disclaimer-summary,
+body.wb-custom-bg .wb-theme-card,
+body.wb-custom-bg .modal,
+body.wb-custom-bg .wb-ua-box {
+    background: var(--wb-bg-surface) !important;
+    color: var(--wb-bg-fg);
+    border-color: var(--line-strong);
+    backdrop-filter: blur(14px) saturate(125%);
+    -webkit-backdrop-filter: blur(14px) saturate(125%);
+}
+body.wb-custom-bg #wbMoreMenu,
+body.wb-custom-bg #wbExpMenu,
+body.wb-custom-bg #wbFabPanel,
+body.wb-custom-bg .modal,
+body.wb-custom-bg .wb-ua-box,
+body.wb-custom-bg #wbBgPanel { background: var(--wb-bg-surface-solid) !important; }
+body.wb-custom-bg input,
+body.wb-custom-bg textarea,
+body.wb-custom-bg select,
+body.wb-custom-bg .history-search,
+body.wb-custom-bg #wbDemoCase {
+    background: var(--wb-bg-input) !important;
+    color: var(--wb-bg-fg) !important;
+    border-color: var(--line-strong) !important;
+}
+body.wb-custom-bg input::placeholder,
+body.wb-custom-bg textarea::placeholder { color: var(--wb-bg-fg-dim); opacity: .78; }
+body.wb-custom-bg .content-block,
+body.wb-custom-bg .wb-proposal-reader {
+    background: var(--wb-bg-surface-soft);
+    color: var(--wb-bg-fg);
+    border-color: var(--line-strong);
+}
+body.wb-custom-bg .content-block p,
+body.wb-custom-bg .content-block li,
+body.wb-custom-bg .content-block td { color: var(--wb-bg-fg-dim); }
+body.wb-custom-bg .content-block h1,
+body.wb-custom-bg .content-block h2,
+body.wb-custom-bg .content-block h3,
+body.wb-custom-bg .content-block h4,
+body.wb-custom-bg .content-block strong { color: var(--wb-bg-fg); }
+body.wb-custom-bg .wb-proposal-toc-list a,
+body.wb-custom-bg .wb-anchor-btn,
+body.wb-custom-bg .wb-textbtn { color: var(--wb-bg-fg-dim); }
+body.wb-custom-bg .wb-disclaimer > div,
+body.wb-custom-bg .wb-agent-row,
+body.wb-custom-bg .wb-agent-ms,
+body.wb-custom-bg .wb-agent-wait,
+body.wb-custom-bg .qe-note,
+body.wb-custom-bg .wb-theme-name { color: var(--wb-bg-fg-dim) !important; }
+body.wb-custom-bg #wbUserBg { transform: translateZ(0); will-change: opacity, filter; }
+@media (max-width: 768px) {
+    body.wb-custom-bg #wbUserBg { inset: -24px; }
+    body.wb-custom-bg .card,
+    body.wb-custom-bg .modal,
+    body.wb-custom-bg #wbBgPanel { backdrop-filter: blur(10px) saturate(118%); -webkit-backdrop-filter: blur(10px) saturate(118%); }
+    body.wb-custom-bg .content-block { background: var(--wb-bg-surface-soft); }
+}
 
 /* ---------- 窄屏（375px 一类小屏）：全部竖排、字放大、不溢出 ---------- */
 @media (max-width: 768px) {
@@ -1719,9 +2272,9 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 
 /* ---------- 全局提示 Toast ---------- */
 #wbToast {
-    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    position: fixed; top: max(18px, env(safe-area-inset-top)); left: 50%; right: auto; z-index: 9999;
     display: flex; flex-direction: column; gap: 10px;
-    width: min(92vw, 400px); pointer-events: none;
+    width: min(92vw, 460px); transform: translateX(-50%); pointer-events: none;
 }
 .wb-toast {
     pointer-events: auto;
@@ -1748,8 +2301,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 .wb-toast.t-error{ border-left-color: #EF4444; }
 .wb-toast.t-error .wb-toast-ico { color: #EF4444; }
 .wb-toast.t-info .wb-toast-ico { color: var(--c-a); }
-@keyframes wbToastIn  { from { opacity: 0; transform: translateX(22px) scale(.97); } to { opacity: 1; transform: none; } }
-@keyframes wbToastOut { to { opacity: 0; transform: translateX(22px) scale(.97); } }
+@keyframes wbToastIn  { from { opacity: 0; transform: translateY(-10px) translateX(-50%) scale(.97); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+@keyframes wbToastOut { to { opacity: 0; transform: translateY(-6px) translateX(-50%) scale(.97); } }
 
 /* ---------- 无障碍：尊重减弱动效偏好 ---------- */
 @media (prefers-reduced-motion: reduce) {
@@ -1764,6 +2317,10 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 /* 2026-09-30 手机端渲染减负：网格漂移是持续 background-position 重绘，扫描线在窄屏上
    存在感极低，第三个光球在小屏挤在一起——三者全停/隐藏，帧率立涨，视觉几乎无损 */
 @media (max-width: 768px) {
+    #wbToast { top: max(10px, env(safe-area-inset-top)); right: auto; left: 50%; width: min(92vw, 460px); transform: translateX(-50%); }
+    .wb-toast { max-height: min(42vh, 260px); overflow: auto; padding: 12px 13px; font-size: 13px; line-height: 1.55; }
+    .wb-toast-title { line-height: 1.45; }
+    .wb-toast-sub { font-size: 12px; line-height: 1.5; }
     .wb-grid { animation: none; }
     .wb-scan { display: none; }
     .wb-orb-3 { display: none; }
@@ -1886,7 +2443,7 @@ body.light .btn-primary:hover:not(:disabled) {
 /* 4) 移动端首屏压缩：hero 让位给创意输入框，第一屏就能开写 */
 @media (max-width: 768px) {
     .hero { padding: 10px 16px 4px; margin-bottom: 6px; }
-    .hero .wb-hero-logo { width: 56px; height: auto; margin-bottom: 5px; border-radius: 9px; }
+    .hero .wb-hero-logo { width: 56px; height: auto !important; margin-bottom: 5px; border-radius: 0; }
     .hero h1 { font-size: 23px; margin-bottom: 3px; }
     .hero p { font-size: 12.5px; }
     .hero p.wb-hero-tech { font-size: 11px; margin-top: 3px; }
@@ -1967,7 +2524,7 @@ body.light .hero h1{ color:#1f2a44; text-shadow:none; animation:none; }
     }
     body.light .hero .wb-em{ -webkit-text-fill-color:var(--c-a); color:var(--c-a); }
 }
-body.light .hero .wb-hero-logo{ box-shadow:0 8px 22px rgba(14,116,144,.18); }
+body.light .hero .wb-hero-logo{ box-shadow:none; }
 body.light .card{
     /* 157轮：卡片底色收到更纯的白（原末端 #f6f8fe 偏蓝），与主背景拉开是靠 1px 描边和淡阴影，
        不是靠「卡片比页面更蓝」——那种做法会让整屏发灰 */
@@ -2045,4 +2602,152 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
 }
 @media (max-width: 768px) {
     .wb-assist-note { font-size: 12px; padding: 8px 10px; margin-top: 14px; }
+}
+
+/* 自定义背景应成为整页视觉层；卡片保留可读性，同时让背景纹理有存在感。 */
+body.wb-custom-bg .wb-bg {
+    background: transparent;
+}
+body.wb-custom-bg .card {
+    background: var(--wb-bg-surface) !important;
+    backdrop-filter: blur(12px) saturate(135%);
+    -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+body.wb-custom-bg .content-block {
+    background: var(--wb-bg-surface-soft) !important;
+    color: var(--wb-bg-fg);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+body.wb-custom-bg .hero p,
+body.wb-custom-bg .wb-hero-newbie,
+body.wb-custom-bg .wb-hero-tech {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .14);
+}
+body.light.wb-custom-bg .hero p,
+body.light.wb-custom-bg .wb-hero-newbie,
+body.light.wb-custom-bg .wb-hero-tech {
+    color: #29405d;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, .72);
+}
+body.light.wb-custom-bg .card {
+    background: var(--wb-bg-surface) !important;
+}
+body.light.wb-custom-bg .content-block {
+    background: var(--wb-bg-surface-soft) !important;
+    color: var(--wb-bg-fg);
+}
+
+/* 长结果和宽表格在窄屏中保持可滚动，不挤破结果容器。 */
+.content-block, .wb-proposal-reader, .wb-proposal-toc { min-width: 0; }
+.rich-table-wrap, .content-block table { -webkit-overflow-scrolling: touch; }
+@media (max-width: 720px) {
+    .wb-proposal-toc-list { padding-bottom: 2px; }
+    .content-block { overflow-wrap: anywhere; }
+}
+
+/* ===== 每一张背景的独立对比度档案 =====
+   不能把所有背景都当成同一种深色：紫色星云、青色深海、橙色熔岩和灰阶水墨
+   的亮度分布不同。下面同时覆盖夜间与日间，切换任一背景都会换对应遮罩，
+   日间不会再沿用夜间那套压暗参数。 */
+body.wb-custom-bg.wb-bg-aurora .wb-bg::after { background: linear-gradient(180deg, rgba(2, 12, 30, .22), rgba(2, 8, 24, .56)); }
+body.wb-custom-bg.wb-bg-nebula .wb-bg::after { background: linear-gradient(180deg, rgba(13, 4, 30, .30), rgba(8, 4, 22, .64)); }
+body.wb-custom-bg.wb-bg-ocean .wb-bg::after { background: linear-gradient(180deg, rgba(0, 18, 30, .25), rgba(0, 12, 25, .58)); }
+body.wb-custom-bg.wb-bg-ember .wb-bg::after { background: linear-gradient(180deg, rgba(28, 7, 8, .28), rgba(19, 5, 10, .62)); }
+body.wb-custom-bg.wb-bg-ink .wb-bg::after { background: linear-gradient(180deg, rgba(4, 7, 14, .20), rgba(4, 7, 13, .52)); }
+body.wb-custom-bg.wb-bg-cyber .wb-bg::after { background: linear-gradient(180deg, rgba(9, 3, 24, .32), rgba(6, 3, 18, .66)); }
+body.wb-custom-bg.wb-bg-forest .wb-bg::after { background: linear-gradient(180deg, rgba(3, 17, 11, .22), rgba(2, 12, 9, .56)); }
+body.wb-custom-bg.wb-bg-plain .wb-bg::after { background: linear-gradient(180deg, rgba(2, 5, 13, .16), rgba(2, 5, 13, .48)); }
+body.wb-custom-bg.wb-bg-user.wb-bg-tone-light .wb-bg::after { background: linear-gradient(180deg, rgba(3, 7, 22, .40), rgba(3, 7, 22, .70)); }
+body.wb-custom-bg.wb-bg-user.wb-bg-tone-mixed .wb-bg::after { background: linear-gradient(180deg, rgba(3, 7, 22, .30), rgba(3, 7, 22, .60)); }
+body.wb-custom-bg.wb-bg-user.wb-bg-tone-dark .wb-bg::after { background: linear-gradient(180deg, rgba(3, 7, 22, .18), rgba(3, 7, 22, .52)); }
+
+body.light.wb-custom-bg.wb-bg-aurora .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .72)); }
+body.light.wb-custom-bg.wb-bg-nebula .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .48), rgba(255, 255, 255, .78)); }
+body.light.wb-custom-bg.wb-bg-ocean .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .40), rgba(255, 255, 255, .70)); }
+body.light.wb-custom-bg.wb-bg-ember .wb-bg::after { background: linear-gradient(180deg, rgba(255, 247, 244, .46), rgba(255, 250, 248, .76)); }
+body.light.wb-custom-bg.wb-bg-ink .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .66)); }
+body.light.wb-custom-bg.wb-bg-cyber .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .50), rgba(255, 255, 255, .80)); }
+body.light.wb-custom-bg.wb-bg-forest .wb-bg::after { background: linear-gradient(180deg, rgba(247, 255, 250, .40), rgba(252, 255, 253, .72)); }
+body.light.wb-custom-bg.wb-bg-plain .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, .62)); }
+body.light.wb-custom-bg.wb-bg-user.wb-bg-tone-light .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .52), rgba(255, 255, 255, .82)); }
+body.light.wb-custom-bg.wb-bg-user.wb-bg-tone-mixed .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .74)); }
+body.light.wb-custom-bg.wb-bg-user.wb-bg-tone-dark .wb-bg::after { background: linear-gradient(180deg, rgba(255, 255, 255, .30), rgba(255, 255, 255, .64)); }
+
+/* 日间背景下的正文和辅助信息采用稳定的深色读色，不依赖背景的偶然亮度。 */
+body.light.wb-custom-bg .hero p,
+body.light.wb-custom-bg .wb-hero-newbie,
+body.light.wb-custom-bg .wb-hero-tech,
+body.light.wb-custom-bg .wb-guide-txt,
+body.light.wb-custom-bg .wb-guide-txt b { color: #203a58; }
+body.light.wb-custom-bg .card,
+body.light.wb-custom-bg .wb-guide-step,
+body.light.wb-custom-bg #wbDemoBar { border-color: rgba(14, 116, 144, .28); }
+
+/* 日间「更多」菜单的最终覆盖：菜单是浅色实体面板，任何状态都使用深色文字，
+   不再被通用玻璃按钮的白字 hover 规则覆盖。 */
+body.light #wbMoreMenu,
+body.light.wb-custom-bg #wbMoreMenu {
+    background: rgba(255, 255, 255, .98) !important;
+    border-color: rgba(40, 60, 120, .26) !important;
+    opacity: 1 !important;
+}
+body.light #wbMoreMenu .wb-glass-btn,
+body.light #wbMoreMenu .wb-glass-btn:visited {
+    color: #1a2340 !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    text-shadow: none !important;
+}
+body.light #wbMoreMenu .wb-glass-btn:hover,
+body.light #wbMoreMenu .wb-glass-btn:focus-visible,
+body.light.wb-custom-bg #wbMoreMenu .wb-glass-btn:hover,
+body.light.wb-custom-bg #wbMoreMenu .wb-glass-btn:focus-visible {
+    color: #0e4f65 !important;
+    background: #e8f5f8 !important;
+    border-color: #8fb8c7 !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* 日间自定义背景的最终可读性收敛：背景保留色彩，内容层不再被整层白雾冲淡。
+   预置背景与用户图片都按亮度档位处理，避免出现截图中的灰蒙蒙观感。 */
+body.light.wb-custom-bg.wb-bg-tone-dark .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,.58)) !important;
+}
+body.light.wb-custom-bg.wb-bg-tone-mixed .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255,255,255,.32), rgba(255,255,255,.52)) !important;
+}
+body.light.wb-custom-bg.wb-bg-tone-light .wb-bg::after {
+    background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.48)) !important;
+}
+body.light.wb-custom-bg .hero {
+    background: rgba(255,255,255,.76);
+    border: 1px solid rgba(14,116,144,.24);
+    border-radius: 20px;
+    box-shadow: 0 12px 30px rgba(31,42,68,.10);
+}
+body.light.wb-custom-bg .hero .wb-hero-logo {
+    width: 72px;
+    height: auto !important;
+    object-fit: contain;
+    object-position: center;
+}
+body.light.wb-custom-bg .hero p { color: #173451; }
+body.light.wb-custom-bg .hero p.wb-hero-tech { color: #294b68; }
+body.light.wb-custom-bg .hero p,
+body.light.wb-custom-bg .wb-hero-newbie,
+body.light.wb-custom-bg .wb-hero-tech { text-shadow: none !important; }
+body.light.wb-custom-bg #wbDemoBar,
+body.light.wb-custom-bg .wb-guide-step,
+body.light.wb-custom-bg #wbTopTools {
+    background: rgba(255,255,255,.94) !important;
+    border-color: rgba(14,116,144,.34) !important;
+    box-shadow: 0 10px 28px rgba(31,42,68,.10);
+}
+body.light.wb-custom-bg .wb-guide-txt,
+body.light.wb-custom-bg .wb-guide-txt b { color: #1d3855; }
+body.light #wbMoreMenu .wb-glass-btn .wb-dot {
+    background: #0e7490;
+    box-shadow: 0 0 7px rgba(14, 116, 144, .48);
 }

@@ -6,7 +6,7 @@
 # 任何一步失败都不允许让线上停在半部署状态。
 #
 # 【用法示例】
-#   # 1) 默认部署（内置文件列表：frontend/index.html + frontend/static/* + backend/*.py）
+#   # 1) 默认部署（前端正式静态资源 + 后端代码/依赖 + data/knowledge_base 只读知识源）
 #   bash backend/scripts/deploy_safe.sh
 #
 #   # 2) 只看将同步什么（不实际传输、不重启、不验证）
@@ -63,7 +63,10 @@ CURL_OPTS=(-sk --noproxy '*' --max-time 30)   # -k: nginx 自签/透明链路; -
 
 # ---------- 参数解析 ----------
 DRY_RUN=0
-FILES_RAW="frontend/index.html frontend/static/* backend/*.py"
+# 仅同步代码、依赖、正式前端资源和只读知识源。运行数据/凭据（DB、上传、生成物、
+# official_docs.json、.env、.uid_secret、quota.json、chroma_db、训练库）不在此列表，
+# 即使本地存在也不会被覆盖到线上。静态资源按扩展名匹配，避免把 tmp_*.html 探针上传。
+FILES_RAW="frontend/index.html frontend/科创赛事助手.ico frontend/static/*.css frontend/static/*.js frontend/static/*.json frontend/static/*.png frontend/static/*.ico backend/*.py backend/requirements.txt backend/Procfile backend/Dockerfile backend/data/*.txt backend/data/competition_profiles.json backend/data/event_requirements.json backend/data/README_知识库提交规范.md backend/knowledge_base/*.json backend/knowledge_base/*.txt"
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
@@ -78,6 +81,27 @@ ssh_run() { $SSH_CMD "$SSH_HOST" "$@"; }
 
 die() { echo "[SYNC] FATAL: $*" >&2; exit 3; }
 
+# 优先等待运行中的生成任务结束再重启；兼容前后端分离后的
+# $REMOTE_DIR/backend/scripts/ 路径和旧版 $REMOTE_DIR/scripts/ 路径。
+restart_remote() {
+  if ssh_run "test -x '$REMOTE_DIR/scripts/safe_restart.sh'"; then
+    echo "[SYNC] 使用远端安全重启脚本: $REMOTE_DIR/scripts/safe_restart.sh"
+    ssh_run "'$REMOTE_DIR/scripts/safe_restart.sh' '${WB_RESTART_MAX_WAIT:-600}'"
+  elif ssh_run "test -x '$REMOTE_DIR/backend/scripts/safe_restart.sh'"; then
+    echo "[SYNC] 使用远端安全重启脚本: $REMOTE_DIR/backend/scripts/safe_restart.sh"
+    ssh_run "'$REMOTE_DIR/backend/scripts/safe_restart.sh' '${WB_RESTART_MAX_WAIT:-600}'"
+  else
+    if [ "${WB_ALLOW_UNSAFE_RESTART:-0}" = "1" ]; then
+      echo "[SYNC] 警告：远端未找到 safe_restart.sh，按显式授权回退 systemctl restart $SERVICE" >&2
+      ssh_run "systemctl restart '$SERVICE'"
+    else
+      echo "[SYNC] FATAL: 远端未找到 safe_restart.sh；为避免打断生成任务，拒绝裸重启。" >&2
+      echo "[SYNC] 如已确认没有运行中的生成任务，才可显式设置 WB_ALLOW_UNSAFE_RESTART=1。" >&2
+      return 1
+    fi
+  fi
+}
+
 rollback_and_exit() {
   # $1=退出码 $2=原因
   echo "[ROLLBACK] 触发原因: $2"
@@ -91,7 +115,7 @@ rollback_and_exit() {
     exit 2
   fi
   echo "[ROLLBACK] 重启服务 $SERVICE"
-  ssh_run "systemctl restart '$SERVICE'"
+  restart_remote
   sleep "$RESTART_WAIT"
   code=$(curl "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "$SITE_URL/api/health" || echo 000)
   if [ "$code" = "200" ]; then
@@ -116,8 +140,28 @@ for f in $FILES_RAW; do
 done
 [ ${#SYNC_FILES[@]} -gt 0 ] || die "文件列表为空"
 
+# 即使调用方通过 --files 自定义名单，也不允许把线上运行数据、凭据或机器相关
+# 索引带上去。这个守卫必须在 SSH、备份和传输之前执行。
+for f in "${SYNC_FILES[@]}"; do
+  case "$f" in
+    *competition.db*|*official_docs.json|uploads/*|*/uploads/*|generated/*|*/generated/*|tmp_export/*|*/tmp_export/*|\
+    *.env|*.uid_secret|*admin_users.json|*quota.json|*/chroma_db/*|*/训练库/*|\
+    *.log|frontend/static/tmp_*)
+      die "禁止同步运行数据/凭据/临时文件: $f"
+      ;;
+  esac
+done
+
 echo "[BACKUP] 仓库根: $REPO_ROOT"
 echo "[BACKUP] 目标: $SSH_HOST:$REMOTE_DIR，共 ${#SYNC_FILES[@]} 个文件待同步"
+
+# dry-run 在任何 SSH/远端备份之前结束，确保“预演”不会创建远端文件或触碰线上数据。
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[SYNC] --dry-run 模式：以下为将要同步的文件（不连接远端、不传输、不重启、不验证）"
+  for f in "${SYNC_FILES[@]}"; do echo "[SYNC]   $f -> $REMOTE_DIR/$f"; done
+  echo "[SYNC] dry-run 结束。线上未发生任何改动。"
+  exit 0
+fi
 
 echo "[BACKUP] 测试 SSH 连通性..."
 ssh_run "echo ok" >/dev/null || die "SSH 连接失败（$SSH_HOST），部署未开始，无任何改动"
@@ -175,13 +219,6 @@ else
 fi
 
 # ---------- 第 2 段：sync（同步文件） ----------
-if [ "$DRY_RUN" = "1" ]; then
-  echo "[SYNC] --dry-run 模式：以下为将要同步的文件（不实际传输/重启/验证）"
-  for f in "${SYNC_FILES[@]}"; do echo "[SYNC]   $f -> $REMOTE_DIR/$f"; done
-  echo "[SYNC] dry-run 结束。线上未发生任何改动。"
-  exit 0
-fi
-
 echo "[SYNC] 同步 ${#SYNC_FILES[@]} 个文件到 $SSH_HOST:$REMOTE_DIR"
 if command -v rsync >/dev/null 2>&1; then
   # -R 保留相对路径层级；一次传输全部文件
@@ -203,8 +240,8 @@ else
 fi
 echo "[SYNC] 同步完成"
 
-echo "[SYNC] 重启服务 $SERVICE（使 .py 改动生效）"
-ssh_run "systemctl restart '$SERVICE'" || rollback_and_exit 1 "systemctl restart 失败"
+echo "[SYNC] 安全重启服务 $SERVICE（等待进行中的生成任务）"
+restart_remote || rollback_and_exit 1 "安全重启失败"
 sleep "$RESTART_WAIT"
 
 # ---------- 第 3 段：verify（部署后验证） ----------

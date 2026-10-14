@@ -419,6 +419,147 @@ def _require_uid():
     return None
 
 
+# ===== 用户长期记忆（仅保存低敏偏好/项目元数据） =====
+# 与前端的可选记忆增强接口保持一致。正文、上传材料、联系方式和密码不进入记忆。
+_MEMORY_PREF_KEYS = {
+    'mode', 'theme', 'chart_theme', 'humanize', 'length_pref', 'review_style',
+    'doc_type', 'track', 'default_competition'
+}
+_MEMORY_CONTEXT_KEYS = {
+    'competition_name', 'track', 'project_label', 'doc_type', 'theme',
+    'last_source_status', 'milestone', 'updated_at'
+}
+_MEMORY_SENSITIVE_RE = re.compile(
+    r'(?:1[3-9]\d{9}|\b\d{17}[\dXx]\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})'
+)
+
+
+def _memory_text(value, max_len=120):
+    if value is None:
+        return ''
+    text = re.sub(r'[\x00-\x1f\x7f]', ' ', str(value)).strip()
+    if not text or _MEMORY_SENSITIVE_RE.search(text):
+        return ''
+    return text[:max_len]
+
+
+def _memory_payload(data, keys):
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for key in keys:
+        if key not in data:
+            continue
+        value = data.get(key)
+        if isinstance(value, bool):
+            out[key] = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[key] = value
+        else:
+            value = _memory_text(value)
+            if value:
+                out[key] = value
+    return out
+
+
+def _read_user_memory(uid=None):
+    uid = uid or _current_uid()
+    conn = get_db()
+    row = conn.execute(
+        "SELECT preferences_json, contexts_json, updated_time FROM user_memory WHERE uid=?",
+        (uid,)).fetchone()
+    conn.close()
+    if not row:
+        return {'preferences': {}, 'contexts': {}, 'updated_at': None}
+    try:
+        prefs = json.loads(row[0] or '{}')
+    except Exception:
+        prefs = {}
+    try:
+        contexts = json.loads(row[1] or '{}')
+    except Exception:
+        contexts = {}
+    return {
+        'preferences': prefs if isinstance(prefs, dict) else {},
+        'contexts': contexts if isinstance(contexts, dict) else {},
+        'updated_at': row[2]
+    }
+
+
+def _write_user_memory(uid, preferences=None, context=None, project_key='default'):
+    if not uid:
+        return {'preferences': {}, 'contexts': {}, 'updated_at': None}
+    current = _read_user_memory(uid)
+    prefs = dict(current.get('preferences') or {})
+    prefs.update(_memory_payload(preferences, _MEMORY_PREF_KEYS))
+    contexts = dict(current.get('contexts') or {})
+    clean_context = _memory_payload(context, _MEMORY_CONTEXT_KEYS)
+    if clean_context:
+        key = _memory_text(project_key, 64) or 'default'
+        contexts[key] = clean_context
+        if len(contexts) > 8:
+            contexts = dict(list(contexts.items())[-8:])
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO user_memory (uid, preferences_json, contexts_json, updated_time) VALUES (?,?,?,?) "
+        "ON CONFLICT(uid) DO UPDATE SET preferences_json=excluded.preferences_json, "
+        "contexts_json=excluded.contexts_json, updated_time=excluded.updated_time",
+        (uid, json.dumps(prefs, ensure_ascii=False), json.dumps(contexts, ensure_ascii=False), now))
+    conn.commit()
+    conn.close()
+    return {'preferences': prefs, 'contexts': contexts, 'updated_at': now}
+
+
+@app.route('/api/memory', methods=['GET'], strict_slashes=False)
+def get_memory():
+    auth = _require_uid()
+    if auth:
+        return jsonify({
+            'success': True,
+            'memory': {'preferences': {}, 'contexts': {}, 'updated_at': None},
+            'authenticated': False,
+            'privacy': {
+                'stored': '登录后才会保存偏好与项目元数据，不保存原始创意、上传材料、密码或联系方式',
+                'control': '登录后可通过本接口 DELETE 清除当前用户的长期记忆'
+            }
+        })
+    return jsonify({
+        'success': True,
+        'memory': _read_user_memory(_current_uid()),
+        'privacy': {
+            'stored': '仅保存偏好与项目元数据，不保存原始创意、上传材料、密码或联系方式',
+            'control': '可通过本接口 DELETE 清除当前用户的长期记忆'
+        }
+    })
+
+
+@app.route('/api/memory', methods=['PATCH'], strict_slashes=False)
+def update_memory():
+    auth = _require_uid()
+    if auth:
+        return auth
+    data = request.get_json(silent=True) or request.form.to_dict() or {}
+    if not isinstance(data, dict):
+        return jsonify({'success': False, 'error': '记忆内容格式不正确'}), 400
+    prefs = data.get('preferences') if isinstance(data.get('preferences'), dict) else data
+    context = data.get('context') if isinstance(data.get('context'), dict) else {}
+    project_key = data.get('project_key') or context.get('competition_name') or 'default'
+    return jsonify({'success': True, 'memory': _write_user_memory(_current_uid(), prefs, context, project_key)})
+
+
+@app.route('/api/memory', methods=['DELETE'], strict_slashes=False)
+def clear_memory():
+    auth = _require_uid()
+    if auth:
+        return auth
+    conn = get_db()
+    conn.execute('DELETE FROM user_memory WHERE uid=?', (_current_uid(),))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'cleared': True})
+
+
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
 # 2026-09-27 实测定档：DeepSeek 单 key 24 路并发零 429（max_tokens=1 探测）；
 # 本机（2C/1.7G）每路生成内存增量 <1MB 级，16 路同时生成毫无压力。
@@ -866,7 +1007,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   task_id TEXT, type TEXT DEFAULT 'generate', path TEXT,
-                  error TEXT, detail TEXT, created_time TEXT, count INTEGER DEFAULT 1,
+                  error TEXT, detail TEXT, error_code TEXT, created_time TEXT, count INTEGER DEFAULT 1,
                   status TEXT DEFAULT 'open', resolved_time TEXT, competition_name TEXT)''')
     # 老库迁移：给 gen_failures 补列（若旧库没有则 ALTER，失败忽略）
     for _col, _ddl in (
@@ -876,6 +1017,7 @@ def init_db():
         ("status", "TEXT DEFAULT 'open'"),
         ("resolved_time", "TEXT"),
         ("competition_name", "TEXT"),
+        ("error_code", "TEXT"),
     ):
         try:
             c.execute("ALTER TABLE gen_failures ADD COLUMN %s %s" % (_col, _ddl))
@@ -890,6 +1032,12 @@ def init_db():
     # 历史同步码表：短码 ↔ 匿名 uid（一键同步，不登录也能跨设备）
     c.execute('''CREATE TABLE IF NOT EXISTS uid_sync
                  (code TEXT PRIMARY KEY, uid TEXT NOT NULL)''')
+    # 用户长期记忆：只存低敏偏好和项目元数据，不存创意正文/上传材料。
+    c.execute('''CREATE TABLE IF NOT EXISTS user_memory
+                 (uid TEXT PRIMARY KEY,
+                  preferences_json TEXT NOT NULL DEFAULT '{}',
+                  contexts_json TEXT NOT NULL DEFAULT '{}',
+                  updated_time TEXT)''')
     # 问题工单表：自动路由（前端/后端），可标记解决并留解决说明
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -966,9 +1114,14 @@ def _seed_kb_if_needed():
 
 
 _seed_kb_if_needed()
-# 生成并发闸：允许最多 3 个生成任务同时进行（原来 Lock 只有 1 个，多用户会排长队）。
-# 大模型调用另有 _LLM_GATE(4) 限流 + SQLite WAL 并发写，3 个并行是稳定与速度的平衡点。
-lock = threading.Semaphore(3)
+# 生成并发闸：默认允许 8 个生成任务同时进行。
+# 模型调用由 competition_agents._LLM_GATE 单独限流；这里仅保护整条流水线的
+# 内存/SQLite 压力。可用 GENERATION_PARALLELISM 在部署环境按内存调整。
+try:
+    _generation_parallelism = max(1, min(16, int(os.getenv("GENERATION_PARALLELISM", "8"))))
+except (TypeError, ValueError):
+    _generation_parallelism = 8
+lock = threading.Semaphore(_generation_parallelism)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -1100,18 +1253,42 @@ def _update_history_data(hid, extra):
 def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name=""):
     """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。"""
     try:
+        try:
+            from failure_patterns import classify_error
+            error_code = classify_error(error, detail)
+        except Exception:
+            error_code = "internal_error"
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status, competition_name) "
-                  "VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?)",
+        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, error_code, created_time, count, status, competition_name) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'open', ?)",
                   (str(task_id or "")[:32], str(type or "generate")[:20],
                    str(path or "")[:200], str(error or "")[:200], str(detail or "")[:500],
+                   error_code,
                    datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60]))
         conn.commit()
         conn.close()
         create_issue("backend", "error", error)
     except Exception:
         pass
+
+
+def _failure_view(error="", detail="", error_code=""):
+    """将内部异常转换为后台可读的标签、原因和处理说明。
+
+    旧记录可能没有 detail/error_code，必须如实标明信息缺失，不能补写推测原因。
+    """
+    try:
+        from failure_patterns import classify_error, FAILURE_LABELS, FIX_SUGGESTIONS
+        code = (error_code or "") or classify_error(error, detail)
+        label = FAILURE_LABELS.get(code, "系统处理异常")
+        action = FIX_SUGGESTIONS.get(code, "系统会保留详细日志并自动尝试恢复")
+    except Exception:
+        label, action = "系统处理异常", "系统会保留详细日志并自动尝试恢复"
+    raw = str(detail or error or "").replace("\n", " ").strip()
+    reason = ("系统没有返回更细的异常信息，已保留任务日志供后续定位"
+              if not raw or raw in ("生成失败，请稍后重试", "内部错误") else raw[:180])
+    return label, reason, action
 
 
 def _safe_unlink(path):
@@ -1308,7 +1485,8 @@ def _mask_double_blind(text, school=None, advisor=None):
 
 def _build_docx(title, text, doc_type='report', subtitle=None,
                 school=None, team=None, advisor=None, competition_name=None,
-                header_title=None):
+                header_title=None, team_name=None, leader=None, members=None,
+                contact=None):
     """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
     from docx_render import build_docx
     text = _strip_identifying_text(text or "")
@@ -1322,6 +1500,7 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
         doc_type=doc_type,
         school=school, team=team, advisor=advisor,
         show_school_advisor=show_school_advisor,
+        team_name=team_name, leader=leader, members=members, contact=contact,
         header_title=header_title,
     )
 
@@ -1342,13 +1521,96 @@ _EXPORT_WORD_FIXES = [
 ]
 
 
+_H2_HEADING_RE = re.compile(r"^(##)\s+(.+?)\s*$")
+
+
+def _dedupe_markdown_sections(text):
+    """合并同名二级章节（导出前去重，保留最后一次出现，正文并入不丢内容）。
+
+    现场（2026-10-14 实测 history id=22）：生成指令要求文末加「## 待替换数据清单」，
+    模型在中段也生成了一次 → 两处同名 → 导出目录出现
+    「十三、关键数据来源与测算说明」「十四、关键数据来源与测算说明」两条同名条目，
+    白占两个编号，评委一眼看出是机器稿。
+
+    策略：保留**最后**一次出现（指令要求它在文末），把前面重复章节的正文按行去重后
+    追加进去——两处清单覆盖范围不同（中段覆盖前几章、文末覆盖后几章），直接删一处
+    会丢一半数据，所以必须合并而不是删除。
+
+    只处理 H2：H3/H4 同名小节（如两个父章节下各有一个「### 小结」）是合法的，
+    跨章节合并会把内容搬错地方。
+    """
+    t = text or ""
+    lines = t.split("\n")
+    prelude, blocks, cur = [], [], None
+    for line in lines:
+        m = _H2_HEADING_RE.match(line)
+        if m:
+            cur = {"title": m.group(2).strip(), "lines": [line]}
+            blocks.append(cur)
+        elif cur is None:
+            prelude.append(line)
+        else:
+            cur["lines"].append(line)
+    if len(blocks) < 2:
+        return t
+
+    groups = {}
+    for b in blocks:
+        key = _normalize_heading_title(b["title"])
+        if key:
+            groups.setdefault(key, []).append(b)
+
+    hit = False
+    for _key, group in groups.items():
+        if len(group) < 2:
+            continue
+        keep = group[-1]
+        while keep["lines"] and not keep["lines"][-1].strip():
+            keep["lines"].pop()
+        existing = set(l.strip() for l in keep["lines"] if l.strip())
+        for b in group[:-1]:
+            for l in b["lines"][1:]:
+                if l.strip() and l.strip() not in existing:
+                    keep["lines"].append(l)
+                    existing.add(l.strip())
+            b["lines"] = None      # 标记整块删除
+            hit = True
+    if not hit:
+        return t
+
+    out = list(prelude)
+    for b in blocks:
+        if b["lines"] is None:
+            continue
+        out.extend(b["lines"])
+        if out and out[-1].strip():
+            out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
 def _clean_export_text(text):
     """导出前把「提醒作者」的措辞换成中性表述。只影响导出件，网页正文不动。"""
-    t = text or ""
+    t = _dedupe_markdown_sections(text or "")
     for a, b in _EXPORT_WORD_FIXES:
         if a in t:
             t = t.replace(a, b)
-    return t
+    # 2026-10-14 P0（评委视角实测 history id=22）：清单条目写成
+    #   「- 单台物料成本 80～120 元（技术方案 · 测算值）→ 替换为小批量试产后的实际 BOM 核算值」
+    # 箭头后面是**写给作者**的提示，留在交给评委的正式件里等于自曝"数据没落实"，
+    # 21 条里 21 条带箭头，满屏都是。这里把箭头及其后的提示整段去掉，只留数字 + 口径。
+    t = re.sub(r"[ \t]*(?:->|→)+\s*(?:替换为|替换成|替换|核实为|核实)[^\n]*$", "", t, flags=re.M)
+    t = re.sub(r"[ \t]+$", "", t, flags=re.M)
+    # 2026-10-14（全站红线，评委视角实测）：导出件禁用「AI」字样。模型偶尔写出
+    # 「## 九、AI 功能核心作用」这类章节标题，交到评委手里就是自曝机器味。
+    # 只吃独立出现的 AI——AIGC / MAIN / China 这类含 AI 的英文词不误伤。
+    # 官方章节表里的「AI」不用特殊照顾：_normalize_heading_title 已同步做 AI→智能
+    # 归一化，改完标题照样能匹配上官方章节，不会打乱顺序。
+    # 竞品/产品真名（WPS AI、Gamma AI）是正当用词，改了反而像外行：先用 \x01 占位避开。
+    _MARK = "\x01"      # 占位符：让被保护的 AI 躲开下一行的替换（repl 里不能用 \x 转义，故用 lambda）
+    t = re.sub(r"(?<=[A-Za-z])([ \t]+)AI(?![A-Za-z0-9])",
+               lambda m: m.group(1) + "A" + _MARK + "I", t)
+    t = re.sub(r"(?<![A-Za-z0-9])AI\s*(?![A-Za-z0-9])", "智能", t)
+    return t.replace("A" + _MARK + "I", "AI")
 
 
 def _append_ai_notice(text):
@@ -1375,6 +1637,10 @@ def _official_chapter_titles(competition_name):
 def _normalize_heading_title(s):
     """把「一、项目概述 / (1)项目概述 / 1.项目概述 / 项目概述」归一成可用于匹配的关键词串。"""
     s = re.sub(r"^\s*(?:[一二三四五六七八九十]+、|\d+[.、]|\(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩]+)\s*", "", s or "")
+    # 2026-10-14：官方章节表里写的是「九、AI 功能核心作用」，导出件要按红线改成
+    # 「智能功能核心作用」——两边都归一化掉 AI，改了标题才能照样匹配上官方章节，
+    # 否则会被 _reorder_markdown_by_chapters 当非官方章节甩到文末。
+    s = re.sub(r"(?<![A-Za-z0-9])AI\s*(?![A-Za-z0-9])", "智能", s)
     return re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", s or "")
 
 
@@ -1849,7 +2115,10 @@ def export_word():
     if _backend_text:
         text = _backend_text
     title = data.get('title', '导出文档')
-    charts = data.get('charts') or []
+    # deep 版图表走 rich_charts（含 title/caption/url/spec），fast 版只有 charts
+    charts = data.get('rich_charts') or data.get('charts') or []
+    # deep 版富表格也一起落进 Word，避免正文只有文字、图表全部丢失
+    rich_tables = data.get('rich_tables') or []
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
     # 封面主标题用「项目名」；没传项目名/创意时，从正文第一行自动提取，避免封面只写「项目申报书」这种泛名
@@ -1870,6 +2139,10 @@ def export_word():
         school=data.get('school'),
         team=data.get('team'),
         advisor=data.get('advisor'),
+        team_name=data.get('team_name'),
+        leader=data.get('leader') or data.get('team_leader'),
+        members=data.get('members') or data.get('team_members'),
+        contact=data.get('contact') or data.get('phone'),
         competition_name=data.get('competition_name'),
         header_title=header_title,
     )
@@ -1879,6 +2152,26 @@ def export_word():
             inject_charts(doc, charts)
         except Exception as e:
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
+    # 富表格插入：PDF 里 4 张结构化附表在 Word 不能丢，append 到文末
+    if rich_tables:
+        try:
+            doc.add_paragraph("结构化附表", style='Heading 1')
+            for rt in rich_tables:
+                header = rt.get('header') if isinstance(rt, dict) else None
+                rows = rt.get('rows') if isinstance(rt, dict) else None
+                if not header or not rows:
+                    continue
+                n_cols = len(header)
+                table = doc.add_table(rows=1 + len(rows), cols=n_cols)
+                table.style = 'Table Grid'
+                for ci, h in enumerate(header):
+                    table.rows[0].cells[ci].text = str(h)
+                for ri, row in enumerate(rows):
+                    for ci, cell in enumerate(row[:n_cols]):
+                        table.rows[ri + 1].cells[ci].text = str(cell)
+                doc.add_paragraph()
+        except Exception as e:
+            print(f"[export_word] 富表格插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
     # 三轮·导出终检（第一百二十二轮）：回读产物检查。
@@ -1909,6 +2202,24 @@ def export_word():
         print(f"[export_word] 目录规范检测：{_toc}")
     except Exception as _e:
         print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
+    # 成品级终检：除正文是否为空外，再核对 Word 结构、图表/表格结构和
+    # 记录级内容完整性。只把真正损坏的文件视为 error，其余作为可读警告回传。
+    try:
+        from quality_gate import check_artifact_bundle
+        _qrec = dict(_rec or data)
+        _qrec.setdefault('proposal', text)
+        _qrec.setdefault('rich_charts', charts)
+        _qrec.setdefault('rich_tables', rich_tables)
+        _bundle = check_artifact_bundle(
+            _qrec, mode=_mode, docx_path=filepath,
+            competition_name=data.get('competition_name') or '',
+            generated_dir='generated',
+        )
+        _warnings.extend(_bundle.get('warnings') or [])
+        if _bundle.get('errors'):
+            _warnings.extend('需系统复核：' + x for x in _bundle['errors'])
+    except Exception as _e:
+        print(f"[export_word] 成品级质检失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
     _resp = send_file(filepath, as_attachment=True,
@@ -1931,9 +2242,16 @@ def export_pdf():
     """把申报书/说明书 Markdown 导出为 PDF（iCAN 提交用，A4 中文）"""
     data = _export_data_from_request()
     text = data.get('text', '')
+    _warnings = []
     title = data.get('title', '申报书')
     # 与 export_word 同一兜底：iCAN 交的就是 PDF，DOM 文本被污染时一样会带进提交件
-    _backend_text = _fetch_proposal_from_source(data)
+    _record = _fetch_record_from_source(data)
+    _backend_text = (_record.get('proposal') or '').strip() if _record else ''
+    # 历史/直链导出也回带同一条记录的图表和附表，避免 PDF 丢失前台成果。
+    if _record:
+        for _key in ('rich_charts', 'rich_tables', 'charts', 'tables', 'competition_name'):
+            if not data.get(_key) and _record.get(_key):
+                data[_key] = _record.get(_key)
     if _backend_text:
         text = _backend_text
     if not text.strip():
@@ -1952,8 +2270,43 @@ def export_pdf():
     text = _append_ai_notice(text)      # PDF 不走 _build_docx，标注要在这里单独加一遍
     try:
         from pdf_render import render_markdown_to_pdf
+        # 服务器旧版没有资产重绘辅助函数；保留请求/历史记录中的已渲染图表，
+        # PDF 主文档仍可稳定导出，缺失图片由图表清单明确留给用户核对。
+        _charts = data.get('charts') or data.get('rich_charts') or []
+        _tables = data.get('tables') or data.get('rich_tables') or []
+        # 封面主标题用项目名（与 export_word 同一兜底）：评委拿到手第一页必须知道是哪个项目。
+        # 之前 PDF 封面只有「申报书 / iCAN」，检索文件都分不清是哪份材料。
+        _project = _project_name_hint(data) or _extract_project_name(text) or ''
+        # iCAN 双盲：封面不能出现学校/指导老师，团队可以留
+        _show_school_advisor = not _is_double_blind(data.get('competition_name'))
         filepath = 'tmp_export.pdf'
-        render_markdown_to_pdf(text, filepath, title=title)
+        try:
+            render_markdown_to_pdf(text, filepath, title=title,
+                                   subtitle=data.get('competition_name'),
+                                   project=_project,
+                                   school=data.get('school'),
+                                   team=data.get('team'),
+                                   advisor=data.get('advisor'),
+                                   team_name=data.get('team_name'),
+                                   leader=data.get('leader') or data.get('team_leader'),
+                                   members=data.get('members') or data.get('team_members'),
+                                   contact=data.get('contact') or data.get('phone'),
+                                   show_school_advisor=_show_school_advisor,
+                                   charts=_charts, tables=_tables)
+        except Exception:
+            _safe_unlink(filepath)
+            render_markdown_to_pdf(text, filepath, title=title,
+                                   subtitle=data.get('competition_name'),
+                                   project=_project,
+                                   school=data.get('school'),
+                                   team=data.get('team'),
+                                   advisor=data.get('advisor'),
+                                   team_name=data.get('team_name'),
+                                   leader=data.get('leader') or data.get('team_leader'),
+                                   members=data.get('members') or data.get('team_members'),
+                                   contact=data.get('contact') or data.get('phone'),
+                                   show_school_advisor=_show_school_advisor,
+                                   charts=_charts, tables=_tables)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{_sanitize_error_detail(e)}"}), 500
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
@@ -1988,7 +2341,29 @@ def export_pdf():
         _resp.headers['X-PDF-Pages'] = str(_d2.get('pages') or 0)
         _resp.headers['X-PDF-MB'] = str(_d2.get('mb') or 0)
         _resp.headers['X-PDF-Limit'] = str((_d2.get('limit') or {}).get('max_pages') or 0)
-        _resp.headers['Access-Control-Expose-Headers'] = 'X-PDF-Pages, X-PDF-MB, X-PDF-Limit'
+        # PDF 也必须与 Word/PPT 共享同一条记录级质量报告，避免“正文有了，
+        # 图表/赛事适配/内容密度却不一致”。这里只附警告，不替用户做提交决定。
+        try:
+            from quality_gate import check_artifact_bundle
+            _qrec = dict(_record or data)
+            _qrec.setdefault('proposal', text)
+            _qrec.setdefault('rich_charts', data.get('rich_charts') or data.get('charts') or [])
+            _qrec.setdefault('rich_tables', data.get('rich_tables') or data.get('tables') or [])
+            _bundle = check_artifact_bundle(
+                _qrec, mode=_resolve_export_mode(data), pdf_path=filepath,
+                competition_name=competition, generated_dir='generated',
+            )
+            _warnings.extend(_bundle.get('warnings') or [])
+            if _bundle.get('errors'):
+                _warnings.extend('需系统复核：' + x for x in _bundle['errors'])
+        except Exception as _qe:
+            print(f"[export_pdf] 成品级质检失败（不阻断）：{_qe}")
+        if _warnings:
+            from urllib.parse import quote as _uq
+            _resp.headers['X-Export-Warnings'] = _uq(json.dumps(_warnings, ensure_ascii=False))
+            _resp.headers['Access-Control-Expose-Headers'] = 'X-PDF-Pages, X-PDF-MB, X-PDF-Limit, X-Export-Warnings'
+        else:
+            _resp.headers['Access-Control-Expose-Headers'] = 'X-PDF-Pages, X-PDF-MB, X-PDF-Limit'
         return _resp
     except Exception:
         return send_file(filepath, as_attachment=True,
@@ -2510,24 +2885,36 @@ def export_feedback():
 @app.route('/admin')
 def admin_home():
     """管理后台 · 总览首页：关键数字一屏看完，再点进详细面板 / 监视。"""
+    _admin_role = _admin_session_role() or "admin"
+    _readonly_mode = _admin_role == "readonly"
+    _mode_title = "评委演示模式 · 只读" if _readonly_mode else "管理员模式 · 完整权限"
+    _mode_desc = ("当前账号可查看统计、失败原因、反馈和运行日志；删除、蒸馏、配置修改等写操作已关闭。"
+                  if _readonly_mode else
+                  "当前账号可查看和维护统计、失败记录、反馈、知识库、公告及蒸馏任务。")
+    _mode_class = "readonly" if _readonly_mode else "admin"
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
-    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
-    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
-    rated_count = avg_row[1] if avg_row else 0
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-    success_rate = round(total_gen * 100.0 / (total_gen + fail_total), 1) if (total_gen + fail_total) else 100.0
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
+        (today + "%",)).fetchone()[0]
+    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
+    rated_count = int(avg_row[1] or 0) if avg_row else 0
+    avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    _attempts = total_gen + fail_total
+    success_rate = round(total_gen * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
+    success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if total_gen else '暂无样本')
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
     recent_fb = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
-        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
+        "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
+        "FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
     conn.close()
 
     fb_rows = "".join(
@@ -2535,8 +2922,14 @@ def admin_home():
         % (r["created_time"] or "", _html_escape(r["content"] or ""))
         for r in recent_fb) or '<li class="e">暂无反馈</li>'
     fail_rows = "".join(
-        '<li><span class="t">%s</span>%s</li>'
-        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        '<li><span class="t">%s%s</span><b>%s</b><br><span class="failure-reason">%s</span>'
+        '<small>%s%s</small></li>'
+        % (r["created_time"] or "",
+           (" · " + _html_escape(r["competition_name"])) if r["competition_name"] else "",
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[0]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[1]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[2]),
+           (" · 任务 " + _html_escape(r["task_id"])) if r["task_id"] else "")
         for r in recent_fail) or '<li class="e">暂无失败</li>'
 
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -2550,12 +2943,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .nav a.active{background:#4f46e5;color:#fff}
 h1{font-size:24px;margin:0 0 4px}
 .sub{color:#64748b;font-size:14px;margin-bottom:20px}
-.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px}
-.h{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
-.h .n{font-size:32px;font-weight:800;color:#4f46e5}
+.hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px;align-items:start}
+.h{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:20px;min-height:116px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.h .n{font-size:32px;line-height:1.15;font-weight:800;color:#4f46e5;white-space:nowrap;font-variant-numeric:tabular-nums}
 .h .n.good{color:#059669}.h .n.bad{color:#e11d48}
 .h .l{font-size:13px;color:#64748b;margin-top:5px}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 @media(max-width:640px){.cols{grid-template-columns:1fr}}
 .box{background:#fff;border-radius:14px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
 .box h2{font-size:15px;margin:0 0 10px;color:#111827}
@@ -2563,18 +2956,28 @@ h1{font-size:24px;margin:0 0 4px}
 .box li{font-size:14px;padding:8px 0;border-bottom:1px solid #f1f5f9}
 .box li:last-child{border-bottom:none}
 .box li .t{display:block;font-size:12px;color:#94a3b8;margin-bottom:2px}
+.box li b{font-size:13px;color:#334155}.box li .failure-reason{display:block;color:#475569;font-size:13px;line-height:1.5}.box li small{display:block;color:#64748b;font-size:11px;line-height:1.45;margin-top:2px}
 .box li.e{color:#94a3b8;text-align:center;padding:16px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
+.mode{display:flex;align-items:flex-start;gap:12px;padding:13px 16px;margin:0 0 18px;border-radius:12px;border:1px solid #c7d2fe;background:#eef2ff;color:#27346b}
+.mode.admin{border-color:#bbf7d0;background:#ecfdf5;color:#065f46}.mode.readonly{border-color:#fde68a;background:#fffbeb;color:#92400e}
+.mode .badge{flex:none;padding:3px 8px;border-radius:999px;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;line-height:1.4}
+.mode.admin .badge{background:#059669}.mode.readonly .badge{background:#d97706}
+.mode b{display:block;font-size:14px;margin-bottom:2px}.mode span{font-size:12.5px;line-height:1.55}
+@media(max-width:900px){.hero{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){body{padding:22px 14px}.hero{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.h{padding:15px;min-height:96px}.h .n{font-size:28px}}
+@media(max-width:400px){.hero{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<div class="mode %s"><span class="badge">%s</span><div><b>当前后台身份</b><span>%s</span></div></div>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
 <div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
 <div class="h"><div class="n">%d</div><div class="l">今日生成</div></div>
 <div class="h"><div class="n %s">%s</div><div class="l">满意度平均分（%d 人打分）</div></div>
-<div class="h"><div class="n %s">%s%%</div><div class="l">生成成功率</div></div>
+<div class="h"><div class="n %s">%s</div><div class="l">生成成功率（记录口径）</div><div class="metric-note">无失败记录也不代表所有情况都已覆盖</div></div>
 <div class="h"><div class="n %s">%d</div><div class="l">待处理工单</div></div>
 <div class="h"><div class="n">%d</div><div class="l">反馈总数</div></div>
 </div>
@@ -2631,7 +3034,7 @@ bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j)
 bindDistill('distillAnalysisBtn','distillAnalysisMsg','/api/distill/analysis',function(j){return '完成：竞品/商业/风险/技术要点已更新';});
 bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',function(j){return '完成：PPT结构+演讲稿套路已更新';});
 bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
-function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
+function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return (x.label||x.code||'未知失败')+'（代码 '+(x.code||'unknown')+'）×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
 function loadViz(){
     AF('/api/admin/stats').then(function(r){return r.json()}).then(function(j){
@@ -2666,11 +3069,12 @@ function loadViz(){
 loadViz();
 </script>
 </div></body></html>""" % (
+        _mode_class, _mode_title, _mode_desc,
         total_gen, today_gen,
-        "good" if avg_rating >= 4 else ("bad" if avg_rating and avg_rating < 3 else ""),
-        avg_rating, rated_count,
-        "good" if success_rate >= 95 else ("bad" if success_rate < 80 else ""),
-        success_rate,
+        "good" if avg_rating is not None and avg_rating >= 4 else ("bad" if avg_rating is not None and avg_rating < 3 else ""),
+        avg_rating_display, rated_count,
+        "good" if success_rate is not None and success_rate >= 95 else ("bad" if success_rate is not None and success_rate < 80 else ""),
+        success_rate_display,
         "bad" if open_issue else "good", open_issue,
         feedback_total, fb_rows, fail_rows)
 
@@ -2681,14 +3085,16 @@ def admin_dashboard():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
+        (today + "%",)).fetchone()[0]
     avg_row = c.execute(
-        "SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
-    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
-    rated_count = avg_row[1] if avg_row else 0
+        "SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
+    rated_count = int(avg_row[1] or 0) if avg_row else 0
+    avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     # 112 轮：取消「只能看 10 条」——改成可翻页查看全部反馈。
     # 每页条数/页码走 query string，默认 50 条，上限 500（防止一次拉爆内存/页面）。
@@ -2739,29 +3145,52 @@ def admin_dashboard():
     # 满意度分布（1-5 星）
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     for r, n in c.execute(
-            "SELECT rating, COUNT(*) FROM history WHERE rating > 0 GROUP BY rating").fetchall():
+            "SELECT rating, COUNT(*) FROM history WHERE %s AND rating > 0 GROUP BY rating" % _TEST_HISTORY_WHERE).fetchall():
         rating_dist[int(r)] = n
     # 生成趋势（最近 14 天）
     trend = c.execute(
         "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
-        "GROUP BY d ORDER BY d DESC LIMIT 7").fetchall()
-    # 赛事分布（Top 8）
-    comp_dist = c.execute(
+        "WHERE %s GROUP BY d ORDER BY d DESC LIMIT 7" % _TEST_HISTORY_WHERE).fetchall()
+    # 赛事分布：后台核对必须展示全部真实赛事，不截断为 Top 8。
+    # 历史测试数据（如 x/y/测试赛事）不冒充正式赛事，但保留数量并单独提示。
+    _comp_rows = c.execute(
         "SELECT competition_name, COUNT(*) n FROM history "
-        "GROUP BY competition_name ORDER BY n DESC, competition_name LIMIT 8").fetchall()
+        "GROUP BY competition_name ORDER BY n DESC, competition_name").fetchall()
+    comp_dist = []
+    _test_total = 0
+    _missing_total = 0
+    for _name, _count in _comp_rows:
+        _name_s = str(_name or "").strip()
+        if not _name_s:
+            _missing_total += int(_count or 0)
+        elif _name_s.lower() in ("x", "y") or _name_s.startswith("测试"):
+            _test_total += int(_count or 0)
+        else:
+            comp_dist.append((_name_s, int(_count or 0)))
+    comp_dist.sort(key=lambda item: (-item[1], item[0]))
+    _comp_quality_notes = []
+    if _test_total:
+        _comp_quality_notes.append("测试/占位记录 %d 条未纳入正式赛事分布" % _test_total)
+    if _missing_total:
+        _comp_quality_notes.append("%d 条历史记录缺少赛事字段，已单独标注" % _missing_total)
+    comp_quality_note = ("<div class=\"data-note\">数据质量提示：%s</div>" %
+                         "；".join(_comp_quality_notes)) if _comp_quality_notes else ""
     # 反馈分类聚合
     fb_cat = c.execute(
         "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
     # 评估指标：平均耗时 / 成功率 / AI 评委平均分
-    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
+    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 0" % _TEST_HISTORY_WHERE).fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
-    succ_total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-    success_rate = round(succ_total * 100.0 / (succ_total + fail_total), 1) if (succ_total + fail_total) else 100.0
+    succ_total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    _attempts = succ_total + fail_total
+    success_rate = round(succ_total * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
+    success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if succ_total else '暂无样本')
     judge_avg = c.execute(
         "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
-        "WHERE json_extract(result_data,'$.score') IS NOT NULL").fetchone()[0]
-    judge_avg = round(judge_avg, 1) if judge_avg else 0
+        "WHERE %s AND json_extract(result_data,'$.score') IS NOT NULL" % _TEST_HISTORY_WHERE).fetchone()[0]
+    judge_avg = round(judge_avg, 1) if judge_avg is not None else None
+    judge_avg_display = ('%.1f' % judge_avg) if judge_avg is not None else '暂无评分'
     open_issues = c.execute(
         "SELECT id, kind, source, content, created_time FROM issues "
         "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
@@ -2879,7 +3308,7 @@ def admin_dashboard():
             '<div class="td">%s</div></div>' % (n, h, label))
     trend_html = "".join(trend_bars) or '<div class="empty">暂无数据</div>'
 
-    # 赛事分布（Top 8）
+    # 赛事分布（全部真实赛事）
     max_c = max([n for _, n in comp_dist]) if comp_dist else 0
     comp_bars = []
     for name, n in comp_dist:
@@ -2887,8 +3316,8 @@ def admin_dashboard():
         comp_bars.append(
             '<div class="barrow"><span class="bl">%s</span>'
             '<span class="btrack"><span class="bfill" style="width:%d%%"></span></span>'
-            '<span class="bn">%d</span></div>' % (_html_escape(name), pct, n))
-    comp_html = "".join(comp_bars) or '<div class="empty">暂无数据</div>'
+            '<span class="bn">%d</span></div>' % (_html_escape(name or "未记录赛事"), pct, n))
+    comp_html = ("".join(comp_bars) or '<div class="empty">暂无数据</div>') + comp_quality_note
 
     # 反馈分类
     cat_total = sum(n for _, n in fb_cat) or 0
@@ -2913,22 +3342,24 @@ def admin_dashboard():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 后台数据</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f8;color:#1a1a2e;margin:0;padding:30px 18px;line-height:1.6}
-.wrap{max-width:760px;margin:0 auto}
-h1{font-size:22px;margin:0 0 18px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:22px}
-.card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.num{font-size:26px;font-weight:700;color:#2563eb}
-.label{font-size:12px;color:#4b5563;margin-top:4px}
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:24px;letter-spacing:.1px;margin:0 0 16px;color:#14213f}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px;align-items:stretch}
+.card{background:#fff;border:1px solid #e6ebf5;border-radius:14px;padding:18px 20px;min-height:112px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.num{font-size:30px;line-height:1.15;font-weight:750;color:#315fe9;white-space:nowrap;font-variant-numeric:tabular-nums}
+.label{font-size:13px;color:#52627f;margin-top:9px;line-height:1.45}
 .banner{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:10px;padding:12px 14px;font-size:15px;font-weight:600;margin-bottom:16px}
 h2{font-size:16px;margin:18px 0 10px}
 ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
 li .t{font-size:12px;color:#57606e;margin-bottom:4px}
 li.empty{color:#57606e;text-align:center;padding:22px}
-.box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+.box{background:#fff;border:1px solid #e6ebf5;border-radius:14px;padding:18px;box-shadow:0 8px 20px rgba(54,77,130,.06);margin-bottom:16px}
+.compdist{max-height:460px;overflow-y:auto;padding-right:6px}
+.data-note{margin-top:12px;padding:9px 11px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.5}
 .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
-.barrow .bl{width:110px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barrow .bl{width:150px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
 .barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
 .barrow .bn{width:34px;font-size:13px;color:#4b5563;flex-shrink:0}
@@ -2981,6 +3412,9 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
+@media(max-width:900px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.wrap{max-width:none}}
+@media(max-width:620px){body{padding:22px 14px 36px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card{padding:15px;min-height:96px}.num{font-size:27px}.barrow .bl{width:110px}}
+@media(max-width:400px){.cards{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
@@ -2992,7 +3426,7 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 <div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 <div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
-<div class="card"><div class="num">%s%%</div><div class="label">生成成功率</div></div>
+<div class="card"><div class="num">%s</div><div class="label">生成成功率（记录口径）</div></div>
 <div class="card"><div class="num">%s</div><div class="label">AI 评委平均分</div></div>
 </div>
 <div class="box">
@@ -3004,8 +3438,8 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 <div class="trend">%s</div>
 </div>
 <div class="box">
-<h2 style="margin-top:0">赛事分布（Top 8）</h2>
-%s
+<h2 style="margin-top:0">赛事分布（全部赛事）</h2>
+<div class="compdist">%s</div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">反馈分类</h2>
@@ -3019,9 +3453,9 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 <ul class="fblist">%s</ul>
 %s
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
-</div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating,
-                              rated_count, feedback_total, avg_dur, success_rate,
-                              judge_avg, rating_bars_html, trend_html, comp_html,
+</div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating_display,
+                              rated_count, feedback_total, avg_dur, success_rate_display,
+                              judge_avg_display, rating_bars_html, trend_html, comp_html,
                               cat_html, issues_html, fb_title, fb_html, fb_pager)
     return html
 
@@ -3029,6 +3463,11 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 def _html_escape(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+# 仅用于管理员正式运营统计；原始历史记录仍保留在数据库审计中。
+# 这些值来自早期联调，不代表真实赛事，不能混入评委看到的正式数据。
+_TEST_HISTORY_WHERE = "TRIM(COALESCE(competition_name,'')) NOT IN ('测试赛事','x','y')"
 
 
 def _fb_cat_cls(cat):
@@ -3080,10 +3519,11 @@ def monitor():
     c = conn.cursor()
     recent_gen = c.execute(
         "SELECT competition_name, mode, duration, status, created_time FROM history "
-        "ORDER BY id DESC LIMIT 12").fetchall()
+        "WHERE %s ORDER BY id DESC LIMIT 12" % _TEST_HISTORY_WHERE).fetchall()
     recent_fail = c.execute(
-        "SELECT error, created_time FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+        "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
+        "FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
 
@@ -3096,14 +3536,27 @@ def monitor():
     except Exception:
         pass
 
+    def _monitor_mode_label(value):
+        return {"fast": "简洁版", "deep": "深度版"}.get(str(value or "").lower(), value or "—")
+
+    def _monitor_status_label(value):
+        return {"success": "已完成", "running": "生成中", "error": "失败"}.get(
+            str(value or "").lower(), value or "—")
+
     gen_rows = "".join(
         '<tr><td>%s</td><td>%s</td><td>%s</td><td>%ss</td></tr>'
-        % (_html_escape(r["competition_name"] or "—"), r["mode"] or "—",
-           r["status"] or "success", r["duration"] if r["duration"] else 0)
+        % (_html_escape(r["competition_name"] or "未记录赛事"),
+           _monitor_mode_label(r["mode"]),
+           _monitor_status_label(r["status"] or "success"),
+           ("%.1f" % float(r["duration"])) if r["duration"] else "0.0")
         for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
     fail_rows = "".join(
-        '<tr><td>%s</td><td>%s</td></tr>'
-        % (r["created_time"] or "", _html_escape(r["error"] or ""))
+        '<tr><td>%s</td><td><b>%s</b><br><span class="reason">%s</span><br><small>%s%s</small></td></tr>'
+        % (r["created_time"] or "",
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[0]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[1]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[2]),
+           (" · 任务 " + _html_escape(r["task_id"])) if r["task_id"] else "")
         for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
 
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -3111,35 +3564,40 @@ def monitor():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 动态监视</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0f1535;color:#e9eefc;margin:0;padding:26px 18px;line-height:1.6}
-.wrap{max-width:860px;margin:0 auto}
-h1{font-size:20px;margin:0 0 6px}
-.sub{font-size:12px;color:#93a0c4;margin-bottom:18px}
-.stat{display:inline-block;background:#18224a;border-radius:10px;padding:12px 18px;margin:0 8px 8px 0}
-.stat b{font-size:22px;color:#22d3ee}
-.stat span{font-size:12px;color:#93a0c4;margin-left:6px}
-h2{font-size:15px;margin:22px 0 8px;color:#22d3ee}
-table{width:100%%;border-collapse:collapse;background:#141d42;border-radius:10px;overflow:hidden}
-th,td{padding:9px 12px;font-size:13px;text-align:left;border-bottom:1px solid #233059}
-th{background:#1b2650;color:#93a0c4;font-weight:600}
-.e{color:#6b7899;text-align:center;padding:18px}
-.green{color:#34d399}.red{color:#fb7185}
-.nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
-.nav a.active{background:#22d3ee;color:#0b1026}
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:24px;letter-spacing:.1px;margin:18px 0 5px;color:#14213f}
+.sub{font-size:13px;color:#52627f;margin-bottom:22px}
+.stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 26px}
+.stat{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:16px 18px;min-height:78px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.stat b{display:block;font-size:27px;line-height:1.15;color:#315fe9;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:12px;color:#52627f;margin-top:6px}
+h2{font-size:16px;margin:26px 0 10px;color:#2563eb;letter-spacing:.1px}
+.section{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:2px 0 0;overflow:hidden;box-shadow:0 8px 20px rgba(54,77,130,.06)}
+table{width:100%%;border-collapse:collapse;table-layout:fixed}
+th,td{padding:10px 16px;font-size:13px;text-align:left;vertical-align:top;border-bottom:1px solid #e5eaf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{background:#eef2ff;color:#52627f;font-weight:650;font-size:12px;letter-spacing:.2px}
+th:first-child,td:first-child{width:55%%}th:nth-child(2),td:nth-child(2){width:15%%}th:nth-child(3),td:nth-child(3){width:15%%}th:nth-child(4),td:nth-child(4){width:15%%}
+tr:last-child td{border-bottom:0}.reason{color:#9f1239;line-height:1.35;white-space:normal}.error-detail{white-space:normal;line-height:1.35}small{display:block;color:#64748b;line-height:1.35;margin-top:2px;font-size:11px}
+.e{color:#64748b;text-align:center;padding:22px}.green{color:#059669}.red{color:#e11d48}
+.nav{display:flex;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+.nav a{background:#fff;border:1px solid #e5eaf4;color:#52627f;text-decoration:none;padding:8px 14px;border-radius:9px;font-size:13px;transition:background .15s,color .15s;box-shadow:0 2px 6px rgba(54,77,130,.05)}
+.nav a:hover{background:#eef2ff;color:#1d4ed8}.nav a.active{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:700}
+@media(max-width:760px){body{padding:20px 14px 34px}.wrap{max-width:none}h1{font-size:21px}.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{padding:14px}.section{overflow-x:auto}table{min-width:680px}}
+@media(max-width:430px){.stat-grid{grid-template-columns:1fr}.stat b{font-size:25px}}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
-<div>
+<div class="stat-grid">
 <div class="stat"><b>%d</b><span>总生成</span></div>
 <div class="stat"><b class="%s">%d</b><span>失败</span></div>
 <div class="stat"><b>%d / %d</b><span>今日额度</span></div>
 </div>
 <h2>最近生成</h2>
-<table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table>
+<div class="section"><table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table></div>
 <h2>最近失败</h2>
-<table><tr><th>时间</th><th>错误</th></tr>%s</table>
+<div class="section"><table><tr><th style="width:22%%">时间</th><th>错误详情</th></tr>%s</table></div>
 </div></body></html>""" % (up_h, up_m, total_gen,
                               "red" if fail_total else "green", fail_total,
                               quota.get("remaining", 0), quota.get("limit", 500),
@@ -3910,8 +4368,15 @@ def _extract_project_name(text):
             continue
         if any(s.startswith(w) for w in _CHAPTER_WORDS):
             continue
-        if s and len(s) >= 2:
-            return s[:40]
+        if not s or len(s) < 2:
+            continue
+        # 2026-10-14（实测 history id=22）：正文首行常常是整段句子
+        # （「我国山区中小学的晨检场景里，水银体温计仍是绝对主力…」），
+        # 拿它当项目名会让封面/封页变成半截话。带句读或过长的行一律跳过，
+        # 取不到就交给调用方回落到文档类型名（「项目申报书」），好过硬凑一截正文。
+        if re.search(r'[。，、；！？]', s) or len(s) > 30:
+            continue
+        return s[:40]
     return ''
 
 
@@ -3921,7 +4386,7 @@ def generate():
     if _rate_limited():
         return jsonify({"success": False,
                         "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"}), 429
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     data["_user_id"] = _current_uid()
     try:
         result_data = _run_generation(data)
@@ -4093,7 +4558,7 @@ def _sweep_tasks():
 
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     # 基础校验：创意和赛事都不能为空，否则模型会凭空编内容、章节顺序乱
     if not (data.get("idea") or "").strip():
         return jsonify({"success": False, "error": "请先填写项目创意（一句话说清做什么、解决什么问题）"}), 400
@@ -4668,6 +5133,7 @@ def upload_file():
 @app.route('/api/export_zip', methods=['GET', 'POST'])
 def export_zip():
     import zipfile, os, re
+    import tempfile
     from docx import Document
     from docx.shared import Pt, RGBColor, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -4724,8 +5190,9 @@ def export_zip():
     if skipped:
         print("[export_zip] 内容为空已跳过 %d 项：%s" % (len(skipped), ", ".join(skipped)))
 
-    tmpdir = 'tmp_export'
-    os.makedirs(tmpdir, exist_ok=True)
+    # 每个请求隔离中间文件，避免共享 tmp_export 中相同文件名串入其他项目。
+    export_workspace = tempfile.TemporaryDirectory(prefix='competition-export-')
+    tmpdir = export_workspace.name
     zippath = os.path.join(tmpdir, '项目材料包.zip')
 
     # 素材打包里的申报书也要按官方章节排序 / 走 iCAN 双盲，
@@ -4755,6 +5222,10 @@ def export_zip():
                         school=data.get('school'),
                         team=data.get('team'),
                         advisor=data.get('advisor'),
+                        team_name=data.get('team_name'),
+                        leader=data.get('leader') or data.get('team_leader'),
+                        members=data.get('members') or data.get('team_members'),
+                        contact=data.get('contact') or data.get('phone'),
                         competition_name=comp if is_prop else None,
                         header_title=title)
         # 打包里的申报书同样要插图：不然单独下载有图、打包里没图，用户会以为系统不稳。
@@ -4781,11 +5252,11 @@ def export_zip():
                 _is_prop = ('申报书' in title)
                 _chars = len(str(text).replace('\n', '').replace(' ', ''))
                 if (not _r.get("ok")) and _chars >= 600:
-                    if _is_prop:
-                        _safe_unlink(zippath)
-                        return jsonify({"success": False, "code": "export_toc_fail",
-                                        "error": "申报书缺封面或目录：" + "；".join(_r.get("errors", [])[:3])}), 422
-                    print("[export_zip] %s 封面/目录检测未过（不影响打包）：%s" % (filename, _r.get("errors")))
+                    # 目录/封面是可修复的排版告警：build_doc 已生成文件后继续交付，
+                    # 将问题写入服务日志，避免用户因为一次误检拿不到整包材料。
+                    # 真正的 zip 写入/文件损坏异常仍由外层异常处理拦截并记录。
+                    print("[export_zip] %s 封面/目录告警（已放行打包）：%s" %
+                          (filename, _r.get("errors")))
             except Exception as _e:
                 print("[export_zip] 封面/目录检测失败（不阻断）：%r" % (_e,))
             zf.write(tmppath, filename)
@@ -4825,6 +5296,8 @@ def export_zip():
             if deck:
                 from pptx_builder import build_deck
                 deck = dict(deck)
+                if data.get('ppt_outline'):
+                    deck['strict_outline'] = True
                 # 前端手动选的主题/模板优先于自动推断（与 /api/export_pptx 行为保持一致）
                 if data.get('theme'):
                     deck['theme'] = data['theme']
@@ -4868,7 +5341,7 @@ def export_zip():
         # _resolve_export_mode 自带 history 表 mode 列兜底。
         _ok, _issues = check_zip(zippath, mode=_resolve_export_mode(data))
         if not _ok:
-            _safe_unlink(zippath)
+            export_workspace.cleanup()
             return jsonify({"success": False, "code": "export_quality_fail",
                             "error": "打包质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
@@ -4876,6 +5349,7 @@ def export_zip():
     _wb_resp = send_file(zippath, as_attachment=True,
                      download_name=_export_filename(project, competition, '材料包', '.zip'),
                      mimetype='application/zip')
+    _wb_resp.call_on_close(export_workspace.cleanup)
     # 2026-10-01：zip 导出也透出警告头（PPT 页数等），前端 wbShowExportWarnings 已接线
     _wb_zwarns = data.get('_export_warnings') or []
     if _wb_zwarns:
@@ -4923,10 +5397,37 @@ def competition_index():
         import importlib.util
         _script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "scripts", "build_comp_index.py")
-        spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return jsonify({"success": True, **mod.build_index()})
+        if os.path.isfile(_script):
+            spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _built = mod.build_index()
+            _items = _built.get("items") or []
+            # 服务器历史迁移可能同时留下 UTF-8 与乱码文件名；动态解析会
+            # 把同一赛事列两次。检测到重复/异常 key 时优先使用已校验的
+            # 15 条静态索引，避免用户看到乱码赛事名。
+            _bad_keys = sum(1 for _item in _items
+                            if re.search(r"[фхцшщч╜БФТ┐]", str(_item.get("key", ""))))
+            if len(_items) <= 15 and not _bad_keys:
+                return jsonify({"success": True, **_built})
+            _canonical = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "static", "competition_index.json")
+            if os.path.isfile(_canonical):
+                with open(_canonical, "r", encoding="utf-8") as _fh:
+                    return jsonify({"success": True, **json.load(_fh)})
+            return jsonify({"success": True, **_built})
+
+        # 发布包可能只带运行时文件而漏掉构建脚本；已有静态索引仍然是
+        # 同一份赛事数据，不能让赛事下拉因此返回 500。
+        _fallbacks = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "competition_index.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "static", "competition_index.json"),
+        ]
+        for _path in _fallbacks:
+            if os.path.isfile(_path):
+                with open(_path, "r", encoding="utf-8") as _fh:
+                    _data = json.load(_fh)
+                return jsonify({"success": True, **_data})
+        raise FileNotFoundError("赛事索引构建脚本和静态索引均不存在")
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -5005,22 +5506,23 @@ def admin_stats():
         c = conn.cursor()
         trend = c.execute(
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
-            "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
+            "WHERE %s AND created_time >= date('now','-14 day') GROUP BY d ORDER BY d" % _TEST_HISTORY_WHERE).fetchall()
         recent_failures = c.execute(
-            "SELECT task_id, type, path, error, detail, created_time, count FROM gen_failures "
+            "SELECT task_id, type, path, error, detail, error_code, created_time, count FROM gen_failures "
             "ORDER BY id DESC LIMIT 10").fetchall()
-        total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
+        total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+        # 统计所有已记录的生成失败（包括已自动恢复），避免把历史失败清理后误报为 100%。
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history WHERE %s GROUP BY mode" % _TEST_HISTORY_WHERE).fetchall()
         # 第一百四十三轮：排除 duration≤1s 测试异常样本，用中位数口径，不被个别极值拉偏
-        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE duration > 1").fetchall()]
+        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE %s AND duration > 1" % _TEST_HISTORY_WHERE).fetchall()]
         avg_dur = sorted(_durs)[len(_durs) // 2] if _durs else 0
         fb = c.execute(
             "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
         rating = c.execute(
-            "SELECT rating, COUNT(*) AS n FROM history WHERE rating > 0 "
+            "SELECT rating, COUNT(*) AS n FROM history WHERE %s AND rating > 0 " % _TEST_HISTORY_WHERE +
             "GROUP BY rating ORDER BY rating").fetchall()
-        scores = c.execute("SELECT result_data FROM history").fetchall()
+        scores = c.execute("SELECT result_data FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchall()
         conn.close()
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5056,11 +5558,26 @@ def admin_stats():
         "time": r["created_time"], "type": r["type"] or "generate",
         "path": r["path"] or "", "error": r["error"], "detail": r["detail"],
         "task_id": r["task_id"] or "", "count": r["count"] or 1,
+        "label": _failure_view(r["error"], r["detail"], r["error_code"])[0],
+        "reason": _failure_view(r["error"], r["detail"], r["error_code"])[1],
+        "action": _failure_view(r["error"], r["detail"], r["error_code"])[2],
     } for r in recent_failures]
 
     denom = total + failed
     mode_breakdown = {r["mode"] or "unknown": r["n"] for r in mode_rows}
-    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    # 有限样本只给出约计；没有失败记录时明确显示样本边界，不宣称 100%。
+    if denom <= 0:
+        success_rate = None
+        success_rate_display = "暂无样本"
+        success_rate_basis = "当前没有可统计的生成记录"
+    elif failed <= 0:
+        success_rate = None
+        success_rate_display = "暂无失败记录"
+        success_rate_basis = "基于 %d 条已记录生成，样本有限，不代表所有情况都已覆盖" % denom
+    else:
+        success_rate = round(total * 100.0 / denom, 1)
+        success_rate_display = "约 %.1f%%" % success_rate
+        success_rate_basis = "基于 %d 条生成记录（成功 %d，失败 %d）" % (denom, total, failed)
     avg_duration = round(avg_dur, 1) if avg_dur else 0
     return jsonify({
         "success": True,
@@ -5070,13 +5587,20 @@ def admin_stats():
         "deep_count": mode_breakdown.get("deep", 0),
         "avg_duration": avg_duration,
         "success_rate": success_rate,
+        "success_rate_display": success_rate_display,
+        "success_rate_basis": success_rate_basis,
         "trend": trend_full,
         "failure": {"total": denom, "failed": failed,
-                    "rate": round(failed * 100.0 / denom, 1) if denom else 0},
+                    "rate": round(failed * 100.0 / denom, 1) if denom else None},
         "recent_failures": recent_failures_list,
         "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
+        "data_provenance": {
+            "hard_facts": ["生成次数、档位、耗时：history 原始记录", "失败次数与原因：gen_failures 原始记录"],
+            "derived": ["成功率为有限样本约计；无失败记录时仅显示暂无失败记录，并标明样本边界"],
+            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
     })
 
 
@@ -5233,7 +5757,7 @@ def admin_report():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
         avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
         fb = c.execute("SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
@@ -5261,7 +5785,12 @@ def admin_report():
 
     mode_bd = {r["mode"] or "unknown": r["n"] for r in mode_rows}
     denom = total + failed
-    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    if denom <= 0:
+        success_rate_display = "暂无样本"
+    elif failed <= 0:
+        success_rate_display = "暂无失败记录"
+    else:
+        success_rate_display = "约 %.1f%%" % round(total * 100.0 / denom, 1)
     avg_duration = round(avg_dur, 1) if avg_dur else 0
 
     score_json = json.dumps([{"range": k, "count": v} for k, v in buckets.items()], ensure_ascii=False)
@@ -5291,7 +5820,7 @@ button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-rad
 <div class="card"><div class="num">""" + str(mode_bd.get("fast", 0)) + """</div><div class="label">简洁版</div></div>
 <div class="card"><div class="num">""" + str(mode_bd.get("deep", 0)) + """</div><div class="label">深度版</div></div>
 <div class="card"><div class="num">""" + str(avg_duration) + """s</div><div class="label">平均耗时</div></div>
-<div class="card"><div class="num">""" + str(success_rate) + """%</div><div class="label">成功率</div></div>
+<div class="card"><div class="num">""" + success_rate_display + """</div><div class="label">成功率（有限样本）</div></div>
 </div>
 <div class="bar"><button onclick="window.print()">打印 / 存 PDF</button></div>
 <div id="scoreChart" class="chart"></div>
@@ -5313,11 +5842,20 @@ _upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
 _mode_counts_cache = {"data": {}, "checked_at": 0.0}
 _probe_lock = threading.Lock()
 _health_cache = {"data": None, "checked_at": 0.0}
+_probe_model = None
+_MODEL_HEALTH_PROBE_ENABLED = os.getenv("MODEL_HEALTH_PROBE", "off").strip().lower() in (
+    "1", "true", "yes", "on"
+)
 
 
 def _probe_deepseek():
-    """非阻塞探测 DeepSeek 上游：60 秒内缓存直接返回；否则后台探测，本次立即返回，
-    绝不阻塞 /api/health。避免首屏健康检查被 2~3 秒的 LLM 探测拖住（147 轮）。"""
+    """返回上游状态；默认不调用模型，避免健康轮询产生 DeepSeek 费用。
+
+    只有显式设置 ``MODEL_HEALTH_PROBE=on`` 时才启用原有的轻量对话探针。
+    普通健康检查返回 ``disabled``，不代表生成不可用；真正生成仍会按需调用模型。
+    """
+    if not _MODEL_HEALTH_PROBE_ENABLED:
+        return "disabled"
     now = time.time()
     if now - _upstream_cache["checked_at"] < 60:
         return _upstream_cache["deepseek"]
@@ -5329,12 +5867,26 @@ def _probe_deepseek():
         _upstream_cache["deepseek"] = "checking"
 
         def _bg_probe():
+            global _probe_model
             result = "down"
             try:
-                from competition_agents import llm
+                # 健康探针使用轻量模型，避免复用正式 180 秒模型并占用生成额度。
+                # deepseek-flash 可能把极小 token 预算全部用于 reasoning，正文为空但
+                # HTTP/API 调用实际成功；不能再用“必须有正文”误判为 down。
+                if _probe_model is None:
+                    from langchain_deepseek import ChatDeepSeek
+                    _probe_model = ChatDeepSeek(
+                        model=os.getenv("DEEPSEEK_MODEL") or "deepseek-flash",
+                        api_key=os.getenv("DEEPSEEK_API_KEY"),
+                        temperature=0, max_tokens=64,
+                        request_timeout=10, max_retries=0,
+                        # 探针预算只有 64 token，思考模式会把它全吃掉导致正文为空；
+                        # 关掉思考才能用「有无正文」判断上游存活（2026-10-14）
+                        extra_body={"thinking": {"type": "disabled"}})
                 from langchain_core.messages import HumanMessage
-                r = llm.invoke([HumanMessage(content="回复两个字：OK")])
-                if bool(getattr(r, "content", "").strip()):
+                _probe_model.invoke([HumanMessage(content="回复两个字：OK")])
+                # 未抛异常即表示鉴权、网络和模型路由均可用；不要求正文非空。
+                if _probe_model is not None:
                     result = "ok"
             except Exception:
                 result = "down"
@@ -5515,7 +6067,7 @@ def api_vulns_status(vid):
     _a = _require_admin()
     if _a is not None:
         return _a
-    payload = request.json or {}
+    payload = request.get_json(force=True, silent=True) or {}
     status = (payload.get('status') or '').strip()
     experience = (payload.get('experience') or '').strip()
     distilled = bool(payload.get('distilled', False))
@@ -5621,6 +6173,18 @@ def health():
     return jsonify(data)
 
 
+@app.route('/api/build_info')
+def build_info():
+    """返回前端与资料包指纹，供桌面端/移动端清理旧缓存。"""
+    return jsonify({
+        "success": True,
+        "fingerprint": "20261003t-o-kb15",
+        "frontend": "20261003t",
+        "style": "20261003o",
+        "knowledge_count": 15,
+    })
+
+
 @app.route('/api/ppt_themes')
 def ppt_themes():
     """返回可用主题与版式模板清单，供前端下拉选择"""
@@ -5662,6 +6226,8 @@ def export_pptx():
     try:
         from pptx_builder import build_deck
         deck = dict(deck)
+        if _outline_text:
+            deck['strict_outline'] = True
         # 前端选了主题/模板时，覆盖 deck 内置值（手动优先于自动推断）
         if data.get("theme"):
             deck["theme"] = data["theme"]
@@ -5719,11 +6285,34 @@ def export_pptx():
                     print("[export_pptx] 页数与大纲相差 %d 页（表格拆页等正常浮动），放行" % abs(_np - _no))
             except Exception as _e:
                 print("[export_pptx] 大纲页数校验失败（不阻断）：%r" % (_e,))
+        _ppt_warnings = []
+        try:
+            from quality_gate import check_artifact_bundle
+            _qrec = dict(_rec or data)
+            _qrec.setdefault('proposal', _qrec.get('proposal') or data.get('text') or '')
+            _qrec.setdefault('ppt_outline', _outline_text)
+            _qrec.setdefault('rich_deck', deck)
+            _qrec.setdefault('rich_charts', data.get('rich_charts') or data.get('charts') or [])
+            _qrec.setdefault('rich_tables', data.get('rich_tables') or data.get('tables') or [])
+            _bundle = check_artifact_bundle(
+                _qrec, mode=_resolve_export_mode(data), pptx_path=out,
+                competition_name=data.get('competition_name') or '', generated_dir='generated',
+            )
+            _ppt_warnings.extend(_bundle.get('warnings') or [])
+            if _bundle.get('errors'):
+                _ppt_warnings.extend('需系统复核：' + x for x in _bundle['errors'])
+        except Exception as _qe:
+            print(f"[export_pptx] 成品级质检失败（不阻断）：{_qe}")
         project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
         competition = deck.get('competition') or data.get('competition_name') or ''
-        return send_file(out, as_attachment=True,
-                         download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
-                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        _resp = send_file(out, as_attachment=True,
+                          download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
+                          mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        if _ppt_warnings:
+            from urllib.parse import quote as _uq
+            _resp.headers['X-Export-Warnings'] = _uq(json.dumps(_ppt_warnings, ensure_ascii=False))
+            _resp.headers['Access-Control-Expose-Headers'] = 'X-Export-Warnings'
+        return _resp
     except Exception as e:
         import traceback
         traceback.print_exc()

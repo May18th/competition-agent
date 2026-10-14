@@ -5,7 +5,7 @@ import os, subprocess, time
 from PIL import Image
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-VID = os.path.join(REPO, "交付视频")
+VID = os.path.join(REPO, "artifacts", "demo-video")
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 def capture():

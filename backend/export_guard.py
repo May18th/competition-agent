@@ -122,9 +122,13 @@ def check_word_structure(docx_path, expected_chapters=None):
         return {"ok": False, "errors": [f"缺少依赖或读取失败：{e}"], "warnings": []}
 
     errors, warnings = [], []
-    h1 = [t for lvl, t in heads if lvl == 1]
-    if not h1:
-        return {"ok": False, "errors": ["无 H1 章节标题"], "warnings": []}
+    # 申报书正文通常从 Heading2 开始，Heading1 会被封面/目录标题占用。
+    # 只要存在可导航的 Heading1~3，就不能把「无 H1」误报成结构损坏。
+    # 取最浅层级作为章节层，兼容 Word/WPS/手机端不同模板。
+    chapter_level = min((lvl for lvl, _ in heads), default=None)
+    if chapter_level is None:
+        return {"ok": False, "errors": ["无章节标题（Heading1~3 一个都没有）"], "warnings": []}
+    h1 = [t for lvl, t in heads if lvl == chapter_level]
     if expected_chapters:
         exp = [re.sub(r'^[一二三四五六七八九十]+、', '', c).strip() for c in expected_chapters]
         missing = [c for c in exp if not any(c and (c in h or h in c) for h in h1)]
@@ -141,19 +145,61 @@ def check_word_structure(docx_path, expected_chapters=None):
 
 def _outline_pages(outline_text):
     """从 ppt_outline markdown 提取页面标题列表（与 rich_pipeline._outline_deck 同口径）。"""
+    lines = [(line.strip()) for line in (outline_text or "").split("\n")]
+    lines = [line for line in lines if line]
+
+    # 优先使用显式页码。深度版大纲常在末尾附「答辩问题库/讲解稿」等
+    # 非页面内容；只要文档存在明确页码，就不能把这些二级标题误算成 PPT 页。
+    page_re = re.compile(
+        r"^(?:#{1,4}\s+)?(?:第\s*\d+\s*页|页?\s*\d+|[（(]?\d+[）)])"
+        r"(?:[.、:：\s|｜-]+)(.+)$"
+    )
+    explicit = [m for line in lines if (m := page_re.match(line))]
+
+    def _is_appendix_heading(title):
+        return bool(re.match(
+            r"^(?:附录?|附)[:：\s]|^(?:答辩问题库|答辩问题预测|讲解稿|演讲稿|备注)",
+            (title or "").strip(), re.IGNORECASE
+        ))
+
+    def _clean(title):
+        title = (title or "").strip().lstrip("#* ").strip()
+        if not title or len(title) > 40:
+            return ""
+        normalized = re.sub(r"[\s\u00b7\-\u2014_()（）\[\]【】|｜]+", "", title)
+        # 文档级标题及附录资源不是 PPT 页面。
+        if re.search(r"(?:PPT|路演)?大纲(?:\d+页?)?$", normalized, re.IGNORECASE) \
+                or normalized in ("目录", "PPT目录", "目录页"):
+            return ""
+        if _is_appendix_heading(title):
+            return ""
+        return title
+
+    if explicit:
+        pages = []
+        appendix_started = False
+        for line in lines:
+            heading = re.match(r"^#{1,4}\s+(.*)$", line)
+            if heading and _is_appendix_heading(heading.group(1)):
+                appendix_started = True
+                continue
+            if appendix_started:
+                continue
+            m = page_re.match(line)
+            if m:
+                title = _clean(m.group(1))
+                if title:
+                    pages.append(title)
+        return pages
+
+    # 兼容没有页码的旧大纲：仅把 markdown 标题视为页面，普通正文行不计页。
     pages = []
-    for line in (outline_text or "").split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        m = re.match(r"^#{1,4}\s+(.*)", line) or re.match(r"^(?:页?\d+|[（(]?\d+[）)])[.、:：\s]+(.*)", line)
+    for line in lines:
+        m = re.match(r"^#{1,4}\s+(.*)", line)
         if m:
-            title = m.group(1).strip().lstrip("#* ").strip()
-            if not title or len(title) > 40:
-                continue
-            if re.match(r"^(?:PPT|路演)?\s*大纲$|^目录$", title, re.IGNORECASE):
-                continue
-            pages.append(title)
+            title = _clean(m.group(1))
+            if title:
+                pages.append(title)
     return pages
 
 

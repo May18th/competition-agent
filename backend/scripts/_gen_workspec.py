@@ -11,7 +11,7 @@ from docx.oxml.ns import qn
 
 REPO = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(REPO, "作品说明书_提交版.docx")
-HERO = os.path.join(REPO, "交付视频", "hero_clean.png")
+HERO = os.path.join(REPO, "artifacts", "demo-video", "hero_clean.png")
 
 SITE = "https://kechuang2026.cn"
 

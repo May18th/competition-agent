@@ -336,6 +336,7 @@
                 if (dr) {
                     dr.value = dr.value.trim() ? dr.value.trim() + '\n\n' + p.text : p.text;
                     dr.dispatchEvent(new Event('change'));
+                    try { wbInputMode('draft'); } catch (e) {}
                 }
                 window._wbDraftImported = true;   // 导入过草稿：意图明确，生成时不再弹通路选择
                 wbToast('已填入申报书草稿框（追加，不覆盖已有内容），正在自动识别项目信息…');
@@ -433,6 +434,7 @@
                 if (data.success) {
                     window._wbDraftImported = true;   // 导入过草稿：意图明确，生成时不再弹通路选择
                     document.getElementById('proposal_draft').value = data.text;
+                    try { wbInputMode('draft'); } catch (e) {}
                     // 注意用 innerHTML：innerText 会把 SVG 图标当纯文本显示出来
                     document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框，正在自动识别项目信息…';
                     // 统一材料框架：导入草稿 → 一次解析自动填充创意/团队/实测数据/关键词等全部输入框
@@ -782,9 +784,29 @@
             var done = false;
             try { done = _wbStoreGet('wbCoachDone') === '1'; } catch (e) {}
             if (!done) { try { done = document.cookie.indexOf('wbCoachDone=1') >= 0; } catch (e) {} }
-            if (done) return;
-            setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
+            // 手机首屏已有可横滑的三步引导卡；再叠加全屏遮罩会重复提示并遮住输入区。
+            var smallScreen = false;
+            try { smallScreen = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches); } catch (e) {}
+            // 首次进入不自动创建全屏遮罩。首页已经有三步引导卡，自动遮罩在
+            // 部分内置浏览器中会先于气泡渲染，造成整页变暗却看不到说明。
+            // 只有用户主动打开「使用说明」时才启动 coachStart()。
+            if (done || smallScreen) return;
+            try { document.body.classList.remove('wb-coach-active'); } catch (e) {}
         })();
+        // 兼容旧标签页/旧缓存：如果只留下遮罩状态却没有完整气泡，1.2 秒后主动清场，
+        // 避免旧脚本的竞态把首页永久压暗。新引导在创建气泡后会先写 wb-coach-ready。
+        setTimeout(function () {
+            try {
+                var b = document.body;
+                var veil = document.getElementById('wbCoachVeil');
+                var tip = document.getElementById('coachTip');
+                if (b && b.classList.contains('wb-coach-active') && !b.classList.contains('wb-coach-ready')) {
+                    b.classList.remove('wb-coach-active');
+                    if (veil && veil.parentNode) veil.parentNode.removeChild(veil);
+                    if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
+                }
+            } catch (e) {}
+        }, 1200);
         // 三步引导卡片的打勾状态与折叠（做过的步骤自动打勾，全做完收成一行）
         (function () {
             // 166 轮排查挖出来的真 bug：#wbUaMask 在 index.html 里排在 app.js 之后（1561 → 1576 行之后），
@@ -911,10 +933,14 @@
             // 417 轮：PDF 超页数/超大小被打回时，光说「未达标」用户不知道删哪。
             // 后端在 suggestions 里给了带数字的删减条目，这里原样列出来。
             if (j && j.code === 'export_quality_fail' && j.suggestions && j.suggestions.length) {
-                var _ips = j.suggestions.slice(0, 4).join('；');
-                wbToast(label + '超出该赛事提交要求，已取消导出', {
-                    type: 'warn', ms: 11000,
-                    sub: (msg ? msg + '。' : '') + '怎么改：' + _ips
+                var _ips = j.suggestions.slice(0, 3).join('；');
+                var _issueText = (j.issues && j.issues.length)
+                    ? j.issues.slice(0, 3).join('；') : msg;
+                var _isPpt = /PPT|路演 PPT/i.test(label);
+                wbToast(_isPpt ? 'PPT 暂未导出，问题已定位' : label + '未通过导出检查', {
+                    type: 'warn', ms: 14000,
+                    sub: (_issueText ? '具体问题：' + _issueText + '。' : '')
+                        + '处理：' + _ips
                 });
                 return;
             }
@@ -934,14 +960,58 @@
                 if (!Array.isArray(arr)) return;
                 arr.slice(0, 5).forEach(function (w) {
                     var m = String(w || '').trim();
-                    if (m) wbToast(m, { type: 'warn', ms: 8000 });
+                    if (!m) return;
+                    var isPptWarning = /PPT 第\d+页信息密度不足|PPT 页数/.test(m);
+                    wbToast(isPptWarning ? 'PPT 已生成，但有一页需要补强' : m, {
+                        type: 'warn', ms: isPptWarning ? 11000 : 8000,
+                        sub: isPptWarning
+                            ? m + '。处理：回到对应章节，点“仅修改此模块”补充真实数据/验证步骤后，再直接导出，无需重新生成整套材料。'
+                            : ''
+                    });
                 });
             } catch (e) {}
+        }
+
+        // 待核实项只提醒、不替用户做决定。只有后端判定为乱码/空文件等原则性
+        // 问题时才会拒绝导出；其余来源边界、绝对化表述由用户确认是否继续。
+        function wbConfirmOpenItems(action) {
+            var rd = window._lastData || {};
+            var qr = rd.quality_report || {};
+            var pending = Array.isArray(qr.pending_replacements) ? qr.pending_replacements : [];
+            var warnings = Array.isArray(qr.warnings) ? qr.warnings : [];
+            // 兼容较早生成的历史记录：没有 quality_report 时仍按原文做一层轻量提醒。
+            if (!pending.length && !warnings.length) {
+                var raw = String(rd.proposal || '');
+                if (/待核实|待补来源|待替换|100\s*[%％]|绝对(?:保证|有效|可靠|安全)?|零风险|完全不会|必然(?:成功|有效)?/.test(raw)) {
+                    pending = [{kind: 'absolute_claim', value: '原文存在待核实或绝对化表述', location: '历史记录'}];
+                }
+            }
+            if (!pending.length && !warnings.length) return true;
+            var items = [];
+            pending.slice(0, 5).forEach(function (x) {
+                if (x.kind === 'absolute_claim') {
+                    items.push('绝对化表述「' + String(x.value || '') + '」' + (x.location ? '（' + x.location + '）' : ''));
+                } else if (x.kind === 'metric_conflict') {
+                    items.push((x.metric || '指标') + '有多个口径：' + (x.values || []).join(' / '));
+                } else {
+                    items.push('数字「' + String(x.value || '') + '」尚缺来源');
+                }
+            });
+            warnings.slice(0, Math.max(0, 5 - items.length)).forEach(function (x) {
+                var s = String(x || '').replace(/^L3\s*/, '');
+                if (items.indexOf(s) < 0) items.push(s.slice(0, 120));
+            });
+            var msg = action + '前提醒：当前有 ' + (pending.length || warnings.length) +
+                ' 项内容需要你核实（只提醒，不会替你修改）：\n\n' +
+                (items.length ? '· ' + items.join('\n· ') + '\n\n' : '') +
+                '继续' + action + '吗？取消不会丢失当前结果。';
+            return window.confirm(msg);
         }
 
         async function exportOne(id, name) {
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
+            if (!wbConfirmOpenItems('导出')) return;
             var btn = (window.event && window.event.target) || null;
             var _qcTimer = 0;
             if (btn) {
@@ -1005,14 +1075,12 @@
             if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
             var comp = '';
             try { comp = (document.getElementById('competition') || {}).value || ''; } catch (e) {}
-            // 后端 /api/feedback 只收 content（+ history_id），星级拼进文本里一起入库
-            var line = '评分 ' + wbRateVal + ' 星（' + (WB_RATE_TXT[wbRateVal] || '') + '）'
-                     + (txt ? '｜' + txt : '')
-                     + (comp ? '｜赛事：' + comp : '');
+            // 星级是结构化字段，正文只保留用户意见，后台卡片不再重复显示「评分几星」。
+            var line = (txt || '用户未补充文字反馈') + (comp ? '｜赛事：' + comp : '');
             fetch('/api/feedback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: line,
+                body: JSON.stringify({ content: line, rating: wbRateVal,
                                        history_id: (window._lastHistoryId || null) })
             }).then(function (r) { return r.ok ? r.json() : null; })
               .then(function (j) {
@@ -1040,6 +1108,7 @@
                否则「待补充」「待替换数据清单」会原样进 PDF */
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
+            if (!wbConfirmOpenItems('导出')) return;
             var btn = (window.event && window.event.target) || null;
             var _qcTimer = 0;
             if (btn) {
@@ -1053,6 +1122,7 @@
             try {
                 var r = await wbExportFetch('/api/export_pdf', {title: name, text: text,
                         competition_name: wbCompName(),
+                        team: wbMeta().team,
                         // 与 Word 导出同理：只对申报书传，让后端用库里原文覆盖被污染的 DOM 文本
                         task_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._currentTaskId || null) : null,
                         history_id: (_DOM_TO_KEY[id] === 'proposal') ? (window._lastHistoryId || null) : null,
@@ -1087,8 +1157,184 @@
             if (v && String(v).trim()) return String(v);
             var el = document.getElementById(domId);
             if (!el) return '';
+            if (el.getAttribute('data-wb-empty') === '1') return '';
             return el.innerText || el.textContent || '';
         }
+
+        // 结果页的局部修改：只请求当前模块，修改后直接写回当前结果对象。
+        var WB_LOCAL_EDIT_TARGETS = {
+            proposal: { id: 'proposalText', label: '申报书正文' },
+            proposal_analysis: { id: 'proposalAnalysis', label: '申报书诊断' },
+            judge_feedback: { id: 'judgeFeedback', label: '评委意见' },
+            defense_questions: { id: 'defenseQuestions', label: '答辩问题' },
+            ppt_outline: { id: 'pptOutline', label: 'PPT大纲' }
+        };
+        function wbLocalEditLoad() {
+            var sel = document.getElementById('wbEditTarget');
+            var preview = document.getElementById('wbEditPreview');
+            if (!sel || !preview) return;
+            var key = sel.value;
+            var cfg = WB_LOCAL_EDIT_TARGETS[key] || {};
+            var text = _txt(key, cfg.id);
+            // 草稿协作结果在旧后端可能只返回 proposal_draft；将其视为当前正文，
+            // 让创意通路和草稿通路都能使用同一套局部修改能力。
+            if (!text.trim() && key === 'proposal') {
+                text = String((window._lastData || {}).proposal_draft || '').trim();
+            }
+            preview.textContent = text ? text.slice(0, 1800) + (text.length > 1800 ? '\n…' : '') : '该模块暂时没有生成内容';
+        }
+        function wbLocalEditToggle() {
+            var body = document.getElementById('wbLocalEditBody');
+            var btn = document.querySelector('.wb-local-edit-toggle');
+            if (!body || !btn) return;
+            var hidden = body.style.display === 'none';
+            body.style.display = hidden ? '' : 'none';
+            btn.innerHTML = hidden ? '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            btn.title = hidden ? '收起局部修改' : '展开局部修改';
+            btn.setAttribute('aria-expanded', hidden ? 'true' : 'false');
+        }
+        function wbLocalEditFocus() {
+            var panel = document.getElementById('wbLocalEdit');
+            var rd = window._lastData || {};
+            var hasResult = ['proposal', 'proposal_draft', 'project_summary', 'quality_report', 'rich_deck']
+                .some(function (key) {
+                    var value = rd[key];
+                    return (typeof value === 'string' && value.trim().length > 0) ||
+                        (value && typeof value === 'object' && Object.keys(value).length > 0);
+                });
+            if (!panel || !hasResult) { wbToast('请先生成一份结果，再使用局部修改', {type: 'warn'}); return; }
+            panel.scrollIntoView({behavior: 'smooth', block: 'center'});
+            var input = document.getElementById('wbEditInstruction');
+            if (input) setTimeout(function () { input.focus(); }, 220);
+            wbLocalEditLoad();
+        }
+        async function wbLocalEditApply() {
+            var sel = document.getElementById('wbEditTarget');
+            var input = document.getElementById('wbEditInstruction');
+            var status = document.getElementById('wbEditStatus');
+            var btn = document.querySelector('.wb-local-edit-primary');
+            if (!sel || !input || !status || !btn) return;
+            var key = sel.value;
+            var cfg = WB_LOCAL_EDIT_TARGETS[key] || {};
+            var text = _txt(key, cfg.id);
+            if (!text.trim() && key === 'proposal') {
+                text = String((window._lastData || {}).proposal_draft || '').trim();
+            }
+            var instruction = String(input.value || '').trim();
+            if (!text.trim()) { wbToast('该模块还没有可修改的内容', {type: 'warn'}); return; }
+            if (!instruction) { wbToast('请先写清楚要改什么', {type: 'warn'}); input.focus(); return; }
+            btn.disabled = true;
+            status.textContent = '正在修改当前模块…';
+            try {
+                var res = await _wbFetch('/api/rewrite', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text, instruction: instruction})
+                }, 90000);
+                var data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || '局部修改失败');
+            var next = String(data.text || '').trim();
+            if (!next) throw new Error('模型没有返回修改内容');
+            if (!window._lastData) window._lastData = {};
+            var _originalBeforeEdit = text;
+            window._lastData[key] = next;
+                // 同步写回历史记录；失败时仍保留本机结果，但明确提示跨设备尚未同步。
+                var hid = window._lastData.history_id || window._lastHistoryId;
+                var persisted = true;
+                if (hid) {
+                    try {
+                        var saveRes = await _wbFetch('/api/history/' + encodeURIComponent(hid) + '/data', {
+                            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({key: key, value: next})
+                        }, 15000);
+                        var saveData = await saveRes.json();
+                        persisted = !!(saveRes.ok && saveData.success);
+                    } catch (saveErr) { persisted = false; }
+                }
+                var el = document.getElementById(cfg.id);
+                if (el) el.innerHTML = wbRenderMD(next);
+                var _cmp = document.getElementById('wbEditCompare');
+                var _origEl = document.getElementById('wbEditOriginal');
+                var _revEl = document.getElementById('wbEditRevised');
+                if (_cmp && _origEl && _revEl) {
+                    _origEl.textContent = _originalBeforeEdit;
+                    _revEl.textContent = next;
+                    _cmp.style.display = 'grid';
+                }
+                if (key === 'proposal') wbRefreshProposalToc();
+                try { wbRefreshPhBar(); wbDataTodoScan(); wbTypoScan(); } catch (e) {}
+                status.textContent = persisted ? '已更新并同步，可直接导出' : '已更新本机结果，跨设备同步失败';
+                input.value = '';
+                wbLocalEditLoad();
+                wbToast(cfg.label + (persisted ? '已更新并同步，无需重跑整套流程' : '已更新，但暂未同步到历史记录'), {type: persisted ? 'ok' : 'warn', ms: 4200});
+            } catch (e) {
+                status.textContent = '修改失败';
+                wbToast('局部修改失败', {type: 'error', sub: _friendlyErr(e)});
+            } finally { btn.disabled = false; }
+        }
+        function wbToggleModule(id) {
+            var el = document.getElementById(id);
+            var button = el && el.previousElementSibling;
+            if (!el || !button) return;
+            var collapsed = button.classList.toggle('is-collapsed');
+            el.style.maxHeight = collapsed ? '180px' : '';
+            el.style.overflow = collapsed ? 'hidden' : '';
+            button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            button.title = collapsed ? '展开模块' : '折叠模块';
+            button.innerHTML = collapsed
+                ? '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                : '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        }
+        function wbRenderTrustNote(data) {
+            var el = document.getElementById('dataTrustNote');
+            if (!el) return;
+            var p = (data && data.data_provenance) || {};
+            el.textContent = p.user_input_present
+                ? '数据可信度：已使用你提供的材料作为事实来源；知识库规则仅用于结构参考，其他测算数字仍需提交前核实。'
+                : '数据可信度：当前没有检测到你提供的实测数据，正文数字只能作为测算/预期参考，提交前请逐条补充来源。';
+        }
+        function wbRenderQualityReport(report) {
+            var el = document.getElementById('qualityReportBox');
+            if (!el) return;
+            if (!report || typeof report !== 'object') {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            var r = report || {};
+            var issues = Array.isArray(r.issues) ? r.issues : [];
+            var warnings = Array.isArray(r.warnings) ? r.warnings : [];
+            var pending = Array.isArray(r.pending_replacements) ? r.pending_replacements : [];
+            var status = r.status || ((issues.length) ? 'blocked' : (warnings.length ? 'needs_review' : 'pass'));
+            var title = status === 'blocked' ? '质检未通过：暂不建议直接提交'
+                : (status === 'needs_review' ? '质检完成：有项目需要核实' : '质检通过：未发现硬性结构问题');
+            var reviewerView = status === 'blocked'
+                ? '评委视角：先处理硬伤，再导出提交。'
+                : (status === 'needs_review'
+                    ? '评委视角：结构可读，但证据和表述仍需逐项核实。'
+                    : '评委视角：结构检查通过，不代表官方评分或事实已核验。');
+            var detail = issues.concat(warnings).slice(0, 3).map(function (x) { return _esc(x); }).join('；');
+            if (!detail && pending.length) {
+                detail = pending.slice(0, 3).map(function (x) {
+                    if (x.kind === 'metric_conflict') return _esc((x.metric || '指标') + '存在多个口径：' + (x.values || []).join(' / '));
+                    if (x.kind === 'absolute_claim') return _esc('绝对化表述「' + (x.value || '') + '」需要补充样本、条件和来源边界');
+                    return _esc('数字 ' + (x.value || '') + ' 缺少邻近来源标记');
+                }).join('；');
+            }
+            var action = r.auto_action ? '<div class="qr-detail">' + _esc(r.auto_action) + '</div>' : '';
+            var pendingHint = pending.length ? '<div class="qr-detail">待处理 ' + pending.length + ' 项：只替换原文对应位置及相关图表，无需重新生成整份材料。</div>' : '';
+            el.className = 'quality-report-box ' + (status === 'blocked' ? 'is-blocked' : (status === 'needs_review' ? 'is-warning' : 'is-pass'));
+            el.innerHTML = '<div class="qr-title">' + title + '</div>'
+                + '<div class="qr-detail qr-reviewer-view">' + reviewerView + '</div>'
+                + (detail ? '<div>' + detail + '</div>' : '') + pendingHint + action;
+            el.style.display = 'block';
+        }
+        window.wbLocalEditLoad = wbLocalEditLoad;
+        window.wbLocalEditToggle = wbLocalEditToggle;
+        window.wbLocalEditFocus = wbLocalEditFocus;
+        window.wbLocalEditApply = wbLocalEditApply;
+        window.wbToggleModule = wbToggleModule;
+        window.wbRenderTrustNote = wbRenderTrustNote;
+        window.wbRenderQualityReport = wbRenderQualityReport;
         async function exportAll() {
             var rd = window._lastData || {};
             var _m = wbMeta();
@@ -1124,8 +1370,10 @@
                 theme: tk || (deck && deck.theme) || null,
                 variant: vk || (deck && deck.variant) || null,
                 chart_theme: wbChartThemeKey(),
+                roadshow: wbRoadshowOn(),
                 school: _m.school, team: _m.team, advisor: _m.advisor
             };
+            if (!wbConfirmOpenItems('打包导出')) return;
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '打包中...'; }
             try {
@@ -1161,6 +1409,10 @@
         function copyText(id) {
             var el = document.getElementById(id);
             if (!el) return;
+            if (el.getAttribute('data-wb-empty') === '1') {
+                wbToast('该模块暂无可复制的真实内容', { type: 'warn' });
+                return;
+            }
             // 优先复制渲染后的干净文本；隐藏的 tab innerText 为空时回退原始数据
             var text = (el.innerText || '').trim() || _txt(_DOM_TO_KEY[id] || '', id);
             if (!String(text).trim()) { wbToast('没有可复制的内容', { type: 'warn' }); return; }
@@ -1187,10 +1439,43 @@
            Failed to fetch）直接甩给用户，评委看到很减分。统一转成中文人话，未知错误仍原样透出 */
         function _friendlyErr(e) {
             var m = (e && e.message) || String(e || '');
-            if (/Unexpected end of JSON|invalid JSON|JSON/i.test(m)) return '服务暂时无响应，请稍后重试';
+            if (/Unexpected end of JSON|Unexpected token [<']/i.test(m) || /invalid JSON|JSON/i.test(m)) return '服务暂时无响应，请稍后重试';
             if (/Failed to fetch|NetworkError|Load failed|net::/i.test(m)) return '网络连接失败，请检查网络后重试';
             if (/timeout|Timed out|aborted/i.test(m)) return '请求超时，请稍后重试';
             return m;
+        }
+
+        // 首屏只在首页结果区尚未展开时校正浏览器的滚动恢复，避免刷新后
+        // 恰好停在 Logo 中间，造成无穷符号像被拆开的错觉；用户已进入结果页时不打断阅读位置。
+        (function () {
+            try {
+                if (location.hash || window.pageYOffset <= 0 || window.pageYOffset >= 260) return;
+                var result = document.getElementById('resultArea');
+                var hidden = !result || getComputedStyle(result).display === 'none';
+                if (!hidden) return;
+                window.requestAnimationFrame(function () { try { window.scrollTo(0, 0); } catch (e) {} });
+            } catch (e) {}
+        })();
+        // 生成轮询期间反向代理可能返回 HTML 错误页；统一先读文本再解析，
+        // 避免把浏览器的 Unexpected token '<' 直接展示给用户。
+        function _wbReadJsonResponse(res, label) {
+            return res.text().then(function (raw) {
+                var data = null;
+                try { data = JSON.parse(raw || ''); } catch (e) {
+                    var bad = new Error(label + '返回了网页而不是数据（HTTP ' + res.status + '），请刷新页面后重试');
+                    bad.httpStatus = res.status;
+                    bad.code = 'non_json_response';
+                    throw bad;
+                }
+                if (!res.ok) {
+                    var msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
+                    var failed = new Error(label + '：' + msg);
+                    failed.httpStatus = res.status;
+                    failed.code = (data && data.code) || 'http_error';
+                    throw failed;
+                }
+                return data;
+            });
         }
         // ---- 全局提示 Toast（替代 alert，所有反馈统一走这里）----
         var _toastSeq = 0;
@@ -1283,7 +1568,7 @@
                 var c = JSON.parse(_wbStoreGet(WB_COMP_IDX_KEY) || 'null');
                 if (c && c.items && c.items.length) WB_COMP_INDEX = c;
             } catch (e) {}
-            _wbFetch('/static/competition_index.json', { cache: 'no-cache' })
+            _wbFetch('static/competition_index.json', { cache: 'no-cache' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
                     if (!d || !d.items || !d.items.length) return;
@@ -1319,6 +1604,26 @@
                     try { renderEventCard(); } catch (e) {}
                 })
                 .catch(function () { /* 拉不到就用缓存 / 回落到内置规则 */ });
+        }
+
+        // 两端都从同一发布包加载代码与官方资料。若服务端指纹变化，立即丢弃
+        // 赛事索引/赛事配置缓存，让当前设备下一次读取也使用新数据，不依赖手动清缓存。
+        function wbCheckBuildSync() {
+            _wbFetch('/api/build_info', {cache: 'no-store'}, 10000)
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) {
+                    if (!d || !d.success || !d.fingerprint) return;
+                    var old = _wbStoreGet('wbBuildFingerprintV1');
+                    if (old && old !== d.fingerprint) {
+                        _wbStoreDel(WB_COMP_IDX_KEY);
+                        _wbStoreDel(WB_COMP_PROF_KEY);
+                        WB_COMP_INDEX = null;
+                        WB_COMP_PROFILES = null;
+                    }
+                    _wbStoreSet('wbBuildFingerprintV1', String(d.fingerprint));
+                    window._wbBuildInfo = d;
+                })
+                .catch(function () { /* 版本探针是诊断能力，不阻断生成 */ });
         }
 
         function wbMatchProfile(name) {
@@ -1827,6 +2132,8 @@
         }
 
         function _coachClear() {
+            try { document.body.classList.remove('wb-coach-active'); } catch (e) {}
+            try { document.body.classList.remove('wb-coach-ready'); } catch (e) {}
             var olds = document.querySelectorAll('.wb-coach-target');
             for (var i = 0; i < olds.length; i++) olds[i].classList.remove('wb-coach-target');
             var veil = document.getElementById('wbCoachVeil');
@@ -1851,6 +2158,7 @@
 
         function coachShow() {
             _coachClear();
+            try { document.body.classList.add('wb-coach-active'); } catch (e) {}
             if (_coachIdx >= COACH_STEPS.length) { coachEnd(); return; }
             var step = COACH_STEPS[_coachIdx];
             var el = document.getElementById(step.id);
@@ -1900,6 +2208,8 @@
                         '<span style="font-size: 12px; color: #aab8de; flex: 1 1 100%;">点暗处或按 Esc 也可退出</span>' +
                     '</div>';
                 document.body.appendChild(tip);
+                // 气泡已经真实挂载后才允许显示遮罩，杜绝“只有一层灰幕”的失败状态。
+                try { document.body.classList.add('wb-coach-ready'); } catch (e) {}
                 coachRepos();
                 // 引导期间持续跟踪：滚动/视口变化（地址栏收起）/sticky 重新吸附都实时重算
                 window.addEventListener('scroll', _coachTrack, { passive: true });
@@ -1946,8 +2256,8 @@
         /* ---------- 首页三步引导（常驻卡片，不是弹窗） ---------- */
         // 「① 输创意 ② 选档位 ③ 点生成」三步写在首屏，点一步就跳到对应位置；
         // 做到了自动打勾，三步都做完折叠成一行，记进 localStorage，老用户不再占地方。
-        var WB_GUIDE_KEY = 'wbGuideDone';
-        var WB_GUIDE_SEL = ['#idea', '.version-card', '#startBtn'];
+        var WB_GUIDE_KEY = 'wbGuideDoneV2';
+        var WB_GUIDE_SEL = ['#competition', '#idea', '#startBtn'];
         var _wbGuide = [false, false, false];
 
         function _wbGuideSave() { try { _wbStoreSet(WB_GUIDE_KEY, JSON.stringify(_wbGuide)); } catch (e) {} }
@@ -1972,17 +2282,6 @@
             if (g) g.style.display = 'none';
             if (b) b.style.display = 'flex';
         }
-        // 手机上默认收起三步引导：实测它占掉首屏 546px，把创意输入框挤到
-        // 屏幕外（要滚 760px 才看得见）。评委进来要一眼看到输入区，不是先看教程。
-        // 收起后 wbGuideBar 那一行还留着「展开三步」，想看随时能展开。
-        (function () {
-            try {
-                if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches
-                    && !_wbStoreGet('wbGuideKeep')) {
-                    wbGuideCollapse();
-                }
-            } catch (e) {}
-        })();
         function wbGuideExpand() {
             var g = document.getElementById('wbGuide'), b = document.getElementById('wbGuideBar');
             if (g) g.style.display = '';
@@ -2001,7 +2300,16 @@
             void el.offsetWidth;
             el.classList.add('wb-guide-flash');
             setTimeout(function () { el.classList.remove('wb-guide-flash'); }, 1700);
-            if (i === 0) { try { document.getElementById('idea').focus(); } catch (e) {} }
+            if (i === 0) {
+                try { document.getElementById('competition').focus(); } catch (e) {}
+            } else if (i === 1) {
+                try {
+                    var draftInput = document.getElementById('proposal_draft');
+                    var ideaInput = document.getElementById('idea');
+                    var input = (draftInput && draftInput.offsetParent !== null) ? draftInput : ideaInput;
+                    if (input && input.focus) input.focus();
+                } catch (e) {}
+            }
         }
         /* ---------- 微信 / QQ 内置浏览器：打开就提示，不等用户踩坑 ---------- */
         // 这些内核：不支持上传文件、复制、下载。必须一进页面就说清楚 + 给复制网址的出口，
@@ -2113,23 +2421,97 @@
             wbGuidePaint();
             if (_wbGuide[0] && _wbGuide[1] && _wbGuide[2]) wbGuideCollapse();
             // 做过的动作自动打勾：不靠用户回来点
+            var competition = document.getElementById('competition');
+            if (competition) competition.addEventListener('input', function () {
+                if (String(competition.value || '').trim().length >= 2) wbGuideDone(0);
+            });
             var idea = document.getElementById('idea');
             if (idea) idea.addEventListener('input', function () {
-                if (String(idea.value || '').trim().length >= 4) wbGuideDone(0);
+                if (String(idea.value || '').trim().length >= 4) wbGuideDone(1);
             });
             var draft = document.getElementById('proposal_draft');
             if (draft) draft.addEventListener('input', function () {
-                if (String(draft.value || '').trim().length >= 4) wbGuideDone(0);
+                if (String(draft.value || '').trim().length >= 4) wbGuideDone(1);
             });
             var f = document.getElementById('ideaFile');
-            if (f) f.addEventListener('change', function () { wbGuideDone(0); });
-            var radios = document.querySelectorAll('input[name="mode"]');
-            for (var i = 0; i < radios.length; i++) {
-                radios[i].addEventListener('change', function () { wbGuideDone(1); });
-            }
+            if (f) f.addEventListener('change', function () { wbGuideDone(1); });
             var sb = document.getElementById('startBtn');
             if (sb) sb.addEventListener('click', function () { wbGuideDone(2); });
+            // 恢复本机草稿后立即同步步骤状态，避免用户明明填过仍看到未完成。
+            if (competition && String(competition.value || '').trim().length >= 2) wbGuideDone(0);
+            if ((idea && String(idea.value || '').trim().length >= 4) ||
+                (draft && String(draft.value || '').trim().length >= 4)) wbGuideDone(1);
         }
+
+        /* ---------- 评委一键演示 ----------
+           优先打开后端固定成品，避免评委现场等待；没有成品时再用内置演示样例走完整生成链路。
+           样例只用于展示流程，不写入任何外部事实或虚构实测数据。 */
+        var WB_DEMO_SAMPLES = {
+            ican: {
+                competition: 'iCAN大学生创新创业大赛',
+                idea: '面向校园实验室的低成本设备状态巡检助手：用手机采集设备指示灯与仪表读数，自动生成异常清单和维修优先级，帮助实验室减少人工巡检遗漏。',
+                team: '演示团队（示例）\n队长：负责产品与项目统筹\n成员：负责移动端与数据处理',
+                keywords: '智能硬件, 校园实验室, 设备巡检'
+            },
+            internet: {
+                competition: '中国国际互联网+大学生创新创业大赛',
+                idea: '面向大学城新生的校园服务导航：把报到、办卡、宿舍报修和校园活动整合成一条可追踪流程，减少新生在多个平台之间反复查找。',
+                team: '演示团队（示例）\n队长：负责用户调研与运营\n成员：负责产品原型与后端服务',
+                keywords: '校园服务, 用户旅程, 运营闭环'
+            },
+            model: {
+                competition: '全国大学生数学建模竞赛',
+                idea: '研究校园共享单车的潮汐调度：根据时段、教学楼和宿舍区之间的出行需求，建立可解释的调度模型，并输出调度策略与敏感性分析。',
+                team: '演示团队（示例）\n队长：负责建模与论文统稿\n成员：负责数据清洗与可视化',
+                keywords: '数学建模, 调度优化, 敏感性分析'
+            }
+        };
+
+        function wbDemoFillSample(key) {
+            var s = WB_DEMO_SAMPLES[key] || WB_DEMO_SAMPLES.ican;
+            var set = function (id, value) { var el = document.getElementById(id); if (el) el.value = value || ''; };
+            set('competition', s.competition);
+            set('idea', s.idea);
+            set('proposal_draft', '');
+            set('udTeam', s.team);
+            set('keywords', s.keywords);
+            set('udSite', ''); set('udScale', ''); set('udMetric', ''); set('udCost', ''); set('udExtra', '');
+            window._wbPathChoice = 'idea';
+            window._wbDraftImported = false;
+            try { wbCompInput(); onCompetitionChange(); wbSaveForm(); } catch (e) {}
+            var deep = document.querySelector('input[name="mode"][value="deep"]');
+            if (deep && !deep.checked) deep.click();
+            try { wbGuideDone(0); wbGuideDone(1); } catch (e) {}
+            return s;
+        }
+
+        async function wbDemoStart() {
+            var sel = document.getElementById('wbDemoCase');
+            var key = sel ? sel.value : 'saved';
+            var btn = document.getElementById('wbDemoBtn');
+            if (btn) { btn.disabled = true; btn.textContent = '正在打开演示…'; }
+            try {
+                if (key === 'saved') {
+                    var r = await _wbFetch('/api/demo', { cache: 'no-store' }, 9000);
+                    var d = await r.json();
+                    if (d && d.success && d.data) {
+                        await openHistory('demo');
+                        wbToast('已打开成品演示，可直接查看导出效果', { type: 'ok', ms: 3600 });
+                        return;
+                    }
+                    key = 'ican';
+                    if (sel) sel.value = key;
+                    wbToast('暂无已保存成品，已切换到内置样例并开始生成', { type: 'warn', ms: 3600 });
+                }
+                wbDemoFillSample(key);
+                if (document.getElementById('startBtn')) startWork();
+            } catch (e) {
+                wbToast('演示入口暂时不可用：' + _friendlyErr(e), { type: 'error' });
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-sparkle"/></svg> 一键演示'; }
+            }
+        }
+        window.wbDemoStart = wbDemoStart;
 
         /* ---------- 一键回到生成内容 ---------- */
         // 结果区很长（评分 / 自查 / 校验 / 正文 / 图表…），读到一半想换栏目得手动往上滑很久。
@@ -2307,7 +2689,7 @@
         function wbCompFocus() {
             var el = document.getElementById('competition');
             if (el && String(el.value || '').trim()) {
-                try { el.select(); } catch (e) {}
+                try { el.select(); el.dataset.wbReplace = '1'; } catch (e) {}
             }
             wbCompOpen();
         }
@@ -2433,6 +2815,7 @@
             var el = document.getElementById('competition');
             if (!el) return;
             el.value = name || '';
+            el.dataset.wbReplace = '';
             wbCompClose();
             wbCompInput();
             onCompetitionChange();
@@ -2474,6 +2857,14 @@
         window.wbPickComp = wbPickComp;
         function wbCompKey(e) {
             if (e.key === 'Escape') { wbCompClose(); return; }
+            var input = document.getElementById('competition');
+            // 聚焦后直接输入/退格就替换旧赛事，避免用户先手动删完整名称。
+            if (input && input.dataset.wbReplace === '1' && !e.ctrlKey && !e.metaKey && !e.altKey &&
+                (e.key === 'Backspace' || e.key === 'Delete' || (e.key && e.key.length === 1))) {
+                input.value = '';
+                input.dataset.wbReplace = '';
+                wbCompInput();
+            }
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 var box = document.getElementById('compSuggest');
@@ -3040,7 +3431,7 @@
         function renderRich(rd, isDeep) {
             var charts = rd.rich_charts || [];
             var tables = rd.rich_tables || [];
-            var deck = rd.rich_deck;
+            var deck = rd.rich_deck || wbRoadshowDeck(rd);
             // 开关开着时预览与导出都用重排后的 8 页 deck，做到"所见即所下载"
             var showDeck = deck;
             if (deck && deck.slides && deck.slides.length && wbRoadshowOn()) {
@@ -3049,10 +3440,32 @@
             var rcw = document.getElementById('richChartsWrap');
             var dcw = document.getElementById('demoChartsWrap');
             if (!rcw || !dcw) return;
-            if (isDeep && charts.length) {
+            // 清掉上一轮可能留下的缩略图与表格，避免二次生成把旧数据当成本轮结果。
+            var chartUnavailable = document.getElementById('demoChartsUnavailable');
+            var demoChartNote = document.getElementById('demoChartsNote');
+            if (chartUnavailable) chartUnavailable.style.display = 'none';
+            if (demoChartNote) demoChartNote.style.display = 'block';
+            // 以实际返回的图表为准，而不是只看档位；简洁版已有图表时也要展示，
+            // 二次生成/历史恢复不能因为 mode 判断变化把首轮成果隐藏。
+            if (charts.length) {
                 rcw.style.display = 'block'; dcw.style.display = 'none';
             } else {
                 rcw.style.display = 'none'; dcw.style.display = 'block';
+                // 明确区分「有真实图表」和「本轮没有数据」。后者仍保留入口，
+                // 让评委知道系统没有静默丢模块，也不会把示例数字误认为项目数据。
+                if (chartUnavailable && rd.show_charts === false) {
+                    chartUnavailable.style.display = 'flex';
+                    if (demoChartNote) demoChartNote.style.display = 'none';
+                    ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
+                        var node = document.getElementById(id);
+                        if (node && node.parentElement) node.parentElement.style.display = 'none';
+                    });
+                } else {
+                    ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
+                        var node = document.getElementById(id);
+                        if (node && node.parentElement) node.parentElement.style.display = '';
+                    });
+                }
             }
             // 存一份索引，放大弹窗按序号取原图，避免把 url 拼进 onclick 造成引号/转义问题
             window.__chartItems = charts;
@@ -3084,7 +3497,7 @@
                     '</table></div></div>';
             }).join('');
             var dw = document.getElementById('deckWrap');
-            if (isDeep && deck && deck.slides && deck.slides.length) {
+            if (deck && deck.slides && deck.slides.length) {
                 dw.style.display = 'block';
                 var typeLabel = {cover:'封面', section:'章节', bullets:'要点', metrics:'数据', chart:'图表', table:'表格', closing:'结尾'};
                 // 图表 / 表格索引：slide 里只存 id，卡片要还原出真实内容
@@ -3276,8 +3689,11 @@
         // 赛事名来源：输入框 + 已生成结果里的赛事名（历史回看时输入框可能已被清空）
         function wbCompText() {
             var el = document.getElementById('competition');
+            var idea = document.getElementById('idea');
+            var draft = document.getElementById('proposal_draft');
             return (_wbT(el && el.value) + ' ' + _wbT((window._lastData || {}).competition) +
-                    ' ' + _wbT((window._lastData || {}).competition_name)).toLowerCase();
+                    ' ' + _wbT((window._lastData || {}).competition_name) + ' ' +
+                    _wbT(idea && idea.value) + ' ' + _wbT(draft && draft.value)).toLowerCase();
         }
         function wbRecoTheme() {
             var low = wbCompText();
@@ -3814,7 +4230,7 @@
             if (p > 0) { name = lb.slice(0, p); sub = lb.slice(p).replace(/[（）]/g, ''); }
             var isReco = (t.key === reco);
             return '<div class="wb-theme-card' + (t.key === cur ? ' on' : '') + '" data-key="' + _esc(t.key) + '"' +
-                   ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb) + '">' +
+                   ' onclick="wbPickTheme(\'' + _esc(t.key) + '\')" title="' + _esc(lb + ' · ' + (t.license || '程序化自绘原创，非第三方原作')) + '">' +
                    (isReco ? '<span style="position:absolute; top:6px; left:6px; z-index:2; padding:1px 6px; border-radius:8px;' +
                              ' font-size:10.5px; background:var(--c-a); color:#fff;">推荐</span>' : '') +
                    wbThemeThumb(wbThemeColors(t), t.layout) +
@@ -3934,6 +4350,12 @@
             // 主题：优先顶层 theme（后端若提供），回退 rich_deck.theme（当前实际版本）。
             // 版式不再由 variant 决定 —— 15 套模板各自带 layout，前端不提供版式下拉。
             var cur = rd.theme || (rd.rich_deck && rd.rich_deck.theme) || 'star';
+            // 没有本次生成结果且用户未手动选主题时，恢复其上次明确保存的主题。
+            var rememberedTheme = window._wbUserMemory && window._wbUserMemory.preferences &&
+                window._wbUserMemory.preferences.theme;
+            if (!_themeManual && rememberedTheme && themes.some(function (x) { return x.key === rememberedTheme; })) {
+                cur = rememberedTheme;
+            }
             // 按赛事推荐模板：iCAN→蓝白科技、电赛→电路蓝、互联网+→商务灰、
             // 数模→白底建模、挑战杯→红金、广告艺术→海报撞色…用户手动点过就不再动
             if (!_themeManual) {
@@ -3985,10 +4407,11 @@
         // ---- 下载 AI 生成的路演 PPT ----
         async function exportPptx() {
             var rd = window._lastData || {};
-            if (!rd.rich_deck) { wbToast('请先用深度版生成一次，才有自动排版的 PPT', { type: 'warn' }); return; }
+            if (!rd || !Object.keys(rd).length) { wbToast('请先生成一份结果', { type: 'warn' }); return; }
+            if (!wbConfirmOpenItems('导出')) return;
             previewDeckStyle();
             // 固定路演结构 + 申报书回填：开关开着时导出重排后的 8 页 deck
-            var deck = rd.rich_deck;
+            var deck = rd.rich_deck || wbRoadshowDeck(rd);
             if (wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
             deck = wbStripDeckTodo(deck);
             var btn = (window.event && window.event.target) || null;
@@ -4004,8 +4427,9 @@
             try {
                 // 417 轮：把大纲原文一起发给后端，后端据此校验「PPT 页数 == 大纲页数」。
                 // 之前后端只拿到重排后的 deck，无从判断页数对不对，等于校验形同虚设。
-                var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
-                                          ppt_outline: rd.ppt_outline || '',
+                var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', proposal: rd.proposal || rd.proposal_draft || '', one_liner: rd.one_liner || '',
+                                          ppt_outline: rd.rich_deck ? (rd.ppt_outline || '') : '',
+                                          roadshow: wbRoadshowOn(),
                                           theme: deck.theme, variant: deck.variant, chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('路演 PPT', r); return; }
                 const res = r.res;
@@ -4024,20 +4448,13 @@
         // 简洁版没有 rich_deck，直接进 exportPptx 只会弹一句「请先用深度版生成」，
         // 用户不知道下一步怎么办，所以这里给带路径的引导。
         function wbPptDownload() {
-            var rd = window._lastData || {};
-            if (!rd.rich_deck) {
-                wbToast('路演 PPT 是深度完整版专属', {
-                    type: 'warn',
-                    sub: '把档位切到「深度完整版」重跑一次，就能导出自动排版的 8 页路演 PPT（打包 zip 里也有一份）'
-                });
+            if (!window._lastData) {
+                wbToast('请先生成一份结果', { type: 'warn' });
                 return;
             }
             exportPptx();
         }
-        window.wbPptDownload = wbPptDownload;
 
-        // 结果渲染后同步 PPT 行的档位提示：简洁版把按钮标成「深度版可用」，
-        // 避免用户点了才被告知不可用（点了才知道 = 白点一次）
         function wbSyncPptRow() {
             var rd = window._lastData || {};
             var hint = document.getElementById('wbPptModeHint');
@@ -4046,7 +4463,7 @@
             // 还没出结果时（生成中/刚打开页面）不给「不可用」的暗示，保持「下载 PPT」，
             // 点了由 wbPptDownload 判断并引导；有结果且确认没 rich_deck 才标「深度版可用」
             var decided = !!window._lastData;
-            var noDeck = decided && !rd.rich_deck;
+            var noDeck = false;
             hint.textContent = noDeck ? '（深度版）' : '';
             btn.textContent = noDeck ? '深度版可用' : '下载 PPT';
         }
@@ -4134,13 +4551,17 @@
         // 否则实施计划/社会价值/项目简介要等全部跑完才显示，流式阶段白等。
         function streamPrepare(mode) {
             streamReset();
+            wbResetResultSurfaces();
             var _isDeep = mode === 'deep';
             document.querySelectorAll('.deep-only').forEach(function (el) {
                 el.style.display = _isDeep ? 'block' : 'none';
             });
             _STREAM_MAP.forEach(function (p) {
                 var el = document.getElementById(p[1]);
-                if (el) el.innerHTML = '<div class="stream-wait">内容正在生成，将实时流出…</div>';
+                if (el) {
+                    el.setAttribute('data-wb-empty', '1');
+                    el.innerHTML = '<div class="stream-wait">内容正在生成，将实时流出…</div>';
+                }
             });
             var ol = document.getElementById('oneLiner');
             if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
@@ -4215,6 +4636,216 @@
         }
 
         // 把后端返回的 partial 渲染进页面；返回本次是否产出了新内容
+        function wbRefreshProposalToc() {
+            var root = document.getElementById('proposalText');
+            var list = document.getElementById('proposalTocList');
+            if (!root || !list) return;
+            if (root.getAttribute('data-wb-empty') === '1') {
+                list.innerHTML = '<span class="wb-proposal-toc-empty">本轮未返回申报书正文</span>';
+                return;
+            }
+            var heads = Array.prototype.slice.call(root.querySelectorAll('h1,h2,h3,h4'));
+            // 有些模型会返回「一、项目概述」这类纯文本而不是 Markdown 标题。
+            // 这类正文以前会让导航整块空白；把短的章节行提升为可定位锚点。
+            if (heads.length < 24) {
+                var candidates = root.querySelectorAll('p,li,div');
+                var seenLabels = heads.map(function (node) {
+                    return String(node.textContent || '').replace(/\s+/g, ' ').trim();
+                });
+                Array.prototype.forEach.call(candidates, function (node) {
+                    if (heads.length >= 30 || node.querySelector('p,li,div')) return;
+                    var tx = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!tx || tx.length > 110) return;
+                    if (/^(?:第\s*[一二三四五六七八九十百\d]+\s*[章节部分]|[一二三四五六七八九十百\d]+[、.．)]|【[^】]{1,36}】|[（(][一二三四五六七八九十\d]+[）)])/.test(tx)) {
+                        if (seenLabels.indexOf(tx) >= 0) return;
+                        seenLabels.push(tx);
+                        heads.push(node);
+                    }
+                });
+            }
+            var html = '';
+            Array.prototype.forEach.call(heads, function (head, i) {
+                var label = (head.textContent || '').replace(/^\s+|\s+$/g, '');
+                if (!label) return;
+                var id = 'proposal-section-' + i;
+                head.id = id;
+                var level = parseInt(head.tagName && head.tagName.slice(1), 10);
+                if (!level || level < 1 || level > 4) level = /^(?:第|[一二三四五六七八九十百\d]+[、.．)]|【)/.test(label) ? 2 : 3;
+                html += '<button type="button" class="wb-proposal-toc-btn" data-level="' +
+                    String(level) + '" data-target="' + id +
+                    '" title="' + _esc(label) + '">' + _esc(label) + '</button>';
+            });
+            // 没有规范标题时也保留一个「全文」入口，避免用户面对大片空白导航。
+            if (!html && (root.textContent || '').trim()) {
+                root.id = root.id || 'proposalText';
+                html = '<button type="button" class="wb-proposal-toc-btn" data-level="2" data-target="proposalText" title="跳到申报书全文">申报书全文</button>';
+            }
+            list.innerHTML = html || '<span class="wb-proposal-toc-empty">申报书尚未生成</span>';
+            list.querySelectorAll('.wb-proposal-toc-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var target = document.getElementById(btn.getAttribute('data-target'));
+                    if (!target) return;
+                    target.style.scrollMarginTop = '86px';
+                    var before = window.pageYOffset || document.documentElement.scrollTop || 0;
+                    try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { target.scrollIntoView(); }
+                    // 兼容微信/夸克/旧 Chromium 对 smooth 静默不执行的情况：
+                    // 450ms 后如果页面仍没动，立即定位一次，确保按钮不是“点了没反应”。
+                    setTimeout(function () {
+                        try {
+                            var now = window.pageYOffset || document.documentElement.scrollTop || 0;
+                            var rect = target.getBoundingClientRect();
+                            if (Math.abs(now - before) < 2 && (rect.top < 40 || rect.top > (window.innerHeight || 700) * .72)) {
+                                target.scrollIntoView();
+                            }
+                        } catch (e) {}
+                    }, 450);
+                    list.querySelectorAll('.wb-proposal-toc-btn').forEach(function (b) { b.classList.remove('active'); });
+                    btn.classList.add('active');
+                });
+            });
+        }
+        window.wbRefreshProposalToc = wbRefreshProposalToc;
+
+        // 简洁版也必须交付可用的答辩准备入口。后端正常返回时原样使用；
+        // 只有字段缺失才显示透明的「待补充」结构，不把未知事实伪装成项目结论。
+        function wbEnsureLiteOutputs(data) {
+            if (!data || typeof data !== 'object') return data || {};
+            var proposal = String(data.proposal || data.proposal_draft || '').trim();
+            if (!String(data.defense_questions || '').trim()) {
+                data.defense_questions = [
+                    '## 答辩问题预测（待结合真实材料核对）',
+                    '1. 项目要解决的具体问题是什么？请用真实场景、对象和时间范围说明。',
+                    '2. 当前已有怎样的实测结果或用户反馈？请补充样本量、指标口径和来源。',
+                    '3. 与现有方案相比，核心差异和可验证的优势是什么？',
+                    '4. 关键技术、成本、合规或落地环节的最大风险是什么？准备如何验证？',
+                    '5. 下一阶段计划完成什么可交付成果？请给出可核验的时间节点。',
+                    '',
+                    '以上为演练问题。系统未检测到的事实不会代替你补写，请在答辩前用真实材料逐项作答。'
+                ].join('\n');
+            }
+            if (!String(data.ppt_outline || '').trim()) {
+                var titles = [];
+                String(proposal || '').split(/\r?\n/).forEach(function (line) {
+                    var s = line.replace(/^\s*[#>*-]+\s*/, '').trim();
+                    if (s && s.length <= 70 && /^(?:第\s*[一二三四五六七八九十百\d]+|[一二三四五六七八九十百\d]+[、.．)]|【)/.test(s)) titles.push(s);
+                });
+                var slides = ['项目概述与要解决的问题', '用户场景与需求证据', '方案原理与产品形态', '技术/实施路径', '验证结果与关键指标', '商业化与推广计划', '风险、边界与下一步', '答辩要点与联系方式'];
+                data.ppt_outline = ['## PPT大纲（8页，待用真实数据核对）'].concat(slides.map(function (name, i) {
+                    var hint = titles[i] ? '（可对应正文：' + titles[i].slice(0, 48) + '）' : '（请补充本页真实材料、图表或证据）';
+                    return (i + 1) + '. ' + name + hint;
+                })).concat(['', '说明：本轮未返回专用 PPT 大纲，以上仅提供结构骨架；数字、结论和图表必须替换为有来源的真实内容。']).join('\n');
+            }
+            return data;
+        }
+        window.wbEnsureLiteOutputs = wbEnsureLiteOutputs;
+
+        // 结果页不能留下「空白模块」：对评委来说，空白无法区分是
+        // 该模块确实不适用、接口失败，还是页面没有渲染。这里统一给出
+        // 可读的状态，但不把任何未知事实伪装成项目结论；同时用 data-wb-empty
+        // 标记让复制、局部修改、导出仍然只取真实原文。
+        function wbRenderModule(id, value, label) {
+            var el = document.getElementById(id);
+            if (!el) return false;
+            var text = String(value == null ? '' : value).trim();
+            if (!text) {
+                el.setAttribute('data-wb-empty', '1');
+                el.innerHTML = '<div class="wb-empty-state" role="status">' +
+                    '<b>' + _esc(label || '该模块') + '暂未返回</b>' +
+                    '<span>本轮没有拿到可核验内容，系统没有替你补写事实。可先检查生成日志，或只修改此模块后重试。</span>' +
+                    '</div>';
+                return false;
+            }
+            el.removeAttribute('data-wb-empty');
+            el.innerHTML = wbRenderMD(text);
+            return true;
+        }
+        window.wbRenderModule = wbRenderModule;
+
+        // 候选版本选择：只替换当前结果的可编辑正文相关字段，共享评审、来源和质检结果。
+        // 因此切换版本不会重新请求模型，也不会让章节导航、局部修改和导出失效。
+        function wbRenderVersionPicker(data) {
+            var box = document.getElementById('wbVersionPicker');
+            if (!box) return;
+            var versions = data && Array.isArray(data.versions) ? data.versions : [];
+            if (versions.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+            var selected = String((data && data.selected_version) || 'v1');
+            box.innerHTML = '<div class="wb-version-title"><span>候选版本</span><small>选择后可直接修改、导出</small></div>' +
+                '<div class="wb-version-list">' + versions.map(function (v) {
+                    var id = String(v.id || 'v1');
+                    return '<button type="button" class="wb-version-btn' + (id === selected ? ' active' : '') +
+                        '" data-version-id="' + _esc(id) + '" title="' + _esc(v.label || id) + '">' +
+                        '<b>' + _esc(v.label || id) + '</b><small>' + _esc(id === 'v1' ? '共享主版本' : '表达侧重点不同') + '</small></button>';
+                }).join('') + '</div>';
+            box.style.display = 'block';
+            box.querySelectorAll('[data-version-id]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var id = btn.getAttribute('data-version-id');
+                    var picked = versions.find(function (v) { return String(v.id) === String(id); });
+                    if (!picked) return;
+                    data.selected_version = id;
+                    ['proposal', 'proposal_outline', 'ppt_outline', 'project_summary', 'one_liner'].forEach(function (key) {
+                        if (Object.prototype.hasOwnProperty.call(picked, key)) data[key] = picked[key] || '';
+                    });
+                    wbRenderModule('proposalText', data.proposal || data.proposal_draft, '申报书正文');
+                    wbRenderModule('projectSummary', data.project_summary, '项目简介');
+                    wbRenderModule('proposalOutline', data.proposal_outline, '写作构思纲要');
+                    wbRenderModule('pptOutline', data.ppt_outline, 'PPT大纲');
+                    wbRefreshProposalToc();
+                    try { wbRenderAnchorBar(); wbRefreshPhBar(); wbDataTodoScan(); wbLocalEditLoad(); } catch (e) {}
+                    box.querySelectorAll('.wb-version-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
+                    wbToast('已切换到「' + (picked.label || id) + '」', { type: 'ok', ms: 2200 });
+                });
+            });
+        }
+        window.wbRenderVersionPicker = wbRenderVersionPicker;
+
+        // 新一轮生成必须从干净的结果面开始，避免上一轮的图表、PPT缩略图、
+        // 专家评审或折叠状态在第二次生成后继续冒充本轮结果。
+        function wbResetResultSurfaces() {
+            ['richCharts', 'richTables', 'deckPreview', 'deckRoadPlan', 'expertReviewContent'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.innerHTML = '';
+            });
+            ['expertReviewPanel', 'deckWrap'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            ['proposalSelfcheck', 'qualityReportBox', 'completenessBox', 'wbPhBar', 'wbBanBar'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                if (id === 'proposalSelfcheck' || id === 'qualityReportBox' || id === 'completenessBox') el.innerHTML = '';
+                if (id === 'proposalSelfcheck' || id === 'qualityReportBox' || id === 'completenessBox' || id === 'wbPhBar' || id === 'wbBanBar') el.style.display = 'none';
+            });
+            ['richChartsWrap', 'demoChartsWrap'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            ['budgetChart', 'marketChart', 'timelineChart'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                try {
+                    if (window.echarts && window.echarts.getInstanceByDom(el)) {
+                        window.echarts.getInstanceByDom(el).dispose();
+                    }
+                } catch (e) {}
+                el.innerHTML = '';
+            });
+            var chartsTab = document.getElementById('chartsTab');
+            if (chartsTab) chartsTab.style.display = 'none';
+            var defenseTab = document.getElementById('defenseTab');
+            if (defenseTab) defenseTab.style.display = 'none';
+            var toc = document.getElementById('proposalTocList');
+            if (toc) toc.innerHTML = '<span class="wb-proposal-toc-empty">生成后按章节快速定位</span>';
+            var editPreview = document.getElementById('wbEditPreview');
+            if (editPreview) editPreview.textContent = '生成后选择要修改的模块';
+            var editStatus = document.getElementById('wbEditStatus');
+            if (editStatus) editStatus.textContent = '';
+            var anchorBar = document.getElementById('wbAnchorBar');
+            if (anchorBar) anchorBar.style.display = 'none';
+            var versionPicker = document.getElementById('wbVersionPicker');
+            if (versionPicker) { versionPicker.style.display = 'none'; versionPicker.innerHTML = ''; }
+        }
+        window.wbResetResultSurfaces = wbResetResultSurfaces;
         function paintPartial(partial) {
             if (!partial || typeof partial !== 'object' || !window.marked) return false;
             var fresh = 0;
@@ -4231,7 +4862,8 @@
                 if (key === 'proposal') {
                     _streamCjk += wbCjkLen(txt.slice(prev));   // 只算正文本次新增片段的有效字数
                 }
-                twSet(key, txt);          // 交给打字机逐字揭示，不再整块覆盖
+                twSet(key, txt);
+                if (key === 'proposal') wbRefreshProposalToc();          // 交给打字机逐字揭示，不再整块覆盖
                 el.classList.add('streaming');
                 // 该区块所属 Tab 打上脉冲点（提示用户在别的页签有内容流入）
                 var tb = document.querySelector('.tab[onclick*="' + tab + '"]');
@@ -4687,7 +5319,69 @@
         }
         window.wbPathDialog = wbPathDialog;
 
+        // 输入入口只保留一条主路径：创意协作 or 草稿协作。高级字段仍保留，但默认不打扰首次使用。
+        function wbInputMode(mode) {
+            var draft = document.getElementById('proposal_draft');
+            var idea = document.getElementById('idea');
+            if (!draft || !idea) return;
+            var dg = draft.closest('.form-group'), ig = idea.closest('.form-group');
+            if (dg) dg.style.display = mode === 'draft' ? '' : 'none';
+            if (ig) ig.style.display = mode === 'idea' ? '' : 'none';
+            window._wbPathChoice = mode;
+            var bar = document.getElementById('wbInputModeBar');
+            if (bar) Array.prototype.forEach.call(bar.querySelectorAll('button[data-mode]'), function (b) {
+                var on = b.getAttribute('data-mode') === mode;
+                b.style.background = on ? 'var(--c-a)' : 'var(--surface-2)';
+                b.style.color = on ? '#fff' : 'var(--text)';
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+        }
+        function wbInitInputMode() {
+            var draft = document.getElementById('proposal_draft'), idea = document.getElementById('idea');
+            if (!draft || !idea || document.getElementById('wbInputModeBar')) return;
+            var anchor = draft.closest('.form-group');
+            if (!anchor || !anchor.parentNode) return;
+            var bar = document.createElement('div');
+            bar.id = 'wbInputModeBar';
+            bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin-bottom:2px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);';
+            bar.innerHTML = '<span style="font-size:13px;color:var(--text-dim);font-weight:600;">从哪开始</span>' +
+                '<button type="button" data-mode="idea" aria-pressed="true" style="padding:7px 12px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:var(--c-a);color:#fff;">我的创意</button>' +
+                '<button type="button" data-mode="draft" aria-pressed="false" style="padding:7px 12px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:var(--surface-2);color:var(--text);">我的草稿</button>' +
+                '<span style="font-size:12px;color:var(--text-mute);">只需填写一项，后续可共同修改</span>';
+            anchor.parentNode.insertBefore(bar, anchor);
+            Array.prototype.forEach.call(bar.querySelectorAll('button[data-mode]'), function (b) {
+                b.addEventListener('click', function () { wbInputMode(b.getAttribute('data-mode')); });
+            });
+            wbInputMode((draft.value || '').trim() && !(idea.value || '').trim() ? 'draft' : 'idea');
+        }
+        window.wbInputMode = wbInputMode;
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wbInitInputMode);
+        else setTimeout(wbInitInputMode, 0);
+
+        function wbConfirmGenerationBoundary(idea, draft) {
+            var source = String(idea || '') + '\n' + String(draft || '');
+            var evidenceIds = ['udTeam', 'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
+            var hasEvidence = evidenceIds.some(function (id) {
+                var el = document.getElementById(id);
+                return !!(el && String(el.value || '').trim());
+            });
+            var hasRiskyClaim = /100\s*[%％]|绝对(?:保证|有效|可靠|安全)?|零风险|完全不会|必然(?:成功|有效)?|准确无误/.test(source);
+            var hasNumbers = /\d/.test(source);
+            if (!hasRiskyClaim && !(hasNumbers && !hasEvidence)) return true;
+            var reason = hasRiskyClaim
+                ? '输入里出现了可能需要证据边界的绝对化表述或百分比。'
+                : '当前还没有检测到实测数据、样本或来源字段。';
+            return window.confirm('生成前提醒：' + reason + '\n\n系统会保留原意，并把无法核验的内容标为“待核实/测算”，不会替你补造事实。是否继续生成？');
+        }
+        window.wbConfirmGenerationBoundary = wbConfirmGenerationBoundary;
+
         function startWork() {
+            // 所有入口（桌面按钮、移动端浮动按钮、快捷演示）统一经过这里。
+            // 生成尚未结束时不允许再次创建任务，避免重复扣额度、结果串台和失败弹窗叠加。
+            if (window._wbGenerating) {
+                wbToast('当前还在生成中', { type: 'info', sub: '请等待本轮完成；已生成片段会实时保留，不需要重复点击' });
+                return;
+            }
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
             const competition = document.getElementById('competition').value;
@@ -4736,6 +5430,10 @@
                     _ie.classList.add('wb-shake-hl');
                     setTimeout(function () { _ie.classList.remove('wb-shake-hl'); }, 1600);
                 }
+                return;
+            }
+            if (!wbConfirmGenerationBoundary(idea, proposal_draft)) {
+                window._wbGenerating = false;
                 return;
             }
 
@@ -4821,7 +5519,9 @@
                 }, 700);
             }, 60);
 
-            fetch('/api/generate_async', {
+            // 返回整条生成 Promise：一键演示需要等待正式生成完成后再恢复按钮状态；
+            // 之前这里没有 return，演示入口的 finally 会立即执行，造成“按钮恢复但其实仍在生成”的误导。
+            return fetch('/api/generate_async', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -4855,6 +5555,10 @@
                     // 171 轮：图表配色主题。后端 rich_pipeline 已有 pick_theme/render_chart(theme=)，
                     // 接上这个字段后，深度版生成的图表 PNG 就与前台所选配色一致（后端未接则忽略）
                     chart_theme: wbChartThemeKey(),
+                    version_count: (function () {
+                        var v = parseInt((document.getElementById('versionCountOpt') || {}).value || '1', 10);
+                        return isFinite(v) ? Math.max(1, Math.min(3, v)) : 1;
+                    })(),
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
                     // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
@@ -4899,23 +5603,75 @@
                     // 手机上连续几分钟的高频请求 + 重渲染是发烫主因之一。改为：
                     //   ① 前台 2s 一次（流式预览仍然连贯）；② 页面切到后台完全不请求；
                     //   ③ 回到前台立刻补拉一次，不用等下一个 tick。
+                    let tick = null;
+                    let _pollBusy = false;
+                    let _pollErrors = 0;
+                    let _missingTaskReads = 0;
+                    let _doneSyncWaits = 0;
+                    let _lastPartialAt = Date.now();
+                    const _mergeStatusPartial = (statusData) => {
+                        var _p = (statusData && statusData.partial) || {};
+                        if (!_p || typeof _p !== 'object') return false;
+                        var _changed = false;
+                        Object.keys(_p).forEach(function (f) {
+                            var _next = String(_p[f] || '');
+                            if (!_next) return;
+                            // /api/status?cursor=... 返回新增后缀；若移动端因网络重试拿到全量，
+                            // 也能识别并避免把正文重复拼接。
+                            var _old = String(_streamAccum[f] || '');
+                            if (_next === _old || _next.indexOf(_old) === 0) {
+                                if (_next.length > _old.length) {
+                                    _streamAccum[f] = _next;
+                                    _changed = true;
+                                }
+                            } else if (_old.indexOf(_next) !== 0) {
+                                _streamAccum[f] = _old + _next;
+                                _changed = true;
+                            }
+                        });
+                        if (_changed) {
+                            _lastPartialAt = Date.now();
+                            paintPartial(_streamAccum);
+                        }
+                        return _changed;
+                    };
                     const _poll = () => {
                         // 切后台/锁屏时彻底停手：省电、省流量，也不给后端添无意义负载
-                        if (document.hidden) return;
+                        if (document.hidden || _pollBusy) return;
                         if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
-                            clearInterval(tick);
+                            if (tick) clearInterval(tick);
                             reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
                             return;
                         }
-                        fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)))
-                            .then(r => r.json())
+                        _pollBusy = true;
+                        var _statusController = (window.AbortController ? new AbortController() : null);
+                        var _statusTimer = _statusController ? setTimeout(function () {
+                            try { _statusController.abort(); } catch (e) {}
+                        }, 25000) : null;
+                        fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)),
+                            _statusController ? { signal: _statusController.signal } : undefined)
+                            .then(function (r) { return _wbReadJsonResponse(r, '生成状态接口'); })
                             .then(res2 => {
                                 if (!res2.success) {
-                                    clearInterval(tick);
-                                    reject(new Error((res2.error || '任务已失效') +
-                                        (res2.detail ? '（' + res2.detail + '）' : '')));
+                                    // 手机端切换网络时可能短暂拿到旧任务视图；连续几次都找不到
+                                    // 才判定任务失效，避免一次瞬时 404 直接把用户踢到重试页。
+                                    _missingTaskReads++;
+                                    if (_missingTaskReads < 4 && Date.now() - t0 < WATCHDOG_MS) {
+                                        var _mw = document.getElementById('fastProgressText');
+                                        if (_mw) _mw.textContent = '连接正在恢复，已生成内容会保留…';
+                                        return;
+                                    }
+                                    if (tick) clearInterval(tick);
+                                    var _taskLost = new Error((res2.error || '任务已失效') +
+                                        (res2.detail ? '（' + res2.detail + '）' : ''));
+                                    _taskLost.code = res2.error_code || 'task_unavailable';
+                                    _taskLost.isTaskFail = true;
+                                    reject(_taskLost);
                                     return;
                                 }
+                                _pollErrors = 0;
+                                _missingTaskReads = 0;
+                                _mergeStatusPartial(res2);
                                 if (res2.status === 'queued') {
                                     // 排队兜底（并发 16 路正常永远碰不到）：默认只说「正在安排」，
                                     // 超过 20 秒还没轮到才诚实显示位次；queued 期间放宽看门狗到 15 分钟
@@ -4936,12 +5692,8 @@
                                     const sec = Math.round((Date.now() - t0) / 1000);
                                     // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
                                     // cursor 增量：后端只回每个字段「新增后缀」，这里累加成全文再渲染
-                                    var _p = res2.partial || {};
-                                    Object.keys(_p).forEach(function (f) {
-                                        _streamAccum[f] = (_streamAccum[f] || '') + (_p[f] || '');
-                                    });
-                                    paintPartial(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
+                                    try { if (window.wbAgentMessages) wbAgentMessages(res2.agent_log || []); } catch (e) {}
                                     if (res2.stage_label) _curStageLabel = String(res2.stage_label);
                                     if (res2.stage) _curStageCode = String(res2.stage);
                                     // 里程碑 1/2：正文写完、评委接手。其余阶段不弹，避免刷屏
@@ -4986,7 +5738,7 @@
                                     // 演讲稿流式预览：stage 到 speech 时，实时显示已生成字数
                                     if (res2.stage === 'speech') {
                                         fetch('/api/speech_stream/' + start.task_id)
-                                            .then(function (r) { return r.json(); })
+                                            .then(function (r) { return _wbReadJsonResponse(r, '演讲稿状态接口'); })
                                             .then(function (ss) {
                                                 if (ss && ss.success && ss.text) {
                                                     _setBar(res2.pct || 0,
@@ -5000,26 +5752,99 @@
                                     }
                                     return;
                                 }
-                                clearInterval(tick);
+                                try { if (window.wbAgentMessages) wbAgentMessages(res2.agent_log || []); } catch (e) {}
                                 if (res2.status === 'error') {
+                                    if (tick) clearInterval(tick);
                                     window._wbGenerating = false;
                                     var _pnE = document.getElementById('wbPartialNote'); if (_pnE) _pnE.style.display = 'none';
+                                    // 失败不清空已经生成的内容：把最后一份 partial 留在结果区，
+                                    // 用户可以复制、局部修改或补数据后再重试。
+                                    try {
+                                        _mergeStatusPartial(res2);
+                                        if (Object.keys(_streamAccum).some(function (f) { return String(_streamAccum[f] || '').trim(); })) {
+                                            var _ea = document.getElementById('resultArea');
+                                            if (_ea) _ea.style.display = 'block';
+                                        }
+                                    } catch (e) {}
+                                    if (String(_streamAccum.proposal || '').trim().length >= 120) {
+                                        // 有可读片段时转为保底交付，避免向用户弹出“生成失败”。
+                                        resolve({ success: true, data: Object.assign({}, _streamAccum, {
+                                            mode: mode, partial_delivery: true,
+                                            generation_warning: res2.error || '后续环节未完成，请核对已生成内容'
+                                        }) });
+                                        return;
+                                    }
                                     // 后端 /api/status 会给 error + detail，detail 才是原始报错。
                                     // 只弹 error 的话用户看到的是「生成失败」四个字，等于没说，
                                     // 也没法判断是自己网络问题还是服务挂了
                                     reject(new Error((res2.error || '生成失败') +
                                         (res2.detail ? '（' + res2.detail + '）' : '')));
                                 } else if (res2.status === 'cancelled') {
+                                    if (tick) clearInterval(tick);
                                     window._wbGenerating = false;
                                     var _pnC = document.getElementById('wbPartialNote'); if (_pnC) _pnC.style.display = 'none';
                                     reject({ cancelled: true });
                                 } else {
-                                    resolve({ success: true, data: res2.data });
+                                    // done 状态偶尔先于最终 data 写入内存到达（移动端代理更容易
+                                    // 读到这个窗口）。先把最后一批 partial 填回空字段，并给后端
+                                    // 一个短暂同步窗口；不要因为一个空对象直接把用户踢到重试页。
+                                    var _doneData = (res2.data && typeof res2.data === 'object')
+                                        ? Object.assign({}, res2.data) : {};
+                                    var _streamHasContent = Object.keys(_streamAccum).some(function (f) {
+                                        return String(_streamAccum[f] || '').trim();
+                                    });
+                                    Object.keys(_streamAccum).forEach(function (f) {
+                                        if (!String(_doneData[f] == null ? '' : _doneData[f]).trim() &&
+                                            String(_streamAccum[f] || '').trim()) {
+                                            _doneData[f] = _streamAccum[f];
+                                        }
+                                    });
+                                    var _contentKeys = ['proposal', 'proposal_draft', 'project_summary',
+                                        'parsed_rules', 'proposal_analysis', 'judge_feedback',
+                                        'defense_questions', 'ppt_outline'];
+                                    var _doneHasContent = _contentKeys.some(function (f) {
+                                        return String(_doneData[f] == null ? '' : _doneData[f]).trim();
+                                    });
+                                    if (!_doneHasContent && !_streamHasContent && _doneSyncWaits < 4 &&
+                                        Date.now() - t0 < (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
+                                        _doneSyncWaits++;
+                                        var _syncText = document.getElementById('fastProgressText');
+                                        if (_syncText) _syncText.textContent = '生成已完成，正在同步结果…';
+                                        return;
+                                    }
+                                    if (tick) clearInterval(tick);
+                                    // 已有 partial 时直接保底交付；即便后端最终数据仍为空，
+                                    // 也返回可渲染对象而不是抛异常显示「重新生成」。
+                                    if (!_doneHasContent && !_streamHasContent) {
+                                        _doneData.partial_delivery = true;
+                                        _doneData.generation_warning = '生成已完成，但结果同步较慢；请稍后打开历史记录补齐内容';
+                                    } else if (_streamHasContent) {
+                                        _doneData.partial_delivery = !_doneHasContent;
+                                        if (!_doneHasContent) _doneData.generation_warning = '已交付已生成片段，其余模块正在同步';
+                                    }
+                                    resolve({ success: true, data: _doneData });
                                 }
                             })
-                            .catch(e => { clearInterval(tick); reject(e); });
+                            .catch(e => {
+                                // 移动网络偶发超时/断线不能直接把整轮生成判死；只要任务还在服务端，
+                                // 下一轮会继续取 partial。连续多次失败且超过短暂恢复窗口才交给兜底。
+                                _pollErrors++;
+                                var _msg = String((e && e.message) || e || '');
+                                var _transient = /fetch|network|load failed|timeout|timed out|abort|网页而不是数据/i.test(_msg);
+                                if (_transient && _pollErrors < 8 && Date.now() - t0 < (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
+                                    var _rw = document.getElementById('fastProgressText');
+                                    if (_rw) _rw.textContent = '连接暂时波动，正在自动恢复…';
+                                    return;
+                                }
+                                if (tick) clearInterval(tick);
+                                reject(e);
+                            })
+                            .finally(function () {
+                                if (_statusTimer) clearTimeout(_statusTimer);
+                                _pollBusy = false;
+                            });
                     };
-                    const tick = setInterval(_poll, 2000);
+                    tick = setInterval(_poll, 2000);
                     document.addEventListener('visibilitychange', function () {
                         if (!document.hidden) { try { _poll(); } catch (e) {} }
                     });
@@ -5041,6 +5866,8 @@
                     }
                 } catch (e) {}
                 window._lastMode = mode;   // 档位单一真相源：结果页徽章、历史打开都读它
+                // 部分交付由系统内部兜底处理；用户只看到可继续编辑的结果，
+                // 具体异常留在后台失败记录和通信日志，不用错误弹窗打断工作流。
                 // 里程碑 2/2：整轮只弹这一次收尾彩蛋
                 wbMileOnce('all', mode === 'deep' ? '搞定，三件套已生成'
                                                   : '搞定，申报书已生成');
@@ -5060,7 +5887,19 @@
                         // 微信 / 夸克 / 百度App 的内核在手机上一次性跑 15 个板块的
                         // marked.parse + innerHTML 会锁死主线程：卡顿、白屏、甚至渲染到一半丢内容。
                         // 改成按优先级入队、每帧限时补画；依赖 DOM 的判断全排到渲染之后。
-                        window._lastData = data.data;
+                        window._lastData = data.data || {};
+                        // 让结果、历史恢复和导出共享同一档位真相源；旧接口没有 mode 时再由当前请求补上。
+                        if (!window._lastData.mode) window._lastData.mode = mode;
+                        // 兼容旧后端草稿优化响应：即使只返回分析字段，也把用户原稿
+                        // 作为当前正文接入统一渲染与局部修改链路。
+                        if (!String(window._lastData.proposal || '').trim() && proposal_draft) {
+                            window._lastData.proposal = proposal_draft;
+                        }
+                        wbEnsureLiteOutputs(window._lastData);
+                        data.data = window._lastData;
+                        try { wbRenderVersionPicker(data.data); } catch (e) {}
+                        wbRenderTrustNote(data.data);
+                        wbRenderQualityReport(data.data.quality_report);
                         const isDeep = mode === 'deep';
                         var _Q = [];
                         function _P(prio, fn) { _Q.push([prio, fn]); }
@@ -5095,12 +5934,12 @@
                                 sc.style.display = 'block';
                             }
                         });
-                        _P(3, function () { document.getElementById('proposalText').innerHTML = wbRenderMD(data.data.proposal); });
-                        _P(3, function () { document.getElementById('judgeFeedback').innerHTML = wbRenderMD(data.data.judge_feedback); });
+                        _P(3, function () { wbRenderModule('proposalText', data.data.proposal || data.data.proposal_draft, '申报书正文'); wbRefreshProposalToc(); });
+                        _P(3, function () { wbRenderModule('judgeFeedback', data.data.judge_feedback, '评委意见'); });
                         _P(4, function () { renderExpertReview(data.data.expert_review); });
                         _P(4, function () { renderJudgeScores(data.data.judge_scores); });
                         _P(4, function () { renderIdeaRadar(data.data.scores, data.data.idea_score); });
-                        _P(5, function () { document.getElementById('proposalAnalysis').innerHTML = wbRenderMD(data.data.proposal_analysis); });
+                        _P(5, function () { wbRenderModule('proposalAnalysis', data.data.proposal_analysis, '申报书诊断'); });
                         // ---- 6~8：深度版专属板块 ----
                         if (data.data.competitor_analysis) _P(6, function () { document.getElementById('competitorAnalysis').innerHTML = wbRenderMD(data.data.competitor_analysis); });
                         if (data.data.business_model) _P(6, function () { document.getElementById('businessModel').innerHTML = wbRenderMD(data.data.business_model); });
@@ -5111,8 +5950,8 @@
                         // 社会价值 / 项目简介：后端已返回，之前漏了往这两个 div 写内容，导致一直空白
                         if (data.data.social_value) _P(7, function () { document.getElementById('socialValue').innerHTML = wbRenderMD(data.data.social_value); });
                         if (data.data.project_summary) _P(7, function () { document.getElementById('projectSummary').innerHTML = wbRenderMD(data.data.project_summary); });
-                        if (data.data.defense_questions) _P(8, function () { document.getElementById('defenseQuestions').innerHTML = wbRenderMD(data.data.defense_questions); });
-                        if (data.data.ppt_outline) _P(8, function () { document.getElementById('pptOutline').innerHTML = wbRenderMD(data.data.ppt_outline); });
+                        _P(8, function () { wbRenderModule('defenseQuestions', data.data.defense_questions, '答辩问题预测'); });
+                        _P(8, function () { wbRenderModule('pptOutline', data.data.ppt_outline, 'PPT 大纲'); });
                         // ---- 9：富媒体（图表 / 表格 / deck），DOM 最重，放最后 ----
                         _P(9, function () { renderRich(data.data, isDeep); });
 
@@ -5201,10 +6040,13 @@
                             }
                         } catch (e) {}
                         wbHideRetry();
-                        wbFabShow(!!(data.data && data.data.rich_deck));
+                        wbFabShow(!!data.data);
                         renderCompleteness(data.data.completeness);
                         initDeckThemeSelect();
-                        document.getElementById('chartsTab').style.display = isDeep ? 'block' : 'none';
+                        // 简洁版保留轻量图表入口；若后端给了真实图表，历史和二次生成都不能丢。
+                        // 图表页是结果闭环的一部分：即便本轮没有真实图表，也展示明确的
+                        //「没有可核验数据」状态，避免第二次生成后入口凭空消失。
+                        document.getElementById('chartsTab').style.display = 'block';
                         wbPaintQueue(_Q);
                         // 接口说成功但一个字都没有：多半是某一步 LLM 静默失败。
                         // 不提示的话用户就对着一堆空板块发呆，以为是自己的问题
@@ -5217,7 +6059,7 @@
                             });
                         }
                         // 初始化可视化图表（有 AI 真图时不再画示例图）
-                        if (isDeep && !(data.data.rich_charts || []).length) {
+                        if (!(data.data.rich_charts || []).length && data.data.show_charts !== false) {
                             setTimeout(async () => {
                                 // echarts 是按需加载的：这里等它到位再画（首屏不再为它买单）
                                 await wbLoadEcharts();
@@ -5341,6 +6183,25 @@
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
                 streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
                 try { wbAgentFinish(false); } catch (e) {}
+                // 移动端网络中断时，最后一批 partial 往往已经在页面上但尚未走到 done。
+                // 先把它固定为可读结果，再决定是否显示重试入口；不能因为状态请求失败
+                // 就把用户已经看到的正文一起藏掉。
+                var _hasPartialAfterError = Object.keys(_streamAccum || {}).some(function (f) {
+                    return String(_streamAccum[f] || '').trim().length > 0;
+                });
+                if (_hasPartialAfterError) {
+                    try { paintPartial(_streamAccum); } catch (e) {}
+                    var _partialResult = document.getElementById('resultArea');
+                    var _partialSkeleton = document.getElementById('skeletonArea');
+                    if (_partialResult) _partialResult.style.display = 'block';
+                    if (_partialSkeleton) _partialSkeleton.style.display = 'none';
+                    var _partialNoteAfterError = document.getElementById('wbPartialNote');
+                    if (_partialNoteAfterError) {
+                        _partialNoteAfterError.style.display = 'block';
+                        var _partialNoteText = document.getElementById('wbPartialNoteTxt');
+                        if (_partialNoteText) _partialNoteText.textContent = '已保留当前已生成内容；连接恢复后可继续补齐，其余模块不会覆盖这份结果';
+                    }
+                }
                 document.getElementById('skeletonArea').style.display = 'none';
                 document.getElementById('cancelWrap').style.display = 'none';
                 document.getElementById('progressSteps').style.display = 'none';
@@ -5350,7 +6211,7 @@
                 var _eb2 = document.getElementById('etaBadge');
                 if (_eb2) _eb2.style.display = 'none';
                 // 被用户主动终止的不弹重试（他自己按的，不需要提示）
-                if (!(err && err.cancelled)) {
+                if (!(err && err.cancelled) && !_hasPartialAfterError) {
                     var _rw = document.getElementById('retryWrap');
                     var _ps = document.getElementById('progressSteps');
                     if (_rw) { _rw.style.display = 'block'; }
@@ -5367,6 +6228,23 @@
                         type: 'warn',
                         sub: '已填内容都还在，明天再来就能继续生成',
                         ms: 8000
+                    });
+                } else if (err && err.code === 'insufficient_balance') {
+                    wbToast('模型服务暂时无法生成', {
+                        type: 'warn', ms: 10000,
+                        sub: '上游模型账户余额不足，已填内容没有丢失；管理员补充额度后无需重新填写即可继续'
+                    });
+                } else if (err && err.code === 'auth_error') {
+                    wbToast('模型服务鉴权未通过', {
+                        type: 'error', ms: 10000,
+                        sub: '请管理员检查模型密钥配置；你的创意和草稿仍保留在页面中'
+                    });
+                } else if (_hasPartialAfterError) {
+                    // 已有正文/分析片段时不把网络波动包装成「生成失败」；
+                    // 结果区已经可用，剩余模块可通过历史同步或局部修改补齐。
+                    wbToast('已保留当前生成内容', {
+                        type: 'warn', ms: 7000,
+                        sub: '连接暂时不稳定，已生成片段仍可查看、复制和修改；恢复后可继续补齐'
                     });
                 } else if (err && err.isCreateFail) {
                     // 任务根本没建立起来：不是生成质量问题，别让人去改创意
@@ -5526,8 +6404,12 @@
                 // 整块被隐藏（简洁版没有深度板块）或压根没内容 → 不给锚点，
                 // 否则点过去是一片空白，反而更迷路
                 var wrap = el.closest ? (el.closest('.deep-only, .auto-show') || el) : el;
-                if (wrap.offsetParent === null && el.offsetParent === null) return;
                 var isPanel = (a.id.indexOf('tab-') === 0);
+                if (!isPanel && el.getAttribute && el.getAttribute('data-wb-empty') === '1') return;
+                // tab-content 在未选中时本来就 display:none，但其内容仍是有效锚点；
+                // 这里只按真实模块的 deep-only/auto-show 显隐过滤，避免导航只剩当前 tab。
+                if (wrap !== el && wrap.style && wrap.style.display === 'none') return;
+                if (isPanel && el.style && el.style.display === 'none') return;
                 if (!isPanel && !(el.textContent || '').trim()) return;
                 h += '<button class="wb-anchor-btn" onclick="wbGoAnchor(\'' + a.t +
                      '\',\'' + a.id + '\')">' + a.n + '</button>';
@@ -5545,8 +6427,9 @@
             setTimeout(function () {
                 var el = document.getElementById(id);
                 if (!el) return;
-                // 滚到带标题的整块（content-block 的父 div），而不是光秃秃的正文块
-                var target = (el.closest && el.closest('div')) || el;
+                // 章节导航必须滚到具体标题，而不是最近的 content-block（否则每个章节
+                // 都跳回正文顶部，看起来像导航失效）。
+                var target = el;
                 // 让开吸顶的导出条，不然标题被压在下面看不见
                 target.style.scrollMarginTop = '76px';
                 try {
@@ -5609,6 +6492,12 @@
             h += '<h2 style="margin-bottom: 6px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 科创赛事申报材料智能生成助手</h2>';
             h += '<div style="color: var(--text-dim); font-size: 13.5px; line-height: 1.8; margin-bottom: 16px;">' +
                  '把你的项目创意变成一整套参赛材料：规则解析、申报书正文、评委打分、竞品与商业分析、图表、路演 PPT、答辩预测。</div>';
+
+            h += '<div style="padding: 12px 14px; border: 1px solid var(--c-a); border-radius: 10px; background: var(--surface-2); margin-bottom: 16px;">' +
+                 '<div style="font-weight: 700; color: var(--text); margin-bottom: 6px;">评委怎么快速查看</div>' +
+                 '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.8;">' +
+                 '① 首页点「一键演示」可直接打开完整成品；② 下拉可换 3 份不同赛事样例；③ 结果页可直接查看图表、PPT 大纲并导出。' +
+                 '<br>进入管理后台请打开 <b>/admin/login</b>：评委使用项目方提供的演示账号，管理员使用管理员账号；普通用户无需登录且无权进入后台。</div></div>';
 
             // 手机端：先说清楚在手机上怎么用，避免踩微信的坑
             if (m) {
@@ -5722,7 +6611,9 @@
                 box.style.borderRadius = '0';
                 box.style.overflowY = 'auto';
             }
+            modal.classList.add('wb-intro-open');
             modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
         }
 
         // Esc 关闭使用说明弹窗：点暗处已支持，键盘党/桌面端习惯 Esc（待验收清单一#3）
@@ -5736,7 +6627,12 @@
 
         function closeIntro(remember) {
             var modal = document.getElementById('introModal');
-            if (modal) modal.style.display = 'none';
+            if (modal) {
+                modal.classList.remove('wb-intro-open');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+            }
+            document.body.classList.remove('wb-intro-open', 'modal-open');
             var noMore = document.getElementById('introNoMore');
             var skip = (!noMore || noMore.checked);
             if (remember !== false && skip) {
@@ -5761,6 +6657,33 @@
                 }
             }
         }
+
+        // 使用说明弹窗的关闭入口统一走这里。部分内置浏览器会吞掉内联
+        // onclick 的 event 或保留旧缓存脚本，因此按钮和遮罩都保留一个无依赖兜底。
+        window.wbIntroClose = function (event) {
+            if (event) {
+                try { event.preventDefault(); } catch (e) {}
+                try { event.stopPropagation(); } catch (e) {}
+            }
+            try {
+                if (typeof closeIntro === 'function') { closeIntro(); return false; }
+            } catch (e) {}
+            var modal = document.getElementById('introModal');
+            if (modal) {
+                modal.classList.remove('wb-intro-open');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+            }
+            return false;
+        };
+        (function bindIntroCloseButtons() {
+            var modal = document.getElementById('introModal');
+            if (!modal) return;
+            modal.querySelectorAll('.wb-modal-x, .wb-modal-close-btn').forEach(function (button) {
+                button.type = 'button';
+                button.addEventListener('click', window.wbIntroClose, false);
+            });
+        })();
 
         /* ---------- 运行日志（只读排查面板，数据来自 /api/logs） ---------- */
         var _LOG_COLOR = { 'ERROR': 'var(--err-text)', 'WARN': '#d97706', 'INFO': 'var(--text-mute)' };
@@ -6237,17 +7160,82 @@
     /* ===================== 图表数据真实性提醒 ===================== */
     /* 后端会在文末生成「待替换数据清单」章节，网页上要提醒作者去补真实数据；
        但它绝不能出现在导出件里（见 wbStripTodo）。 */
+    window.wbReplaceEvidence = async function () {
+        var rd = window._lastData || {}, hid = rd.history_id;
+        if (!hid) { wbToast('当前结果还没有可同步的历史记录', {type:'warn'}); return; }
+        var text = String(rd.proposal || ''), markers = [];
+        text.split(/\r?\n/).forEach(function (line) {
+            if (/待核实|待补来源|待替换/.test(line)) {
+                var m = line.replace(/^\s*[-*\d.、)]+\s*/, '').trim();
+                if (m && markers.indexOf(m) < 0) markers.push(m.slice(0, 180));
+            }
+        });
+        var replacements = [];
+        markers.slice(0, 12).forEach(function (marker) {
+            var value = window.prompt('补充真实值（取消跳过）：\n' + marker);
+            if (value && value.trim()) replacements.push({marker:marker, value:value.trim(), source:'用户补充'});
+        });
+        if (!replacements.length) return;
+        try {
+            var res = await _wbFetch('/api/history/' + encodeURIComponent(hid) + '/evidence', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({replacements:replacements})});
+            var out = await res.json();
+            if (!res.ok || !out.success) throw new Error(out.error || '替换失败');
+            window._lastData = out.data || rd;
+            try { renderRich(window._lastData, window._lastData.mode === 'deep'); } catch (e) {}
+            try { renderResult(window._lastData); } catch (e) {}
+            wbToast('已局部替换并同步图表，无需重新生成', {type:'ok'});
+        } catch (e) { wbToast('局部替换失败：' + (e.message || e), {type:'error'}); }
+    };
+
+    function wbRenderDataTodoKinds() {
+        var el = document.getElementById('dataTodoKinds');
+        if (!el) return;
+        var rd = window._lastData || {};
+        var qr = rd && rd.quality_report || {};
+        var pending = Array.isArray(qr.pending_replacements) ? qr.pending_replacements : [];
+        if (!pending.length) {
+            el.style.display = 'none';
+            el.textContent = '';
+            return;
+        }
+        var labels = {
+            metric_conflict: '数字口径',
+            source_missing: '引用来源',
+            absolute_claim: '表述边界',
+            user_data_gap: '材料缺口',
+            data_gap: '材料缺口'
+        };
+        var counts = {};
+        pending.forEach(function (item) {
+            var key = labels[item && item.kind] ? item.kind : 'other';
+            var name = labels[key] || '待核实';
+            counts[name] = (counts[name] || 0) + 1;
+        });
+        var order = ['数字口径', '引用来源', '表述边界', '材料缺口', '待核实'];
+        var parts = order.filter(function (name) { return counts[name]; }).map(function (name) {
+            return '<span class="data-todo-kind"><b>' + _esc(name) + '</b> ' + counts[name] + '</span>';
+        });
+        if (!parts.length) { el.style.display = 'none'; return; }
+        el.innerHTML = '<span class="data-todo-kinds-label">风险分类</span>' + parts.join('');
+        el.style.display = 'flex';
+    }
+    window.wbRenderDataTodoKinds = wbRenderDataTodoKinds;
+
     window.wbDataTodoScan = function () {
         var bar = document.getElementById('dataTodoBar');
         var cnt = document.getElementById('dataTodoCount');
         var el = document.getElementById('proposalText');
         if (!bar || !el) return 0;
         var txt = el.innerText || el.textContent || '';
+        var qualityPending = (((window._lastData || {}).quality_report || {}).pending_replacements || []);
+        if (!Array.isArray(qualityPending)) qualityPending = [];
         var at = txt.indexOf('待替换数据清单');
         if (at < 0) {
             /* 兜底：后端字段名可能变化，改用更宽松的判据 */
-            if (txt.indexOf('需替换为实测') < 0 && txt.indexOf('待替换') < 0) {
+            if (txt.indexOf('需替换为实测') < 0 && txt.indexOf('待替换') < 0 && !qualityPending.length) {
                 bar.style.display = 'none';
+                var emptyKinds = document.getElementById('dataTodoKinds');
+                if (emptyKinds) { emptyKinds.style.display = 'none'; emptyKinds.textContent = ''; }
                 return 0;
             }
         }
@@ -6255,6 +7243,7 @@
         var seg = at >= 0 ? txt.slice(at, at + 2000) : txt;
         var n = (seg.match(/(^|\n)\s*[-*·]\s*\S/g) || []).length;
         if (!n) { n = (seg.match(/(^|\n)\s*\d+[.、)]\s*\S/g) || []).length; }
+        if (!n && qualityPending.length) n = qualityPending.length;
         if (n > 40) n = 0;   // 明显是误判就干脆不显示数字
         /* 193 轮：数不出条数时原来填「若干」，页面就成了「有 若干 项数据需要替换」——
            这是占位词残留（L7），评委会当成没做完。改为：数得出来就报数，数不出来就说定性结论。 */
@@ -6267,11 +7256,17 @@
             cnt.textContent = n || '';
         }
         bar.style.display = 'block';
+        wbRenderDataTodoKinds();
         return n;
     };
-    window.wbDataTodoJump = function () {
+        window.wbDataTodoJump = function () {
         var el = document.getElementById('proposalText');
-        if (!el) return;
+        var rd = window._lastData || {};
+        var hasResult = !!(String(rd.proposal || rd.proposal_draft || '').trim() || (el && String(el.textContent || '').trim()));
+        if (!el || !hasResult) {
+            wbToast('请先生成一份结果，再进行数据核查', { type: 'warn' });
+            return;
+        }
         var heads = el.querySelectorAll('h1,h2,h3,h4,h5,h6,strong,p');
         for (var i = 0; i < heads.length; i++) {
             var t = (heads[i].innerText || heads[i].textContent || '');
@@ -6282,6 +7277,8 @@
         }
         wbToast('没定位到清单，请手动往下翻', { type: 'warn' });
     };
+    // 顶部“更多功能”使用内联入口；显式挂到 window，兼容旧浏览器和脚本作用域隔离。
+    window.wbGoAnchor = wbGoAnchor;
 
     /* ===================== 分享：生成 7 天有效的只读链接 ===================== */
     function wbShareModal(url, expires) {
@@ -6453,6 +7450,10 @@
 
     /* ===================== 失败/超时后重试 ===================== */
     window.wbRetry = function () {
+        if (window._wbGenerating) {
+            wbToast('当前还在生成中', {type: 'info', sub: '请等待本轮完成，不会重复创建任务'});
+            return;
+        }
         var w = document.getElementById('retryWrap');
         if (w) w.style.display = 'none';
         var eb = document.getElementById('etaBadge');
@@ -6684,10 +7685,17 @@
             var modal = document.getElementById('historyModal');
             try {
                 var d = null;
-                try {
-                    var res = await fetch('/api/history/' + id);
-                    d = await res.json();
-                } catch (e) { d = null; }
+                if (String(id) === 'demo') {
+                    try {
+                        var demoRes = await _wbFetch('/api/demo', { cache: 'no-store' }, 9000);
+                        d = await demoRes.json();
+                    } catch (e) { d = null; }
+                } else {
+                    try {
+                        var res = await fetch('/api/history/' + id);
+                        d = await res.json();
+                    } catch (e) { d = null; }
+                }
                 if (!d || !d.success || !d.data) {
                     // 后端按 uid 隔离，手机端 uid 存不住时这条会「记录不存在」。
                     // 用生成时存在本机的那份兜底，历史不至于点了打不开。
@@ -6699,10 +7707,13 @@
                     }
                 }
                 var data = d.data;
+                wbEnsureLiteOutputs(data);
                 window._lastData = data;
+                wbRenderTrustNote(data);
+                wbRenderQualityReport(data.quality_report);
                 // 打开历史必须同步记下 history_id，否则 wbShare 和导出回源都会拿不到 id，
                 // 表现成「分享提示还没存进历史」「导出不回源当前记录」。
-                window._lastHistoryId = id;
+                window._lastHistoryId = String(id) === 'demo' ? null : id;
                 // 174 轮：回看历史必须重算「沉淀」入口。原来只在生成完成那次同步过，
                 // 于是回看一条旧记录时，按钮上写的还是上一条的分数、点下去沉淀的却是当前这条
                 // ——「显示的分数」和「实际入库的记录」不是同一条，属于静默错沉淀。
@@ -6715,8 +7726,9 @@
                     window._wbLastScore = _hs;
                     wbTrainArchiveSync(_hs);
                 } catch (e) {}
-                wbFabShow(!!data.rich_deck);
-                var isDeep = !!(data.competitor_analysis || data.business_model || data.tech_solution);
+                wbFabShow(!!data);
+                // 优先使用生成时记录的 mode，不能因某个残留字段而把简洁版误判为深度版。
+                var isDeep = data.mode === 'deep' || (!data.mode && !!(data.competitor_analysis || data.business_model || data.tech_solution));
                 window._lastMode = data.mode || (isDeep ? 'deep' : 'fast');
                 var md = function (s) {
                     try { return wbRenderMD(s || ''); } catch (e) { return String(s || '').replace(/\n/g, '<br>'); }
@@ -6735,9 +7747,10 @@
                         si.title = (s.checked ? '与本地 ' + s.checked + ' 条范文对比（本地初检，非知网正式查重）' : '本地初检，非正式查重');
                     }
                 } catch (e) {}
-                set('proposalText', data.proposal);
-                set('judgeFeedback', data.judge_feedback);
-                set('proposalAnalysis', data.proposal_analysis);
+                wbRenderModule('proposalText', data.proposal || data.proposal_draft, '申报书正文');
+                wbRefreshProposalToc();
+                wbRenderModule('judgeFeedback', data.judge_feedback, '评委意见');
+                wbRenderModule('proposalAnalysis', data.proposal_analysis, '申报书诊断');
                 set('competitorAnalysis', data.competitor_analysis);
                 set('businessModel', data.business_model);
                 set('riskAnalysis', data.risk_analysis);
@@ -6745,8 +7758,8 @@
                 set('implementationPlan', data.implementation_plan);
                 set('socialValue', data.social_value);
                 set('projectSummary', data.project_summary);
-                set('defenseQuestions', data.defense_questions);
-                set('pptOutline', data.ppt_outline);
+                wbRenderModule('defenseQuestions', data.defense_questions, '答辩问题预测');
+                wbRenderModule('pptOutline', data.ppt_outline, 'PPT 大纲');
                 try { renderExpertReview(data.expert_review); } catch (e) {}
                 try { renderJudgeScores(data.judge_scores); } catch (e) {}
                 try { renderIdeaRadar(data.scores, data.idea_score); } catch (e) {}
@@ -6766,7 +7779,7 @@
                 var defenseTab = document.getElementById('defenseTab');
                 if (defenseTab) defenseTab.style.display = 'block';
                 var chartsTab = document.getElementById('chartsTab');
-                if (chartsTab) chartsTab.style.display = isDeep ? 'block' : 'none';
+                if (chartsTab) chartsTab.style.display = 'block';
                 var badge = document.getElementById('tierBadge');
                 if (badge) {
                     // 档位以记录自带的 mode 为准；后端还没落库 mode 时才回退到内容嗅探
@@ -6783,7 +7796,7 @@
                 // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
                 try { switchTab(null, 'proposal'); } catch (e) {}
                 if (modal) modal.style.display = 'none';
-                wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
+                wbToast(String(id) === 'demo' ? '已打开成品演示，可以直接查看并导出' : ('已打开历史记录 #' + id + '，可以继续导出'), { type: 'ok', ms: 2800 });
             } catch (e) {
                 wbToast('打开失败：' + _friendlyErr(e), { type: 'error' });
             }
@@ -6865,6 +7878,7 @@
         // 页面加载后拉取一次知识库状态（失败也不影响主流程）
         loadKnowledgeStatus();
         // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
+        wbCheckBuildSync();
         wbLoadCompIndex();
         wbCompReorderChips();   // 老用户回来：常用赛事标签按本机使用频次排好（第一百零二轮）
         // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
@@ -6935,7 +7949,7 @@
             };
 
             function fromStatic() {
-                return fetch('/static/notice.json?t=' + Date.now(), { cache: 'no-store' })
+                return fetch('static/notice.json?t=' + Date.now(), { cache: 'no-store' })
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .catch(function () { return null; });
             }
@@ -7135,6 +8149,50 @@
                 bgL: ['rgba(248,250,252,.6)', 'rgba(240,243,247,.74)'],
                 bgD: ['rgba(24,30,42,.45)', 'rgba(16,20,30,.58)']
             }
+        };
+
+        // 原生 details 在部分移动端内核、旧引导遮罩残留时会出现“按钮高亮但不展开”。
+        // 改为独立弹窗，避免条款直接铺在首页底部；同时先清理引导层，保证点击始终有可见结果。
+        window.wbDisclaimerToggle = function (summary) {
+            var details = summary && summary.parentElement;
+            if (!details || details.tagName.toLowerCase() !== 'details') return;
+            try { if (typeof coachEnd === 'function') coachEnd(); } catch (e) {}
+            // coachEnd 可能处在另一个闭包中；这里再做一次无条件清理，兼容旧缓存脚本。
+            try {
+                document.body.classList.remove('wb-coach-active', 'wb-coach-ready');
+                ['wbCoachVeil', 'coachTip'].forEach(function (id) {
+                    var node = document.getElementById(id);
+                    if (node && node.parentNode) node.parentNode.removeChild(node);
+                });
+                document.querySelectorAll('.wb-coach-target').forEach(function (node) { node.classList.remove('wb-coach-target'); });
+            } catch (e) {}
+            var source = document.getElementById('wbDisclaimerBody');
+            details.open = false;
+            summary.setAttribute('aria-expanded', 'true');
+            // 只复用参考图的弹窗视觉模板，不混入首页“使用说明”的正文内容。
+            var modal = document.getElementById('disclaimerModal');
+            var target = document.getElementById('wbDisclaimerModalBody');
+            if (!modal || !target || !source) return;
+            target.innerHTML = source.innerHTML;
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('wb-disclaimer-open');
+            var close = modal.querySelector('.wb-modal-x');
+            if (close) setTimeout(function () { try { close.focus(); } catch (e) {} }, 0);
+        };
+        window.closeDisclaimer = function (ev) {
+            var intro = document.getElementById('introModal');
+            if (intro && intro.style.display !== 'none' && typeof closeIntro === 'function') {
+                closeIntro();
+            }
+            var modal = document.getElementById('disclaimerModal');
+            if (!modal) return;
+            if (ev && ev.target !== modal) return;
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('wb-disclaimer-open');
+            var summary = document.querySelector('#wbDisclaimer .wb-disclaimer-summary');
+            if (summary) summary.setAttribute('aria-expanded', 'false');
         };
         function wbChartThemeKey() {
             var v = '';
@@ -7386,17 +8444,21 @@
         var WB_BG_PRESETS = [
             /* 极光的青+紫和默认底色的光晕撞色，所以绿色那团加重并上移到首屏可见处，
                否则切了看不出区别（实测顶部带色差只有 3.5，跟噪声基线差不多） */
-            { id: 'aurora', name: '极光', color: '#070b18', img: 'radial-gradient(1200px 700px at 12% 26%, rgba(56,189,248,.46), transparent 60%), radial-gradient(900px 620px at 82% 16%, rgba(168,85,247,.38), transparent 62%), radial-gradient(1000px 760px at 58% 72%, rgba(52,211,153,.36), transparent 66%)' },
-            { id: 'nebula', name: '星云', color: '', img: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.34), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.34), transparent 64%), linear-gradient(160deg, #0a0f22, #120b24)' },
-            { id: 'ocean', name: '深海', color: '', img: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.34), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.30), transparent 66%), linear-gradient(180deg, #04121f, #061a2c)' },
-            { id: 'ember', name: '熔岩', color: '', img: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.32), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.30), transparent 64%), linear-gradient(160deg, #150a10, #1c0f0a)' },
-            { id: 'ink', name: '水墨', color: '', img: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.26), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.30), transparent 64%), linear-gradient(180deg, #0b0e14, #10141c)' },
-            { id: 'cyber', name: '赛博', color: '', img: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.34), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.30), transparent 62%), linear-gradient(150deg, #0a0716, #131024)' },
-            { id: 'forest', name: '林雾', color: '', img: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.26), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.30), transparent 66%), linear-gradient(180deg, #07130f, #0a1712)' },
-            { id: 'plain', name: '纯净', color: '', img: 'linear-gradient(180deg, #080b14, #0d1220)' }
+            { id: 'aurora', name: '极光', tone: 'dark', color: '#071b2b', img: 'radial-gradient(1200px 700px at 12% 26%, rgba(56,189,248,.70), transparent 60%), radial-gradient(900px 620px at 82% 16%, rgba(168,85,247,.58), transparent 62%), radial-gradient(1000px 760px at 58% 72%, rgba(52,211,153,.52), transparent 66%)' },
+            { id: 'nebula', name: '星云', tone: 'dark', color: '', img: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.62), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.58), transparent 64%), linear-gradient(160deg, #160b30, #281044)' },
+            { id: 'ocean', name: '深海', tone: 'dark', color: '', img: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.62), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.56), transparent 66%), linear-gradient(180deg, #032435, #06445b)' },
+            { id: 'ember', name: '熔岩', tone: 'dark', color: '', img: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.62), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.58), transparent 64%), linear-gradient(160deg, #32100c, #4a1713)' },
+            { id: 'ink', name: '水墨', tone: 'dark', color: '', img: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.50), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.56), transparent 64%), linear-gradient(180deg, #111722, #263344)' },
+            { id: 'cyber', name: '赛博', tone: 'dark', color: '', img: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.64), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.60), transparent 62%), linear-gradient(150deg, #16072c, #291044)' },
+            { id: 'forest', name: '林雾', tone: 'dark', color: '', img: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.58), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.60), transparent 66%), linear-gradient(180deg, #071f16, #0d3424)' },
+            { id: 'plain', name: '纯净', tone: 'dark', color: '', img: 'linear-gradient(180deg, #182334, #2f4152)' }
         ];
         var WB_BG_KEY = 'wb_bg_cfg_v1';
+        var WB_BG_CLASS_IDS = ['aurora', 'nebula', 'ocean', 'ember', 'ink', 'cyber', 'forest', 'plain', 'user'];
         var wbBgLayer = null, wbBgUserUrl = null;
+        // 用户可以在图片恢复期间立刻点「恢复默认」。用序号让旧的异步回调失效，
+        // 避免 IndexedDB 读回旧图片后又把刚恢复的页面切回自定义背景。
+        var wbBgApplyEpoch = 0;
         function wbBgLayerEl() {
             if (!wbBgLayer) {
                 wbBgLayer = document.createElement('div');
@@ -7457,8 +8519,37 @@
                 });
             }).catch(function () { return null; });
         }
+        // 上传图片先做一次低成本亮度采样，背景切换时据此选择遮罩强度。
+        // 只保存 tone，不保存图片像素到 localStorage；图片仍由 IndexedDB 管理。
+        function wbBgImageTone(canvas) {
+            try {
+                var ctx = canvas && canvas.getContext('2d');
+                if (!ctx || !canvas.width || !canvas.height) return 'mixed';
+                var side = 32, w = Math.min(side, canvas.width), h = Math.min(side, canvas.height);
+                var sample = document.createElement('canvas'); sample.width = w; sample.height = h;
+                var sctx = sample.getContext('2d');
+                sctx.drawImage(canvas, 0, 0, w, h);
+                var px = sctx.getImageData(0, 0, w, h).data, total = 0, count = 0;
+                for (var i = 0; i < px.length; i += 4) {
+                    total += (px[i] * .2126 + px[i + 1] * .7152 + px[i + 2] * .0722);
+                    count++;
+                }
+                var avg = count ? total / count : 128;
+                return avg > 166 ? 'light' : avg < 92 ? 'dark' : 'mixed';
+            } catch (e) { return 'mixed'; }
+        }
+        function wbBgSetTone(tone, source) {
+            var b = document.body;
+            if (!b) return;
+            b.classList.remove('wb-bg-tone-dark', 'wb-bg-tone-light', 'wb-bg-tone-mixed');
+            for (var i = 0; i < WB_BG_CLASS_IDS.length; i++) b.classList.remove('wb-bg-' + WB_BG_CLASS_IDS[i]);
+            b.classList.add(tone === 'light' ? 'wb-bg-tone-light' : tone === 'dark' ? 'wb-bg-tone-dark' : 'wb-bg-tone-mixed');
+            if (source && WB_BG_CLASS_IDS.indexOf(String(source)) >= 0) b.classList.add('wb-bg-' + source);
+        }
         function wbBgApply(cfg) {
+            wbBgApplyEpoch += 1;
             var L = wbBgLayerEl();
+            var active = !!(cfg && cfg.src);
             // 0.45：用户图 brightness≈0.66。原先 0.55（brightness 0.59）把上传的图压得太灰，
             // 用户会以为「图坏了」；嫌亮/嫌暗都可以拖面板里的压暗滑块
             var dim = cfg && typeof cfg.dim === 'number' ? cfg.dim : 0.45;
@@ -7466,9 +8557,16 @@
             var img = cfg && cfg.src === 'user' ? wbBgUserUrl : null;
             var preset = null;
             for (var i = 0; i < WB_BG_PRESETS.length; i++) if (WB_BG_PRESETS[i].id === (cfg && cfg.src)) preset = WB_BG_PRESETS[i];
+            active = !!(img || preset);
+            if (document.body) {
+                document.body.classList.toggle('wb-custom-bg', active);
+                wbBgSetTone(active ? ((cfg && cfg.tone) || (preset && preset.tone) || 'mixed') : 'mixed', active ? (cfg && cfg.src) : '');
+            }
             if (img) {
                 L.style.backgroundImage = 'url(' + img + ')';
-                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.75).toFixed(2) + ')';
+                L.style.backgroundColor = 'transparent';
+                var lightTheme = !!(document.body && document.body.classList.contains('light'));
+                L.style.filter = 'blur(' + blur + 'px) brightness(' + (lightTheme ? 1.05 : (1 - dim * 0.75)).toFixed(2) + ')';
                 L.style.opacity = '1';
             } else if (preset) {
                 // 分两条设置：image 只能是 gradient，color 单独走 background-color
@@ -7476,14 +8574,23 @@
                 L.style.backgroundColor = preset.color || 'transparent';
                 // 预设本身是低饱和深色，压暗系数比用户图片轻一档（0.45 vs 0.75），
                 // 否则切了跟没切一样；嫌亮可以拖面板里的压暗滑块
-                L.style.filter = 'blur(' + blur + 'px) brightness(' + (1 - dim * 0.45).toFixed(2) + ')';
+                var lightThemePreset = !!(document.body && document.body.classList.contains('light'));
+                L.style.filter = 'blur(' + blur + 'px) brightness(' + (lightThemePreset ? 1.08 : (1 - dim * 0.45)).toFixed(2) + ')';
                 L.style.opacity = '1';
             } else {
-                L.style.opacity = '0';   // 默认：交回原生背景
+                // 默认：交回原生背景。显式清空所有内联状态，兼容旧版本残留的
+                // background-color / filter，确保切换回来后不是“透明但仍被压暗”。
+                L.style.backgroundImage = 'none';
+                L.style.backgroundColor = 'transparent';
+                L.style.filter = 'none';
+                L.style.opacity = '0';
             }
             wbBgSaveCfg(cfg || {});
         }
         function wbBgPick(id) {
+            // 选背景属于明确的用户操作；若首次引导正处于延迟创建窗口，
+            // 同步收掉残留遮罩，避免页面仍像被压暗而误以为背景没有切回。
+            try { if (typeof coachEnd === 'function') coachEnd(); } catch (e) {}
             // 没图却点了「我的图片」（如清过浏览器数据）：别把背景切成一片空
             if (id === 'user' && !wbBgUserUrl) {
                 if (window.wbToast) wbToast('还没有上传过图片，先点「上传我的图片」', { type: 'warn' });
@@ -7493,12 +8600,14 @@
             cfg.src = id;
             wbBgApply(cfg);
             wbBgRenderSwatches();   // 选中框跟着走
-            if (window.wbToast) wbToast('背景已切换：' + (id === 'user' ? '我的图片' : (WB_BG_PRESETS.filter(function (p) { return p.id === id; })[0] || {}).name || id), { type: 'ok' });
+            var pickedName = id === 'user' ? '我的图片' : (id ? ((WB_BG_PRESETS.filter(function (p) { return p.id === id; })[0] || {}).name || id) : '系统默认');
+            if (window.wbToast) wbToast('背景已切换：' + pickedName, { type: 'ok' });
             wbBgPanelClose();   // 切完背景自动收起，不用再去找 ×
         }
         function wbBgUpload(input) {
             var f = input && input.files && input.files[0];
             if (!f) return;
+            var uploadEpoch = wbBgApplyEpoch;
             if (!/^image\//.test(f.type)) { if (window.wbToast) wbToast('请选择图片文件', { type: 'error' }); return; }
             var ok = window.confirm('这张图只保存在你本机浏览器里，不会上传到服务器。\n请确认它是你自己拍摄 / 自己生成 / 已获授权的图片。');
             if (!ok) { input.value = ''; return; }
@@ -7514,10 +8623,11 @@
                 URL.revokeObjectURL(url);
                 cv.toBlob(function (blob) {
                     if (!blob) { if (window.wbToast) wbToast('图片处理失败', { type: 'error' }); return; }
-                    wbBgPut(blob).then(function () {
+                wbBgPut(blob).then(function () {
+                        if (uploadEpoch !== wbBgApplyEpoch) return;
                         if (wbBgUserUrl) { try { URL.revokeObjectURL(wbBgUserUrl); } catch (e) {} }
                         wbBgUserUrl = URL.createObjectURL(blob);
-                        var cfg = wbBgLoadCfg(); cfg.src = 'user';
+                        var cfg = wbBgLoadCfg(); cfg.src = 'user'; cfg.tone = wbBgImageTone(cv);
                         wbBgApply(cfg);
                         wbBgRenderSwatches();   // 让「我的图片」卡出现（上传前它没有图可用）
                         input.value = '';       // 清空，否则再选同一个文件不触发 change
@@ -7525,8 +8635,9 @@
                         wbBgPanelClose();   // 上传即应用，同样自动收起
                     }).catch(function () {
                         // 私密模式/老内核没有 IndexedDB：退回本次会话内可用的 blob URL，刷新后失效但不报错
+                        if (uploadEpoch !== wbBgApplyEpoch) return;
                         wbBgUserUrl = URL.createObjectURL(blob);
-                        var c2 = wbBgLoadCfg(); c2.src = 'user'; c2.dim = c2.dim || 0.45;
+                        var c2 = wbBgLoadCfg(); c2.src = 'user'; c2.dim = c2.dim || 0.45; c2.tone = wbBgImageTone(cv);
                         wbBgApply(c2);
                         wbBgRenderSwatches();
                         input.value = '';
@@ -7539,9 +8650,11 @@
             img.src = url;
         }
         function wbBgReset() {
+            try { if (typeof coachEnd === 'function') coachEnd(); } catch (e) {}
             var cfg = wbBgLoadCfg();
-            cfg.src = '';
-            wbBgApply(cfg);
+            // 不保留旧 src，避免下一次启动或旧回调再次应用自定义背景。
+            wbBgApply({ dim: typeof cfg.dim === 'number' ? cfg.dim : 0.45 });
+            wbBgRenderSwatches();
             if (window.wbToast) wbToast('已恢复默认背景', { type: 'ok' });
         }
         function wbBgSetDim(v) { var c = wbBgLoadCfg(); c.dim = parseFloat(v); wbBgApply(c); }
@@ -7594,6 +8707,21 @@
         }
         window.wbMoreToggle = wbMoreToggle;
         window.wbMoreClose = wbMoreClose;
+        function wbToggleFocusMode() {
+            var on = document.body.classList.toggle('wb-focus');
+            wbToast(on ? '已进入专注阅读：隐藏辅助说明' : '已恢复完整信息', {type: 'info', ms: 2200});
+        }
+        window.wbToggleFocusMode = wbToggleFocusMode;
+        (function addMoreFocusAction() {
+            var menu = document.getElementById('wbMoreMenu');
+            if (!menu || menu.querySelector('[data-wb-focus]')) return;
+            var b = document.createElement('button');
+            b.type = 'button'; b.className = 'wb-glass-btn wb-glass-btn-sm'; b.dataset.wbFocus = '1';
+            b.style.cssText = 'display:flex;width:100%;justify-content:flex-start;border:none;background:transparent;margin-top:2px;';
+            b.title = '隐藏辅助说明，保留正文与操作'; b.innerHTML = '<span class="wb-dot"></span>专注阅读';
+            b.onclick = function () { wbToggleFocusMode(); wbMoreClose(); };
+            menu.appendChild(b);
+        })();
         document.addEventListener('click', function (e) {
             var m = document.getElementById('wbMoreMenu');
             if (!m || m.style.display !== 'block') return;
@@ -7623,6 +8751,14 @@
             // 用户一旦切到预设就再也切不回自己那张图，只能重新上传）；
             // 没上传过时点它直接唤起选择框
             var hasUser = !!wbBgUserUrl;
+            // 默认背景是一个显式色卡，用户不需要再猜「恢复默认」按钮在哪里。
+            var onDefault = !cur;
+            html += '<div onclick="wbBgPick(\'\')" title="恢复系统默认背景"'
+                + ' style="cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid '
+                + (onDefault ? 'var(--c-a)' : 'var(--line)') + ';">'
+                + '<div style="height: 38px; background: var(--bg-0); background-image: linear-gradient(135deg, rgba(34,211,238,.18), transparent 58%), linear-gradient(180deg, var(--bg-0), var(--bg-1));"></div>'
+                + '<div style="padding: 3px 0; text-align: center; font-size: 11.5px; background: var(--surface-solid); color: '
+                + (onDefault ? 'var(--c-a)' : 'var(--text-dim)') + ';">系统默认</div></div>';
             var onUser = (cur === 'user');
             html += '<div onclick="' + (hasUser ? 'wbBgPick(\'user\')' : 'document.getElementById(\'wbBgFileInput\').click()') + '"'
                 + ' title="' + (hasUser ? '我的图片' : '点击上传我的图片') + '"'
@@ -7652,7 +8788,9 @@
                 var cfg = wbBgLoadCfg();
                 if (!cfg || !cfg.src) return;
                 if (cfg.src === 'user') {
+                    var restoreEpoch = wbBgApplyEpoch;
                     wbBgGet().then(function (blob) {
+                        if (restoreEpoch !== wbBgApplyEpoch) return;
                         if (!blob) {
                             // 配置还在但图片没了（清过浏览器数据 / 换了浏览器）：
                             // 别让「我的图片」一直指向一个不存在的背景
@@ -7781,5 +8919,67 @@
             return html;
         }
         window.wbRenderMD = wbRenderMD;
+
+        /* 长期记忆：仅恢复用户上次明确选择的赛事，不覆盖本次已填写内容。
+           后端记忆只含低敏元数据；接口不可用时静默跳过，不影响首页首屏。 */
+        function wbLoadUserMemory() {
+            // 滚动发布期间旧后端可能暂时没有该可选接口；同一会话只探测一次，
+            // 避免刷新/路由切换反复打出 404，也避免把可选能力变成首屏噪音。
+            try { if (sessionStorage.getItem('wb-memory-unsupported') === '1') return; } catch (e) {}
+            /*
+             * 记忆只在登录账号下保存。先读取会话状态，再访问记忆接口：
+             * 这样匿名首屏不会去探测旧部署中尚未发布的 /api/memory，
+             * 也不会因为一个可选接口的 404 影响首页。/api/me 本身同样按
+             * 可选能力处理，旧后端返回 404 时直接静默结束。
+             */
+            fetch('/api/me', { cache: 'no-store' }).then(function (meRes) {
+                if (!meRes || !meRes.ok) return null;
+                return meRes.json().catch(function () { return null; });
+            }).then(function (me) {
+                if (!me || me.logged_in !== true) return null;
+                return fetch('/api/memory', { cache: 'no-store' }).then(function (r) {
+                    if (r.status === 404) {
+                        try { sessionStorage.setItem('wb-memory-unsupported', '1'); } catch (e) {}
+                        return null;
+                    }
+                    return r.ok ? r.json() : null;
+                });
+            }).then(function (payload) {
+                if (!payload || !payload.success || !payload.memory) return;
+                var prefs = payload.memory.preferences || {};
+                window._wbUserMemory = payload.memory;
+                // 只在页面刚打开、用户尚未操作模式时恢复；不会覆盖本次交互选择。
+                var modeValue = String(prefs.mode || '').trim();
+                if (modeValue === 'fast' || modeValue === 'deep') {
+                    var modeEl = document.querySelector('input[name="mode"][value="' + modeValue + '"]');
+                    if (modeEl && !window._wbModeManual && !window._wbGenerating) {
+                        modeEl.checked = true;
+                        try { modeEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+                    }
+                }
+                var chartTheme = String(prefs.chart_theme || '').trim();
+                if (chartTheme && typeof WB_CHART_THEMES !== 'undefined' && WB_CHART_THEMES[chartTheme] && !window._wbChartThemeManual) {
+                    try { window.wbChartThemePick(chartTheme); } catch (e) {}
+                }
+                var comp = document.getElementById('competition');
+                var remembered = String(prefs.default_competition || '').trim();
+                if (!comp || !remembered || String(comp.value || '').trim()) return;
+                var opts = Array.prototype.slice.call(comp.options || []);
+                var match = opts.find(function (o) {
+                    return String(o.value || o.textContent || '').trim() === remembered;
+                });
+                if (match) comp.value = match.value;
+            }).catch(function () {
+                // 长期记忆不可用时静默降级；生成、编辑和导出均不依赖它。
+                try { sessionStorage.setItem('wb-memory-unsupported', '1'); } catch (e) {}
+            });
+        }
+        window.wbLoadUserMemory = wbLoadUserMemory;
+        document.addEventListener('change', function (evt) {
+            if (evt.target && evt.target.matches && evt.target.matches('input[name="mode"]')) window._wbModeManual = true;
+            if (evt.target && evt.target.id === 'chartTheme') window._wbChartThemeManual = true;
+        });
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wbLoadUserMemory);
+        else setTimeout(wbLoadUserMemory, 0);
 
         })();

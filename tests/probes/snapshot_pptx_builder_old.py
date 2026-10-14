@@ -1,0 +1,1751 @@
+"""
+路演 PPT 生成模块（python-pptx）
+设计目标：不是"能用"，而是"拿得出手"——
+- 16:9 宽屏，统一视觉系统（深蓝 #0F1535 / 主紫 #4A55B8 / 青强调 #22B8CF）
+- 封面 / 章节页 / 要点页 / 图表页 / 表格页 / 数据页 / 结尾页 7 种版式
+- 内置 15 套精品模板，按风格族分类：科技星空 2 / 扁平商务 3 / 简洁学术 3 /
+  莫兰迪 2 / 红金 2 / 清新文艺 2 / 中国风 1（配色 + 6 维版式各自钉死）
+- 每页统一页眉强调条 + 页脚（项目名 + 页码）
+- 微软雅黑全套（含中文 east-asian 字体设置）
+输入：deck = {"project":..., "one_liner":..., "competition":..., "slides":[...]}
+"""
+import os
+import re
+from datetime import datetime
+
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.oxml.ns import qn
+
+# ============ 主题系统（按项目内容自适应）============
+# 每套主题 = 一套完整配色 + 字体 + 装饰色，deep/deep2 决定封面渐变，
+# chapter 是章节色轮（内容页顶条、kicker、标题下划线都从它取色）。
+THEMES = {
+    "tech": {
+        "label": "科技蓝（AI/算法/硬件/数据类）",
+        "chapter": ["4A55B8", "0E9AA7", "EF8C2C", "DB3F72", "7C5CE0", "2E9E5B", "D94E2A"],
+        "deep": "0F1535", "deep2": "3B2170",
+        "ink": "1A2347", "body": "3A4468", "muted": "8A93B5",
+        "primary": "4A55B8", "accent": "22B8CF",
+        "card": "F7F8FD", "soft": "F2F4FB",
+        "cover_deco": ["22B8CF", "F59E0B", "DB3F72"],
+        "section_rule": "F5D96B", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"variant": "v1", "header": "topbar", "card": "solid", "deco": True},
+        "chart": ["#4A55B8", "#22B8CF", "#F59E0B", "#34C78A", "#F0637C", "#8B7BE8", "#5B93F5"],
+    },
+    "ink": {
+        # 中国风：宣纸米底 + 朱红 + 黛青 + 描金，适配传统文化/非遗/国学类项目。
+        # 整份走浅底（打印省墨、投影不糊），朱红只做竖条与印章，不做大面积底色，
+        # 否则就是"年画配色"。封面单独走 orient 版式（宣纸 + 朱印 + 回纹边框）。
+        "label": "中国风·水墨朱丹（传统文化/非遗/国风项目）",
+        "chapter": ["9E2B25", "2F4858", "B08D57", "7A3B2E", "4A5D4E", "8B5A2B", "5B4A7A"],
+        "deep": "F7F3E8", "deep2": "E8DFC9",
+        "ink": "1F2328", "body": "4A4740", "muted": "94897A",
+        "primary": "9E2B25", "accent": "B08D57",
+        "card": "FDFBF5", "soft": "F2EBDC",
+        "cover_deco": ["9E2B25", "2F4858", "B08D57"],
+        "section_rule": "B08D57", "font": "微软雅黑",
+        "family": "中国风", "scene": "传统文化 / 非遗 / 国学 / 中医药",
+        "layout": {"cover": "orient", "body": "cards", "header": "sidebar",
+                   "card": "outline", "section": "light", "deco": False,
+                   "light_closing": True},
+        "chart": ["#9E2B25", "#2F4858", "#B08D57", "#7A3B2E", "#4A5D4E", "#8B5A2B", "#5B4A7A"],
+    },
+    "medical": {
+        "label": "生命青绿（医疗/健康/护理/康复类）",
+        "chapter": ["0E9E8C", "2E86C1", "45B39D", "1F7A6B", "D68910", "5DADE2", "27AE60"],
+        "deep": "09332F", "deep2": "0E6B60",
+        "ink": "123B37", "body": "33605B", "muted": "83A9A4",
+        "primary": "0E9E8C", "accent": "34D3B5",
+        "card": "F2FAF8", "soft": "E7F5F2",
+        "cover_deco": ["34D3B5", "F5C86B", "2E86C1"],
+        "section_rule": "A8E6D9", "font": "微软雅黑",
+        "chart": ["#0E9E8C", "#2E86C1", "#45B39D", "#F0B429", "#27AE60", "#5DADE2", "#16A085"],
+    },
+    "edu": {
+        "label": "暖橙活力（教育/教学/校园/培训类）",
+        "chapter": ["E2803A", "C0563A", "F0B429", "5B8C5A", "4A7FB5", "A463C8", "D45B5B"],
+        "deep": "4A2410", "deep2": "8A4B1F",
+        "ink": "3B2418", "body": "5B4436", "muted": "A08A78",
+        "primary": "E2803A", "accent": "F0B429",
+        "card": "FFF8F0", "soft": "FBEEDD",
+        "cover_deco": ["F0B429", "E2803A", "D45B5B"],
+        "section_rule": "FFD98A", "font": "微软雅黑",
+        "chart": ["#E2803A", "#F0B429", "#C0563A", "#5B8C5A", "#4A7FB5", "#A463C8", "#D45B5B"],
+    },
+    "agri": {
+        "label": "大地丰绿（农业/种植/养殖/乡村/生态类）",
+        "chapter": ["4E8C3A", "7BA05B", "C9A227", "6B8E23", "3E7C59", "A0703A", "2E6B4F"],
+        "deep": "1E3D1A", "deep2": "3E6B2A",
+        "ink": "243A1E", "body": "46603A", "muted": "8CA07E",
+        "primary": "4E8C3A", "accent": "C9A227",
+        "card": "F6FAF2", "soft": "EFF7E8",
+        "cover_deco": ["C9A227", "7BA05B", "E08A3C"],
+        "section_rule": "DCE9A8", "font": "微软雅黑",
+        "chart": ["#4E8C3A", "#C9A227", "#7BA05B", "#6B8E23", "#3E7C59", "#A0703A", "#2E6B4F"],
+    },
+    "finance": {
+        "label": "商务藏金（金融/支付/供应链/商业服务类）",
+        "chapter": ["1F3864", "B8860B", "2E5C8A", "8B6914", "40607A", "C99700", "33475B"],
+        "deep": "0C1A33", "deep2": "1F3864",
+        "ink": "16233D", "body": "3C4A63", "muted": "8894AE",
+        "primary": "1F3864", "accent": "B8860B",
+        "card": "F7F8FA", "soft": "EFF1F6",
+        "cover_deco": ["B8860B", "C99700", "40607A"],
+        "section_rule": "E0C068", "font": "微软雅黑",
+        "chart": ["#1F3864", "#B8860B", "#2E5C8A", "#C99700", "#40607A", "#8B6914", "#5B7A99"],
+    },
+    "craft": {
+        "label": "匠心工业（智能制造/机械/材料/建筑类）",
+        "chapter": ["5C6B73", "E08A38", "3D5A6C", "A63A2F", "7A8B5A", "C77B3E", "4A5D63"],
+        "deep": "1F2A30", "deep2": "3D4C55",
+        "ink": "232E33", "body": "48575E", "muted": "8B979D",
+        "primary": "5C6B73", "accent": "E08A38",
+        "card": "F5F6F7", "soft": "EAEDEF",
+        "cover_deco": ["E08A38", "A63A2F", "7A8B5A"],
+        "section_rule": "E8B87A", "font": "微软雅黑",
+        "chart": ["#5C6B73", "#E08A38", "#3D5A6C", "#A63A2F", "#7A8B5A", "#C77B3E", "#4A5D63"],
+    },
+    "social": {
+        "label": "公益暖阳（公益/助老/无障碍/社区服务类）",
+        "chapter": ["D46A5C", "E4A03C", "5E8C7E", "C2564F", "7B6DA8", "3E8C86", "B5713C"],
+        "deep": "4A2320", "deep2": "8A3F33",
+        "ink": "3A2422", "body": "57433F", "muted": "A2897F",
+        "primary": "D46A5C", "accent": "E4A03C",
+        "card": "FFF7F5", "soft": "FBEDE8",
+        "cover_deco": ["E4A03C", "D46A5C", "5E8C7E"],
+        "section_rule": "F3C9A0", "font": "微软雅黑",
+        "chart": ["#D46A5C", "#E4A03C", "#5E8C7E", "#C2564F", "#7B6DA8", "#3E8C86", "#B5713C"],
+    },
+    "academic": {
+        "label": "学术答辩（论文/开题/结题/答辩类）",
+        "chapter": ["002FA7", "2E75B6", "4A7FB5", "1F4E78", "5B8C5A", "8B6914", "6B5B73"],
+        "deep": "F7F9FC", "deep2": "DCE6F5",
+        "ink": "002B5C", "body": "33506E", "muted": "7E93AB",
+        "primary": "002FA7", "accent": "2E75B6",
+        "card": "FFFFFF", "soft": "EDF1F6",
+        "cover_deco": ["2E75B6", "5B8C5A", "8B6914"],
+        "section_rule": "B8D4F0", "font": "微软雅黑",
+        "tier": "premium",
+        # 学术答辩改白底：原来 deep 是 #00254D 深蓝，投影/打印出来整份很沉，
+        # 答辩场合白底更易读。居中浅色封面 + 极简条目 + 描边卡，与 paper（色带+填色卡）错开。
+        "layout": {"variant": "v4", "body": "minimal", "header": "topbar",
+                   "card": "outline", "section": "light", "deco": False,
+                   "light_cover": True, "light_closing": True},
+        "family": "简洁学术风", "scene": "论文 / 开题 / 答辩",
+        "chart": ["#002FA7", "#2E75B6", "#4A7FB5", "#5B8C5A", "#8B6914", "#6B5B73", "#7E93AB"],
+    },
+    "ican": {
+        # iCAN 大赛专用：蓝白科技风。全色轮只走蓝色系，封面深蓝渐变 + 亮蓝强调，
+        # 不用撞色不用花哨装饰，答辩/路演大屏投影也稳（深底白字，对比度够）。
+        "label": "iCAN 蓝白科技（iCAN 大赛 · 正式路演场合）",
+        "chapter": ["0E5EA8", "2AA9E0", "124C86", "4E93CE", "1E7FB8", "2F5E9E", "6FB3E0"],
+        "deep": "072C55", "deep2": "0F5C9E",
+        "ink": "0B2E52", "body": "3A5B7E", "muted": "93A8C2",
+        "primary": "0E5EA8", "accent": "2AA9E0",
+        "card": "F4F8FE", "soft": "EAF2FB",
+        "cover_deco": ["2AA9E0", "7FC4EE", "0E5EA8"],
+        "section_rule": "C4DEF5", "font": "微软雅黑",
+        "tier": "premium",
+        # 左深蓝色块封面 + 卡片正文 + 左侧竖色带页眉：iCAN 要的是"正式但不冷场"
+        "layout": {"variant": "v2", "body": "cards", "header": "sidebar",
+                   "card": "solid", "section": "light", "deco": False},
+        "chart": ["#0E5EA8", "#2AA9E0", "#124C86", "#4E93CE", "#6FB3E0", "#1E7FB8", "#9CCBEF"],
+    },
+    "biz": {
+        # 经管/商务类专用：中性灰。深炭灰封面 + 蓝灰强调，整组色只走灰阶，
+        # 商业计划书、财务测算、市场分析这类内容要"稳"，高饱和配色反而显得不专业。
+        "label": "商务灰（经管/商业/创业/财务类）",
+        "chapter": ["374151", "4A5568", "5C6B7A", "2F3A47", "6B7280", "7D8B9C", "455A64"],
+        "deep": "1E242C", "deep2": "3A4654",
+        "ink": "1F2933", "body": "4A5568", "muted": "8A97A6",
+        "primary": "374151", "accent": "6B7280",
+        "card": "F5F6F8", "soft": "EAECEF",
+        "cover_deco": ["9AA5B1", "6B7280", "C0C8D2"],
+        "section_rule": "D3D8DE", "font": "微软雅黑",
+        "tier": "premium",
+        # 左色块封面 + 极简条目 + 无卡：商务内容本来就密，再套填色卡片会显得挤
+        "layout": {"variant": "v4", "body": "minimal", "header": "rule", "card": "plain", "section": "light"},
+        "family": "扁平商务风", "scene": "商业计划 / 经管 / 服务外包",
+        "chart": ["#374151", "#5C6B7A", "#7D8B9C", "#9AA5B1", "#4A5568", "#6B7280", "#B4BCC6"],
+    },
+    "studio": {
+        # 艺术/设计类专用：近黑底压住，只在强调处放撞色（品红/青/琥珀）。
+        # 设计类路演要的就是"敢用色"，但底色必须收住，不然满屏花哨反而不高级。
+        # chapter 是正文标题色，走可辨识的中深色调，不用荧光色（浅底上看不清）。
+        "label": "设计风（广告艺术/视觉传达/文创类）",
+        "chapter": ["C2185B", "00838F", "EF6C00", "4527A0", "00897B", "5D4037", "283593"],
+        "deep": "111318", "deep2": "2C303C",
+        "ink": "16181F", "body": "4C525E", "muted": "8A909C",
+        "primary": "C2185B", "accent": "00ACC1",
+        "card": "FAFAFB", "soft": "F1F2F5",
+        "cover_deco": ["FF4D6D", "00E5C0", "FFC94D"],
+        "section_rule": "E3E5EA", "font": "微软雅黑",
+        "tier": "premium",
+        # 近黑整页封面 + 左侧竖色带页眉 + 白底描边卡：设计类要"敢用色"，
+        # 但正文区必须留白，否则满屏色块会压过作品本身
+        "layout": {"variant": "v1", "header": "sidebar", "card": "outline", "deco": True},
+        "chart": ["#C2185B", "#00838F", "#EF6C00", "#4527A0", "#00897B", "#FFC94D", "#5D4037"],
+    },
+    "cyber": {
+        "label": "科技紫·AI（人工智能/大数据/赛博未来类）",
+        "chapter": ["6D28D9", "7C3AED", "A855F7", "4B0082", "22D3EE", "F472B6", "8B5CF6"],
+        "deep": "160826", "deep2": "3B2170",
+        "ink": "2A1A4A", "body": "5B4A7A", "muted": "9A8BB8",
+        "primary": "7C3AED", "accent": "22D3EE",
+        "card": "F7F4FD", "soft": "F1EAFB",
+        "cover_deco": ["22D3EE", "A855F7", "F472B6"],
+        "section_rule": "C4B5FD", "font": "微软雅黑",
+        "tier": "premium",
+        # 与 tech 同为整页渐变封面，但正文走极简圆点（AI 类常配图，卡片会抢视觉）
+        "layout": {"variant": "v1", "body": "numbered", "header": "sidebar", "card": "outline"},
+        "family": "科技星空风", "scene": "人工智能 / 网络安全 / 机器人",
+        "chart": ["#7C3AED", "#22D3EE", "#A855F7", "#F472B6", "#8B5CF6", "#4B0082", "#F59E0B"],
+    },
+    # ---------------- 以下 9 套为 2026-09-26 新增的精品模板 ----------------
+    # 每套都自带 layout（封面/正文/页眉/卡片/章节页组合），同色系内也刻意错开版式，
+    # 不是"换个颜色算一套"。layout 字段说明见 VARIANTS 下方注释。
+    "circuit": {
+        # 电子设计类：电路蓝。深靛底 + 电路青，正文走描边卡片（硬件类常有参数表，
+        # 描边卡比填色卡更"图纸感"，也不会把页面压得太重）。
+        "label": "电路蓝（电子设计/嵌入式/硬件类）",
+        "chapter": ["0B6E8C", "14568C", "1F7A6B", "3E6EA1", "0E8F72", "2C6E9B", "4A8FA8"],
+        "deep": "06263A", "deep2": "0E4A66",
+        "ink": "0A2E3E", "body": "35576B", "muted": "8AA5B4",
+        "primary": "0B6E8C", "accent": "00B8D4",
+        "card": "FFFFFF", "soft": "E8F2F6",
+        "cover_deco": ["00B8D4", "7FD8E8", "0B6E8C"],
+        "section_rule": "BFE3EC", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"variant": "v3", "header": "rule", "card": "outline"},
+        "chart": ["#0B6E8C", "#00B8D4", "#14568C", "#1F7A6B", "#3E6EA1", "#0E8F72", "#4A8FA8"],
+    },
+    "svc": {
+        # 服务外包类：浅灰网格。整份以白/浅灰为主，只有顶条和表头落冷灰蓝，
+        # 交付物/服务流程这类内容要"干净"，深色封面反而显得像发布会。
+        "label": "浅灰网格（服务外包/IT 服务/交付类）",
+        "chapter": ["415A6B", "5B6B7C", "37474F", "607D8B", "546E7A", "78909C", "455A64"],
+        "deep": "263238", "deep2": "455A64",
+        "ink": "1F2A30", "body": "4A5A66", "muted": "8C9AA6",
+        "primary": "415A6B", "accent": "78909C",
+        "card": "F4F6F8", "soft": "EAEEF1",
+        "cover_deco": ["78909C", "B0BEC5", "415A6B"],
+        "section_rule": "CFD8DC", "font": "微软雅黑",
+        "tier": "premium",
+        # 服务流程/交付清单用极简圆点，不用大号序号（序号会把"流程"讲成"步骤堆砌"）
+        "layout": {"variant": "v3", "body": "minimal", "header": "topbar",
+                   "card": "solid", "section": "light"},
+        "chart": ["#415A6B", "#78909C", "#607D8B", "#546E7A", "#455A64", "#37474F", "#90A4AE"],
+    },
+    "capital": {
+        # 创投/融资路演：深炭灰 + 铜金。金只做强调（数字、分隔线），绝不当大面积底色，
+        # 否则就是"暴发户配色"。正文用大号序号，路演时逐条讲很顺。
+        "label": "创投深灰（融资/商业计划/创赛路演类）",
+        "chapter": ["2E3742", "B08D57", "4A5568", "8A6D3F", "6B7280", "C0A062", "3F4A57"],
+        "deep": "171B21", "deep2": "2E3742",
+        "ink": "1C2228", "body": "4C5560", "muted": "8B94A0",
+        "primary": "2E3742", "accent": "B08D57",
+        "card": "F6F6F4", "soft": "EDEDE9",
+        "cover_deco": ["B08D57", "C0A062", "8A6D3F"],
+        "section_rule": "D8C9A8", "font": "微软雅黑",
+        "tier": "premium",
+        # 大号序号：投资人看商业计划书是逐条过的，序号比卡片更好指
+        "layout": {"variant": "v3", "body": "numbered", "header": "topbar", "card": "plain"},
+        "family": "扁平商务风", "scene": "融资路演 / 创赛",
+        "chart": ["#2E3742", "#B08D57", "#6B7280", "#C0A062", "#4A5568", "#8A6D3F", "#A8B0BC"],
+    },
+    "math": {
+        # 数学建模：白底 + 墨字 + 深靛主色，公式/推导用朱红强调。
+        # 建模评审看的就是假设与推导，配色越退后越好，所以整份走"论文感"。
+        "label": "建模白底（数学建模/公式推导类）",
+        "chapter": ["1F3A93", "C0392B", "1F6F5C", "7D3C98", "B9770E", "2C3E50", "0E6655"],
+        "deep": "F7F8FA", "deep2": "DFE7F2",
+        "ink": "14213D", "body": "3A4256", "muted": "7C8598",
+        "primary": "1F3A93", "accent": "C0392B",
+        "card": "FFFFFF", "soft": "F1F3F8",
+        "cover_deco": ["1F3A93", "C0392B", "1F6F5C"],
+        "section_rule": "1F3A93", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"cover": "paper", "body": "numbered", "header": "rule",
+                   "card": "plain", "section": "light", "deco": False,
+                   "light_cover": True, "light_closing": True},
+        "family": "简洁学术风", "scene": "数学建模 / 公式推导",
+        "chart": ["#1F3A93", "#C0392B", "#1F6F5C", "#7D3C98", "#B9770E", "#2C3E50", "#0E6655"],
+    },
+    "paper": {
+        # 大创/科研结题：学术蓝白底。封面白底居中，正文卡片式，
+        # 与 math 的区别：math 走序号+无卡（推导链），paper 走卡片（成果罗列）。
+        "label": "科研蓝白（大创/国创/科研结题类）",
+        "chapter": ["0B4F9E", "2E75B6", "1F7A6B", "8B6914", "5B4E9E", "0E7490", "6B7280"],
+        "deep": "FBFBFD", "deep2": "E8EDF6",
+        "ink": "12304F", "body": "3C4E63", "muted": "7E8CA0",
+        "primary": "0B4F9E", "accent": "2E75B6",
+        # 白底主题不能让卡片也是纯白（CARD=FFFFFF 会和页面底糊在一起），
+        # 用一层极淡蓝灰把卡片边界托出来
+        "card": "F5F8FC", "soft": "F0F4FA",
+        "cover_deco": ["0B4F9E", "2E75B6", "1F7A6B"],
+        "section_rule": "B8D4F0", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"variant": "v3", "body": "cards", "header": "rule", "card": "solid", "section": "light",
+                   "light_closing": True},
+        "family": "简洁学术风", "scene": "国创 / 大创 / 科研结题",
+        "chart": ["#0B4F9E", "#2E75B6", "#1F7A6B", "#8B6914", "#5B4E9E", "#0E7490", "#6B7280"],
+    },
+    "redgold": {
+        # 挑战杯（大挑）：中国红 + 金。红做底、金做线，金面积控制在 10% 以内，
+        # 这是政务/赛事正式场合最稳的一组，不会显得俗。
+        "label": "挑战杯红金（挑战杯/科创赛事正式答辩）",
+        "chapter": ["8C1C24", "B8860B", "A63A2F", "C99700", "7A2230", "D4AF37", "5E1B22"],
+        "deep": "5E0F16", "deep2": "8C1C24",
+        "ink": "4A1016", "body": "5E3A3C", "muted": "A08A88",
+        "primary": "8C1C24", "accent": "D4AF37",
+        "card": "FDF7F5", "soft": "F7EBE7",
+        "cover_deco": ["D4AF37", "E8C766", "8C1C24"],
+        "section_rule": "E8C766", "font": "微软雅黑",
+        "tier": "premium",
+        # 居中构图 + 金线：红金最怕大面积撞色，居中留白能把金压成点缀
+        "layout": {"variant": "v4", "body": "cards", "header": "sidebar", "card": "solid",
+                   "section": "dark", "deco": True},
+        "family": "红金正式风", "scene": "挑战杯大挑 / 正式答辩",
+        "chart": ["#8C1C24", "#D4AF37", "#A63A2F", "#C99700", "#7A2230", "#B8860B", "#5E1B22"],
+    },
+    "blackgold": {
+        # 挑战杯小挑 / 创业计划：黑金。近黑底 + 单一金强调，比红金更"商业"，
+        # 适合创业计划赛这类要讲商业模式与融资的场合。
+        "label": "黑金创赛（创业计划/小挑/融资答辩）",
+        "chapter": ["C9A227", "8A6D1F", "D4B942", "5C4B12", "A8851E", "E8CE7A", "3A3010"],
+        "deep": "0E0F12", "deep2": "1E2026",
+        "ink": "16171B", "body": "4A4B52", "muted": "8A8B93",
+        "primary": "C9A227", "accent": "E8CE7A",
+        "card": "FAF8F2", "soft": "F1EDDF",
+        "cover_deco": ["C9A227", "E8CE7A", "8A6D1F"],
+        "section_rule": "C9A227", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"variant": "v2", "body": "numbered", "header": "sidebar",
+                   "card": "plain", "section": "dark"},
+        "family": "红金正式风", "scene": "挑战杯小挑 / 创业计划",
+        "chart": ["#C9A227", "#8A6D1F", "#D4B942", "#A8851E", "#5C4B12", "#E8CE7A", "#3A3010"],
+    },
+    "poster": {
+        # 广告艺术：海报风。大面积色块 + 粗标题 + 高饱和撞色（品红/芥末黄/青），
+        # 设计类路演怕的不是"花"，是"花得没章法"，所以底色一律收成白/墨蓝，
+        # 撞色只出现在色块和序号上。
+        "label": "海报撞色（广告艺术/视觉传达/文创类）",
+        "chapter": ["E91E63", "F5C518", "1F2A44", "00ACC1", "FF7043", "5E35B1", "43A047"],
+        "deep": "1F2A44", "deep2": "E91E63",
+        "ink": "151C2C", "body": "454F63", "muted": "8A93A8",
+        "primary": "E91E63", "accent": "F5C518",
+        "card": "FFFFFF", "soft": "F5F3FA",
+        "cover_deco": ["F5C518", "E91E63", "00ACC1"],
+        "section_rule": "F5C518", "font": "微软雅黑",
+        "tier": "premium",
+        "layout": {"variant": "v3", "header": "sidebar", "card": "outline", "section": "light"},
+        "chart": ["#E91E63", "#F5C518", "#1F2A44", "#00ACC1", "#FF7043", "#5E35B1", "#43A047"],
+    },
+    "sec": {
+        # 网安 / 终端风：近黑底 + 终端绿。只放绿和青两种强调（模拟终端/日志界面），
+        # 不放第三种杂色，否则就从"专业"变成"黑客帝国"。
+        "label": "终端深空（网络安全/攻防/系统类）",
+        "chapter": ["1E9E6A", "0EA5C6", "2BD47A", "0E7490", "38BDF8", "22C55E", "155E75"],
+        "deep": "080B10", "deep2": "132029",
+        "ink": "0B1A22", "body": "33505E", "muted": "7A93A0",
+        "primary": "1E9E6A", "accent": "38BDF8",
+        "card": "F2F6F8", "soft": "E6EEF2",
+        "cover_deco": ["2BD47A", "38BDF8", "0EA5C6"],
+        "section_rule": "2BD47A", "font": "微软雅黑",
+        "tier": "premium",
+        # 序号 + 描边卡：攻防流程/复现步骤天然带顺序，序号比卡片更能体现"第几步"
+        "layout": {"variant": "v1", "body": "numbered", "header": "sidebar", "card": "outline"},
+        "chart": ["#1E9E6A", "#38BDF8", "#2BD47A", "#0EA5C6", "#22C55E", "#0E7490", "#7DD3FC"],
+    },
+    # ---------------- 2026-09-26 重做：15 套精品按风格族分类 ----------------
+    # 参考 m1page 模板站的分类（扁平 / 简洁 / 星空科技 / 莫兰迪 / 文艺 / 中国风 / 红金），
+    # 一套 = 一套配色 + 一套钉死的 6 维版式；族内两套至少错开封面/正文/页眉/卡片中的两项，
+    # 不是"换个颜色算一套"。family/scene 会回传给前端做分组与推荐说明。
+    "star": {
+        # 科技星空·星海蓝：深空底 + 星点 + 亮蓝强调。
+        # 星空风最容易做俗（满屏星星），所以星点只铺在封面，内容页一律干净的深蓝白字。
+        "label": "星海蓝（科技星空 · iCAN/电子设计/工程类）",
+        "chapter": ["2E7BD6", "3FBFEA", "5B8DEF", "1F6FB2", "7CC4F5", "4FA3D1", "2A5F9E"],
+        "deep": "06152F", "deep2": "123A6B",
+        "ink": "0B2445", "body": "3C5573", "muted": "8CA2BC",
+        "primary": "1F6FB2", "accent": "3FBFEA",
+        "card": "F2F7FD", "soft": "E9F1FA",
+        "cover_deco": ["3FBFEA", "7CC4F5", "1F6FB2"],
+        "section_rule": "9FD4F2", "font": "微软雅黑",
+        "family": "科技星空风", "scene": "iCAN / 电赛 / 工程训练 / 计算机设计",
+        "layout": {"cover": "star", "body": "numbered", "header": "topbar",
+                   "card": "solid", "section": "dark", "deco": False},
+        "chart": ["#2E7BD6", "#3FBFEA", "#5B8DEF", "#1F6FB2", "#7CC4F5", "#4FA3D1", "#2A5F9E"],
+    },
+    "flat": {
+        # 扁平商务·蓝：扁平风的规矩是"纯色块 + 无渐变阴影 + 高对比"，
+        # 蓝做主色、琥珀做强调，比灰阶商务更有互联网气，但饱和度压住不刺眼。
+        "label": "扁平蓝（扁平商务 · 互联网+/创新创业）",
+        "chapter": ["1B6AC9", "FFB020", "2E9E6B", "E4572E", "0E9AA7", "5B6BD6", "8E44AD"],
+        "deep": "0F4C9E", "deep2": "2E7BD6",
+        "ink": "12233F", "body": "3F5470", "muted": "8B9BB5",
+        "primary": "1B6AC9", "accent": "FFB020",
+        "card": "F5F8FC", "soft": "EAF0F8",
+        "cover_deco": ["FFB020", "2E9E6B", "E4572E"],
+        "section_rule": "FFD79A", "font": "微软雅黑",
+        "family": "扁平商务风", "scene": "互联网+ / 创新创业 / 产品发布",
+        "layout": {"variant": "v2", "body": "cards", "header": "topbar",
+                   "card": "solid", "section": "light"},
+        "chart": ["#1B6AC9", "#FFB020", "#2E9E6B", "#E4572E", "#0E9AA7", "#5B6BD6", "#8E44AD"],
+    },
+    "morandi": {
+        # 莫兰迪·雾霭蓝灰：所有颜色都掺灰降饱和（雾蓝 / 灰绿 / 燕麦），
+        # 设计类路演要高级感，靠的是"灰得有层次"，不是撞色。
+        "label": "雾霭蓝灰（莫兰迪 · 广告艺术/视觉传达）",
+        "chapter": ["7C95A6", "9DAE9E", "A8998C", "6E7F8D", "B0A49B", "8F9E8B", "7E8A80"],
+        "deep": "3E4C55", "deep2": "6B7A83",
+        "ink": "2E3A40", "body": "5A666C", "muted": "96A0A4",
+        "primary": "7C95A6", "accent": "B08C7A",
+        "card": "F4F2EE", "soft": "E9E6E0",
+        "cover_deco": ["9DAE9E", "B08C7A", "A8998C"],
+        "section_rule": "C9C2B6", "font": "微软雅黑",
+        "family": "莫兰迪风", "scene": "广告艺术 / 视觉传达 / 品牌形象",
+        "layout": {"variant": "v4", "body": "cards", "header": "rule",
+                   "card": "outline", "section": "light"},
+        "chart": ["#7C95A6", "#9DAE9E", "#A8998C", "#6E7F8D", "#B0A49B", "#8F9E8B", "#7E8A80"],
+    },
+    "clay": {
+        # 莫兰迪·陶土藕粉：暖调莫兰迪（陶土 / 藕粉 / 灰紫 / 橄榄），
+        # 与 morandi 的冷雾蓝错开，包装/文创/展陈这类偏"物"的项目更贴。
+        "label": "陶土藕粉（莫兰迪 · 包装/文创/展陈）",
+        "chapter": ["B08C7A", "9C8AA5", "7D8F69", "C0A090", "8E7C8F", "A89283", "6F7B63"],
+        "deep": "5A4A46", "deep2": "8A736A",
+        "ink": "3A2E2B", "body": "5E4E49", "muted": "9A8A82",
+        "primary": "B08C7A", "accent": "9C8AA5",
+        "card": "F7F3EE", "soft": "EFE9E1",
+        "cover_deco": ["9C8AA5", "7D8F69", "C0A090"],
+        "section_rule": "D6C6B8", "font": "微软雅黑",
+        "family": "莫兰迪风", "scene": "包装设计 / 文创产品 / 展陈",
+        "layout": {"variant": "v2", "header": "sidebar", "card": "solid", "section": "light"},
+        "chart": ["#B08C7A", "#9C8AA5", "#7D8F69", "#C0A090", "#8E7C8F", "#A89283", "#6F7B63"],
+    },
+    "verdant": {
+        # 清新文艺·青绿：浅米绿底 + 薄荷绿主色 + 暖沙点缀，
+        # 文创/文旅/手作这类项目用深色科技风会"压死"作品，浅底留白才透气。
+        "label": "清新青绿（文艺清新 · 文创/文旅/手作）",
+        "chapter": ["4C9A8A", "7BA05B", "8FAF7E", "3E7C6E", "A8B86A", "5E8C7E", "C2A76B"],
+        "deep": "EDF4EE", "deep2": "D6E7DA",
+        "ink": "25392F", "body": "4A6153", "muted": "8AA392",
+        "primary": "4C9A8A", "accent": "E0A46B",
+        "card": "F7FBF7", "soft": "EAF3EA",
+        "cover_deco": ["4C9A8A", "7BA05B", "E0A46B"],
+        "section_rule": "A8C8B4", "font": "微软雅黑",
+        "family": "清新文艺风", "scene": "文创 / 文旅 / 手作 / 博物馆",
+        "layout": {"variant": "v3", "body": "minimal", "header": "rule",
+                   "card": "outline", "section": "light", "light_closing": True},
+        "chart": ["#4C9A8A", "#7BA05B", "#8FAF7E", "#3E7C6E", "#A8B86A", "#5E8C7E", "#C2A76B"],
+    },
+    "literary": {
+        # 清新文艺·暖米：米黄纸感底 + 黛蓝标题 + 赭石强调，
+        # 出版/展览/绘本这类内容本身"文气"重，配色要退到纸后面。
+        "label": "文艺暖米（清新文艺 · 出版/展览/绘本）",
+        "chapter": ["3E5C6B", "C87F4A", "7C6A55", "8C7BA6", "5E7C6B", "A88B5B", "6B5B73"],
+        "deep": "F6EFE2", "deep2": "E8DCC8",
+        "ink": "2C2A26", "body": "544E45", "muted": "948B7C",
+        "primary": "3E5C6B", "accent": "C87F4A",
+        "card": "FDFAF3", "soft": "F5EEE1",
+        "cover_deco": ["3E5C6B", "C87F4A", "8C7BA6"],
+        "section_rule": "D8C8AE", "font": "微软雅黑",
+        "family": "清新文艺风", "scene": "出版 / 展览 / 绘本 / 书店",
+        "layout": {"variant": "v4", "body": "minimal", "header": "sidebar",
+                   "card": "solid", "section": "light",
+                   "light_cover": True, "light_closing": True},
+        "chart": ["#3E5C6B", "#C87F4A", "#7C6A55", "#8C7BA6", "#5E7C6E", "#A88B5B", "#6B5B73"],
+    },
+    "deepblue": {
+        # 蒸馏自「科技蓝色1.pptx」：深蓝 #0566CA + 青色 #35FCFF，阿里巴巴普惠体。
+        "label": "深蓝青（科技蓝 · 蓝底+青色高光）",
+        "chapter": ["0566CA", "35FCFF", "5B93F5", "104AA3", "22B8CF", "0E9AA7", "6B8DD6"],
+        "deep": "08223F", "deep2": "0566CA",
+        "ink": "FFFFFF", "body": "D9E6F7", "muted": "9FB6D6",
+        "primary": "0566CA", "accent": "35FCFF",
+        "card": "F5F9FE", "soft": "EAF2FD",
+        "cover_deco": ["35FCFF", "0566CA", "5B93F5"],
+        "section_rule": "35FCFF", "font": "微软雅黑",
+        "family": "科技风", "scene": "AI / 算法 / 硬件 / 电子设计",
+        "layout": {"variant": "v1", "body": "cards", "header": "topbar", "card": "solid", "deco": True},
+        "chart": ["#0566CA", "#35FCFF", "#5B93F5", "#104AA3", "#22B8CF", "#0E9AA7", "#6B8DD6"],
+    },
+    "steel": {
+        # 蒸馏自「商业风.pptx / 商业风3.pptx」：钢蓝 #438DB2 + 暖金，印品招牌体。
+        "label": "商务钢蓝（商业风 · 钢蓝+暖金）",
+        "chapter": ["438DB2", "2E5A6E", "E0A64B", "5B93F5", "34C78A", "8B7BE8", "F0637C"],
+        "deep": "1F3A4D", "deep2": "438DB2",
+        "ink": "1A2A35", "body": "3E4E5A", "muted": "8294A0",
+        "primary": "438DB2", "accent": "E0A64B",
+        "card": "F8FAFC", "soft": "EEF4F8",
+        "cover_deco": ["438DB2", "2E5A6E", "E0A64B"],
+        "section_rule": "E0A64B", "font": "微软雅黑",
+        "family": "商务风", "scene": "商业计划 / 金融 / 创业路演",
+        "layout": {"variant": "v2", "body": "minimal", "header": "rule", "card": "outline", "section": "light"},
+        "chart": ["#438DB2", "#2E5A6E", "#E0A64B", "#5B93F5", "#34C78A", "#8B7BE8", "#F0637C"],
+    },
+    "serif": {
+        # 蒸馏自「Deepseek.pptx / 人工智能模型2.pptx」：米白底 + 朱红，思源宋体。
+        "label": "学术宋体（论文/答辩 · 米白底+朱红）",
+        "chapter": ["8B1A1A", "3A4A5A", "B08D57", "5E7C6B", "7A3B2E", "4A5D4E", "8B5A2B"],
+        "deep": "F7F3EA", "deep2": "EAE2D2",
+        "ink": "26221B", "body": "4A443C", "muted": "8F8678",
+        "primary": "8B1A1A", "accent": "B08D57",
+        "card": "FDFBF6", "soft": "F3EEE3",
+        "cover_deco": ["8B1A1A", "3A4A5A", "B08D57"],
+        "section_rule": "B08D57", "font": "思源宋体 CN",
+        "family": "学术风", "scene": "论文答辩 / 结题 / 学术汇报",
+        "layout": {"variant": "v4", "body": "numbered", "header": "rule", "card": "outline", "section": "light",
+                   "light_cover": True, "light_closing": True},
+        "chart": ["#8B1A1A", "#3A4A5A", "#B08D57", "#5E7C6B", "#7A3B2E", "#4A5D4E", "#8B5A2B"],
+    },
+}
+
+# 精品 15 套：主推，前端默认展示（按风格族分组，族内版式互不相同）。
+#   科技星空 2 / 扁平商务 3 / 简洁学术 3 / 莫兰迪 2 / 红金 2 / 清新文艺 2 / 中国风 1
+PREMIUM_ORDER = ["star", "cyber",                        # 科技星空风 2 套
+                 "flat", "biz", "capital",               # 扁平商务风 3 套
+                 "paper", "math", "academic",            # 简洁白底学术风 3 套
+                 "morandi", "clay",                      # 莫兰迪设计风 2 套
+                 "redgold", "blackgold",                 # 红金正式风 2 套
+                 "verdant", "literary",                  # 清新文艺风 2 套
+                 "ink"]                                  # 中国风 1 套
+# 旧主题不删（历史结果里可能还引用着这些 key），折叠进"更多备选风格"
+EXTRA_ORDER = ["tech", "ican", "circuit", "svc", "studio", "poster", "sec",
+               "medical", "edu", "agri", "finance", "craft", "social",
+               "deepblue", "steel", "serif"]
+THEME_ORDER = PREMIUM_ORDER + EXTRA_ORDER
+# ============ 版式模板库 ============
+# 版式有 6 个维度，主题通过 layout 字段挑一套组合（不指定则用 VARIANTS 的默认值）：
+#   cover   封面：gradient 流光整页 / split 左色块 / band 顶部色带 / center 居中留白 / paper 白底学术
+#   body    正文：cards 卡片 / minimal 极简圆点 / numbered 大号序号
+#   header  页眉：topbar 顶部渐变条 / rule 无顶条·短下划线 / sidebar 左侧竖色带
+#   card    卡片：solid 填色 / outline 白底描边 / plain 无卡（只留左侧竖条）
+#   section 章节页：dark 深色 / light 浅色
+#   deco    角落几何装饰
+# 同色系的两套必须在 cover/body/header/card 里至少错开两项，否则就是"换个颜色算一套"。
+VARIANTS = [
+    {"key": "v1", "name": "流光 · 卡片", "cover": "gradient", "body": "cards", "deco": True, "section": "dark"},
+    {"key": "v2", "name": "左色块 · 极简", "cover": "split", "body": "minimal", "deco": False, "section": "light"},
+    {"key": "v3", "name": "色带 · 序号", "cover": "band", "body": "numbered", "deco": True, "section": "dark"},
+    {"key": "v4", "name": "居中 · 留白", "cover": "center", "body": "cards", "deco": False, "section": "light"},
+]
+_VARIANT_KEYS = ["cover", "body", "deco", "section"]
+# 生效版式的完整 6 维（header/card 由主题单独给，不在 VARIANTS 里）
+BASE_LAYOUT = {"cover": "gradient", "body": "cards", "deco": True, "section": "dark",
+               "header": "topbar", "card": "solid", "light_cover": False, "light_closing": False}
+V = dict(BASE_LAYOUT)   # 当前生效版式
+THEME_NAME = "tech"
+_THEME_VARIANT = "v1"   # 当前主题自带的 variant（前端没显式换版式时才用它）
+
+
+def resolve_layout(name):
+    """算出某套主题最终生效的 6 维版式：BASE → 该主题的 variant → layout 逐项覆盖。
+
+    前端也用同一份结果画缩略图（封面长什么样、正文是卡片还是序号），
+    避免前端再维护一份"哪套用哪种版式"的影子表。
+    """
+    t = THEMES.get(str(name or "").lower()) or THEMES["tech"]
+    lay = dict(t.get("layout") or {})
+    vkey = str(lay.pop("variant", "v1") or "v1").lower()
+    out = dict(BASE_LAYOUT)
+    for v in VARIANTS:
+        if v["key"] == vkey:
+            for k in _VARIANT_KEYS:
+                out[k] = v.get(k, out[k])
+            break
+    out.update(lay)
+    return out
+
+
+def list_themes():
+    """给前端用的主题清单。
+
+    顺带把配色和版式回传：前端画缩略图不用再维护一份和 THEMES 重复的对照表，
+    新增主题后前端自动就能画出来。tier=premium 的 15 套是主推精品，
+    其余旧主题折叠进"更多风格"，避免一屏 20 多张卡反而挑不出来。
+    """
+    # 版权台账（第一百零二轮）：蒸馏主题标注来源与授权，程序化主题标自绘原创
+    _distilled_src = {
+        "deepblue": "蒸馏自「科技蓝色1.pptx」（仅样式/配色规律，非原文）",
+        "steel": "蒸馏自「商业风.pptx / 商业风3.pptx」（仅样式/配色规律，非原文）",
+        "serif": "蒸馏自「Deepseek.pptx / 人工智能模型2.pptx」（仅样式/配色规律，非原文）",
+    }
+    return {
+        "themes": [
+            {"key": k, "label": THEMES[k]["label"],
+             "tier": ("premium" if k in PREMIUM_ORDER else "extra"),
+             "family": THEMES[k].get("family", "通用风格"),
+             "scene": THEMES[k].get("scene", ""),
+             "license": ("蒸馏参考（非原文）" if k in _distilled_src else "程序化自绘原创"),
+             "source": _distilled_src.get(k, ""),
+             "colors": {
+                 "deep": THEMES[k]["deep"], "deep2": THEMES[k]["deep2"],
+                 "primary": THEMES[k]["primary"], "accent": THEMES[k]["accent"],
+                 "deco": list(THEMES[k].get("cover_deco", [])),
+             },
+             "layout": resolve_layout(k)}
+            for k in THEME_ORDER
+        ],
+        "premium": list(PREMIUM_ORDER), "extra": list(EXTRA_ORDER),
+    }
+
+
+def _apply_variant(key):
+    """切换版式模板：只覆盖 VARIANTS 里定义的 4 维，header/card 由主题说了算。
+
+    原因：主题绑定的 header/card 是"这一套长什么样"的一部分，
+    用户手选 v1-v4 时不应该把页眉样式也给冲掉（否则学术白底套 v1 会冒出渐变顶条）。
+    """
+    global V
+    picked = None
+    for v in VARIANTS:
+        if v["key"] == str(key or "").lower():
+            picked = v
+            break
+    if picked is None and str(key or "").lower() in ("v1", "v2", "v3", "v4", ""):
+        picked = VARIANTS[0]
+    if picked is not None:
+        for k in _VARIANT_KEYS:
+            V[k] = picked.get(k, V.get(k))
+    return V
+
+
+def _apply_theme(name):
+    """切换整套视觉系统：配色 + 版式，只改模块级常量，页面函数不用动"""
+    global THEME_NAME, CHAPTER, DEEP, DEEP2, INK, BODY, MUTED, PRIMARY, ACCENT, CARD, SOFT, FONT, COVER_DECO, SECTION_RULE, V, _THEME_VARIANT
+    t = THEMES.get(str(name or "").lower()) or THEMES["tech"]
+    THEME_NAME = str(name or "tech").lower()
+    CHAPTER = t["chapter"]; DEEP = t["deep"]; DEEP2 = t["deep2"]
+    INK = t["ink"]; BODY = t["body"]; MUTED = t["muted"]
+    PRIMARY = t["primary"]; ACCENT = t["accent"]
+    CARD = t["card"]; SOFT = t["soft"]; FONT = t.get("font") or "微软雅黑"
+    COVER_DECO = t["cover_deco"]; SECTION_RULE = t["section_rule"]
+    # 主题自带版式：BASE → 该主题指定的 variant（若有）→ layout 逐项覆盖
+    _THEME_VARIANT = str((t.get("layout") or {}).get("variant", "v1") or "v1").lower()
+    V = resolve_layout(THEME_NAME)
+    return THEME_NAME
+
+
+# 章节色轮：按 kicker 序号轮换，整份 PPT 从"一片蓝"变成有节奏的多色叙事
+CHAPTER = ["4A55B8", "0E9AA7", "EF8C2C", "DB3F72", "7C5CE0", "2E9E5B", "D94E2A"]
+DEEP = "0F1535"      # 封面深蓝
+DEEP2 = "3B2170"     # 封面渐变尾（蓝紫）
+INK = "1A2347"       # 标题深色
+BODY = "3A4468"      # 正文
+MUTED = "8A93B5"     # 页脚/辅助
+PRIMARY = "4A55B8"   # 主色（兜底）
+ACCENT = "22B8CF"    # 强调青（兜底）
+SOFT = "F2F4FB"      # 浅底（表格斑马纹，会被章节色覆盖）
+CARD = "F7F8FD"      # 卡片底
+WHITE = "FFFFFF"
+FONT = "微软雅黑"
+COVER_DECO = ["22B8CF", "F59E0B", "DB3F72"]
+SECTION_RULE = "F5D96B"
+
+
+def _chapter_color(kicker, idx=0):
+    """按 kicker 里的序号取章节色：'03 / 市场' -> CHAPTER[2]"""
+    m = re.match(r"\D*(\d+)", str(kicker or ""))
+    if m:
+        try:
+            return CHAPTER[(int(m.group(1)) - 1) % len(CHAPTER)]
+        except Exception:
+            pass
+    return CHAPTER[idx % len(CHAPTER)]
+
+
+def _darken(hexstr, amount=0.15):
+    """把颜色往黑色方向压（用于表头逐列递深）"""
+    try:
+        r = int(hexstr[0:2], 16); g = int(hexstr[2:4], 16); b = int(hexstr[4:6], 16)
+        f = lambda v: max(int(v * (1 - amount)), 0)
+        return "%02X%02X%02X" % (f(r), f(g), f(b))
+    except Exception:
+        return "3A44A0"
+
+
+def _lighten(hexstr, amount=0.55):
+    """把颜色往白色方向调（用于渐变尾、浅底色块）"""
+    try:
+        r = int(hexstr[0:2], 16); g = int(hexstr[2:4], 16); b = int(hexstr[4:6], 16)
+        f = lambda v: int(v + (255 - v) * amount)
+        return "%02X%02X%02X" % (f(r), f(g), f(b))
+    except Exception:
+        return "EEF1FA"
+
+SLIDE_W = 13.333
+SLIDE_H = 7.5
+
+# ===== 要点断行控制（豆包约定，2026-09-25）=====
+# 每条要点最多占 MAX_LINES_PER_BULLET 行，每行不超过 MAX_CHARS_PER_LINE 个中文字符。
+# 超出部分末尾补 "…"，保证版面不被长句撑爆。
+# 注意：实际每行字数还会按栏宽动态收紧（见 _bullets_body），这两个值是**上限**。
+MAX_CHARS_PER_LINE = 40
+MAX_LINES_PER_BULLET = 2
+
+# 断行优先落在这类标点之后，避免把词从中间劈开
+_BREAK_CHARS = "，。；、！？：）】」》”’,.;!?:)]}"
+
+# ===== 自动分页常量（豆包约定，2026-09-25）=====
+# 一页最多放几张要点卡片。实测：双栏 8 张时最后一张底边 6.19in，
+# 距页脚（6.98in）仍有余量，所以上限取 8。
+MAX_BLOCKS_PER_SLIDE = 8
+# 有图表 / 有数据卡片时版面被占掉一半，要点相应减半
+MAX_BLOCKS_WITH_CHART = 4
+MAX_BLOCKS_WITH_METRICS = 4
+# 表格每页最多数据行（不含表头）
+MAX_TABLE_ROWS_PER_SLIDE = 7
+# 单条要点超过这个字数就先按标点拆成多条，避免长段落被 "…" 截断
+SPLIT_BULLET_CHARS = 58
+
+# 14pt 中文字符约占 0.194 inch 宽，留一点余量
+_PT_PER_CN_CHAR = 14.0
+_INCH_PER_CN_CHAR = _PT_PER_CN_CHAR / 72.0 * 1.03
+
+
+def _wrap_line(s, per_line):
+    """在不超过 per_line 的前提下尽量在标点后断，返回 (本行, 剩余)"""
+    s = str(s or "")
+    if len(s) <= per_line:
+        return s, ""
+    window = s[:per_line]
+    lo = max(int(per_line * 0.55), 0)
+    for i in range(len(window) - 1, lo, -1):
+        if window[i] in _BREAK_CHARS:
+            return window[: i + 1], s[i + 1:]
+    return window, s[per_line:]
+
+
+def _fit_per_line(col_w):
+    """按栏宽反推每行能放多少个中文字，再受 MAX_CHARS_PER_LINE 封顶"""
+    usable = max(col_w - 0.62, 1.0)     # 减去卡片内左边距和色条占位
+    est = int(usable / _INCH_PER_CN_CHAR)
+    return max(min(est, MAX_CHARS_PER_LINE), 10)
+
+
+def _split_bullets(bullets, max_chars=SPLIT_BULLET_CHARS):
+    """把超长段落拆成多条要点（豆包要求：长段落拆分，而不是截断丢弃）
+
+    拆分顺序：句末标点（。；！？）→ 逗号顿号 → 兜底按字数硬切。
+    "**标题**：说明" 结构只在第一条保留标题，后续条继承语境。
+    """
+    out = []
+    for b in bullets or []:
+        txt = re.sub(r"\s+", " ", str(b)).strip()
+        if not txt:
+            continue
+        if len(txt) <= max_chars:
+            out.append(txt)
+            continue
+        m = re.match(r"^\*\*(.+?)\*\*[：:]\s*(.*)$", txt)
+        head = (m.group(1) or "").strip() if m else ""
+        body = (m.group(2) or "").strip() if m else txt
+
+        parts = [p for p in re.split(r"(?<=[。；;！？!?])", body) if p.strip()]
+        if len(parts) == 1:
+            parts = [p for p in re.split(r"(?<=[，,、])", body) if p.strip()]
+        if len(parts) == 1:
+            parts = [body[i:i + max_chars] for i in range(0, len(body), max_chars)]
+
+        chunks, cur = [], ""
+        for p in parts:
+            p = p.strip()
+            if cur and len(cur) + len(p) > max_chars:
+                chunks.append(cur)
+                cur = p
+            else:
+                cur = (cur + p).strip()
+        if cur:
+            chunks.append(cur)
+
+        for i, c in enumerate(chunks):
+            out.append("**%s**：%s" % (head, c) if (i == 0 and head) else c)
+    return out
+
+
+def _chunk(seq, size):
+    """按 size 切片；空列表也返回一页，保证至少渲染一页"""
+    if not seq:
+        return [[]]
+    return [seq[i:i + size] for i in range(0, len(seq), size)]
+
+
+def _rgb(hexstr):
+    return RGBColor.from_string(hexstr)
+
+
+def _set_run_font(run, size, color, bold=False, name=None):
+    # name 默认 None 而不是 FONT：默认参数在函数定义时就绑定了初值，
+    # 那样 _apply_theme 换主题字体永远不会生效（踩过）。
+    name = name or FONT or "微软雅黑"
+    run.font.name = name
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = _rgb(color)
+    # 设置中文（east-asian）字体，否则中文回退宋体
+    rPr = run._r.get_or_add_rPr()
+    for tag in ("a:ea", "a:cs"):
+        el = rPr.find(qn(tag))
+        if el is None:
+            latin = rPr.find(qn("a:latin"))
+            el = rPr.makeelement(qn(tag), {})
+            if latin is not None:
+                latin.addnext(el)
+            else:
+                rPr.append(el)
+        el.set("typeface", name)
+
+
+def _luma(hexstr):
+    """感知亮度 0~1，用于判断底色深浅（决定文字用深色还是浅色）"""
+    try:
+        r = int(hexstr[0:2], 16); g = int(hexstr[2:4], 16); b = int(hexstr[4:6], 16)
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    except Exception:
+        return 0.2
+
+
+def _sub_text(deep=None):
+    """深底上的辅助文字色（封面副标题、结尾页小字）。
+
+    原来这些地方写死 "A9B6E8"/"7C88C0"，白底学术主题（math/paper）一用就看不见 ——
+    必须按底色深浅取色。
+    """
+    if _luma(deep or DEEP) < 0.55:
+        return _lighten(deep or DEEP2, 0.55)
+    return MUTED
+
+
+def _add_box(slide, x, y, w, h):
+    tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    tf.margin_left = 0
+    tf.margin_right = 0
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    return tb, tf
+
+
+def _add_rect(slide, x, y, w, h, color, round_=False, alpha=None, line=None, line_w=None):
+    shape_type = MSO_SHAPE.ROUNDED_RECTANGLE if round_ else MSO_SHAPE.RECTANGLE
+    sp = slide.shapes.add_shape(shape_type, Inches(x), Inches(y), Inches(w), Inches(h))
+    if round_:
+        try:
+            sp.adjustments[0] = 0.08
+        except Exception:
+            pass
+    if color is None:
+        sp.fill.background()
+    else:
+        sp.fill.solid()
+        sp.fill.fore_color.rgb = _rgb(color)
+        if alpha is not None:
+            # 透明度：往 srgbClr 里塞 alpha 子元素（OOXML 单位是千分比百分比：100000=100%）
+            srgb = sp.fill.fore_color._xFill.find(".//" + qn("a:srgbClr"))
+            if srgb is not None:
+                a = srgb.makeelement(qn("a:alpha"), {"val": str(int(alpha * 100000))})
+                srgb.append(a)
+    if line is None:
+        sp.line.fill.background()
+    else:
+        sp.line.color.rgb = _rgb(line)
+        sp.line.width = Pt(line_w or 1)
+    sp.shadow.inherit = False
+    return sp
+
+
+def _gradient_cover(slide):
+    """整页渐变背景（深蓝）"""
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0,
+                                Inches(SLIDE_W), Inches(SLIDE_H))
+    bg.line.fill.background()
+    bg.shadow.inherit = False
+    spPr = bg._element.spPr
+    old = spPr.find(qn("a:solidFill"))
+    if old is not None:
+        spPr.remove(old)
+    from pptx.oxml import parse_xml
+    from pptx.oxml.ns import nsdecls
+    grad = parse_xml(
+        '<a:gradFill %s rotWithShape="1">'
+        '<a:gsLst>'
+        '<a:gs pos="0"><a:srgbClr val="%s"/></a:gs>'
+        '<a:gs pos="100000"><a:srgbClr val="%s"/></a:gs>'
+        '</a:gsLst>'
+        '<a:lin ang="2700000" scaled="0"/>'
+        '</a:gradFill>' % (nsdecls("a"), DEEP, DEEP2))
+    ln = spPr.find(qn("a:ln"))
+    if ln is not None:
+        spPr.insert(list(spPr).index(ln), grad)
+    else:
+        spPr.append(grad)
+    return bg
+
+
+def _clean(slide):
+    """去掉默认占位符"""
+    for ph in list(slide.placeholders):
+        ph._element.getparent().remove(ph._element)
+
+
+def _footer(slide, project, page_no):
+    tb, tf = _add_box(slide, 0.7, SLIDE_H - 0.5, 7, 0.3)
+    p = tf.paragraphs[0]
+    r = p.add_run()
+    r.text = project
+    _set_run_font(r, 10, MUTED)
+    tb2, tf2 = _add_box(slide, SLIDE_W - 1.4, SLIDE_H - 0.5, 0.9, 0.3)
+    p2 = tf2.paragraphs[0]
+    p2.alignment = PP_ALIGN.RIGHT
+    r2 = p2.add_run()
+    r2.text = str(page_no)
+    _set_run_font(r2, 10, MUTED)
+
+
+def _page_header(slide, title, kicker=None, accent=PRIMARY):
+    """内容页统一页眉。三种样式由主题的 layout.header 决定：
+      topbar  顶部渐变条 + 右上几何装饰（默认，节奏感强）
+      sidebar 左侧竖色带（把视觉重心压到左边，学术/报告场合更稳）
+      rule    无顶条无装饰，只留标题 + 一条长下划线（最克制，白底主题用）
+    """
+    style = V.get("header", "topbar")
+    left = 0.72
+    if style == "topbar":
+        top = _add_rect(slide, 0, 0, SLIDE_W, 0.11, accent)
+        _grad(top, accent, _lighten(accent, 0.45), 0)   # 横向渐变，顶条不再是死板纯色
+        # 右上角两个低透明度装饰块，打破方版面的呆板
+        d1 = _add_rect(slide, SLIDE_W - 1.15, 0.14, 0.5, 0.5, accent, round_=True)
+        _set_alpha(d1, 0.28)
+        d2 = _add_rect(slide, SLIDE_W - 0.62, 0.22, 0.28, 0.28, accent, round_=True)
+        _set_alpha(d2, 0.18)
+    elif style == "sidebar":
+        _add_rect(slide, 0.55, 0.40, 0.1, 1.52, accent)
+        left = 0.86
+    y = 0.55
+    if kicker:
+        tb, tf = _add_box(slide, left, 0.42, 11.5 - (left - 0.72), 0.35)
+        r = tf.paragraphs[0].add_run()
+        r.text = kicker
+        _set_run_font(r, 12.5, accent, bold=True)
+        y = 0.85
+    tb, tf = _add_box(slide, left, y, 11.9 - (left - 0.72), 0.75)
+    r = tf.paragraphs[0].add_run()
+    r.text = title
+    _set_run_font(r, 27, INK, bold=True)
+    _add_rect(slide, left + 0.02, y + 0.82, 2.4 if style == "rule" else 1.15, 0.055, accent)
+
+
+def _bullets_body(slide, bullets, top=2.15, left=0.72, width=11.9,
+                  per_col=None, max_blocks=None, accent=PRIMARY):
+    bullets = [b for b in (bullets or []) if str(b).strip()]
+    if max_blocks:
+        bullets = bullets[:max_blocks]
+    # 窄栏（左文右图版式）不再强行分两栏：5.3in 分两栏后每行只剩 10 个字，
+    # 内容全被 "…" 吃掉。宽度不足 7in 时一律单栏。
+    # 另外：起点越靠下可用高度越小，单栏排不下就自动切双栏，避免压到页脚。
+    avail_h = 6.85 - top
+    need_single = len(bullets) * 0.92
+    two_col = ((per_col is not None or len(bullets) > 4 or need_single > avail_h)
+               and width >= 7.0)
+    if two_col and per_col is None:
+        per_col = math_ceil(len(bullets) / 2)
+    if two_col:
+        per_col = max(per_col or 1, 1)
+        col_w = (width - 0.6) / 2
+        cols = [bullets[:per_col], bullets[per_col:]]
+    else:
+        col_w = width
+        cols = [bullets]
+    per_line = _fit_per_line(col_w)
+    row_h = 0.92 if not two_col else 1.05
+    if V.get("body") == "minimal":
+        row_h = 0.86 if not two_col else 0.96
+    elif V.get("body") == "numbered":
+        row_h = 0.95 if not two_col else 1.08
+    for ci, col in enumerate(cols):
+        x = left + ci * (col_w + 0.6)
+        for bi, b in enumerate(col):
+            y = top + bi * row_h
+            txt = re.sub(r"\s+", " ", str(b)).strip()
+            # 支持和 "**标题**：说明" 的结构
+            m = re.match(r"^\*\*(.+?)\*\*[：:]\s*(.*)$", txt)
+            # 卡片左侧竖条按条目轮换色彩，同一页内也有色彩节奏
+            bar_color = CHAPTER[(bi + ci * per_col if two_col else bi) % len(CHAPTER)]
+            style = V.get("body")
+            if style == "cards":
+                cs = V.get("card", "solid")
+                if cs == "outline":
+                    # 白底 + 章节色淡描边：内容密的页面用填色卡会显脏，描边更像"图纸"
+                    _add_rect(slide, x, y, col_w, row_h - 0.16, WHITE, round_=True,
+                              line=_lighten(bar_color, 0.45), line_w=1)
+                elif cs == "plain":
+                    pass                      # 只留左侧竖条，不画卡
+                else:
+                    card = _add_rect(slide, x, y, col_w, row_h - 0.16, CARD, round_=True)
+                    card.line.fill.background()
+                _add_rect(slide, x + 0.18, y + row_h / 2 - 0.155, 0.075, 0.31, bar_color, round_=True)
+                tx, tw = (x + 0.38, col_w - 0.5) if cs == "plain" else (x + 0.45, col_w - 0.62)
+            elif style == "minimal":
+                # 极简：无卡片，左侧圆点 + 底部细分割线
+                dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(x + 0.12),
+                                             Inches(y + row_h / 2 - 0.09), Inches(0.17), Inches(0.17))
+                dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(bar_color)
+                dot.line.fill.background(); dot.shadow.inherit = False
+                if bi < len(col) - 1:
+                    line = _add_rect(slide, x + 0.38, y + row_h - 0.06, col_w - 0.4, 0.012, None)
+                    line.fill.solid(); line.fill.fore_color.rgb = _rgb(_lighten(bar_color, 0.78))
+                    line.line.fill.background()
+                tx, tw = x + 0.42, col_w - 0.55
+            else:
+                # numbered：大号序号方块
+                box = _add_rect(slide, x + 0.1, y + 0.1, 0.62, row_h - 0.32, bar_color, round_=True)
+                tb_n, tf_n = _add_box(slide, x + 0.1, y + 0.1, 0.62, row_h - 0.32)
+                tf_n.vertical_anchor = MSO_ANCHOR.MIDDLE
+                pn = tf_n.paragraphs[0]; pn.alignment = PP_ALIGN.CENTER
+                rn = pn.add_run(); rn.text = "%02d" % (bi + 1 + (ci * per_col if two_col else 0))
+                _set_run_font(rn, 15, WHITE, bold=True)
+                tx, tw = x + 0.86, col_w - 0.98
+            tb, tf = _add_box(slide, tx, y + 0.09, tw, row_h - 0.2)
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+            head = (m.group(1) or "").strip() if m else ""
+            body = (m.group(2) or "").strip() if m else txt
+
+            # 逐行排布：第一行让标题和正文共用，其余行放正文剩余部分
+            lines = []
+            rest = body
+            first = True
+            for _ in range(MAX_LINES_PER_BULLET):
+                room = per_line - (len(head) + 2) if (first and head) else per_line
+                seg, rest = _wrap_line(rest, max(room, 8))
+                lines.append((head if first else "", seg))
+                head = ""
+                first = False
+                if not rest:
+                    break
+            if rest and lines:                       # 还有没排下的内容，末尾补省略号
+                h, s = lines[-1]
+                lines[-1] = (h, s.rstrip() + "…")
+
+            for li, (pfx, seg) in enumerate(lines):
+                if not (pfx or seg):
+                    continue
+                p = tf.paragraphs[0] if li == 0 else tf.add_paragraph()
+                p.space_after = Pt(1)
+                p.line_spacing = 1.05
+                if pfx:
+                    r1 = p.add_run(); r1.text = pfx + "  "
+                    _set_run_font(r1, 14.5, bar_color, bold=True)
+                if seg:
+                    r = p.add_run(); r.text = seg
+                    _set_run_font(r, 13.5 if pfx else 14, BODY)
+
+
+def _chart_body(slide, bullets, image_path, accent=PRIMARY):
+    """左文右图。要点区 5.3in 单栏，图片等比缩到 6.2×4.5in 内居中。"""
+    _bullets_body(slide, bullets, top=2.2, left=0.72, width=5.3,
+                  max_blocks=MAX_BLOCKS_WITH_CHART, accent=accent)
+    if not (image_path and os.path.exists(image_path)):
+        return
+    BX, BY, BW, BH = 6.35, 2.0, 6.2, 4.5
+    # 图底下垫一层极淡的章节色块，让图片和页面底色有层次
+    pad = _add_rect(slide, BX - 0.12, BY - 0.12, BW + 0.24, BH + 0.24,
+                    _lighten(accent, 0.9), round_=True)
+    pad.line.color.rgb = _rgb(_lighten(accent, 0.7))
+    pad.line.width = Pt(1)
+    pic = slide.shapes.add_picture(image_path, Inches(BX), Inches(BY),
+                                   width=Inches(BW))
+    if pic.height > Inches(BH):                      # 太高就等比压回框内
+        ratio = float(Inches(BH)) / float(pic.height)
+        pic.height = Inches(BH)
+        pic.width = Emu(int(pic.width * ratio))
+    pic.left = Inches(BX + (BW - pic.width / 914400.0) / 2)
+    pic.top = Inches(BY + (BH - pic.height / 914400.0) / 2)
+
+
+def _table_body(slide, table, accent=PRIMARY):
+    header = table.get("header", [])
+    rows = table.get("rows", [])
+    n_rows = min(len(rows) + 1, 9)
+    n_cols = min(len(header), 7)          # 列数上限放宽到 7，宽表不再被砍列
+    if not header or not rows:
+        return
+    left, top = 0.72, 2.1
+    width = 11.9
+    row_h = min(0.62, 4.4 / n_rows)
+    gt = slide.shapes.add_table(n_rows, n_cols, Inches(left), Inches(top),
+                                Inches(width), Inches(row_h * n_rows)).table
+    # 列宽：第一列稍宽
+    first = width * (0.34 if n_cols <= 3 else 0.24)
+    rest = (width - first) / (n_cols - 1) if n_cols > 1 else 0
+    gt.columns[0].width = Inches(first)
+    for ci in range(1, n_cols):
+        gt.columns[ci].width = Inches(rest)
+    # 表头：先看 WithBlocks 是否为纯色（powerpoint 表格 cell 不支持渐变 XML hack 的风险较高，
+    # 改用"章节色 + 逐列递深"的做法制造层次
+    for ci, htext in enumerate(header[:n_cols]):
+        cell = gt.cell(0, ci)
+        cell.fill.solid()
+        shade = accent if ci == 0 else _darken(accent, ci * 0.06)
+        cell.fill.fore_color.rgb = _rgb(shade)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = cell.text_frame.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run(); r.text = str(htext)
+        _set_run_font(r, 13 if n_cols <= 6 else 11, WHITE, bold=True)
+    softener = _lighten(accent, 0.93)
+    for ri, row in enumerate(rows[:n_rows - 1]):
+        for ci in range(n_cols):
+            cell = gt.cell(ri + 1, ci)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _rgb(softener if ri % 2 == 0 else WHITE)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            val = str(row[ci]) if ci < len(row) else ""
+            p = cell.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER if ci > 0 else PP_ALIGN.LEFT
+            r = p.add_run(); r.text = val
+            _set_run_font(r, 12 if n_cols <= 6 else 10.5, BODY, bold=(ci == 0))
+
+
+def _metrics_body(slide, metrics, top=2.35, height=2.5, accent=PRIMARY):
+    """2-4 个数据卡片：每张卡取色轮中不同颜色做渐变底，数字用白字"""
+    metrics = [m for m in (metrics or []) if str(m).strip()][:4]
+    n = len(metrics)
+    if n == 0:
+        return
+    gap = 0.45
+    card_w = (11.9 - gap * (n - 1)) / n
+    num_size = 34 if height >= 2.0 else 28
+    for i, m in enumerate(metrics):
+        m = str(m).strip()
+        num, label = "", ""
+        # 区间数字（10—30元 / 2-8次 / 3~5家）原来匹配不到：正则不认「—」连接，
+        # 失败后 num=整串、label 走 `label or m` 也印整串 → 大小两层同一串文字叠印
+        #（用户截图实锤：痛点页蓝卡上 34pt 和 13.5pt 两层「10—30元：…」完全重叠）
+        mm = re.match(r"^\s*([\d.]+(?:\s*[-—–~～至到]\s*[\d.]+)?\s*[%万亿倍年个天元周亿人家台套项次所校]?)\s*[：:、，,]\s*(.+)$", m)
+        if mm:
+            num, label = mm.group(1).strip(), mm.group(2).strip()
+        else:
+            # 兜底绝不再印两遍：有冒号且前半含数字就拆前后两段；否则整串进 label、num 留空
+            m2 = re.match(r"^\s*([^：:]{1,14})[：:]\s*(.+)$", m)
+            if m2 and re.search(r"\d", m2.group(1)):
+                num, label = m2.group(1).strip(), m2.group(2).strip()
+            else:
+                label = m
+        x = 0.72 + i * (card_w + gap)
+        c1 = CHAPTER[i % len(CHAPTER)]
+        card = _add_rect(slide, x, top, card_w, height, c1, round_=True)
+        _grad(card, c1, _darken(c1, 0.28), 5400000)
+        card.line.fill.background()
+        if num:
+            # 「10—30元」这类长区间 34pt 一行放不下：按长度降号 + 允许换行，防止横向挤爆
+            ns = num_size if len(num) <= 8 else (num_size - 10 if len(num) <= 14 else num_size - 16)
+            tb, tf = _add_box(slide, x + 0.2, top + height * 0.16,
+                              card_w - 0.4, height * 0.36)
+            tf.word_wrap = True
+            p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+            r = p.add_run(); r.text = num
+            _set_run_font(r, ns, WHITE, bold=True)
+        if label:
+            # num 拆不出来时 label 独占卡片中部，不留上半截空位
+            ly = top + (height * 0.55 if num else height * 0.24)
+            lh = height * (0.36 if num else 0.58)
+            tb2, tf2 = _add_box(slide, x + 0.25, ly, card_w - 0.5, lh)
+            tf2.word_wrap = True
+            p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.CENTER
+            r2 = p2.add_run(); r2.text = label
+            _set_run_font(r2, 13.5 if height >= 2.0 else 12, WHITE)
+
+
+def _add_notes(slide, text):
+    """把 LLM 给的 note 写进 PPT 备注栏（演示时双击可见）"""
+    if not text:
+        return
+    try:
+        tf = slide.notes_slide.notes_text_frame
+        tf.text = str(text)[:500]
+    except Exception:
+        pass
+
+
+def math_ceil(x):
+    import math as _m
+    return _m.ceil(x)
+
+
+# ============ 各版式 ============
+def _cover_gradient(slide, meta, s):
+    """v1 流光：整页渐变 + 三色装饰圆 + 三段式彩色竖条"""
+    _bg_grad(slide, DEEP, DEEP2, 3150000)
+    for (cx, cy, cw, ch, col, al) in ((10.1, 0.15, 3.2, 3.2, COVER_DECO[0], 0.42),
+                                      (10.1, 4.3, 3.2, 3.2, COVER_DECO[1], 0.38),
+                                      (0.15, 4.5, 2.9, 2.9, COVER_DECO[2], 0.30)):
+        d = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx), Inches(cy), Inches(cw), Inches(ch))
+        d.fill.solid(); d.fill.fore_color.rgb = _rgb(col)
+        d.line.fill.background(); d.shadow.inherit = False
+        _set_alpha(d, al)
+    for i, col in enumerate(COVER_DECO):
+        _add_rect(slide, 0.9, 2.02 + i * 0.78, 0.14, 0.62, col, round_=True)
+    tb, tf = _add_box(slide, 1.35, 2.0, 10.3, 1.5)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, WHITE, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.37, 3.35, 10, 0.7)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 17, _sub_text())
+
+
+def _cover_split(slide, meta, s):
+    """v2 左色块：左侧 4.6in 渐变块放标题，右侧留白放定位（明暗对比更强）"""
+    block = _add_rect(slide, 0, 0, 4.9, SLIDE_H, PRIMARY)
+    # 浅底主题（DEEP 接近白）不做渐变：白→主色渐变会把左侧标题压成白底白字
+    if _luma(DEEP) < 0.55:
+        _grad(block, DEEP, PRIMARY, 3150000)
+    accent_bar = _add_rect(slide, 4.9, 0, 0.09, SLIDE_H, ACCENT)
+    tb, tf = _add_box(slide, 0.75, 2.55, 3.9, 2.2)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 34, WHITE, bold=True)
+    _add_rect(slide, 0.75, 4.5, 1.1, 0.06, WHITE)
+    tb2, tf2 = _add_box(slide, 5.6, 2.75, 7.0, 1.6)
+    r2 = tf2.paragraphs[0].add_run(); r2.text = meta.get("one_liner", "")
+    _set_run_font(r2, 20, INK)
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 5.6, 4.35, 7.0, 0.6)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED)
+    for i, col in enumerate(COVER_DECO[:2]):
+        d = _add_rect(slide, 10.4 + i * 0.85, 5.75, 0.62, 0.62, col, round_=True)
+        _set_alpha(d, 0.55)
+
+
+def _cover_band(slide, meta, s):
+    """v3 顶部粗色带：白底提案感，标题压在色带上"""
+    band = _add_rect(slide, 0, 0, SLIDE_W, 2.85, PRIMARY)
+    # 同上：白底主题（paper 等）的色带走纯色，渐变会让左上角的标题看不见
+    if _luma(DEEP) < 0.55:
+        _grad(band, DEEP, PRIMARY, 0)
+    stripe = _add_rect(slide, 0, 2.85, SLIDE_W, 0.075, ACCENT)
+    tb, tf = _add_box(slide, 0.9, 0.85, 11.5, 1.4)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 38, WHITE, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 0.9, 3.5, 11.0, 1.1)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 19, INK)
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 0.9, 4.75, 8.0, 0.6)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED)
+    for i, col in enumerate(COVER_DECO):
+        d = _add_rect(slide, 9.3 + i * 1.3, 5.5, 0.95, 0.95, col, round_=True)
+        _set_alpha(d, 0.5)
+
+
+def _cover_center(slide, meta, s):
+    """v4 居中留白：对称构图，标题居中，上下细线夹住。
+    light_cover=True 时整页转白底（学术/白底主题用），文字颜色跟着反相。"""
+    light = bool(V.get("light_cover")) or _luma(DEEP) >= 0.55
+    if light:
+        _add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, WHITE)
+        line_c, title_c, sub_c = PRIMARY, INK, BODY
+    else:
+        _bg_grad(slide, DEEP, DEEP2, 2700000)
+        line_c, title_c, sub_c = WHITE, WHITE, _sub_text()
+    _add_rect(slide, 3.4, 1.95, 6.5, 0.03, line_c)
+    tb, tf = _add_box(slide, 1.6, 2.45, 10.1, 1.6)
+    p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+    r = p.add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 42, title_c, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 2.2, 4.15, 8.9, 0.8)
+        p2 = tf2.paragraphs[0]; p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 17, sub_c)
+    _add_rect(slide, 5.2, 5.15, 2.9, 0.03, line_c)
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.6, 5.5, 10.1, 0.6)
+    p3 = tf3.paragraphs[0]; p3.alignment = PP_ALIGN.CENTER
+    r3 = p3.add_run(); r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED if light else _sub_text())
+
+
+def _cover_paper(slide, meta, s):
+    """白底学术封面：左侧通顶竖色带 + 墨色标题 + 细分割线。
+
+    给数学建模/论文/开题这类"评审按纸质稿看"的场合用：打印不费墨，
+    投影也不会因为整页深色导致后排看不清标题。
+    """
+    _add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, WHITE)
+    _add_rect(slide, 0, 0, 0.26, SLIDE_H, PRIMARY)
+    _add_rect(slide, 0.26, 1.92, 2.4, 0.05, ACCENT)
+    tb, tf = _add_box(slide, 1.05, 2.28, 11.0, 1.6)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, INK, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.07, 3.78, 10.6, 0.8)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 18, BODY)
+    _add_rect(slide, 1.07, 4.62, 1.5, 0.04, _lighten(PRIMARY, 0.6))
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.07, 4.88, 9.0, 0.6)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED)
+    for i, col in enumerate((COVER_DECO + [PRIMARY, ACCENT, PRIMARY])[:3]):
+        _add_rect(slide, 10.35 + i * 0.52, 6.25, 0.4, 0.4, col, round_=True)
+
+
+# 星空封面的星点坐标写死（不用 random）：同一份 PPT 反复导出长得一样，方便对版。
+# 位置都避开标题区（x 1.3~11.7 / y 2.0~4.1），免得星点压在字上。
+_STARS = [(0.62, 0.72, 0.07, 0.75), (1.62, 0.34, 0.05, 0.55), (3.24, 0.92, 0.06, 0.60),
+          (5.05, 0.40, 0.05, 0.50), (7.42, 0.82, 0.08, 0.70), (9.20, 0.30, 0.05, 0.50),
+          (11.15, 0.62, 0.07, 0.65), (12.45, 1.48, 0.05, 0.50), (12.82, 3.18, 0.06, 0.60),
+          (11.60, 4.62, 0.05, 0.50), (12.60, 6.20, 0.07, 0.60), (0.78, 4.82, 0.05, 0.45),
+          (0.52, 6.58, 0.06, 0.50), (2.20, 7.02, 0.05, 0.40), (6.80, 6.92, 0.05, 0.45),
+          (9.60, 7.00, 0.06, 0.50)]
+
+
+def _cover_star(slide, meta, s):
+    """星空封面：深空渐变底 + 星点 + 两团星云光晕，标题压在左侧。
+
+    星点只铺封面，内容页一律干净 —— 内容页再撒星星，投影出来就是一片噪点。
+    """
+    _bg_grad(slide, DEEP, DEEP2, 3150000)
+    for (cx, cy, cw, col, al) in ((10.2, 0.15, 3.1, COVER_DECO[0], 0.22),
+                                  (0.15, 4.6, 2.9, COVER_DECO[1], 0.18)):
+        d = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx), Inches(cy), Inches(cw), Inches(cw))
+        d.fill.solid(); d.fill.fore_color.rgb = _rgb(col)
+        d.line.fill.background(); d.shadow.inherit = False
+        _set_alpha(d, al)
+    for (sx, sy, ss, al) in _STARS:
+        st = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(sx), Inches(sy), Inches(ss), Inches(ss))
+        st.fill.solid(); st.fill.fore_color.rgb = _rgb("FFFFFF")
+        st.line.fill.background(); st.shadow.inherit = False
+        _set_alpha(st, al)
+    for i, col in enumerate(COVER_DECO):
+        _add_rect(slide, 0.9, 2.02 + i * 0.78, 0.14, 0.62, col, round_=True)
+    tb, tf = _add_box(slide, 1.35, 2.0, 10.3, 1.5)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, WHITE, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.37, 3.35, 10, 0.7)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 17, _sub_text())
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.37, 6.35, 10, 0.5)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, _sub_text())
+
+
+def _cover_orient(slide, meta, s):
+    """中国风封面：宣纸底 + 右侧朱红竖条 + 朱印 + 回纹边框 + 墨色标题。
+
+    不用满屏云纹/毛笔字：评委看的是项目名，装饰压过标题就本末倒置了。
+    朱红面积控制在 8% 左右（竖条 + 印章 + 四角折线）。
+    """
+    _add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, SOFT)
+    _add_rect(slide, SLIDE_W - 1.05, 0, 1.05, SLIDE_H, PRIMARY)
+    _add_rect(slide, SLIDE_W - 1.18, 0, 0.06, SLIDE_H, ACCENT)
+    # 回纹边框：外框细线 + 四角 L 形折线（回纹的简化，打出来也不会糊）
+    _add_rect(slide, 0.55, 0.55, SLIDE_W - 1.10, SLIDE_H - 1.10, None,
+              line=_lighten(PRIMARY, 0.55), line_w=1)
+    for (cx, cy, w, h) in ((0.55, 0.55, 1.10, 0.05), (0.55, 0.55, 0.05, 0.90),
+                           (SLIDE_W - 1.65, SLIDE_H - 0.60, 1.10, 0.05),
+                           (SLIDE_W - 0.60, SLIDE_H - 1.45, 0.05, 0.90)):
+        _add_rect(slide, cx, cy, w, h, PRIMARY)
+    # 朱红印章
+    seal = _add_rect(slide, 0.95, 1.58, 0.62, 0.62, PRIMARY, round_=True)
+    tb_s, tf_s = _add_box(slide, 0.95, 1.58, 0.62, 0.62)
+    tf_s.vertical_anchor = MSO_ANCHOR.MIDDLE
+    ps = tf_s.paragraphs[0]; ps.alignment = PP_ALIGN.CENTER
+    rs = ps.add_run(); rs.text = "创"
+    _set_run_font(rs, 20, WHITE, bold=True)
+    tb, tf = _add_box(slide, 1.85, 2.30, 9.6, 1.6)
+    r = tf.paragraphs[0].add_run(); r.text = meta.get("project", "项目路演")
+    _set_run_font(r, 40, INK, bold=True)
+    if meta.get("one_liner"):
+        tb2, tf2 = _add_box(slide, 1.87, 3.80, 9.4, 0.8)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = meta["one_liner"]
+        _set_run_font(r2, 18, BODY)
+    _add_rect(slide, 1.88, 4.62, 1.5, 0.04, _lighten(PRIMARY, 0.45))
+    comp = meta.get("competition") or "科创赛事路演"
+    tb3, tf3 = _add_box(slide, 1.88, 4.88, 9.0, 0.6)
+    r3 = tf3.paragraphs[0].add_run()
+    r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+    _set_run_font(r3, 13, MUTED)
+
+
+_COVERS = {"gradient": _cover_gradient, "split": _cover_split,
+           "band": _cover_band, "center": _cover_center, "paper": _cover_paper,
+           "star": _cover_star, "orient": _cover_orient}
+
+
+def _slide_cover(prs, s, meta):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    _COVERS.get(V.get("cover"), _cover_gradient)(slide, meta, s)
+    # 封面底部信息（split/band 版式已在各自函数里画过，避免重复）
+    if V.get("cover") in ("gradient", "center"):
+        tb3, tf3 = _add_box(slide, 1.37 if V.get("cover") == "gradient" else 1.6,
+                            6.35, 10, 0.5)
+        comp = meta.get("competition") or "科创赛事路演"
+        r3 = tf3.paragraphs[0].add_run()
+        r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
+        _set_run_font(r3, 13, _sub_text())
+    if s.get("note"):
+        _add_notes(slide, s.get("note"))
+    return slide
+
+
+def _set_alpha(shape, alpha):
+    srgb = shape.fill.fore_color._xFill.find(".//" + qn("a:srgbClr"))
+    if srgb is not None:
+        a = srgb.makeelement(qn("a:alpha"), {"val": str(int(alpha * 100000))})
+        srgb.append(a)
+
+
+def _set_alpha_text(run, alpha):
+    """给文字填充加透明度（用于衬底大数字）"""
+    try:
+        rPr = run._r.get_or_add_rPr()
+        sf = rPr.find(qn("a:solidFill"))
+        if sf is None:
+            return
+        c = sf.find(qn("a:srgbClr"))
+        if c is None:
+            return
+        a = c.makeelement(qn("a:alpha"), {"val": str(int(alpha * 100000))})
+        c.append(a)
+    except Exception:
+        pass
+
+
+def _grad(shape, c1, c2, angle=2700000):
+    """给任意 shape 应用双色线性渐变（python-pptx 原生不支持，走 XML）"""
+    from pptx.oxml import parse_xml
+    from pptx.oxml.ns import nsdecls
+    spPr = shape._element.spPr
+    if spPr.find(qn("a:gradFill")) is not None:
+        return shape
+    try:
+        shape.fill.solid()
+        old = spPr.find(qn("a:solidFill"))
+        if old is not None:
+            spPr.remove(old)
+    except Exception:
+        pass
+    grad = parse_xml(
+        '<a:gradFill %s rotWithShape="1">'
+        '<a:gsLst>'
+        '<a:gs pos="0"><a:srgbClr val="%s"/></a:gs>'
+        '<a:gs pos="100000"><a:srgbClr val="%s"/></a:gs>'
+        '</a:gsLst>'
+        '<a:lin ang="%d" scaled="0"/>'
+        '</a:gradFill>' % (nsdecls("a"), c1, c2, int(angle)))
+    ln = spPr.find(qn("a:ln"))
+    if ln is not None:
+        spPr.insert(list(spPr).index(ln), grad)
+    else:
+        spPr.append(grad)
+    return shape
+
+
+def _bg_grad(slide, c1, c2, angle=2700000):
+    """整页渐变背景"""
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0,
+                                Inches(SLIDE_W), Inches(SLIDE_H))
+    bg.line.fill.background()
+    bg.shadow.inherit = False
+    return _grad(bg, c1, c2, angle)
+
+
+def _slide_section(prs, s, meta, page_no, idx=0):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    # 每个章节一种颜色：不再全篇同一个深蓝
+    color = _chapter_color(s.get("num") or s.get("kicker"), idx)
+    num = str(s.get("num", "")).zfill(2) or "01"
+    if V.get("section") == "light":
+        # 浅色章节页：白底 + 巨大浅灰数字 + 深色标题（像杂志分隔页）
+        panel = _add_rect(slide, 8.6, 0, SLIDE_W - 8.6, SLIDE_H, _lighten(color, 0.82))
+        panel.line.fill.background()
+        tb, tf = _add_box(slide, 0.95, 1.75, 5.0, 2.6)
+        r = tf.paragraphs[0].add_run(); r.text = num
+        _set_run_font(r, 96, _lighten(color, 0.55), bold=True)
+        tb2, tf2 = _add_box(slide, 3.5, 3.15, 5.2, 1.2)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = s.get("title", "")
+        _set_run_font(r2, 32, INK, bold=True)
+        _add_rect(slide, 3.56, 4.25, 1.3, 0.06, color)
+    else:
+        _bg_grad(slide, _darken(color, 0.45), _darken(color, 0.12), 3150000)
+        deco = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.2), Inches(1.0),
+                                      Inches(5.1), Inches(5.1))
+        deco.fill.solid(); deco.fill.fore_color.rgb = _rgb(WHITE)
+        deco.line.fill.background(); deco.shadow.inherit = False
+        _set_alpha(deco, 0.10)
+        tb, tf = _add_box(slide, 0.95, 1.9, 4.2, 2.4)
+        r = tf.paragraphs[0].add_run(); r.text = num
+        _set_run_font(r, 88, "FFFFFF", bold=True)
+        _set_alpha_text(r, 0.35)
+        tb2, tf2 = _add_box(slide, 3.6, 3.05, 8.6, 1.2)
+        r2 = tf2.paragraphs[0].add_run(); r2.text = s.get("title", "")
+        _set_run_font(r2, 32, WHITE, bold=True)
+        _add_rect(slide, 3.66, 4.15, 1.3, 0.06, SECTION_RULE)
+    if s.get("bullets"):
+        line_color = MUTED if V.get("section") == "light" else _sub_text(_darken(color, 0.45))
+        tb3, tf3 = _add_box(slide, 3.56 if V.get("section") == "light" else 3.66, 4.5, 8.4, 1.4)
+        for line in s["bullets"][:3]:
+            p = tf3.add_paragraph()
+            rr = p.add_run(); rr.text = "— " + str(line)
+            _set_run_font(rr, 14, line_color)
+    _add_notes(slide, s.get("note"))
+    return slide
+
+
+def _slide_bullets(prs, s, meta, page_no, chart_path=None, cont=False, idx=0):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    title = s.get("title", "")
+    if cont:
+        title = "%s（续）" % title
+    accent = _chapter_color(s.get("kicker"), idx)
+    _page_header(slide, title, s.get("kicker"), accent)
+    metrics = s.get("metrics") or []
+    bullets = s.get("bullets", [])
+    if chart_path:
+        _chart_body(slide, bullets, chart_path, accent)
+        if metrics:                                  # 图右、要点左，指标压到页脚上方
+            _metrics_body(slide, metrics, top=5.15, height=1.6)
+    elif metrics:
+        _metrics_body(slide, metrics, top=2.05, height=1.9)   # 上半屏
+        _bullets_body(slide, bullets, top=4.15,                # 下半屏，不再重叠
+                      max_blocks=MAX_BLOCKS_WITH_METRICS, accent=accent)
+    else:
+        _bullets_body(slide, bullets, max_blocks=MAX_BLOCKS_PER_SLIDE, accent=accent)
+    _footer(slide, meta.get("project", ""), page_no)
+    return slide
+
+
+def _slide_table(prs, s, meta, page_no, cont=False, idx=0):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    title = s.get("title", "")
+    if cont:
+        title = "%s（续）" % title
+    accent = _chapter_color(s.get("kicker"), idx)
+    _page_header(slide, title, s.get("kicker"), accent)
+    _table_body(slide, s.get("table") or {}, accent)
+    if s.get("note"):
+        tb, tf = _add_box(slide, 0.72, 6.55, 11.9, 0.5)
+        r = tf.paragraphs[0].add_run(); r.text = str(s["note"])
+        _set_run_font(r, 11.5, MUTED)
+    _footer(slide, meta.get("project", ""), page_no)
+    return slide
+
+
+def _slide_metrics(prs, s, meta, page_no, idx=0):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    accent = _chapter_color(s.get("kicker"), idx)
+    _page_header(slide, s.get("title", ""), s.get("kicker"), accent)
+    _metrics_body(slide, s.get("metrics", []), top=2.15, height=2.35)
+    if s.get("bullets"):
+        _bullets_body(slide, s["bullets"], top=4.75,
+                      max_blocks=MAX_BLOCKS_WITH_METRICS, accent=accent)
+    _footer(slide, meta.get("project", ""), page_no)
+    return slide
+
+
+def _slide_closing(prs, s, meta, page_no):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    # 白底主题（math/paper/academic）必须收白尾：原来这里写死深蓝紫渐变，
+    # 前面全是白页、最后突然一整页深蓝，比配色不统一更扎眼。
+    light = bool(V.get("light_closing")) or _luma(DEEP) >= 0.55
+    title = s.get("title", "谢谢聆听")
+    tail = meta.get("one_liner") or meta.get("project", "")
+    if light:
+        _add_rect(slide, 0, 0, SLIDE_W, SLIDE_H, WHITE)
+        _add_rect(slide, 5.42, 2.3, 2.5, 0.04, PRIMARY)
+        tb, tf = _add_box(slide, 1.2, 2.6, 11, 1.4)
+        p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+        r = p.add_run(); r.text = title
+        _set_run_font(r, 44, INK, bold=True)
+        if s.get("bullets"):
+            tb2, tf2 = _add_box(slide, 1.7, 4.15, 10, 1.2)
+            for b in s["bullets"][:2]:
+                p2 = tf2.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
+                r2 = p2.add_run(); r2.text = str(b)
+                _set_run_font(r2, 15, BODY)
+        tb3, tf3 = _add_box(slide, 1.2, 5.9, 11, 0.6)
+        p3 = tf3.paragraphs[0]; p3.alignment = PP_ALIGN.CENTER
+        r3 = p3.add_run(); r3.text = tail
+        _set_run_font(r3, 13, MUTED)
+        return slide
+    _bg_grad(slide, DEEP, DEEP2, 2700000)
+    deco = (COVER_DECO + [PRIMARY, ACCENT])[:2]
+    d1 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.15), Inches(0.15),
+                                Inches(4.0), Inches(4.0))
+    d1.fill.solid(); d1.fill.fore_color.rgb = _rgb(deco[0])
+    d1.line.fill.background(); d1.shadow.inherit = False
+    _set_alpha(d1, 0.25)
+    d2 = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(9.3), Inches(3.3),
+                                Inches(4.0), Inches(4.0))
+    d2.fill.solid(); d2.fill.fore_color.rgb = _rgb(deco[1])
+    d2.line.fill.background(); d2.shadow.inherit = False
+    _set_alpha(d2, 0.28)
+    tb, tf = _add_box(slide, 1.2, 2.6, 11, 1.4)
+    p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+    r = p.add_run(); r.text = title
+    _set_run_font(r, 44, WHITE, bold=True)
+    if s.get("bullets"):
+        tb2, tf2 = _add_box(slide, 1.7, 4.15, 10, 1.2)
+        for b in s["bullets"][:2]:
+            p2 = tf2.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
+            r2 = p2.add_run(); r2.text = str(b)
+            _set_run_font(r2, 15, _sub_text())
+    tb3, tf3 = _add_box(slide, 1.2, 5.9, 11, 0.6)
+    p3 = tf3.paragraphs[0]; p3.alignment = PP_ALIGN.CENTER
+    r3 = p3.add_run(); r3.text = tail
+    _set_run_font(r3, 13, _sub_text())
+    return slide
+
+
+# ============ 主入口 ============
+def build_deck(deck, out_path, chart_paths=None):
+    """chart_paths: {chart_id: png路径}
+    deck 可选 theme（主题 key）与 variant（模板 key v1-v4），不传则用默认。"""
+    chart_paths = chart_paths or {}
+    # 关键：把主题真正应用到本次渲染（不接这行，传了 theme 也不会生效）
+    _apply_theme(deck.get("theme"))
+    # 15 套精品各自定好了封面/正文/页眉/卡片，这里不再接受外部 variant 覆盖：
+    # 用户要的是"选比赛就出风格"，再让他套 v1-v4 等于把设计冲掉。
+    # 只有不带 layout 的旧主题才回落到手动版式。
+    if not (THEMES.get(str(deck.get("theme") or "").lower()) or {}).get("layout"):
+        _apply_variant(deck.get("variant"))
+    prs = Presentation()
+    prs.slide_width = Inches(SLIDE_W)
+    prs.slide_height = Inches(SLIDE_H)
+    meta = {
+        "project": deck.get("project", "科创项目"),
+        "one_liner": deck.get("one_liner", ""),
+        "competition": deck.get("competition", ""),
+    }
+    page = 1
+    for i, s in enumerate(deck.get("slides", [])):
+        stype = str(s.get("type", "bullets")).lower()
+        if stype in ("cover", "title"):
+            _slide_cover(prs, s, meta)
+            page += 1
+        elif stype == "section":
+            _slide_section(prs, s, meta, page, i)
+            page += 1
+        elif stype == "table":
+            page = _emit_table(prs, s, meta, page, i)
+        elif stype == "metrics":
+            if s.get("bullets"):
+                sub = dict(s)
+                sub["bullets"] = _split_bullets(s["bullets"])
+                _slide_metrics(prs, sub, meta, page, i)
+            else:
+                _slide_metrics(prs, s, meta, page, i)
+            page += 1
+        elif stype in ("closing", "thanks", "end"):
+            _slide_closing(prs, s, meta, page)
+            page += 1
+        else:
+            page = _emit_bullets(prs, s, meta, page, chart_paths, i)
+    # 417 轮：末页底部补一行智能辅助声明，与 Word/PDF 导出件同一套措辞。
+    # deck['notice'] 后端早就在塞，但 pptx_builder 一直没读它，等于 PPT 光着身子提交。
+    _notice = (deck.get("notice") or "").strip()
+    if _notice and len(prs.slides):
+        try:
+            _last = prs.slides[len(prs.slides) - 1]
+            _tb, _tf = _add_box(_last, 0.9, 6.55, 11.5, 0.55)
+            _p = _tf.paragraphs[0]
+            _p.alignment = PP_ALIGN.CENTER
+            _r = _p.add_run()
+            _r.text = _notice
+            _set_run_font(_r, 9, _sub_text())
+        except Exception as _ne:
+            print("[pptx] 末页声明写入失败（不阻断）：%r" % (_ne,))
+    prs.save(out_path)
+    return out_path
+
+
+def _emit_bullets(prs, s, meta, page, chart_paths, idx=0):
+    """要点页自动分页：先拆长段落，再按每页容量切片，超出生成"（续）"页"""
+    cpath = chart_paths.get(s.get("chart")) if s.get("chart") else None
+    metrics = s.get("metrics") or []
+    blocks = _split_bullets(s.get("bullets", []))
+    # 首页要放图表或指标卡，容量减半；续页是干净版面，按满容量排
+    if cpath or metrics:
+        cap0 = MAX_BLOCKS_WITH_CHART if cpath else MAX_BLOCKS_WITH_METRICS
+        head, tail = blocks[:cap0], blocks[cap0:]
+        chunks = [head] + (_chunk(tail, MAX_BLOCKS_PER_SLIDE) if tail else [])
+    else:
+        chunks = _chunk(blocks, MAX_BLOCKS_PER_SLIDE)
+    if not chunks:
+        chunks = [[]]
+    for pi, chunk in enumerate(chunks):
+        sub = dict(s)
+        sub["bullets"] = chunk
+        sub["metrics"] = metrics if pi == 0 else []   # 指标只在首页出现
+        _slide_bullets(prs, sub, meta, page,
+                       cpath if pi == 0 else None, cont=(pi > 0), idx=idx)
+        page += 1
+    return page
+
+
+def _emit_table(prs, s, meta, page, idx=0):
+    """表格页自动分页：每页 MAX_TABLE_ROWS_PER_SLIDE 行，表头每页重复"""
+    t = s.get("table") or {}
+    header, rows = t.get("header") or [], t.get("rows") or []
+    if not header or not rows:
+        _slide_table(prs, s, meta, page, idx=idx)
+        return page + 1
+    for pi, chunk in enumerate(_chunk(rows, MAX_TABLE_ROWS_PER_SLIDE)):
+        sub = dict(s)
+        sub["table"] = {"header": header, "rows": chunk}
+        _slide_table(prs, sub, meta, page, cont=(pi > 0), idx=idx)
+        page += 1
+    return page
+
+
+if __name__ == "__main__":
+    deck = {
+        "project": "护途 CareWay",
+        "one_liner": "让每一次住院都有人管、有据可依",
+        "competition": "iCAN 大学生创新创业大赛",
+        "slides": [
+            {"type": "cover", "title": "护途 CareWay"},
+            {"type": "bullets", "kicker": "01 / 痛点", "title": "住院陪护市场痛点",
+             "bullets": ["**找护工难**：靠熟人介绍，质量无从考证",
+                         "**价格不透明**：同类服务差价可达 2 倍",
+                         "**纠纷难界定**：出了问题责任说不清"],
+             "metrics": ["4.5亿：全国年住院人次", "60%：家属请假陪护比例", "38%：护工无培训上岗"]},
+            {"type": "table", "kicker": "02 / 竞品", "title": "竞品对比",
+             "table": {"header": ["维度", "我们", "传统中介", "平台A"],
+                       "rows": [["资质审核", "三重背调", "无", "证件拍照"],
+                                ["价格", "平台统一定价", "口头议价", "抽成20%"]]}},
+            {"type": "section", "num": "3", "title": "商业模式",
+             "bullets": ["抽佣 + 会员 + 保险分成"]},
+            {"type": "bullets", "title": "市场规模", "chart": "demo",
+             "bullets": ["目标市场 120 亿", "首年渗透 0.5%"]},
+            {"type": "closing", "title": "谢谢聆听", "bullets": ["欢迎评委指导"]},
+        ],
+    }
+    build_deck(deck, "_ppt_test.pptx", chart_paths={"demo": "_chart_test/demo.png"})
+    print("ok")

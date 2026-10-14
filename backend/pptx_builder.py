@@ -1435,6 +1435,15 @@ def _slide_cover(prs, s, meta):
         r3 = tf3.paragraphs[0].add_run()
         r3.text = f"{comp} · {datetime.now().strftime('%Y-%m')}"
         _set_run_font(r3, 13, _sub_text())
+    # 封面保留可编辑的团队信息位。未提供的数据只显示占位，不替用户编造。
+    team = str(meta.get("team_name") or meta.get("team") or "________________").splitlines()[0].strip()
+    leader = str(meta.get("leader") or "________________").splitlines()[0].strip()
+    line = "团队名称：%s  ·  负责人：%s" % (team, leader)
+    tb4, tf4 = _add_box(slide, 0.85, 6.82, 11.7, 0.42)
+    p4 = tf4.paragraphs[0]
+    p4.alignment = PP_ALIGN.CENTER
+    r4 = p4.add_run(); r4.text = line
+    _set_run_font(r4, 9, _sub_text())
     if s.get("note"):
         _add_notes(slide, s.get("note"))
     return slide
@@ -1679,13 +1688,21 @@ def build_deck(deck, out_path, chart_paths=None):
         "project": deck.get("project", "科创项目"),
         "one_liner": deck.get("one_liner", ""),
         "competition": deck.get("competition", ""),
+        "team": deck.get("team", ""),
+        "team_name": deck.get("team_name", ""),
+        "leader": deck.get("leader", ""),
+        "members": deck.get("members", ""),
+        "contact": deck.get("contact", ""),
     }
     page = 1
     # 页数总预算：基础页数 = deck 章节页数（与大纲 1:1），（续）页只能消耗
     # MAX_TOTAL_SLIDES - 基础页数 的额度，用完即压缩单页内容（超限宁可少排，
     # 不可超页数——iCAN 等赛事硬要求 ≤20 页）。
     slides = deck.get("slides", [])
-    cont_budget = max(0, MAX_TOTAL_SLIDES - len(slides))
+    # 富媒体流水线以 PPT 大纲为唯一页级契约时，不允许排版器自动生成续页；
+    # 超出单页容量的内容会进入备注，避免“实际页数 > 大纲页数”。旧的
+    # 手工 deck 未带该标记时继续沿用原有总页数预算。
+    cont_budget = 0 if deck.get("strict_outline") else max(0, MAX_TOTAL_SLIDES - len(slides))
     for i, s in enumerate(slides):
         stype = str(s.get("type", "bullets")).lower()
         if stype in ("cover", "title"):

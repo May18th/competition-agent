@@ -39,12 +39,15 @@ def _get_llm():
                 x for x in _np.replace("::1", "").replace(";", ",").split(",") if x)
             os.environ["no_proxy"] = os.environ["NO_PROXY"]
         _llm = ChatDeepSeek(
-            model="deepseek-chat",
+            # 2026-10-14 与 llm_factory 统一：默认 deepseek-flash（旧名 deepseek-chat 已停售）
+            model=os.getenv("DEEPSEEK_MODEL") or "deepseek-flash",
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             temperature=0.2,
             max_tokens=8000,
             request_timeout=180,
             max_retries=2,
+            # 关闭思考模式：实测默认开启时 100 输出 token 里 74 个是 reasoning（按输出价计费）
+            extra_body={"thinking": {"type": "disabled"}},
         )
     return _llm
 
@@ -351,17 +354,54 @@ def _outline_deck(outline):
     outline = (outline or "").strip()
     if not outline:
         return {"slides": [], "outline_missing": True}
+    lines = [line.strip() for line in outline.split("\n") if line.strip()]
+    page_re = re.compile(
+        r"^(?:#{1,4}\s+)?(?:第\s*\d+\s*页|页?\s*\d+|[（(]?\d+[）)])"
+        r"(?:[.、:：\s|｜-]+)(.+)$"
+    )
+    # 与 export_guard._outline_pages 同口径：有显式页码时只认页码标题，
+    # 避免文末「附：答辩问题库」等资源标题变成空白/多余 PPT 页面。
+    explicit_page_mode = any(page_re.match(line) for line in lines)
+
+    def _is_document_heading(title):
+        normalized = re.sub(r"[\s\u00b7\-\u2014_()（）\[\]【】|｜]+", "", title or "")
+        if re.search(r"(?:PPT|路演)?大纲(?:\d+页?)?$", normalized, re.IGNORECASE) \
+                or normalized in ("目录", "PPT目录", "目录页"):
+            return True
+        return bool(re.match(r"^(?:附录?|附)[:：\s]|^(?:答辩问题库|答辩问题预测|讲解稿|演讲稿|备注)", title or "", re.IGNORECASE))
+
+    def _is_appendix_heading(title):
+        return bool(re.match(
+            r"^(?:附录?|附)[:：\s]|^(?:答辩问题库|答辩问题预测|讲解稿|演讲稿|备注)",
+            (title or "").strip(), re.IGNORECASE
+        ))
+
     slides = []
     cur = None
-    for line in outline.split("\n"):
-        line = line.strip()
+    appendix_started = False
+    for line in lines:
         if not line:
             continue
+        heading = re.match(r"^#{1,4}\s+(.*)$", line)
+        if heading and _is_appendix_heading(heading.group(1)):
+            appendix_started = True
+            continue
+        # 附录下的编号问题/讲解稿不是页面；大纲页在附录后也不应被继续计入。
+        if appendix_started:
+            continue
         # 标题：## x / # x / 1. x / 第1页 x / 01 / x
-        m = re.match(r"^#{1,4}\s+(.*)", line) or re.match(r"^(?:页?\d+|[（(]?\d+[）)])[.、:：\s]+(.*)", line)
+        m = page_re.match(line)
         if m:
-            # 第二百三十五轮：标题剥掉两端 Markdown 加粗/标题标记，避免「市场规模**」这类星号残留
+            # page_re 的捕获组只保留页面标题，避免把「第1页｜」写进标题；
+            # 导出校验和 PPT 页面读取使用同一标题文本。
             title = m.group(1).strip().strip("#* ").strip()
+        elif not explicit_page_mode:
+            m = re.match(r"^#{1,4}\s+(.*)", line)
+            title = m.group(1).strip().strip("#* ").strip() if m else ""
+        else:
+            m = None
+            title = ""
+        if m:
             if not title or len(title) > 40:
                 continue
             # 跳过文档级标题（「PPT 大纲」「路演大纲」「目录」等），它只是整份大纲的名字，不是某一页
@@ -369,9 +409,7 @@ def _outline_deck(outline):
             # 不认「智能巡检系统 · 3分钟路演大纲」「项目PPT大纲（16页）」这类带前后缀写法，
             # 导致文档级标题被当成一页正文 -> PPT 页数 +1、与大纲对不上（417-2 投诉场景）。
             # 新判据：去符号空白后以「大纲」结尾（允许 PPT/路演 前缀与括号页数后缀）或等于目录类。
-            _norm = re.sub(r"[\s\u00b7\-\u2014_()（）\[\]【】]+", "", title)
-            if re.search(r"(?:PPT|路演)?大纲(?:\d+页?)?$", _norm, re.IGNORECASE) \
-                    or _norm in ("目录", "PPT目录", "目录页"):
+            if _is_document_heading(title):
                 continue
             if cur:
                 slides.append(cur)
@@ -393,7 +431,8 @@ def _outline_deck(outline):
         slides.append(cur)
     if not slides:
         return {"slides": [], "outline_missing": True}
-    # 大纲第一页通常就是「封面」，标记为 cover，避免下游再插一个空封面导致页数 +1
+    # 大纲第一页通常就是「封面」，标记为 cover；不在这里隐式新增页面，
+    # 页面数量必须与 ppt_outline 的显式页面一一对应。
     if "封面" in slides[0].get("title", ""):
         slides[0]["type"] = "cover"
     return {"slides": slides}
@@ -576,7 +615,9 @@ def build_rich_assets(result, competition="", idea="", theme=None, user_data="")
         table_map = {t["id"]: t for t in tables}
         chart_ids = {c["id"] for c in charts}
         norm = []
-        for s in slides[:18]:
+        # 不静默截断大纲页面。截断会造成导出 PPT 缺页，而校验器仍按原始大纲计数。
+        # 总页数/续页预算由 pptx_builder 的质量门统一控制。
+        for s in slides:
             if not isinstance(s, dict):
                 continue
             s.setdefault("type", "bullets")
@@ -603,9 +644,24 @@ def build_rich_assets(result, competition="", idea="", theme=None, user_data="")
                     break
                 _s["type"] = "chart"
                 _s["chart"] = _cid
-        if norm and norm[0].get("type") != "cover":
-            norm.insert(0, {"type": "cover"})
+        # 大纲页与导出页严格 1:1：pptx_builder 为超容量要点生成续页，
+        # 会让实际页数多于大纲。超出的内容不丢失，转入演讲者备注，
+        # 由评委看到的页面保持规整，演示者仍可在备注中完整查看。
+        for _s in norm:
+            if not isinstance(_s, dict):
+                continue
+            _stype = str(_s.get("type") or "bullets").lower()
+            _cap = 4 if (_stype in ("chart", "metrics") or _s.get("chart")) else 8
+            _bullets = _s.get("bullets")
+            if isinstance(_bullets, list) and len(_bullets) > _cap:
+                _overflow = [str(x).strip() for x in _bullets[_cap:] if str(x).strip()]
+                _s["bullets"] = _bullets[:_cap]
+                if _overflow:
+                    _extra = "页面容量外的补充要点：\n" + "\n".join("- " + x for x in _overflow)
+                    _s["note"] = (str(_s.get("note") or "").strip() + "\n" + _extra).strip()
+        # 只渲染大纲中明确存在的页面，不隐式插入封面；否则会破坏大纲契约。
         deck["slides"] = _clean_deck_slides(norm)
+        deck["strict_outline"] = True
         deck.setdefault("one_liner", result.get("one_liner", ""))
         deck.setdefault("project", _project_name(idea, result.get("one_liner", "")))
         deck.setdefault("competition", competition)

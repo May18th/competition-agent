@@ -1,0 +1,25 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">
+<script>
+window.addEventListener('load', function(){
+  var m0 = location.hash.match(/w=(\d+)/), m1 = location.hash.match(/h=(\d+)/), m2 = location.hash.match(/scroll=(\d+)/);
+  var W = m0 ? parseInt(m0[1],10) : 1080, H = m1 ? parseInt(m1[1],10) : 1400;
+  var f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;left:0;top:0;border:0;width:'+W+'px;height:'+H+'px;';
+  f.src = 'http://127.0.0.1:8080/';
+  f.onload = function(){
+    setTimeout(function(){
+      try {
+        var dd = f.contentDocument, win = f.contentWindow;
+        try { win.localStorage.setItem('wbCoachDone', '1'); } catch(e) {}
+        try { win.document.cookie = 'wbCoachDone=1; max-age=31536000; path=/'; } catch(e) {}
+        var veil = dd.getElementById('wbCoachVeil');
+        if (veil) veil.remove();
+        var tip = dd.getElementById('coachTip');
+        if (tip) tip.style.display = 'none';
+        if (m2) win.scrollTo(0, parseInt(m2[1], 10));
+      } catch(e) {}
+    }, 700);
+  };
+  document.body.appendChild(f);
+});
+</script></body></html>
