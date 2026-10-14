@@ -265,7 +265,7 @@ def _number_headings(text):
                 elif m.group(1) == '###':
                     cn2 += 1
                     cn3 = 0
-                    line = '### （%d）%s' % (cn2, _RE_HEADING_PREFIX.sub('', title).strip())
+                    line = '### （%s）%s' % (_cn_num(cn2), _RE_HEADING_PREFIX.sub('', title).strip())
                 else:
                     cn3 += 1
                     line = '#### %d、%s' % (cn3, _RE_HEADING_PREFIX.sub('', title).strip())

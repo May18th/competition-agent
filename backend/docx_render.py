@@ -263,8 +263,7 @@ def _number_heading_blocks(blocks):
     """给正文标题注入中文编号（在渲染层做，不要求上游 LLM 输出带编号）。
 
     - H2（markdown ``##``，一级章节）→ 一、二、三、…
-    - H2（markdown ``##``，一级章节）→ 一、二、三、…
-    - H3（markdown ``###``，二级小节）→ （1）（2）（3）…
+    - H3（markdown ``###``，二级小节）→ （一）（二）（三）…
     - H4（markdown ``####``，三级小节）→ 1、2、3、…
     - 无论上游是否已经编号，都先去掉旧前缀再按层级重排，避免出现「五、…」重复或乱序。
 
@@ -272,7 +271,7 @@ def _number_heading_blocks(blocks):
     blocks，在这里编号一次，两边自动一致（目录是手写静态列表，跟着正文走）。
     """
     cn1 = 0        # 一级章节计数（一、二、…）
-    cn2 = 0        # 二级小节计数（（1）（2）…），每进新章重置
+    cn2 = 0        # 二级小节计数（（一）（二）…），每进新章重置
     cn3 = 0        # 三级小节计数（1、2、3…），每进新章/二级重置
     out = []
     for _bi, blk in enumerate(blocks):
@@ -294,7 +293,7 @@ def _number_heading_blocks(blocks):
         elif level == 3:
             cn2 += 1
             cn3 = 0
-            text = '（%d）%s' % (cn2, _RE_HEADING_PREFIX.sub('', text).strip())
+            text = '（%s）%s' % (_cn_num(cn2), _RE_HEADING_PREFIX.sub('', text).strip())
         elif level == 4:
             cn3 += 1
             text = '%d、%s' % (cn3, _RE_HEADING_PREFIX.sub('', text).strip())

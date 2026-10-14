@@ -14,7 +14,7 @@
 | `docs/operations/` | 部署、运行、域名与操作说明 | 可能含环境信息，不提交密码 |
 | `docs/archive/` | 旧版本、编码异常或无法归类的历史文件 | 归档，不进入生成链路 |
 | `artifacts/reference/` | 可展示的样例 Word/PDF/PPT | 版权和来源需单独核验 |
-| `artifacts/demo-video/` | 演示视频及配套截图 | 演示材料，不是运行依赖 |
+| `artifacts/demo-video/` | 已清理，不保留演示视频及截图 | 演示视频仅按需在本地生成，不进入源码包 |
 | `artifacts/qa/` | 浏览器、云端和端到端检查产物 | 可清理、不可作为业务数据 |
 | `artifacts/research/` | 临时网页抓取与研究快照 | 仅用于核查，不能直接训练或引用 |
 | `artifacts/legacy-runtime/` | 旧入口遗留的生成/上传目录 | 当前入口不使用，迁移前保留 |

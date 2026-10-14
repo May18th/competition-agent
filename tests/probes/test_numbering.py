@@ -4,12 +4,13 @@
 用「裸标题 + 已编号标题」混合的 markdown 走两条渲染链路，断言：
 1. 裸 H2 按序拿到 一、二、…（中文数字）
 2. 裸 H3 拿到 （一）（二）…，每进新 H2 章重新起算
-3. 已编号标题（一、/1./1.1/（一）/第X章）原样保留，不重复加号
-4. H1 / H4 不编号
+3. 上游已有编号统一重排，不重复、不乱序
+4. H1 不编号，H4 使用 1、2、3…
 5. 生成真实 docx 读回 Heading 段落验证编号写进文档；生成 PDF 读回文本验证
 """
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -80,11 +81,11 @@ expect = [
     (2, '一、摘要'),
     (2, '二、研究目的'),
     (3, '（一）子节甲'),
-    (3, '3.1 已编号小节'),        # 已编号 → 原样
-    (2, '一、已编号章节'),        # 已编号 → 原样（但推进计数器）
+    (3, '（二）已编号小节'),       # 已编号 → 统一重排
+    (2, '三、已编号章节'),         # 已编号 → 统一重排
     (3, '（一）裸小节'),          # 新章后 H3 重新起算
     (2, '四、项目背景与意义'),    # 前面已有 3 个 H2 → 四
-    (4, '四级标题不编号'),        # H4 不编号
+    (4, '1、四级标题不编号'),      # H4 使用阿拉伯数字序号
     (1, '文档主标题'),            # H1 不编号
     (1, '第一章 手写章标题'),     # 裸「第X章」→ 已编号，原样
     (2, '五、5G 创新应用'),       # 「5G」不是编号，照常编号
@@ -123,11 +124,11 @@ pdf_expect = [
     '## 一、摘要',
     '## 二、研究目的',
     '### （一）子节甲',
-    '### 3.1 已编号小节',
-    '## 一、已编号章节',
+    '### （二）已编号小节',
+    '## 三、已编号章节',
     '### （一）裸小节',
     '## 四、项目背景与意义',
-    '#### 四级标题不编号',
+    '#### 1、四级标题不编号',
     '# 文档主标题',
     '## 五、5G 创新应用',
 ]
@@ -147,7 +148,8 @@ try:
 except Exception:
     from PyPDF2 import PdfReader
 
-pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp_num_test.pdf')
+_fd, pdf_path = tempfile.mkstemp(prefix='competition-agent-num-', suffix='.pdf')
+os.close(_fd)
 render_markdown_to_pdf(MD, pdf_path, title='测试申报书')
 reader = PdfReader(pdf_path)
 pdf_text = ''.join((pg.extract_text() or '') for pg in reader.pages)
