@@ -17,7 +17,7 @@ import re
 import gzip as _gzip
 import secrets as _secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, send_file, make_response, g
+from flask import Flask, request, jsonify, send_file, make_response, g, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -109,10 +109,10 @@ def admin_notice():
 
 # ===== gzip 压缩 =====
 # 首页 index.html 约 400KB，gzip 后约 100KB，加载快一倍。
-# 只压缩文本类响应且 >500 字节；流式预览接口不压缩（避免影响实时性）。
+# 只压缩文本类响应且 >500 字节；语音与聊天流不压缩（避免缓冲影响实时性）。
 @app.after_request
 def _gzip_response(resp):
-    if request.path.startswith('/api/speech_stream'):
+    if request.path.startswith('/api/speech_stream') or request.path == '/api/chat':
         return resp
     if getattr(resp, 'direct_passthrough', False):
         return resp
@@ -6496,6 +6496,62 @@ _CHAT_PRESET = [
 ]
 
 
+_CHAT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+
+
+def _chat_persist(uid, role, content, style):
+    if not uid or _admin_session_role() == 'readonly':
+        return
+    try:
+        from chat_store import append_message
+        append_message(_CHAT_DB_PATH, uid, role, content, style)
+    except Exception as exc:
+        print("[chat] history write failed: %s" % exc)
+
+
+def _chat_reserve_quota():
+    """Atomically reserve one LLM call because llm.stream bypasses invoke's quota wrapper."""
+    import competition_agents as _agents
+    with _agents._quota_lock:
+        _data = _agents._quota_load()
+        before = int(_data.get("calls", 0) or 0)
+        if before >= _agents._QUOTA_DAILY_LIMIT:
+            return False
+        _data["calls"] = before + 1
+        _agents._quota_save(_data)
+        if int(_agents._quota_load().get("calls", 0) or 0) < before + 1:
+            return False
+    return True
+
+
+def _chat_sse(payload):
+    import json as _json
+    return "data: %s\n\n" % _json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _chat_context(uid):
+    from chat_store import list_recent
+    from langchain_core.messages import AIMessage, HumanMessage
+    history = list_recent(_CHAT_DB_PATH, uid, 24)
+    messages = []
+    for item in history:
+        text = item.get("content") or ""
+        messages.append(AIMessage(content=text) if item.get("role") == "bot" else HumanMessage(content=text))
+    return messages
+
+
+def _chat_chunk_text(chunk):
+    content = getattr(chunk, "content", chunk)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    return str(content or "")
+
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。
@@ -6509,6 +6565,9 @@ def chat():
     style = _chat_style_key(data.get('style'))
     for kws, ans in _CHAT_PRESET:
         if any(k in msg for k in kws):
+            reply = _chat_style_lead(style) + ans
+            _chat_persist(_current_uid(), 'user', msg, style)
+            _chat_persist(_current_uid(), 'bot', reply, style)
             return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
                             "source": "preset", "style": style})
     # 第二百九十四轮：演示只读会话「只答不写、不计入生成额度」——仅走预设，不接 LLM 兜底，
@@ -6517,17 +6576,88 @@ def chat():
         return jsonify({"success": False,
                         "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
                         "error_code": "demo_readonly"}), 403
+    uid = _current_uid()
     try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        prompt = ("你是「%s」智能助手，用中文回答用户问题，只谈本产品功能与赛事规则，不编造数据。"
-                  "回答口吻：%s。\n用户问题：%s" % (_CHAT_NAME, _CHAT_STYLES[style]["tone"], msg))
-        # 336 轮：聊天兜底降 token（400→200）缩短等待（目标 <6s）。
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=200)
-        return jsonify({"success": True, "reply": (resp.content or '').strip(),
-                        "source": "llm", "style": style})
+        from competition_agents import llm, get_quota_status
+        if not bool(data.get('stream', True)):
+            from langchain_core.messages import SystemMessage, HumanMessage
+            messages = [SystemMessage(content=(
+                "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
+                % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
+            ))]
+            messages.extend(_chat_context(uid))
+            messages.append(HumanMessage(content=msg))
+            resp = llm.invoke(messages, max_tokens=600)
+            reply = (resp.content or '').strip()
+            _chat_persist(uid, 'user', msg, style)
+            _chat_persist(uid, 'bot', reply, style)
+            return jsonify({"success": True, "reply": reply, "source": "llm", "style": style})
+        if not _chat_reserve_quota():
+            return jsonify({"success": False, "error_code": "quota_exhausted",
+                            "quota": get_quota_status()}), 429
+        from langchain_core.messages import SystemMessage, HumanMessage
+        messages = [SystemMessage(content=(
+            "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
+            "请结合对话历史回答追问；不确定时明确说明。"
+            % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
+        ))]
+        messages.extend(_chat_context(uid))
+        messages.append(HumanMessage(content=msg))
+
+        @stream_with_context
+        def generate():
+            parts = []
+            try:
+                for chunk in llm.stream(messages, max_tokens=600):
+                    token = _chat_chunk_text(chunk)
+                    if not token:
+                        continue
+                    parts.append(token)
+                    yield _chat_sse({"token": token})
+                reply = "".join(parts).strip()
+                if reply:
+                    _chat_persist(uid, 'user', msg, style)
+                    _chat_persist(uid, 'bot', reply, style)
+                yield "data: [DONE]\n\n"
+            except GeneratorExit:
+                raise
+            except Exception as exc:
+                print("[chat] streaming failed: %s" % exc)
+                yield _chat_sse({"error_code": "upstream_error"})
+                yield "data: [DONE]\n\n"
+
+        response = Response(generate(), mimetype='text/event-stream')
+        response.headers['Cache-Control'] = 'no-cache, no-transform'
+        response.headers['X-Accel-Buffering'] = 'no'
+        response.headers['Connection'] = 'keep-alive'
+        return response
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/chat_history', methods=['GET'])
+def chat_history():
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": True, "messages": []})
+    try:
+        from chat_store import list_recent
+        return jsonify({"success": True, "messages": list_recent(_CHAT_DB_PATH, _current_uid(), 50)})
+    except Exception as exc:
+        print("[chat] history read failed: %s" % exc)
+        return jsonify({"success": True, "messages": []})
+
+
+@app.route('/api/chat_clear', methods=['POST'])
+def chat_clear():
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+    try:
+        from chat_store import clear
+        clear(_CHAT_DB_PATH, _current_uid())
+        return jsonify({"success": True})
+    except Exception as exc:
+        print("[chat] history clear failed: %s" % exc)
+        return jsonify({"success": False}), 503
 
 
 @app.route('/api/analyze_segment', methods=['POST'])

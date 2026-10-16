@@ -3,8 +3,10 @@
 cert_kechuang/
 __pycache__/
 *.pyc
+.comp_agent_gens
 uploads/
 competition.db
+chat_history.db
 history.json
 quota.json
 error.log
