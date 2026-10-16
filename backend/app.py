@@ -17,7 +17,7 @@ import re
 import gzip as _gzip
 import secrets as _secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, send_file, make_response, g
+from flask import Flask, request, jsonify, send_file, make_response, g, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -127,7 +127,7 @@ def _gzip_response(resp):
         max_age = 2592000 if request.args.get('v') else 3600
         resp.headers['Cache-Control'] = f'public, max-age={max_age}'
         resp.vary.add('Accept-Encoding')
-    if request.path.startswith('/api/speech_stream'):
+    if request.path.startswith('/api/speech_stream') or request.path == '/api/chat':
         return resp
     if getattr(resp, 'direct_passthrough', False):
         if not is_static or resp.status_code != 200:
@@ -6225,6 +6225,222 @@ def demo_data():
     except Exception:
         return jsonify({"success": False, "error": "演示数据解析失败"})
     return jsonify({"success": True, "data": data})
+
+
+_CHAT_NAME = "小创 · 科创赛事助手智能助手"
+_CHAT_STYLES = {
+    "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
+    "casual": {"label": "轻松幽默", "tone": "口语化、轻松幽默，可带一点趣味，但信息必须准确"},
+    "academic": {"label": "学术详细", "tone": "引用赛事规则依据、展开论证，可适当详细"},
+}
+
+
+def _chat_style_key(value):
+    value = (value or "").strip()
+    if value in _CHAT_STYLES:
+        return value
+    for key, style in _CHAT_STYLES.items():
+        if value == style["label"]:
+            return key
+    return "concise"
+
+
+def _chat_style_lead(style):
+    if style == "casual":
+        return "嘿，简单说——"
+    if style == "academic":
+        return "依据官方规则口径："
+    return ""
+
+
+_CHAT_PRESET = [
+    (("评分", "打分", "维度", "权重", "多少分"),
+     "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
+    (("章节", "结构", "几章", "目录"),
+     "申报书章节按各赛事官方要求自动组织。例：iCAN 为 8 章（背景与痛点→需求与用户→技术选型→技术方案→功能与智能作用→使用说明→前景与商业模式→团队与知识产权）。"),
+    (("答辩", "问题", "评委会问"),
+     "系统会预测评委高频问题并给回答框架，见「答辩准备」板块；也可用首页右下角「答辩模拟」逐条练习。"),
+    (("PPT", "路演", "ppt"),
+     "深度版会自动生成路演 PPT 大纲（含结构页）与演讲稿，可一键下载；支持 31 套风格。"),
+    (("简洁", "深度", "档位", "区别", "什么区别"),
+     "简洁版=结论型（快速出稿）；深度版=论证型（竞品定量对比、风险分级矩阵、技术分步链路、财务测算、多专家评审、答辩预测）。"),
+    (("导出", "下载", "打包", "文件", "word", "docx", "zip"),
+     "结果页右上角「导出中心」可一键打包全部（含 10 份 Word + 项目数据图表 + 路演 PPT 共 12 个文件），也可单份下载；导出前需生成完成。"),
+    (("字数", "篇幅", "多少字", "字多", "字少"),
+     "简洁版出稿约 1300~1500 字（结论型）；深度版约 1.2 万字（论证型，含图表、财务测算与答辩预测），以档位卡实测统计为准。"),
+    (("历史", "记录", "之前", "找回", "上次"),
+     "历史记录在首页「历史记录」区，按赛事/档位可筛选，点开可回看完整结果并重新导出打包。"),
+    (("同步", "分享", "换设备", "同步码", "另一台"),
+     "在「同步码」入口查看本机 8 位同步码，在另一台设备输入即可绑定，历史/草稿/赛事选择跨设备共享（绑定后同一账号）。"),
+    (("赛事", "选哪个", "比赛", "大赛", "参赛"),
+     "先选参赛赛事，系统按该赛事官方评分维度与章节要求组织内容；未收录的赛事按通用科创结构生成。"),
+    (("演示", "样例", "体验", "例子", "一键演示"),
+     "首页「一键演示」直接载入预置样例结果（不真实生成、不耗额度），可查看完整评分/正文/图表/PPT 与导出。"),
+    (("失败", "报错", "出错", "重试", "卡住", "打不开"),
+     "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
+]
+
+
+_CHAT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+
+
+def _chat_persist(uid, role, content, style):
+    if not uid or _admin_session_role() == 'readonly':
+        return
+    try:
+        from chat_store import append_message
+        append_message(_CHAT_DB_PATH, uid, role, content, style)
+    except Exception as exc:
+        print("[chat] history write failed: %s" % exc)
+
+
+def _chat_reserve_quota():
+    """Atomically reserve one LLM call because llm.stream bypasses invoke's quota wrapper."""
+    import competition_agents as _agents
+    with _agents._quota_lock:
+        _data = _agents._quota_load()
+        before = int(_data.get("calls", 0) or 0)
+        if before >= _agents._QUOTA_DAILY_LIMIT:
+            return False
+        _data["calls"] = before + 1
+        _agents._quota_save(_data)
+        if int(_agents._quota_load().get("calls", 0) or 0) < before + 1:
+            return False
+    return True
+
+
+def _chat_sse(payload):
+    import json as _json
+    return "data: %s\n\n" % _json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _chat_context(uid):
+    from chat_store import list_recent
+    from langchain_core.messages import AIMessage, HumanMessage
+    history = list_recent(_CHAT_DB_PATH, uid, 24)
+    messages = []
+    for item in history:
+        text = item.get("content") or ""
+        messages.append(AIMessage(content=text) if item.get("role") == "bot" else HumanMessage(content=text))
+    return messages
+
+
+def _chat_chunk_text(chunk):
+    content = getattr(chunk, "content", chunk)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    return str(content or "")
+
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """智能体聊天——预设问题短路，其他问题支持 SSE 与多轮上下文。"""
+    data = request.get_json(silent=True) or {}
+    msg = (data.get('message') or '').strip()
+    if not msg:
+        return jsonify({"success": False, "error": "请输入问题"}), 400
+    if len(msg) > 500:
+        msg = msg[:500]
+    style = _chat_style_key(data.get('style'))
+    for kws, ans in _CHAT_PRESET:
+        if any(k in msg for k in kws):
+            reply = _chat_style_lead(style) + ans
+            _chat_persist(_current_uid(), 'user', msg, style)
+            _chat_persist(_current_uid(), 'bot', reply, style)
+            return jsonify({"success": True, "reply": reply,
+                            "source": "preset", "style": style})
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False,
+                        "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
+                        "error_code": "demo_readonly"}), 403
+    uid = _current_uid()
+    try:
+        from competition_agents import llm, get_quota_status
+        if not bool(data.get('stream', True)):
+            from langchain_core.messages import SystemMessage, HumanMessage
+            messages = [SystemMessage(content=(
+                "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
+                % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
+            ))]
+            messages.extend(_chat_context(uid))
+            messages.append(HumanMessage(content=msg))
+            resp = llm.invoke(messages, max_tokens=600)
+            reply = (resp.content or '').strip()
+            _chat_persist(uid, 'user', msg, style)
+            _chat_persist(uid, 'bot', reply, style)
+            return jsonify({"success": True, "reply": reply, "source": "llm", "style": style})
+        if not _chat_reserve_quota():
+            return jsonify({"success": False, "error_code": "quota_exhausted",
+                            "quota": get_quota_status()}), 429
+        from langchain_core.messages import SystemMessage, HumanMessage
+        messages = [SystemMessage(content=(
+            "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
+            "请结合对话历史回答追问；不确定时明确说明。"
+            % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
+        ))]
+        messages.extend(_chat_context(uid))
+        messages.append(HumanMessage(content=msg))
+
+        @stream_with_context
+        def generate():
+            parts = []
+            try:
+                for chunk in llm.stream(messages, max_tokens=600):
+                    token = _chat_chunk_text(chunk)
+                    if not token:
+                        continue
+                    parts.append(token)
+                    yield _chat_sse({"token": token})
+                reply = "".join(parts).strip()
+                if reply:
+                    _chat_persist(uid, 'user', msg, style)
+                    _chat_persist(uid, 'bot', reply, style)
+                yield "data: [DONE]\n\n"
+            except GeneratorExit:
+                raise
+            except Exception as exc:
+                print("[chat] streaming failed: %s" % exc)
+                yield _chat_sse({"error_code": "upstream_error"})
+                yield "data: [DONE]\n\n"
+
+        response = Response(generate(), mimetype='text/event-stream')
+        response.headers['Cache-Control'] = 'no-cache, no-transform'
+        response.headers['X-Accel-Buffering'] = 'no'
+        response.headers['Connection'] = 'keep-alive'
+        return response
+    except Exception as exc:
+        return jsonify({"success": False, "error": _friendly_error(exc),
+                        "error_code": _error_code(exc)}), 500
+
+
+@app.route('/api/chat_history', methods=['GET'])
+def chat_history():
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": True, "messages": []})
+    try:
+        from chat_store import list_recent
+        return jsonify({"success": True, "messages": list_recent(_CHAT_DB_PATH, _current_uid(), 50)})
+    except Exception as exc:
+        print("[chat] history read failed: %s" % exc)
+        return jsonify({"success": True, "messages": []})
+
+
+@app.route('/api/chat_clear', methods=['POST'])
+def chat_clear():
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+    try:
+        from chat_store import clear
+        clear(_CHAT_DB_PATH, _current_uid())
+        return jsonify({"success": True})
+    except Exception as exc:
+        print("[chat] history clear failed: %s" % exc)
+        return jsonify({"success": False}), 503
 
 
 @app.route('/api/health')
