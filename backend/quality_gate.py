@@ -7,6 +7,7 @@ L1 生成完整性 / L2 导出质量 / L3 内容质量 / L4 历史恢复 / L5 �
 import re
 import os
 import json
+from content_rules import HUMANIZE_BANNED
 
 
 # ============ L1 生成完整性 ============
@@ -37,7 +38,21 @@ def check_generation(result, mode="deep"):
     _aok, _aissues = check_award_pitfalls(proposal, mode)
     if not _aok:
         issues.extend(_aissues)
+    # 生成后的确定性复核不能只依赖 prompt；将去 AI 腔禁词作为质量问题记录，
+    # 供导出审计和后台定位。普通词命中只提示改写，不在这里硬拦导出。
+    _hok, _hissues = check_humanize_banned(proposal)
+    if not _hok:
+        issues.extend(_hissues)
     return (not issues), issues
+
+
+def check_humanize_banned(text):
+    """检查生成物中的去 AI 腔禁词，返回 (ok, issues)。"""
+    text = str(text or "")
+    hits = [word for word in HUMANIZE_BANNED if word in text]
+    if not hits:
+        return True, []
+    return False, ["去 AI 腔复核：出现禁用表达「%s」，建议改写后再提交" % "、".join(hits)]
 
 
 # ============ 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版） ============
@@ -575,7 +590,7 @@ def _audit_pptx_artifact(path, result, project_name, competition_name, outline_t
     errors, warnings = [], []
     metrics = {"slides": 0, "blank_slides": [], "images": 0,
                "tables": 0, "characters": 0, "slide_characters": [],
-               "titles": []}
+               "titles": [], "scenario_slides": 0}
     if not path:
         return metrics, errors, warnings
     try:
@@ -602,6 +617,9 @@ def _audit_pptx_artifact(path, result, project_name, competition_name, outline_t
                 except Exception:
                     pass
             combined = "\n".join(texts)
+            # 只看页眉/标题区域，避免项目名或页脚中的“场景”误计为场景板块。
+            if idx != 0 and any("场景" in str(x) for x in texts[:2]):
+                metrics["scenario_slides"] += 1
             chars = _artifact_chars(combined)
             metrics["slide_characters"].append(chars)
             metrics["characters"] += chars
@@ -629,6 +647,17 @@ def _audit_pptx_artifact(path, result, project_name, competition_name, outline_t
                 except Exception:
                     pass
         all_text = "\n".join(all_shapes_text)
+        # PPT 是面向评委的路演成品，字段标签/页码前缀属于生成痕迹，必须在导出审计中拦出。
+        placeholder_hits = re.findall(
+            r"(?im)(?:^|\n)\s*(?:标题|要点|讲解稿|演讲稿|备注)\s*[:：]|"
+            r"(?:第\s*\d+\s*页|页\s*\d+)\s*[|｜:：-]", all_text)
+        if placeholder_hits:
+            errors.append("PPT 残留字段标签或页码前缀：请清理标题/要点/讲解稿等占位内容")
+        if metrics["scenario_slides"] == 0:
+            warnings.append("PPT 未发现独立典型场景板块，评委无法快速判断真实使用场景")
+        internal_terms = re.findall(r"团队任务分配|开发待办|内部安排|本页讲什么", all_text)
+        if internal_terms:
+            warnings.append("PPT 含团队内部汇报口吻：%s" % "、".join(sorted(set(internal_terms))))
         if project_name and str(project_name) not in all_text:
             warnings.append("PPT 未出现项目名称，需确认封面与项目匹配")
         if competition_name and str(competition_name) not in all_text:
@@ -889,6 +918,9 @@ def check_content(text):
         issues.append("疑似泄露院校名（双盲）")
     if re.search(r'(指导老师|指导教师|导师)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}', text or ""):
         issues.append("疑似泄露导师姓名")
+    _hok, _hissues = check_humanize_banned(text)
+    if not _hok:
+        issues.extend(_hissues)
     return (not issues), issues
 
 
@@ -1138,6 +1170,9 @@ def score_export(result, mode="deep"):
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', proposal) or \
        re.search(r'(指导老师|指导教师|导师|负责人|队长)\s*[:：]\s*[\u4e00-\u9fa5]{2,4}\s*(?:$|[，。、；！？,.;!?）)\]])', proposal, re.M):
         soft.append("疑似双盲信息泄露（院校/导师/姓名），提交前请自行确认已脱敏")
+    _hok, _hissues = check_humanize_banned(proposal)
+    if not _hok:
+        soft.extend(_hissues)
     if hard:
         return 0, dims, ["一票否决：" + h for h in hard] + soft, hard
     reasons.extend(soft)

@@ -13,9 +13,12 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'backend'))
 
 from docx_render import _blocks, _number_heading_blocks, build_docx
-from pdf_render import _number_headings, render_markdown_to_pdf
+import pdf_render
+from pdf_render import (_media_norm, _number_headings, _pick_media_section,
+                        _split_markdown_sections, render_markdown_to_pdf)
 
 MD = """## 摘要
 
@@ -141,6 +144,59 @@ check('第一章 手写章标题' in numbered and '一、第一章' not in numbe
 fenced = _number_headings('```\n## 围栏内不是标题\n```\n## 真标题\n')
 check('## 围栏内不是标题' in fenced and '## 一、真标题' in fenced,
       'pdf 代码围栏内的 ## 不编号，围栏外正常编号')
+
+# ---------- 3b. 语义媒体落位：与 Word 使用同类章节锚点 ----------
+media_sections = [
+    '一、项目背景与痛点',
+    '二、技术方案与系统架构',
+    '三、竞品分析与差异化',
+    '四、商业模式与财务预测',
+    '五、实施计划与里程碑',
+]
+for media_title, section_index in (
+        ('预算与成本结构', 3),
+        ('系统准确率与响应延迟', 1),
+        ('竞品功能与差异化对比', 2),
+        ('实施进度与里程碑', 4),
+        ('无关材料', -1)):
+    check(_pick_media_section(media_title, media_sections) == section_index,
+          'PDF 媒体「%s」语义落位正确' % media_title)
+prefix, parsed_sections = _split_markdown_sections(
+    '前置摘要\n\n## 一、技术方案\n正文\n\n## 二、实施计划\n进度')
+check('前置摘要' in prefix and
+      [_media_norm(item['title']) for item in parsed_sections] == ['技术方案', '实施计划'],
+      'PDF 正文章节切分保留前置内容并去除编号用于匹配')
+
+_original_chart_path = pdf_render._chart_path
+_original_chart_story = pdf_render._chart_story
+_placements = []
+try:
+    pdf_render._chart_path = lambda _chart: 'mock-image.png'
+    def _capture_media(charts, tables, page_break=False, heading=None):
+        _placements.append({
+            'charts': [x.get('title') for x in charts or []],
+            'tables': [x.get('title') for x in tables or []],
+            'page_break': page_break,
+        })
+        return []
+    pdf_render._chart_story = _capture_media
+    _body = ('## 一、技术方案与系统架构\n技术正文\n\n'
+             '## 二、竞品分析与差异化\n竞品正文\n\n'
+             '## 三、商业模式与财务预测\\n商业正文')
+    _charts = [
+        {'title': '系统准确率与响应延迟', 'url': '/generated/mock.png'},
+        {'title': '无关材料', 'url': '/generated/mock.png'},
+    ]
+    _tables = [{'title': '竞品功能与差异化对比', 'header': ['维度'], 'rows': [['效果']]}]
+    pdf_render._body_with_media_story(_body, _charts, _tables)
+finally:
+    pdf_render._chart_path = _original_chart_path
+    pdf_render._chart_story = _original_chart_story
+
+check(_placements[0]['charts'] == ['系统准确率与响应延迟'] and
+      _placements[1]['tables'] == ['竞品功能与差异化对比'] and
+      _placements[-1]['charts'] == ['无关材料'] and _placements[-1]['page_break'],
+      'PDF 图表/表格随语义章节落位，未匹配媒体才进入补充附表')
 
 # ---------- 4. pdf 链路：生成真实 PDF 读回 ----------
 try:

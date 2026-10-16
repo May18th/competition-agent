@@ -1193,7 +1193,7 @@
             btn.title = hidden ? '收起局部修改' : '展开局部修改';
             btn.setAttribute('aria-expanded', hidden ? 'true' : 'false');
         }
-        function wbLocalEditFocus() {
+        function wbLocalEditFocus(targetKey) {
             var panel = document.getElementById('wbLocalEdit');
             var rd = window._lastData || {};
             var hasResult = ['proposal', 'proposal_draft', 'project_summary', 'quality_report', 'rich_deck']
@@ -1203,6 +1203,9 @@
                         (value && typeof value === 'object' && Object.keys(value).length > 0);
                 });
             if (!panel || !hasResult) { wbToast('请先生成一份结果，再使用局部修改', {type: 'warn'}); return; }
+            var target = String(targetKey || '').trim();
+            var sel = document.getElementById('wbEditTarget');
+            if (target && sel && WB_LOCAL_EDIT_TARGETS[target]) sel.value = target;
             panel.scrollIntoView({behavior: 'smooth', block: 'center'});
             var input = document.getElementById('wbEditInstruction');
             if (input) setTimeout(function () { input.focus(); }, 220);
@@ -4790,8 +4793,12 @@
             if (!text) {
                 el.setAttribute('data-wb-empty', '1');
                 el.innerHTML = '<div class="wb-empty-state" role="status">' +
+                    '<svg class="wb-empty-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-warn"/></svg>' +
                     '<b>' + _esc(label || '该模块') + '暂未返回</b>' +
                     '<span>本轮没有拿到可核验内容，系统没有替你补写事实。可先检查生成日志，或只修改此模块后重试。</span>' +
+                    (WB_LOCAL_EDIT_TARGETS[({proposalText:'proposal', proposalAnalysis:'proposal_analysis', judgeFeedback:'judge_feedback', defenseQuestions:'defense_questions', pptOutline:'ppt_outline'}[id] || '')]
+                        ? '<button type="button" class="wb-empty-action" onclick="wbLocalEditFocus(\'' + ({proposalText:'proposal', proposalAnalysis:'proposal_analysis', judgeFeedback:'judge_feedback', defenseQuestions:'defense_questions', pptOutline:'ppt_outline'}[id] || '') + '\')">仅补齐此模块</button>'
+                        : '') +
                     '</div>';
                 return false;
             }
@@ -5479,12 +5486,18 @@
 
             const btn = document.getElementById('startBtn');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> 系统正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
+            btn.setAttribute('aria-busy', 'true');
+            var _wbRingSvg = '<svg class="wb-progress-ring wb-progress-ring-sm" viewBox="0 0 36 36" aria-hidden="true"><circle class="wb-progress-ring-track" cx="18" cy="18" r="15.5" pathLength="100"></circle><circle class="wb-progress-ring-value" cx="18" cy="18" r="15.5" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"></circle></svg>';
+            btn.innerHTML = _wbRingSvg + '系统正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
             document.getElementById('cancelWrap').style.display = 'block';
             try { wbHideRetry(); } catch (e) {}
             var _eb0 = document.getElementById('etaBadge');
             if (_eb0) { _eb0.style.display = 'inline-block'; _eb0.innerText = '预计 --'; }
+            var _ring0 = document.getElementById('fastProgressRing');
+            var _ringPct0 = document.getElementById('fastProgressPct');
+            if (_ring0) { _ring0.style.strokeDashoffset = '100'; _ring0.parentNode.setAttribute('aria-valuenow', '0'); }
+            if (_ringPct0) _ringPct0.textContent = '0%';
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
@@ -5502,14 +5515,19 @@
             // 用户不滚动也能看到「正在推进」（深度版要等 3 分半，看不到反馈会以为卡死）。
             const _setBar = (pct, label, stageText) => {
                 if (pct > _maxPct) _maxPct = pct;
-                document.getElementById('fastProgress').style.width = Math.max(_maxPct, 0) + '%';
+                var _pctNow = Math.max(Math.min(_maxPct, 100), 0);
+                document.getElementById('fastProgress').style.width = _pctNow + '%';
+                var _ring = document.getElementById('fastProgressRing');
+                var _ringPct = document.getElementById('fastProgressPct');
+                if (_ring) { _ring.style.strokeDashoffset = String(100 - _pctNow); _ring.parentNode.setAttribute('aria-valuenow', String(Math.round(_pctNow))); }
+                if (_ringPct) _ringPct.textContent = Math.round(_pctNow) + '%';
                 document.getElementById('fastProgressText').innerText = label;
                 var _b = document.getElementById('startBtn');
                 if (_b && _b.disabled) {
                 // 169 轮：sticky 按钮上的百分比必须写明是「整体进度」，
                 // 否则它会和下方智能体面板的「环节 2/9」被当成同一个指标前后打架。
                 // 阶段名不再挂按钮后面（太挤），统一给 fastProgressText 那行显示
-                _b.innerHTML = '<span class="spinner"></span> ' +
+                _b.innerHTML = _wbRingSvg + ' ' +
                     (isOptimize ? '正在优化' : '正在生成') + ' · 整体 ' + Math.max(_maxPct, 0) + '%';
                 }
                 // 126 轮：已用时间。惰性初始化而不是读外层 t0——_setBar 定义在 t0 之前，
@@ -5917,6 +5935,7 @@
                     document.getElementById('cancelWrap').style.display = 'none';
                     _currentTaskId = null;
                     btn.disabled = false;
+                    btn.setAttribute('aria-busy', 'false');
                     btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始' + (proposal_draft.length > 0 ? '优化' : '生成');
                     if (data.success) {
                         document.getElementById('skeletonArea').style.display = 'none';
@@ -6093,6 +6112,7 @@
                         var _got = ['parsed_rules', 'proposal', 'judge_feedback', 'project_summary']
                             .some(function (k) { return !!(data.data[k] && String(data.data[k]).trim()); });
                         if (!_got) {
+                            wbShowErrorState('生成完成，但没有返回可用内容', '系统保留了你的输入；可以直接重试，若连续发生请查看运行日志。', 'empty-result');
                             wbToast('生成结束但没拿到内容，建议再生成一次', {
                                 type: 'warn', ms: 6000,
                                 sub: '若反复出现，请把「运行日志」里的报错发给我们'
@@ -6102,6 +6122,14 @@
                         document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
                     } else {
                         // 后端返回的友好错误（余额不足 / 超时 / 鉴权失败等），detail 是原始报错
+                        document.getElementById('skeletonArea').style.display = 'none';
+                        document.getElementById('cancelWrap').style.display = 'none';
+                        document.getElementById('fastProgress').style.width = '0%';
+                        var _ringDataErr = document.getElementById('fastProgressRing');
+                        var _ringDataErrPct = document.getElementById('fastProgressPct');
+                        if (_ringDataErr) { _ringDataErr.style.strokeDashoffset = '100'; _ringDataErr.parentNode.setAttribute('aria-valuenow', '0'); }
+                        if (_ringDataErrPct) _ringDataErrPct.textContent = '0%';
+                        wbShowErrorState(data.error || '这次没有生成成功', data.detail ? ('系统提示：' + data.detail + '。已保留你填写的内容，可以直接重试。') : '已保留你填写的内容，可以直接重试。', data.code || 'generation-error');
                         wbToast(data.error || '生成失败，请稍后重试', {
                             type: 'error',
                             sub: (data.detail ? ('原始报错：' + data.detail + '　') : '') +
@@ -6140,6 +6168,10 @@
                 // 失败/取消后把残留进度条清零，避免下次进来还挂着旧百分比
                 document.getElementById('fastProgress').style.width = '0%';
                 document.getElementById('fastProgressText').innerText = '';
+                var _ringErr = document.getElementById('fastProgressRing');
+                var _ringPctErr = document.getElementById('fastProgressPct');
+                if (_ringErr) { _ringErr.style.strokeDashoffset = '100'; _ringErr.parentNode.setAttribute('aria-valuenow', '0'); }
+                if (_ringPctErr) _ringPctErr.textContent = '0%';
                 var _eb2 = document.getElementById('etaBadge');
                 if (_eb2) _eb2.style.display = 'none';
                 // 被用户主动终止的不弹重试（他自己按的，不需要提示）
@@ -6152,7 +6184,32 @@
                 _currentTaskId = null;
                 window._wbGenerating = false;   // 必须复位：泄漏会让之后打开历史记录时下载 dock 永久被抑制
                 btn.disabled = false;
+                btn.setAttribute('aria-busy', 'false');
                 btn.innerHTML = '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成';
+                if (!(err && err.cancelled) && !_hasPartialAfterError) {
+                    var _errTitle = '这次没有生成成功';
+                    var _errDetail = '已保留你填写的内容，可以直接重试。';
+                    var _errCode = (err && err.code) || 'generation-error';
+                    if (err && err.code === 'quota_exceeded') {
+                        _errTitle = '今日生成次数已达上限';
+                        _errDetail = '已保留你填写的内容，明天可继续生成。';
+                    } else if (err && err.code === 'insufficient_balance') {
+                        _errTitle = '模型服务暂时无法生成';
+                        _errDetail = '上游模型额度不足，管理员补充额度后可直接重试。';
+                    } else if (err && err.code === 'auth_error') {
+                        _errTitle = '模型服务鉴权未通过';
+                        _errDetail = '请管理员检查模型密钥配置，页面内容仍然保留。';
+                    } else if (err && err.isCreateFail) {
+                        _errTitle = '生成任务没有建立起来';
+                        _errDetail = ((err.httpStatus ? 'HTTP ' + err.httpStatus + ' · ' : '') + (err.message || '服务暂时不可用')).slice(0, 160);
+                    } else if (err && String(err.message || '').match(/Failed to fetch|NetworkError/i)) {
+                        _errTitle = '连接中断，内容没有丢失';
+                        _errDetail = '网络似乎抖了一下，恢复后点击“再试一次”即可。';
+                    } else if (err && err.message) {
+                        _errDetail = ('系统提示：' + String(err.message)).slice(0, 160);
+                    }
+                    wbShowErrorState(_errTitle, _errDetail, _errCode);
+                }
                 if (err && err.cancelled) {
                     wbToast('已终止生成', { type: 'warn' });
                 } else if (err && err.code === 'quota_exceeded') {
@@ -7397,6 +7454,20 @@
     window.wbHideRetry = function () {
         var w = document.getElementById('retryWrap');
         if (w) w.style.display = 'none';
+        var e = document.getElementById('wbErrorState');
+        if (e) { e.hidden = true; e.removeAttribute('data-error-code'); }
+    };
+    window.wbShowErrorState = function (title, detail, code) {
+        var box = document.getElementById('wbErrorState');
+        if (!box) return;
+        var t = document.getElementById('wbErrorTitle');
+        var d = document.getElementById('wbErrorDetail');
+        if (t) t.textContent = String(title || '这次没有生成成功');
+        if (d) d.textContent = String(detail || '已保留你填写的内容，可以直接重试。');
+        if (code) box.setAttribute('data-error-code', String(code));
+        box.hidden = false;
+        var ps = document.getElementById('progressSteps');
+        if (ps) ps.style.display = 'block';
     };
 
         function showHistory() {
@@ -8194,7 +8265,7 @@
         checkHealth();
         // 167 轮：心跳原来是无脑 30s 一次，切后台也在打，白耗移动端电量。
         // 改为「仅页面可见才请求」+ 失败退避（30s→60s→120s，上限 5 分钟），回到前台立刻补一次。
-        var _hbBase = 30000, _hbMul = 1;
+        var _hbBase = 30000, _hbMul = 1, _hbLast = 0;
         setInterval(function () {
             if (document.hidden) return;
             if (!window._wbHealthOk && _hbMul < 10) _hbMul *= 2;   // 连续失败就拉长间隔

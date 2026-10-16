@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from llm_factory import build_chat_model
 from langchain_core.messages import HumanMessage
 from stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
+from content_rules import HUMANIZE_BANNED, JUDGE_FACING_OUTPUT as _JUDGE_FACING_OUTPUT
 
 
 # ============ 配置 ============
@@ -115,12 +116,57 @@ def _llm_invoke_with_quota(*args, **kwargs):
         data = _quota_load()
         if data.get("calls", 0) >= _QUOTA_DAILY_LIMIT:
             raise RuntimeError(f"今日 LLM 调用已达上限（{_QUOTA_DAILY_LIMIT} 次），请明天再试")
+    started = time.monotonic()
     with _LLM_GATE:
         result = _llm_invoke_original(*args, **kwargs)
     with _quota_lock:
         data = _quota_load()
         data["calls"] = data.get("calls", 0) + 1
         _quota_save(data)
+    # LangChain 在不同版本把用量放在 usage_metadata 或 response_metadata.token_usage；
+    # 两种都取，取不到时保留 0，绝不让埋点影响生成主链路。
+    try:
+        usage = getattr(result, "usage_metadata", None) or {}
+        meta = getattr(result, "response_metadata", None) or {}
+        legacy = meta.get("token_usage") if isinstance(meta, dict) else {}
+        if not isinstance(legacy, dict):
+            legacy = {}
+        def _num(*values):
+            for value in values:
+                try:
+                    if value is not None:
+                        return int(value)
+                except (TypeError, ValueError):
+                    pass
+            return 0
+        prompt_tokens = _num(usage.get("input_tokens"), legacy.get("prompt_tokens"), legacy.get("input_tokens"))
+        completion_tokens = _num(usage.get("output_tokens"), legacy.get("completion_tokens"), legacy.get("output_tokens"))
+        total_tokens = _num(usage.get("total_tokens"), legacy.get("total_tokens"), prompt_tokens + completion_tokens)
+        task_id = None
+        uid = None
+        try:
+            from stage_reporter import current_task_id, tasks
+            task_id = current_task_id()
+            task = tasks.get(task_id) if task_id else None
+            uid = (task or {}).get("data", {}).get("_user_id") if isinstance(task, dict) else None
+        except Exception:
+            pass
+        try:
+            import app_log
+            model_name = (meta.get("model_name") if isinstance(meta, dict) else None) or os.getenv("DEEPSEEK_MODEL") or "deepseek-flash"
+            app_log.info("llm_usage", "LLM 调用完成", data={
+                "model": str(model_name)[:80],
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "task_id": str(task_id or "")[:32],
+                "uid": str(uid or "")[:64],
+            })
+        except Exception:
+            pass
+    except Exception:
+        pass
     return result
 
 
@@ -764,7 +810,7 @@ _DE_AI_SPEC = """【去 AI 味 —— 必须遵守。下面每条都给「改前
 14. 禁止占位符（硬性）：全文严禁出现任何【】方括号占位符、方括号提示（如【待你填写：xxx】【示例值，需核实】【需补充数据来源】）；所有段落必须一口气写完，需要估算的数字就用「测算值 / 示例值 / 预计约 X」直接写出具体数值或区间，不准留空、不准让用户填空。
 """
 
-_HUMANIZE_BANNED = ["随着", "综上所述", "赋能", "生态", "一站式", "闭环", "深度融合"]
+_HUMANIZE_BANNED = list(HUMANIZE_BANNED)
 
 _HUMANIZE_STRONG_SPEC = """【去 AI 味强化要求 —— 必须严格遵守】
 1. 全文严禁出现这些词/句式：随着……的发展、综上所述、赋能、打造……生态、一站式、闭环、深度融合；出现就必须改写。
@@ -818,7 +864,6 @@ _SELF_TECH_HIGHLIGHTS = """【如果本项目是「AI 多智能体创作 / 申�
 5. 图表自动生成：内置 12 种图表（环形 / 柱状 / 雷达 / 象限 / 漏斗 / 甘特 / 架构 / 风险热力 / 堆叠 / 进度环 / 横向排名 / 折线），按内容自动匹配类型，导出 Word / PPT 直接可用。
 6. 合规与质量约束：双盲脱敏（隐去院校与指导老师）、去 AI 味、严禁编造假数据、真实行业数据注入。
 """
-
 
 _SELF_DEFENSE_HINTS = """【如果本项目是「AI 多智能体创作 / 申报书生成 / 竞赛辅导工具」这一类系统，下面 4 个尖锐问题必须出现在 10 个问题里，并各自给出回答框架】
 1. 和直接让 ChatGPT / 豆包写一份申报书有什么区别？你的系统凭什么比通用大模型写得更好、更贴比赛评分标准？
@@ -1201,7 +1246,7 @@ def _compress_to_length(text, max_chars, topic, rounds=1):
             _cut = n - max_chars
             _pct = (_cut / n * 100) if n else 0
             prompt = (
-                "下面是一份科创赛事申报书，当前 %d 字，要求压到 %d 字以内。\n"
+                _JUDGE_FACING_OUTPUT + "\n下面是一份科创赛事申报书，当前 %d 字，要求压到 %d 字以内。\n"
                 "这意味着**你必须删掉至少 %d 字（约 %.0f%% 的内容）**，不是微调，是实打实地砍。\n\n"
                 "硬要求：\n"
                 "1. 每章只保留最核心的 2 句话（约 100～150 字），删掉所有展开说明、举例、铺垫；\n"
@@ -1247,7 +1292,7 @@ def _expand_to_length(text, min_chars, topic, rounds=2, info_mode=False):
             # 深度版：字数只作参考，指令按信息量给——缺论点/数据/场景才补，
             # 信息完整仅字数偏少不强扩（防止为凑字数注水：排比、空话、重复论点）。
             prompt = (
-                "下面是关于「%s」的一份深度版科创赛事申报书，当前正文只有约 %d 字，"
+                _JUDGE_FACING_OUTPUT + "\n下面是关于「%s」的一份深度版科创赛事申报书，当前正文只有约 %d 字，"
                 "明显低于深度版通常的篇幅区间（通常 2500～5000 字），大概率存在信息缺口。\n\n"
                 "这是一次**信息量补强**，不是字数扩写。请先通读全文，逐章自检："
                 "是否缺论点、缺数据测算、缺具体场景。然后：\n"
@@ -1277,7 +1322,7 @@ def _expand_to_length(text, min_chars, topic, rounds=2, info_mode=False):
             print(f"📏 深度版信息量补强第 {i + 1} 轮：{n} 字（参考下限 {min_chars}）")
         else:
             prompt = (
-                "下面是关于「%s」的一份科创赛事申报书，当前正文只有约 %d 字，"
+                _JUDGE_FACING_OUTPUT + "\n下面是关于「%s」的一份科创赛事申报书，当前正文只有约 %d 字，"
                 "而要求是不少于 %d 字，篇幅严重不足，评委会认定内容空洞。\n\n"
                 "请在**不改变章节结构、不删减已有内容**的前提下做扩写：\n"
                 "1. 每一节补充更具体的场景、数据测算、技术参数、实施步骤与风险应对，"
@@ -1341,6 +1386,7 @@ def rule_parser_agent(state: CompetitionState) -> CompetitionState:
 {kb_block}
 {rule_content_text}
 {official_block}
+{_JUDGE_FACING_OUTPUT}
 
 请提取：
 1. 核心评分维度（如创新性、实用性、技术难度等）及各维度占比
@@ -1364,6 +1410,7 @@ def similarity_checker_agent(state: CompetitionState) -> CompetitionState:
 
 赛事：{state['competition_name']}
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_similarity_paradigm_ref()}
 
@@ -1392,6 +1439,7 @@ def comprehensive_analysis_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创赛事分析专家。请根据以下项目，一次性完成所有分析。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 
 请分四部分输出：
@@ -1448,6 +1496,7 @@ def deep_competitor_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深市场分析专家。请只负责分析竞品情况，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_analysis_paradigm_ref('competitor')}
 
@@ -1472,6 +1521,7 @@ def deep_business_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深商业模式专家。请只负责设计商业模式，不要写竞品分析、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_ref_block(state, '商业模式')}
 {_analysis_paradigm_ref('business')}
@@ -1500,6 +1550,7 @@ def deep_risk_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深风险评估专家。请只负责分析风险，不要写商业模式、技术方案等其他内容。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_ref_block(state, '风险分析')}
 {_analysis_paradigm_ref('risk')}
@@ -1528,6 +1579,7 @@ def deep_tech_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是资深技术架构师。请只负责写技术方案，不要写竞品、商业模式、风险等其他内容。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_analysis_paradigm_ref('tech')}
 
@@ -1555,6 +1607,7 @@ def plan_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目规划专家。请为以下项目制定详细的实施计划。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_ref_block(state, '实践过程')}
 
@@ -1579,6 +1632,7 @@ def social_value_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""你是科创项目价值分析专家。请分析这个项目的社会价值和应用前景。
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 {_ref_block(state, '社会价值')}
 {_industry_ref()}
@@ -1606,6 +1660,7 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
     prompt = f"""请根据以下项目，写一段300字左右的项目简介：
 
 项目创意：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 {_user_data_ref(state)}
 一句话定位：{state.get('one_liner', '')}
 
@@ -2212,7 +2267,7 @@ def _fill_missing_chapters(proposal, chapters):
         return proposal
     miss_block = "\n".join("## " + c for c in missing)
     prompt = (
-        "下面这份申报书漏了这几个章节，请补齐。\n\n"
+        _JUDGE_FACING_OUTPUT + "\n下面这份申报书漏了这几个章节，请补齐。\n\n"
         "缺失章节（标题原样输出，每章都要有实质内容：数据 + 场景 + 技术名词 + 验证证据，"
         "不允许一句话带过）：\n" + miss_block + "\n\n"
         "申报书现有结尾（供衔接上下文，不要重复已有章节）：\n" + proposal[-2500:] + "\n\n"
@@ -2313,6 +2368,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 8. 严禁编造任何具体人名、昵称和虚构经历（含「李然」「王雨桐」全名，以及「小李」「小王」「小张」「李同学」等变体）；用户没提供真实案例时，一律用泛化表述（「参赛团队普遍反馈」「某高校学生」），真实案例只能来自用户输入。
 
 {_competition_focus(state)}
+{_JUDGE_FACING_OUTPUT}
 {_SELF_TECH_HIGHLIGHTS}
 
 {_CONCRETE_SPEC}
@@ -2406,6 +2462,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
 5. 中文标点用全角。
 6. 全文禁止出现任何【】方括号占位符，段落必须完整写完，需要估算的数字直接用「测算值/示例值/预计约 X」写出。
+{_JUDGE_FACING_OUTPUT}
 {_SELF_TECH_HIGHLIGHTS}
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}
@@ -2429,6 +2486,7 @@ def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
 1. 只修改评委明确指出的问题段落，其他没问题的地方保持原文，不要整篇重写。
 2. 保留原申报书的结构和未涉及问题的内容。
 3. 修改后输出完整的申报书全文。
+{_JUDGE_FACING_OUTPUT}
 
 当前申报书：
 {state.get('proposal', '')}
@@ -2719,6 +2777,7 @@ def defense_questions_agent(state: CompetitionState) -> CompetitionState:
     proposal_line = (f"申报书要点（供提问时抓具体把柄，不要脱离它提问）：\n{proposal_brief[:2500]}\n"
                      if proposal_brief else "")
     prompt = f"""你是科创赛事答辩专家。请站在真实评委的角度，为下面的项目准备 10 个**必问、尖锐、能筛出项目真伪**的问题，并为每个问题给出约 200 字的回答框架。
+{_JUDGE_FACING_OUTPUT}
 
 项目：{state['idea']}
 一句话定位：{state.get('one_liner', '')}
@@ -2776,6 +2835,7 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
+{_JUDGE_FACING_OUTPUT}
 {_deck_speech_paradigm_ref()}
 评委意见（PPT 要回应或补齐的短板）：{state.get('judge_feedback') or '（无）'}
 
@@ -2786,6 +2846,15 @@ def ppt_outline_agent(state: CompetitionState) -> CompetitionState:
 "生成 3 分钟路演大纲（8～10 页），每页只写标题 + 2～3 个要点短语，不要写完整句子。",
 "生成 15～20 页路演大纲，每页写「标题 + 3～5 个要点 + 一段 50～80 字讲解稿」；要点必须落到具体数据、真实场景或明确结论，禁止「市场前景广阔」「赋能行业」这类空话，也不要整页只放一个口号。"
 )}
+
+【汇报对象与页面结构】
+这是一份面对赛事评委的路演汇报，不是团队内部工作汇报，也不是产品 PRD。评委要在有限时间内判断“问题是否真实、方案是否有效、数据是否可信、项目是否能落地”。页面顺序必须围绕评委判断展开：项目定位 → 真实痛点与典型应用场景 → 解决方案/产品形态 → 技术或创新证据 → 试点/实测结果 → 竞品与差异化 → 市场与商业化 → 实施保障与风险 → 结尾诉求。
+
+【典型场景必须独立成板块】
+必须设置一个标题含“典型应用场景”或“使用场景”的独立页面，不能把场景零散塞进痛点、功能或团队页。该页至少写清 2～3 个具体场景，每个场景包含：谁在什么时刻遇到什么问题、项目如何介入、结果用什么数据或证据验证。场景页服务于评委判断，不写“我们团队接下来要做什么”。
+
+【禁止团队内部口吻】
+不要生成“团队任务分配”“开发待办”“内部安排”“本页讲什么”等面向团队的页面。团队信息最多用一页简短说明与项目相关的能力和已完成工作；优先使用“实施保障与执行能力”这类评委可判断的标题。不要输出“标题：”“要点：”“讲解稿：”“第 N 页 |”等字段标签或页码前缀。
 """
     response = llm.invoke([HumanMessage(content=prompt)])
     state["ppt_outline"] = response.content
@@ -2801,6 +2870,7 @@ def speech_agent(state: CompetitionState) -> CompetitionState:
 
 项目：{state['idea']}
 一句话定位：{state['one_liner']}
+{_JUDGE_FACING_OUTPUT}
 {_deck_speech_paradigm_ref()}
 PPT大纲：{state['ppt_outline']}
 
@@ -2840,9 +2910,10 @@ PPT大纲：{state['ppt_outline']}
 def one_liner_agent(state: CompetitionState) -> CompetitionState:
     """💡 一句话定位 Agent：生成路演开场一句话"""
     _report_stage("idea_scoring")
-    prompt = f"""请用一句话（30字以内）概括这个项目，用来路演开场。
+    prompt = f"""请用一句话（30字以内）概括这个项目，用来路演开场，让赛事评委快速判断项目解决谁的什么问题、核心方案或价值是什么。不得写团队内部口号或未经材料支持的效果承诺。
 
 项目：{state['idea']}
+{_JUDGE_FACING_OUTPUT}
 
 直接输出一句话，不要解释。
 """
@@ -2865,6 +2936,7 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 
 申报书：
 {state.get('proposal', '')}
+{_JUDGE_FACING_OUTPUT}
 
 请严格针对这份申报书的具体内容，分四部分输出：
 1. 结构完整性
@@ -2886,7 +2958,8 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
 def rich_media_agent(state: CompetitionState) -> CompetitionState:
     """🎞️ 富媒体 Agent：生成结构化表格 + PPT 幻灯片结构"""
     _report_stage("rich_assets")
-    prompt = f"""你是路演材料制作专家。请根据下面的分析结果，生成结构化数据。
+    prompt = f"""你是路演材料制作专家。请根据下面的分析结果，生成面向赛事评委的结构化数据。
+{_JUDGE_FACING_OUTPUT}
 
 项目创意：{state.get('idea', '')}
 一句话定位：{state.get('one_liner', '')}

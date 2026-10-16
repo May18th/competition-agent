@@ -122,10 +122,17 @@ def admin_notice():
 # 只压缩文本类响应且 >500 字节；流式预览接口不压缩（避免影响实时性）。
 @app.after_request
 def _gzip_response(resp):
+    is_static = request.path.startswith('/static/')
+    if is_static:
+        max_age = 2592000 if request.args.get('v') else 3600
+        resp.headers['Cache-Control'] = f'public, max-age={max_age}'
+        resp.vary.add('Accept-Encoding')
     if request.path.startswith('/api/speech_stream'):
         return resp
     if getattr(resp, 'direct_passthrough', False):
-        return resp
+        if not is_static or resp.status_code != 200:
+            return resp
+        resp.direct_passthrough = False
     if resp.headers.get('Content-Encoding'):
         return resp
     # 304/204/HEAD 无 body，压缩会带错 Content-Encoding，导致浏览器解码失败
@@ -589,14 +596,15 @@ def _client_ip():
     return (request.remote_addr or 'unknown').strip()
 
 
-def _rate_limited():
-    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。
-    键优先用匿名用户 uid（cookie），其次才退回 IP——校级活动几百人常走同一个
-    校园网 NAT 出口，按 IP 限 5 次/分会把正常用户成片误伤。"""
+def _rate_limited(scope="generate"):
+    """检查并记录一次 AI 操作；超过限流返回 True，否则返回 False。
+    键优先用匿名用户 uid（cookie），其次才退回 IP；再按接口 scope 分桶，避免
+    用户点一次生成、一次改写、一次校对就把所有操作共享的桶打满。"""
     try:
-        key = _current_uid() or _client_ip()
+        identity = _current_uid() or _client_ip()
     except Exception:
-        key = _client_ip()
+        identity = _client_ip()
+    key = (str(identity or "unknown"), str(scope or "generate"))
     now = time.time()
     with _rate_lock:
         hits = [t for t in _rate_hits.get(key, []) if now - t < _RATE_WINDOW_SEC]
@@ -2194,24 +2202,11 @@ def export_word():
             inject_charts(doc, charts)
         except Exception as e:
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
-    # 富表格插入：PDF 里 4 张结构化附表在 Word 不能丢，append 到文末
+    # 富表格插入：按章节重点落位，竞品/风险/财务表不再统一堆到文末。
     if rich_tables:
         try:
-            doc.add_paragraph("结构化附表", style='Heading 1')
-            for rt in rich_tables:
-                header = rt.get('header') if isinstance(rt, dict) else None
-                rows = rt.get('rows') if isinstance(rt, dict) else None
-                if not header or not rows:
-                    continue
-                n_cols = len(header)
-                table = doc.add_table(rows=1 + len(rows), cols=n_cols)
-                table.style = 'Table Grid'
-                for ci, h in enumerate(header):
-                    table.rows[0].cells[ci].text = str(h)
-                for ri, row in enumerate(rows):
-                    for ci, cell in enumerate(row[:n_cols]):
-                        table.rows[ri + 1].cells[ci].text = str(cell)
-                doc.add_paragraph()
+            from docx_charts import inject_tables
+            inject_tables(doc, rich_tables)
         except Exception as e:
             print(f"[export_word] 富表格插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
@@ -4454,9 +4449,9 @@ def _extract_project_name(text):
 @app.route('/api/generate', methods=['POST'])
 def generate():
     """⚠️ 已废弃：请改用 /api/generate_async + /api/status 轮询。保留仅为兼容旧前端。"""
-    if _rate_limited():
+    if _rate_limited("generate"):
         return jsonify({"success": False,
-                        "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"}), 429
+                        "error": "生成操作太频繁，请 1 分钟后再试（每分钟最多 5 次）"}), 429
     data = request.get_json(force=True, silent=True) or {}
     data["_user_id"] = _current_uid()
     try:
@@ -4513,9 +4508,9 @@ def _start_generation(data):
                                   "error": "今日生成次数已达上限，请明天再试"})
     except Exception:
         pass
-    if _rate_limited():
+    if _rate_limited("generate"):
         return None, jsonify({"success": False,
-                              "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
+                              "error": "生成操作太频繁，请 1 分钟后再试（每分钟最多 5 次）"})
     task_id = uuid.uuid4().hex
     tasks[task_id] = {"status": "queued", "stage": "queued", "updated_at": time.time(), "start_time": time.time(),
                       "mode": data.get("mode", "fast"), "data": data}
@@ -4670,7 +4665,7 @@ def restyle():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     style = data.get('style', 'formal')
-    if _rate_limited():
+    if _rate_limited("restyle"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
@@ -4679,8 +4674,10 @@ def restyle():
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
+        from content_rules import JUDGE_FACING_OUTPUT
         desc = _RESTYLE_STYLES[style]
         prompt = f"""请把下面这份申报书整体改写成【{desc}】的风格。
+{JUDGE_FACING_OUTPUT}
 
 硬性要求：
 1. 保留所有章节标题、层级结构、数字、数据、占位符【待你填写：xxx】原样不变；
@@ -4703,14 +4700,16 @@ def rewrite_paragraph():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     instruction = data.get('instruction', '改写这段，让它更具体、更有说服力')
-    if _rate_limited():
+    if _rate_limited("rewrite"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
         from competition_agents import llm
         from langchain_core.messages import HumanMessage
+        from content_rules import JUDGE_FACING_OUTPUT
         prompt = f"""请对下面这段申报书文字做局部修改，指令：{instruction}
+{JUDGE_FACING_OUTPUT}
 
 要求：
 1. 只改这一段，保持 Markdown 格式、不改变章节/标题；
@@ -4732,7 +4731,7 @@ def proofread():
     """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
-    if _rate_limited():
+    if _rate_limited("proofread"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
@@ -5272,6 +5271,7 @@ def export_zip():
     comp = (data.get('competition_name') or '').strip()
     # 前端打包时把本轮的图表一起带过来（rich_charts），申报书正文里才插得进图
     charts_in = data.get('rich_charts') or []
+    tables_in = data.get('rich_tables') or []
 
     def build_doc(title, text):
         dt = 'outline' if ('大纲' in title or 'PPT' in title) else ('default' if '申报书' in title else 'analysis')
@@ -5308,6 +5308,12 @@ def export_zip():
                 inject_charts(d, charts_in)
             except Exception as e:
                 print(f"[export_zip] 申报书插图失败（不影响导出）：{e}")
+        if is_prop and tables_in:
+            try:
+                from docx_charts import inject_tables
+                inject_tables(d, tables_in)
+            except Exception as e:
+                print(f"[export_zip] 申报书表格插入失败（不影响导出）：{e}")
         return d
 
     with zipfile.ZipFile(zippath, 'w', zipfile.ZIP_DEFLATED) as zf:

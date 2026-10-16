@@ -353,8 +353,8 @@ def _chart_path(chart):
     return path if os.path.isfile(path) else ''
 
 
-def _chart_story(charts, tables):
-    """Build a restrained appendix so PDF never silently drops structured media."""
+def _chart_story(charts, tables, page_break=False, heading=None):
+    """Build semantic chart/table flow; unmatched media may use an appendix heading."""
     story = []
     charts = charts if isinstance(charts, list) else []
     tables = tables if isinstance(tables, list) else []
@@ -362,9 +362,10 @@ def _chart_story(charts, tables):
     usable_tables = [t for t in tables if isinstance(t, dict) and t.get('header') and t.get('rows')]
     if not usable_charts and not usable_tables:
         return story
-    story.append(PageBreak())
-    story.append(Paragraph('数据图表与结构化附表', _H1))
-    story.append(Paragraph('图表沿用本次生成记录中的结构化数据；来源与测算口径请在提交前逐项核对。', _NOTE))
+    if page_break:
+        story.append(PageBreak())
+    if heading:
+        story.append(Paragraph(_clean(heading), _MEDIA_H))
     for chart, path in usable_charts:
         story.append(Paragraph(_clean(chart.get('title') or '数据图表'), _MEDIA_H))
         try:
@@ -405,6 +406,123 @@ def _chart_story(charts, tables):
             ]))
             story.append(tbl)
             story.append(Spacer(1, 8))
+    return story
+
+
+# Keep these semantic anchors aligned with docx_charts._ANCHORS so Word and PDF
+# place the same charts and tables under the same proposal sections.
+_MEDIA_ANCHORS = [
+    (('预算', '成本', '经费', '资金', '投入', '收入', '盈利', '收费', '单价', '毛利', '成本结构', '费用'),
+     ('商业模式', '市场空间', '经费', '预算', '财务')),
+    (('市场', '规模', '增长', '用户量', '渗透', '赛道', '份额', '趋势', '预测', '需求'),
+     ('商业模式', '市场空间', '市场', '前景', '背景')),
+    (('时间', '里程碑', '进度', '计划', '路线', '阶段', '周期', '排期', '季度', '年度', '节点'),
+     ('执行计划', '实施', '里程碑', '计划', '进度')),
+    (('技术', '架构', '准确率', '性能', '算法', '识别率', '响应', '延迟', '召回', '精度', '系统', '模块'),
+     ('技术方案', '系统架构', '技术', '架构', '产品形态')),
+    (('风险', '失败', '威胁', '挑战', '不确定', '隐患', '应对', '概率'),
+     ('风险分析', '风险', '应对')),
+    (('竞品', '对比', '差异', '友商', '同类', '对手', '对标', '优势'),
+     ('竞品对比', '竞品', '差异化', '创新点')),
+    (('团队', '分工', '人员', '组织', '职责', '角色'),
+     ('团队分工', '团队', '执行计划')),
+    (('社会', '价值', '公益', '影响', '可持续', '普惠', '就业', '环保'),
+     ('社会价值', '应用前景', '社会', '价值')),
+    (('用户', '画像', '场景', '人群', '客户', '受众'),
+     ('目标用户', '应用场景', '用户', '场景')),
+    (('痛点', '问题', '现状', '缺口', '需求'),
+     ('背景与痛点', '痛点', '背景', '项目概述')),
+]
+
+
+def _media_norm(text):
+    text = re.sub(r'^[一二三四五六七八九十百]+[、.．]', '', str(text or '').strip())
+    text = re.sub(r'^[（(][一二三四五六七八九十百]+[）)]', '', text)
+    return re.sub(r'^\d+(?:\.\d+)*[、.．]?\s*', '', text)
+
+
+def _media_text(item, chart=False):
+    parts = [item.get('title', ''), item.get('caption', '')]
+    if chart:
+        parts.append(item.get('source', ''))
+        spec = item.get('spec') or {}
+        parts.append(spec.get('type', ''))
+        data = spec.get('data') or {}
+        if isinstance(data, dict):
+            for key in ('xAxis', 'x', 'categories', 'labels', 'names', 'name'):
+                value = data.get(key)
+                if isinstance(value, list):
+                    parts.extend(str(x) for x in value[:12])
+                elif value:
+                    parts.append(str(value))
+            parts.extend(str(s.get('name')) for s in (data.get('series') or [])
+                         if isinstance(s, dict) and s.get('name'))
+    return ' '.join(str(part) for part in parts)
+
+
+def _pick_media_section(title, section_titles):
+    best_i, best_score = -1, 0
+    for index, section_title in enumerate(section_titles):
+        for media_words, section_words in _MEDIA_ANCHORS:
+            media_hits = sum(1 for word in media_words if word in title)
+            section_hits = sum(1 for word in section_words if word in section_title)
+            score = media_hits * section_hits
+            if score > best_score:
+                best_i, best_score = index, score
+    return best_i
+
+
+def _split_markdown_sections(body_text):
+    prefix, sections, current = [], [], None
+    for line in body_text.split('\n'):
+        match = re.match(r'^##\s+(.*)$', line)
+        if match:
+            current = {'title': _media_norm(match.group(1)), 'lines': [line]}
+            sections.append(current)
+        elif current is None:
+            prefix.append(line)
+        else:
+            current['lines'].append(line)
+    return prefix, sections
+
+
+def _body_with_media_story(body_text, charts, tables):
+    prefix, sections = _split_markdown_sections(body_text)
+    if not sections:
+        return _flow(body_text) + _chart_story(charts, tables, page_break=True,
+                                               heading='数据图表与结构化附表')
+
+    chart_items = [(chart, _chart_path(chart)) for chart in (charts or [])
+                   if isinstance(chart, dict) and _chart_path(chart)]
+    table_items = [table for table in (tables or [])
+                   if isinstance(table, dict) and table.get('header') and table.get('rows')]
+    titles = [section['title'] for section in sections]
+    section_charts = [[] for _ in sections]
+    section_tables = [[] for _ in sections]
+    fallback_charts, fallback_tables = [], []
+    chart_counts, table_counts = {}, {}
+
+    for chart, path in chart_items:
+        target = _pick_media_section(_media_text(chart, chart=True), titles)
+        if target >= 0 and chart_counts.get(target, 0) < 2:
+            section_charts[target].append(chart)
+            chart_counts[target] = chart_counts.get(target, 0) + 1
+        else:
+            fallback_charts.append(chart)
+    for table in table_items:
+        target = _pick_media_section(_media_text(table), titles)
+        if target >= 0 and table_counts.get(target, 0) < 1:
+            section_tables[target].append(table)
+            table_counts[target] = table_counts.get(target, 0) + 1
+        else:
+            fallback_tables.append(table)
+
+    story = _flow('\n'.join(prefix)) if any(x.strip() for x in prefix) else []
+    for index, section in enumerate(sections):
+        story.extend(_flow('\n'.join(section['lines'])))
+        story.extend(_chart_story(section_charts[index], section_tables[index]))
+    story.extend(_chart_story(fallback_charts, fallback_tables, page_break=True,
+                              heading='补充图表与结构化附表'))
     return story
 
 
@@ -462,7 +580,6 @@ def render_markdown_to_pdf(markdown_text, out_path, title="申报书", subtitle=
         while body_lines and not body_lines[0].strip():
             body_lines.pop(0)
     body_text = '\n'.join(body_lines)
-    body_flow = _flow(body_text)
     has_headings = any(re.match(r'^##\s+', x.strip()) for x in body_lines)
     toc = TableOfContents()
     # rightIndent 给右侧页码留位；dotsMinLevel=0 让一级条目也带点引线
@@ -503,8 +620,7 @@ def render_markdown_to_pdf(markdown_text, out_path, title="申报书", subtitle=
     story.append(PageBreak())
     if include_toc and has_headings:
         story.extend([Paragraph('目录', _TOC_H), toc, PageBreak()])
-    story.extend(body_flow)
-    story.extend(_chart_story(charts, tables))
+    story.extend(_body_with_media_story(body_text, charts, tables))
     doc = _PdfDocTemplate(
         out_path, pagesize=A4,
         leftMargin=2.2 * cm, rightMargin=2.2 * cm,

@@ -48,6 +48,7 @@ set -euo pipefail
 # ---------- 可配置项（环境变量优先） ----------
 SSH_HOST="${WB_SSH_HOST:-root@8.149.236.90}"
 SSH_KEY="${WB_SSH_KEY:-$HOME/.ssh/id_aliyun_deploy}"
+SSH_KNOWN_HOSTS="${WB_SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}"
 SSH_PORT="${WB_SSH_PORT:-22}"
 REMOTE_DIR="${WB_REMOTE_DIR:-/opt/comp-agent}"
 BACKUP_DIR="${WB_BACKUP_DIR:-/opt/backups}"
@@ -57,7 +58,7 @@ STATIC_URL="${WB_STATIC_URL:-${SITE_URL}/static/app.js}"
 SERVICE="${WB_SERVICE:-comp-agent}"
 RESTART_WAIT="${WB_RESTART_WAIT:-5}"     # restart 后等待秒数（对齐 deploy_guard.py 的 sleep 5）
 
-SSH_CMD="ssh -i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15"
+SSH_CMD="ssh -i $SSH_KEY -p $SSH_PORT -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$SSH_KNOWN_HOSTS -o ConnectTimeout=15"
 # 数组形式：--noproxy 的 '*' 若用无引号字符串展开会被 glob 污染，必须数组+引号
 CURL_OPTS=(-sk --noproxy '*' --max-time 30)   # -k: nginx 自签/透明链路; --noproxy: 本机代理会劫持外网请求
 
@@ -231,7 +232,7 @@ else
     dest_dir="$REMOTE_DIR/$(dirname "$f")"
     ssh_run "mkdir -p '$dest_dir'" || rollback_and_exit 1 "创建远端目录失败: $dest_dir"
     if ! scp -i "$SSH_KEY" -P "$SSH_PORT" \
-         -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+         -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
          "$f" "$SSH_HOST:$dest_dir/"; then
       rollback_and_exit 1 "scp 传输失败: $f"
     fi

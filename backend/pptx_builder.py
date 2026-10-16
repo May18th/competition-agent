@@ -927,6 +927,85 @@ def _clean(slide):
         ph._element.getparent().remove(ph._element)
 
 
+def _clean_ppt_text(value, title=False):
+    """清理大纲残留的 Markdown/字段标签，避免把提示词直接印到成品页。"""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if title:
+        # 大纲有时把页码写进标题（「第 2 页 | 痛点」），页码由版式页脚统一管理。
+        text = re.sub(r"^第\s*\d+\s*页\s*[|｜:：-]\s*", "", text)
+        text = re.sub(r"^页\s*\d+\s*[|｜:：-]\s*", "", text)
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r"^\s*[*#·▍]+\s*", "", text)
+    # 字段标签可能出现在旧数据的每一行开头，不能只清理首行。
+    text = re.sub(r"(?im)(?:^|\n)\s*(?:标题|要点|讲解稿|演讲稿|备注)\s*[:：]\s*", "", text).strip()
+    return text
+
+
+def _focus_from_title(title):
+    """旧历史 deck 也按章节重点选择版式，避免导出时退回普通卡片。"""
+    text = str(title or "")
+    if re.search(r"场景", text):
+        return "scenario"
+    if re.search(r"竞品|对比|差异化|替代方案", text):
+        return "comparison"
+    if re.search(r"风险|应对|合规|安全", text):
+        return "risk"
+    if re.search(r"架构|技术路线|技术方案|系统组成|工作原理|流程", text):
+        return "architecture"
+    if re.search(r"团队|分工|执行能力|保障", text):
+        return "team"
+    if re.search(r"实施|路线图|里程碑|阶段", text):
+        return "timeline"
+    if re.search(r"市场|商业|营收|财务|成本|定价|规模|实测|试点|成果|指标|数据|验证", text):
+        return "evidence"
+    return "narrative"
+
+
+def _split_scenario_item(value, index):
+    """将场景要点拆成短标题与评委可读的事实说明。"""
+    text = _clean_ppt_text(value)
+    m = re.match(r"^\*{0,2}([^：:]{2,18})\*{0,2}\s*[：:]\s*(.+)$", text)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    # 没有显式标签时给出中性编号，避免编造场景名称。
+    return "场景 %02d" % (index + 1), text
+
+
+def _scenario_body(slide, bullets, accent=PRIMARY):
+    """典型应用场景板块：三列展示对象、介入和可验证结果，面向评委阅读。"""
+    items = [_split_scenario_item(x, i) for i, x in enumerate(bullets or []) if str(x).strip()][:3]
+    if not items:
+        return
+    gap = 0.28
+    left = 0.72
+    width = (11.9 - gap * (len(items) - 1)) / len(items)
+    top, height = 2.05, 4.25
+    for i, (label, body) in enumerate(items):
+        x = left + i * (width + gap)
+        color = CHAPTER[i % len(CHAPTER)]
+        _add_rect(slide, x, top, width, height, _lighten(color, 0.90), round_=True,
+                  line=_lighten(color, 0.52), line_w=1.2)
+        _add_rect(slide, x, top, 0.1, height, color, round_=True)
+        tb_num, tf_num = _add_box(slide, x + 0.28, top + 0.25, 0.55, 0.42)
+        p_num = tf_num.paragraphs[0]
+        r_num = p_num.add_run(); r_num.text = "%02d" % (i + 1)
+        _set_run_font(r_num, 18, color, bold=True)
+        tb_label, tf_label = _add_box(slide, x + 0.88, top + 0.23, width - 1.1, 0.55)
+        p_label = tf_label.paragraphs[0]
+        r_label = p_label.add_run(); r_label.text = label
+        _set_run_font(r_label, 17, INK, bold=True)
+        tb_body, tf_body = _add_box(slide, x + 0.3, top + 1.02, width - 0.6, height - 1.28)
+        tf_body.word_wrap = True
+        p_body = tf_body.paragraphs[0]
+        r_body = p_body.add_run(); r_body.text = body
+        _set_run_font(r_body, 15, BODY)
+    # 轻量评委提示，明确该页看的是证据链而非团队内部任务。
+    tb, tf = _add_box(slide, 0.72, 6.43, 11.9, 0.32)
+    p = tf.paragraphs[0]
+    r = p.add_run(); r.text = "评委关注：具体对象 · 使用时刻 · 介入方式 · 可验证结果"
+    _set_run_font(r, 10.5, MUTED)
+
+
 def _footer(slide, project, page_no):
     tb, tf = _add_box(slide, 0.7, SLIDE_H - 0.5, 7, 0.3)
     p = tf.paragraphs[0]
@@ -1582,6 +1661,20 @@ def _slide_bullets(prs, s, meta, page_no, chart_path=None, cont=False, idx=0):
     return slide
 
 
+def _slide_scenario(prs, s, meta, page_no, idx=0):
+    """典型应用场景专用页：单独成板块，不与普通功能卡混排。"""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _clean(slide)
+    accent = _chapter_color(s.get("kicker"), idx)
+    title = s.get("title") or "典型应用场景"
+    _page_header(slide, title, s.get("kicker"), accent)
+    _scenario_body(slide, s.get("bullets") or [], accent=accent)
+    _footer(slide, meta.get("project", ""), page_no)
+    if s.get("note"):
+        _add_notes(slide, s.get("note"))
+    return slide
+
+
 def _slide_table(prs, s, meta, page_no, cont=False, idx=0):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _clean(slide)
@@ -1698,7 +1791,24 @@ def build_deck(deck, out_path, chart_paths=None):
     # 页数总预算：基础页数 = deck 章节页数（与大纲 1:1），（续）页只能消耗
     # MAX_TOTAL_SLIDES - 基础页数 的额度，用完即压缩单页内容（超限宁可少排，
     # 不可超页数——iCAN 等赛事硬要求 ≤20 页）。
-    slides = deck.get("slides", [])
+    # 导出入口可能拿到历史记录中的旧 deck，统一在最终排版前再清洗一次，
+    # 这样旧数据也不会把「标题：」「要点：」或「第 N 页 |」带到成品。
+    slides = []
+    for raw in deck.get("slides", []) or []:
+        if not isinstance(raw, dict):
+            continue
+        s = dict(raw)
+        s["title"] = _clean_ppt_text(s.get("title"), title=True)
+        s["focus"] = s.get("focus") or _focus_from_title(s.get("title"))
+        s["kicker"] = _clean_ppt_text(s.get("kicker"))
+        s["bullets"] = [_clean_ppt_text(x) for x in (s.get("bullets") or [])]
+        s["bullets"] = [x for x in s["bullets"] if x]
+        s["note"] = _clean_ppt_text(s.get("note"))
+        s["caption"] = _clean_ppt_text(s.get("caption"))
+        if s["focus"] == "scenario" and str(s.get("type") or "bullets").lower() in ("bullets", "chart"):
+            s["type"] = "scenario"
+            s.pop("chart", None)
+        slides.append(s)
     # 富媒体流水线以 PPT 大纲为唯一页级契约时，不允许排版器自动生成续页；
     # 超出单页容量的内容会进入备注，避免“实际页数 > 大纲页数”。旧的
     # 手工 deck 未带该标记时继续沿用原有总页数预算。
@@ -1728,6 +1838,9 @@ def build_deck(deck, out_path, chart_paths=None):
                 _slide_metrics(prs, sub, meta, page, i)
             else:
                 _slide_metrics(prs, s, meta, page, i)
+            page += 1
+        elif stype == "scenario":
+            _slide_scenario(prs, s, meta, page, i)
             page += 1
         elif stype in ("closing", "thanks", "end"):
             _slide_closing(prs, s, meta, page)

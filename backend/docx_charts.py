@@ -159,6 +159,53 @@ def _add_image(doc, anchor_p, img_path, title, caption, width_in, source=''):
     return p_cap
 
 
+def _insert_table_after(doc, anchor_p, table_data):
+    """把结构化表格插入到语义匹配章节，而不是统一堆到文末。"""
+    header = [str(x) for x in (table_data.get('header') or [])]
+    rows = [[str(x) for x in row[:len(header)]] for row in (table_data.get('rows') or [])]
+    if not header or not rows:
+        return anchor_p
+    cap = _new_after(doc, anchor_p)
+    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cap.paragraph_format.space_before = Pt(6)
+    cap.paragraph_format.space_after = Pt(3)
+    run = cap.add_run('表：' + str(table_data.get('title') or '结构化数据'))
+    run.font.size = Pt(10.5)
+    run.bold = True
+    table = doc.add_table(rows=1, cols=len(header))
+    table.style = 'Table Grid'
+    table.autofit = True
+    # 将新表格 XML 挪到题注之后，避免 python-docx 只能追加到文末。
+    cap._p.addnext(table._tbl)
+    for ci, value in enumerate(header):
+        cell = table.rows[0].cells[ci]
+        cell.text = ''
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(value)
+        r.font.size = Pt(10.5)
+        r.bold = True
+    for row_values in rows:
+        row = table.add_row()
+        for ci, value in enumerate(row_values + [''] * (len(header) - len(row_values))):
+            cell = row.cells[ci]
+            cell.text = ''
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT if ci == 0 else WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(value)
+            r.font.size = Pt(10.5)
+    note = str(table_data.get('source') or '').strip()
+    if note:
+        p_note = _new_after(doc, cap)
+        p_note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_note = p_note.add_run('来源：' + note)
+        r_note.font.size = Pt(9)
+        r_note.italic = True
+        r_note.font.color.rgb = RGBColor(0x6B, 0x78, 0x99)
+        return p_note
+    return cap
+
+
 def inject_charts(doc, charts, width_in=5.4, per_section=2):
     """把图表插进申报书对应章节末尾。
 
@@ -224,4 +271,39 @@ def inject_charts(doc, charts, width_in=5.4, per_section=2):
             cur = _add_image(doc, cur, path, c.get('title', ''), c.get('caption', ''),
                              width_in, c.get('source', ''))
             done += 1
+    return done
+
+
+def inject_tables(doc, tables, per_section=1):
+    """按章节重点插入结构化表格，竞品/风险/财务表优先落到对应章节。"""
+    tables = [t for t in (tables or []) if isinstance(t, dict) and t.get('header') and t.get('rows')]
+    if not tables:
+        return 0
+    sections = _sections(doc)
+    paras = doc.paragraphs
+    placed, fallback = [], []
+    counts = {}
+    for table in tables:
+        title = str(table.get('title') or '')
+        si = _pick_section(title, sections) if sections else -1
+        if si >= 0 and counts.get(si, 0) < per_section:
+            counts[si] = counts.get(si, 0) + 1
+            placed.append((si, table))
+        else:
+            fallback.append(table)
+    placed.sort(key=lambda item: item[0])
+    done = 0
+    for si, table in placed:
+        start, end = sections[si][1], sections[si][2]
+        anchor_i = end - 1
+        while anchor_i > start and not paras[anchor_i].text.strip():
+            anchor_i -= 1
+        _insert_table_after(doc, paras[anchor_i], table)
+        done += 1
+    if fallback:
+        anchor = doc.paragraphs[-1] if doc.paragraphs else None
+        if anchor is not None:
+            for table in fallback:
+                anchor = _insert_table_after(doc, anchor, table)
+                done += 1
     return done

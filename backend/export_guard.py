@@ -222,12 +222,22 @@ def check_ppt_matches_outline(pptx_path, ppt_outline_text):
     if n != len(expected):
         errors.append(f"PPT 页数 {n} != 大纲页数 {len(expected)}")
     # 标题对应：逐页比对 slide 标题文本与大纲标题（允许空标题，只警告）
+    aliases = {
+        "团队分工": ("实施保障", "执行能力"),
+        "开发计划": ("实施路线", "阶段成果"),
+        "项目计划": ("实施路线", "阶段成果"),
+    }
     for i, slide in enumerate(slides[:len(expected)]):
         slide_titles = []
         for sh in slide.shapes:
             if sh.has_text_frame and sh.text_frame.text.strip():
                 slide_titles.append(sh.text_frame.text.strip().split("\n")[0])
-        if slide_titles and not any(expected[i] in t or t in expected[i] for t in slide_titles):
+        matched = any(expected[i] in t or t in expected[i] for t in slide_titles)
+        if i == 0 and "封面" in expected[i] and slide_titles:
+            matched = True
+        if not matched:
+            matched = any(alias in " ".join(slide_titles) for alias in aliases.get(expected[i], ()))
+        if slide_titles and not matched:
             warnings.append(f"第 {i+1} 页标题与大纲「{expected[i]}」不一致")
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 

@@ -7,26 +7,30 @@ _MAX = 300
 _logs = deque(maxlen=_MAX)
 
 
-def log(level, source, message):
-    _logs.append({
+def log(level, source, message, data=None):
+    item = {
         "ts": time.time(),
         "time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "level": str(level).upper(),
         "source": str(source or "app"),
         "message": str(message)[:300],
-    })
+    }
+    if isinstance(data, dict) and data:
+        # 结构化字段只允许调用方显式传入，避免把 prompt、密钥或原文写进日志。
+        item["data"] = data
+    _logs.append(item)
 
 
-def info(source, message):
-    log("INFO", source, message)
+def info(source, message, data=None):
+    log("INFO", source, message, data=data)
 
 
-def warn(source, message):
-    log("WARN", source, message)
+def warn(source, message, data=None):
+    log("WARN", source, message, data=data)
 
 
-def error(source, message):
-    log("ERROR", source, message)
+def error(source, message, data=None):
+    log("ERROR", source, message, data=data)
 
 
 def get_logs(level=None, limit=100):

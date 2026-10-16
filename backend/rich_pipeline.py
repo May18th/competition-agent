@@ -15,6 +15,7 @@ import uuid
 
 from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
+from content_rules import JUDGE_FACING_OUTPUT
 
 try:
     from chart_renderer_pro import render as render_chart
@@ -230,6 +231,7 @@ def _gen_assets(result, competition, idea, kb_data="", user_data=""):
 {_ud}"""
     kb_block = f"\n【可引用的行业真实数据】\n{kb_data}\n" if kb_data else ""
     prompt = f"""你是国家级科创赛事的路演数据可视化专家。根据以下项目材料，设计 6-8 张最有说服力的图表（charts）和 2-4 张关键表格（tables），要达到「2026 国赛超精美图表 A」水准。
+{JUDGE_FACING_OUTPUT}
 
 {material}
 {kb_block}
@@ -493,7 +495,8 @@ def _gen_deck(result, competition, idea, assets):
 可用图表 id：{chart_ids}
 可用表格 id：{table_ids}
 """
-    prompt = f"""你是顶级路演 PPT 设计师。根据材料设计一份 12-14 页的路演 PPT 页面结构。
+    prompt = f"""你是顶级路演 PPT 设计师。根据材料设计一份 12-14 页的面向赛事评委的路演 PPT 页面结构。
+{JUDGE_FACING_OUTPUT}
 
 {material}
 
@@ -540,6 +543,48 @@ def _fallback_deck(result, idea):
         slides.append(cur)
     slides.append({"type": "closing", "title": "谢谢聆听"})
     return {"slides": slides}
+
+
+def _audience_title(title):
+    """把团队内部汇报标题改成评委可判断的项目能力标题。"""
+    text = re.sub(r"\s+", " ", str(title or "")).strip()
+    replacements = (
+        (r"^(?:团队任务分配|团队分工|开发待办|内部安排|工作分工)$", "实施保障与执行能力"),
+        (r"^(?:项目计划|开发计划|工作计划)$", "实施路线与阶段成果"),
+        (r"^(?:产品功能|功能介绍)$", "产品形态与核心功能"),
+    )
+    for pattern, replacement in replacements:
+        if re.search(pattern, text, re.IGNORECASE):
+            return replacement
+    return text
+
+
+def _is_scenario_title(title):
+    """场景必须使用独立板块版式，避免散落在普通要点卡中。"""
+    text = str(title or "")
+    return bool(re.search(r"(?:典型|应用|使用|用户|落地|真实)?场景", text))
+
+
+def _slide_focus(title):
+    """按章节标题确定评委阅读重点，供排版器选择合适版式。"""
+    text = str(title or "")
+    if _is_scenario_title(text):
+        return "scenario"
+    if re.search(r"竞品|竞合|对比|差异化|替代方案", text):
+        return "comparison"
+    if re.search(r"风险|应对|合规|安全", text):
+        return "risk"
+    if re.search(r"架构|技术路线|技术方案|系统组成|工作原理|流程", text):
+        return "architecture"
+    if re.search(r"团队|分工|执行能力|保障", text):
+        return "team"
+    if re.search(r"实施|路线图|里程碑|计划|阶段", text):
+        return "timeline"
+    if re.search(r"市场|商业|营收|财务|成本|定价|规模", text):
+        return "business"
+    if re.search(r"实测|试点|成果|指标|数据|效果|验证", text):
+        return "evidence"
+    return "narrative"
 
 
 def _outline_deck(outline):
@@ -608,7 +653,9 @@ def _outline_deck(outline):
                 continue
             if cur:
                 slides.append(cur)
-            cur = {"type": "bullets", "title": title, "bullets": [], "note": ""}
+            title = _audience_title(title)
+            cur = {"type": "scenario" if _is_scenario_title(title) else "bullets",
+                   "focus": _slide_focus(title), "title": title, "bullets": [], "note": ""}
             continue
         if not cur:
             # 第一个标题之前的说明文字（如「PPT大纲」自身标题），跳过
@@ -669,7 +716,33 @@ def _clean_deck_slides(slides):
             _v = s.get(_k)
             if isinstance(_v, list):
                 s[_k] = [x for x in _v if not (isinstance(x, str) and _looks_like_prompt_leak(x))]
+        s["title"] = _audience_title(s.get("title"))
+        s.setdefault("focus", _slide_focus(s.get("title")))
+        if _is_scenario_title(s.get("title")) and str(s.get("type") or "bullets").lower() in ("bullets", "chart"):
+            s["type"] = "scenario"
+            s.pop("chart", None)
         out.append(s)
+    return out
+
+
+def _ensure_judge_structure(slides):
+    """为所有赛事补齐评委视角的场景板块，尽量不改变大纲页数。"""
+    out = [dict(s) for s in (slides or []) if isinstance(s, dict)]
+    if any(str(s.get("type") or "").lower() == "scenario" for s in out):
+        return out
+    # 优先把已有的用户/应用页转成场景页，保留原有要点和页数契约。
+    candidate = None
+    for s in out:
+        title = str(s.get("title") or "")
+        if re.search(r"用户|应用|使用|落地", title) and len(s.get("bullets") or []) >= 2:
+            candidate = s
+            break
+    if candidate is None:
+        return out
+    if "场景" not in str(candidate.get("title") or ""):
+        candidate["title"] = "典型应用场景｜" + str(candidate.get("title") or "")
+    candidate["type"] = "scenario"
+    candidate.pop("chart", None)
     return out
 
 
@@ -851,23 +924,54 @@ def build_rich_assets(result, competition="", idea="", theme=None, user_data="")
             if not isinstance(s, dict):
                 continue
             s.setdefault("type", "bullets")
+            s["title"] = _audience_title(s.get("title"))
+            s.setdefault("focus", _slide_focus(s.get("title")))
             # table 引用 -> 实体
             if isinstance(s.get("table"), str):
                 s["table"] = table_map.get(s["table"])
+            if isinstance(s.get("table"), dict):
+                s["type"] = "table"
             # chart 引用必须存在，否则退化为普通要点页
             if s.get("chart") and s["chart"] not in chart_ids:
                 s.pop("chart", None)
                 s["type"] = "bullets"
             if s["type"] == "chart" and not s.get("chart"):
                 s["type"] = "bullets"
+            if s.get("focus") == "scenario":
+                s["type"] = "scenario"
+                s.pop("chart", None)
+                s.pop("table", None)
             norm.append(s)
-        # L6：把图表引用注入到匹配的页面（市场/数据/趋势/对比/规模/用户/财务/架构/流程等），
-        # 让 build_deck 能嵌入图表图片，不再「8 页全文字 0 图」。
-        _chart_keywords = ("市场", "数据", "趋势", "对比", "竞品", "规模", "增长", "用户",
-                           "财务", "架构", "流程", "痛点", "营收", "份额")
+        # 章节重点驱动版式：竞品/风险优先表格，其余证据型章节优先图表，
+        # 场景页走专用板块，团队页保持评委可扫描的简洁要点。
+        _used_tables = {str(s.get("table", {}).get("id")) for s in norm
+                        if isinstance(s.get("table"), dict)}
+        for _s in norm:
+            _focus = _s.get("focus") or _slide_focus(_s.get("title"))
+            if _focus not in ("comparison", "risk") or _s.get("table"):
+                continue
+            _picked = None
+            for _t in tables:
+                if _t["id"] in _used_tables:
+                    continue
+                if _focus == "comparison" and re.search(r"竞品|对比|差异", str(_t.get("title") or "")):
+                    _picked = _t; break
+                if _focus == "risk" and re.search(r"风险|应对|安全", str(_t.get("title") or "")):
+                    _picked = _t; break
+            if _picked is None:
+                _picked = next((t for t in tables if t["id"] not in _used_tables), None)
+            if _picked is not None and _picked["id"] not in _used_tables:
+                _s["table"] = _picked
+                _s["type"] = "table"
+                _used_tables.add(_picked["id"])
+
+        _chart_keywords = ("市场", "数据", "趋势", "规模", "增长", "财务", "架构", "流程",
+                           "痛点", "营收", "份额", "实测", "试点", "成果", "里程碑")
         _chart_iter = iter(sorted(chart_ids))
         for _s in norm:
-            if _s.get("type") == "bullets" and any(k in (_s.get("title") or "") for k in _chart_keywords):
+            _focus = _s.get("focus") or _slide_focus(_s.get("title"))
+            if (_s.get("type") == "bullets" and _focus in ("business", "evidence", "architecture", "timeline")
+                    and any(k in (_s.get("title") or "") for k in _chart_keywords)):
                 try:
                     _cid = next(_chart_iter)
                 except StopIteration:
@@ -890,7 +994,7 @@ def build_rich_assets(result, competition="", idea="", theme=None, user_data="")
                     _extra = "页面容量外的补充要点：\n" + "\n".join("- " + x for x in _overflow)
                     _s["note"] = (str(_s.get("note") or "").strip() + "\n" + _extra).strip()
         # 只渲染大纲中明确存在的页面，不隐式插入封面；否则会破坏大纲契约。
-        deck["slides"] = _clean_deck_slides(norm)
+        deck["slides"] = _ensure_judge_structure(_clean_deck_slides(norm))
         deck["strict_outline"] = True
         deck.setdefault("one_liner", result.get("one_liner", ""))
         deck.setdefault("project", _project_name(idea, result.get("one_liner", "")))

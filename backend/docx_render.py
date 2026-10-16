@@ -1063,7 +1063,8 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
 
         cp = doc.core_properties
         cp.title = title
-        cp.author = '科创赛事多智能体协同创作助手'
+        # 文档属性不写入内部产品/模型名称，避免提交材料暴露生成工具来源。
+        cp.author = ''
         cp.category = '赛事申报材料'
         return doc
 

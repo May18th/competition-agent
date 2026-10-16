@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
     <title>可创无限 · 创造无限可能</title>
     <meta name="description" content="输入一句项目创意，按 15 个赛事的官方评审规则生成申报书、路演 PPT 与答辩预测；简洁版约 1 分钟出稿、深度版约 4 分钟出完整方案书，字数与用时以站内实测统计为准，支持双盲赛事自动脱敏。">
     <!-- 没有 icon 声明时浏览器会默认去请求 /favicon.ico，本项目没有该文件 → 控制台一条资源错误，
          标签页也永远是空白图标。直接复用 logo.png，零风险。
          193 轮：补真正的 favicon.ico（16/32/48 三尺寸，由 logo.png 程序化生成），
          png 只做高分兜底——ico 才是浏览器书签栏/标签页真正吃的那一个。 -->
-    <link rel="icon" href="static/favicon.ico?v=20261003a" sizes="any">
+    <link rel="icon" href="static/favicon.ico?v=20261016b" sizes="any">
     <link rel="icon" type="image/png" href="static/logo.png?v=20261003a">
     <link rel="apple-touch-icon" href="static/logo_apple.png?v=20261003a">
     <meta property="og:type" content="website">
@@ -22,7 +23,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="static/style.css?v=20261003o">
+    <link rel="stylesheet" href="static/style.css?v=20261017d">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -33,7 +34,7 @@
          这里放在 <body> 开标签之后的第一行（同步阻塞、早于任何内容渲染），
          按 localStorage 记忆给 body 打标记：日间不闪黑、夜间不闪白，两头都不用牺牲。
          下面那个 initTheme 会再跑一次，纯属幂等重复，不冲突。 -->
-    <script>(function(){try{if(localStorage.getItem('wbLight')!=='0'){document.body.classList.add('light');}}catch(e){}})();</script>
+    <script>(function(){try{if(localStorage.getItem('wbLight')!=='0'){document.body.classList.add('light');}if(localStorage.getItem('wbLiquidGlass')!=='0'){document.body.classList.add('wb-liquid-glass');}if(localStorage.getItem('wbMotion')==='0'){document.body.classList.add('wb-motion-low');}}catch(e){document.body.classList.add('light','wb-liquid-glass');}})();</script>
     <!-- 首屏骨架屏：静态 HTML 里先画几块灰条，JS 就绪后淡出，避免白屏几秒 -->
     <div id="pageSkeleton" aria-hidden="true">
         <div class="skeleton" style="height: 22px; width: 42%; margin: 0 auto 18px;"></div>
@@ -42,6 +43,19 @@
         <div class="skeleton" style="height: 18px; margin-bottom: 10px; width: 82%;"></div>
         <div class="skeleton" style="height: 160px;"></div>
     </div>
+    <script>
+    (function () {
+        function hidePageSkeleton() {
+            var skeleton = document.getElementById('pageSkeleton');
+            if (!skeleton || skeleton.dataset.hiding === '1') return;
+            skeleton.dataset.hiding = '1';
+            skeleton.classList.add('hide');
+            setTimeout(function () { skeleton.remove(); }, 400);
+        }
+        window.addEventListener('load', hidePageSkeleton, { once: true });
+        setTimeout(hidePageSkeleton, 2500);
+    })();
+    </script>
     <svg class="wb-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
         <defs>
         <symbol id="wb-i-rocket" viewBox="0 0 24 24"><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></symbol>
@@ -69,6 +83,7 @@
         <symbol id="wb-i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></symbol>
         <symbol id="wb-i-cross" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
         <symbol id="wb-i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+        <symbol id="wb-i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3.8L3 10"/><path d="M3 4v6h6"/><path d="M4 13a8 8 0 0 0 14.9 3.8L21 14"/><path d="M21 20v-6h-6"/></symbol>
         <symbol id="wb-i-history" viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></symbol>
         <symbol id="wb-i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></symbol>
         <symbol id="wb-i-layers" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></symbol>
@@ -179,31 +194,49 @@
                     <span class="wb-dot" style="animation-delay:.85s"></span>更多 ▾
                 </button>
                 <div id="wbMoreMenu" style="display: none; position: absolute; right: 0; top: calc(100% + 6px);
-                                            z-index: 1700; min-width: 148px; padding: 6px;
+                                            z-index: 1700; min-width: 238px; padding: 8px;
                                             background: var(--surface-solid); border: 1px solid var(--line);
                                             border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.18);">
-                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item"
-                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
-                            onclick="wbMoreClose();wbBgPanelToggle()" title="更换页面底图（图片只存本机）">
-                        <span class="wb-dot"></span>页面背景
-                    </button>
-                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item"
-                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent; margin-top: 2px;"
-                            onclick="wbMoreClose();wbToggleTheme()" title="切换日间/夜间模式">
-                        <span class="wb-dot" style="animation-delay:.4s"></span>日间 / 夜间
-                    </button>
-                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbGoAnchor('proposal','proposalText')" title="跳到结果中的申报书正文">
-                        <span class="wb-dot"></span>结果导航
-                    </button>
-                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbLocalEditFocus()" title="只修改一个结果模块">
-                        <span class="wb-dot"></span>局部修改
-                    </button>
-                    <button type="button" class="wb-glass-btn wb-glass-btn-sm wb-more-item" style="display:flex; width:100%; justify-content:flex-start; border:none; background:transparent; margin-top:2px;" onclick="wbMoreClose();wbDataTodoJump()" title="查看需要核实的数据">
-                        <span class="wb-dot"></span>数据核查
+                    <details class="wb-more-group" open>
+                        <summary><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg>结果工具</summary>
+                        <div class="wb-more-group-body">
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbGoAnchor('proposal','proposalText')" title="跳到结果中的申报书正文">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg>结果导航
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbLocalEditFocus()" title="只修改一个结果模块">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg>局部修改
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbDataTodoJump()" title="查看需要核实的数据">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-search"/></svg>数据核查
+                            </button>
+                        </div>
+                    </details>
+                    <details class="wb-more-group">
+                        <summary><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg>显示与交互</summary>
+                        <div class="wb-more-group-body">
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbBgPanelToggle()" title="更换页面底图（图片只存本机）">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-globe"/></svg>页面背景
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbToggleTheme()" title="切换日间/夜间模式">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg>日间 / 夜间
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbToggleLiquidGlass()" title="切换半透明、柔和高光与背景折射效果" aria-pressed="true" data-wb-glass-toggle="1">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-layers"/></svg>液态玻璃
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbToggleMotion()" title="降低背景装饰动画，减少视觉干扰和设备负载" aria-pressed="false" data-wb-motion-toggle="1">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bolt"/></svg>动效强度
+                            </button>
+                            <button type="button" class="wb-more-item" onclick="wbMoreClose();wbToggleSound()" title="开启轻量交互音效（默认关闭）" aria-pressed="false" data-wb-sound-toggle="1">
+                                <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg>交互音效
+                            </button>
+                        </div>
+                    </details>
+                    <button type="button" class="wb-more-item wb-more-standalone" data-wb-focus="1" onclick="wbToggleFocusMode();wbMoreClose()" title="隐藏辅助说明，保留正文与操作">
+                        <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg>专注阅读
                     </button>
                     <a class="wb-glass-btn wb-glass-btn-sm wb-more-item" href="/admin/login" title="评委或管理员进入管理后台"
                        style="display:flex; width:100%; justify-content:flex-start; align-items:center; border:none; background:transparent; margin-top:2px; text-decoration:none;">
-                        <span class="wb-dot"></span>管理后台
+                        <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-building"/></svg>管理后台
                     </a>
                 </div>
             </div>
@@ -710,13 +743,20 @@
             </div>
             <!-- 主 CTA 独立成条：不再和上方任何一行贴在一起 -->
             <div id="startBar">
-                <button id="startBtn" class="btn-primary" onclick="startWork()">
+                <button id="startBtn" class="btn-primary" onclick="startWork()" aria-busy="false">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
                 </button>
             </div>
             <div id="progressSteps" class="progress-steps" style="display: none;">
                 <!-- 简洁版进度条 -->
                 <div id="fastProgressBar" style="display: block; width: 100%;">
+                    <div class="wb-progress-live" aria-live="polite">
+                        <svg class="wb-progress-ring" viewBox="0 0 36 36" role="progressbar" aria-label="整体生成进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                            <circle class="wb-progress-ring-track" cx="18" cy="18" r="15.5" pathLength="100"></circle>
+                            <circle id="fastProgressRing" class="wb-progress-ring-value" cx="18" cy="18" r="15.5" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"></circle>
+                        </svg>
+                        <div><b id="fastProgressPct">0%</b><span>整体进度</span></div>
+                    </div>
                     <div style="width: 100%; height: 8px; background: var(--track); border-radius: 4px; overflow: hidden;">
                         <div id="fastProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--c-a), var(--c-b)); transition: width 0.5s;"></div>
                     </div>
@@ -760,6 +800,14 @@
                 <div id="retryWrap" style="display: none; text-align: center; margin-top: 12px;">
                     <button onclick="wbRetry()" style="padding: 9px 20px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 600;">重新生成</button>
                     <div style="margin-top: 6px; font-size: 12px; color: var(--text-mute);">会用刚才填的内容再跑一次</div>
+                </div>
+                <div id="wbErrorState" class="wb-error-state" role="alert" aria-live="assertive" hidden>
+                    <div class="wb-error-art" aria-hidden="true"><svg class="wb-error-art-icon" viewBox="0 0 24 24"><use href="#wb-i-warn"></use></svg><span></span><span></span><span></span></div>
+                    <div class="wb-error-copy">
+                        <strong id="wbErrorTitle">这次没有生成成功</strong>
+                        <span id="wbErrorDetail">已保留你填写的内容，可以直接重试。</span>
+                    </div>
+                    <button type="button" class="wb-error-action" onclick="wbRetry()"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-refresh"></use></svg> 再试一次</button>
                 </div>
             </div>
         </div>
@@ -1061,7 +1109,7 @@
                     <h3 style="color: var(--c-a); margin-bottom: 20px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-download"/></svg> 导出中心</h3>
                     <div style="background: var(--surface-2); border-radius: 10px; padding: 20px; margin-bottom: 20px;">
                         <div style="font-size: 14px; color: var(--text-dim); margin-bottom: 16px;"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-bulb"/></svg> 分项材料为 Word(.docx)，申报书另有 PDF，路演 PPT 为 .pptx（深度版）；可单独下载，也可一键打包成压缩包：</div>
-                        <div id="exportList" style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 20px; font-size: 14px; color: var(--text-soft);">
+                        <div id="exportList" class="wb-export-list" style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 20px; font-size: 14px; color: var(--text-soft);">
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background: var(--surface-solid); border-radius:6px;">
                                 <span><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-doc"/></svg> 赛事规则解析报告.docx</span>
                                 <button onclick="exportOne('parsedRules', '赛事规则解析报告')" style="padding:4px 12px; background:var(--c-a-soft); color:var(--c-a); border:none; border-radius:4px; cursor:pointer; font-size:12px;">单独下载</button>
@@ -1142,11 +1190,11 @@
                             <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.6;">
                                 你上传过 <b id="wbKeepName" style="color: var(--text-soft);"></b>，可把优化后的内容写回原文件：
                             </div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-soft); margin-bottom: 12px;">
-                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <div class="wb-choice-grid" style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-soft); margin-bottom: 12px;">
+                                <label class="wb-choice-card" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="radio" name="wbKeepMode" value="keep" checked> 保留原表格格式，只替换内容（推荐）
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <label class="wb-choice-card" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="radio" name="wbKeepMode" value="reformat"> 按标准格式重新排版
                                 </label>
                             </div>
@@ -1307,8 +1355,8 @@
                          之前页数和顺序全看系统发挥，经常缺「痛点页」或「数据页空着」，
                          这里导出前把结构钉死，每页有几条内容直接显示出来，缺哪页一眼看到 -->
                     <div id="deckRoadWrap" style="margin-bottom: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px;">
-                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
-                            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
+                        <div class="wb-choice-surface" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+                            <label class="wb-choice-card wb-choice-card--wide" style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--text-dim);">
                                 <!-- 默认采用紧凑路演结构；系统会把详细大纲收敛成约 8～10 页，
                                      未入页的内容保留在备注/正文，不让评委面对冗长拆页。 -->
                                 <input type="checkbox" id="chkRoadshow" checked onchange="wbRoadToggle()" style="width:15px; height:15px; accent-color: var(--c-a);">
@@ -1798,9 +1846,76 @@
     };
     window.__wbWrapMarked();
     </script>
-    <script src="static/app.js?v=20261003t"></script>
+    <script src="static/app.js?v=20261017d"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
+<script>
+/* 轻量交互音效：默认关闭，只有用户主动开启后才创建 AudioContext。 */
+(function () {
+    var enabled = false, ctx = null, lastHover = 0;
+    function getPref() { try { return localStorage.getItem('wbSoundOn') === '1'; } catch (e) { return false; } }
+    function setPref(v) {
+        try { localStorage.setItem('wbSoundOn', v ? '1' : '0'); } catch (e) {}
+        try { sessionStorage.setItem('wbSoundOn', v ? '1' : '0'); } catch (e) {}
+    }
+    function reduced() {
+        return document.body.classList.contains('wb-motion-low') ||
+            (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+    function ensure() {
+        if (!enabled || reduced()) return null;
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        if (!ctx) { try { ctx = new AC(); } catch (e) { return null; } }
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+        return ctx;
+    }
+    function beep(kind) {
+        var ac = ensure();
+        if (!ac) return;
+        var now = ac.currentTime, osc = ac.createOscillator(), gain = ac.createGain();
+        var freq = kind === 'ok' ? 660 : kind === 'error' ? 190 : kind === 'click' ? 320 : 470;
+        osc.type = 'sine'; osc.frequency.setValueAtTime(freq, now);
+        if (kind === 'ok') osc.frequency.exponentialRampToValueAtTime(880, now + .065);
+        if (kind === 'error') osc.frequency.exponentialRampToValueAtTime(120, now + .08);
+        gain.gain.setValueAtTime(.0001, now);
+        gain.gain.exponentialRampToValueAtTime(kind === 'hover' ? .012 : .028, now + .008);
+        gain.gain.exponentialRampToValueAtTime(.0001, now + (kind === 'hover' ? .035 : .105));
+        osc.connect(gain); gain.connect(ac.destination); osc.start(now); osc.stop(now + .12);
+    }
+    window.wbToggleSound = function () {
+        enabled = !enabled; setPref(enabled);
+        var b = document.querySelector('[data-wb-sound-toggle]');
+        if (b) b.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        if (enabled) { beep('click'); if (window.wbToast) wbToast('交互音效已开启', {type:'info', ms:1800}); }
+        else if (window.wbToast) wbToast('交互音效已关闭', {type:'info', ms:1800});
+    };
+    function init() {
+        enabled = getPref();
+        var b = document.querySelector('[data-wb-sound-toggle]');
+        if (b) b.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        document.addEventListener('pointerover', function (e) {
+            if (!enabled || reduced() || Date.now() - lastHover < 260) return;
+            var t = e.target && e.target.closest && e.target.closest('#startBtn, #wbDemoBtn, .wb-glass-btn');
+            if (!t || (e.relatedTarget && t.contains(e.relatedTarget))) return;
+            lastHover = Date.now(); beep('hover');
+        }, {passive:true});
+        document.addEventListener('click', function (e) {
+            if (!enabled || reduced()) return;
+            var t = e.target && e.target.closest && e.target.closest('button, [role="button"]');
+            if (t && !t.matches('[data-wb-sound-toggle]')) beep('click');
+        }, {passive:true});
+        var toast = document.getElementById('wbToast');
+        if (toast && window.MutationObserver) new MutationObserver(function (ms) {
+            if (!enabled || reduced()) return;
+            ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes || [], function (n) {
+                if (n.nodeType === 1 && n.classList) beep(n.classList.contains('t-ok') ? 'ok' : n.classList.contains('t-error') ? 'error' : 'info');
+            }); });
+        }).observe(toast, {childList:true});
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
 
 <!-- 微信 / QQ 内置浏览器：一进来就全屏引导去浏览器打开。
      这些内核不支持上传文件、复制到剪贴板、下载文件；不先说清楚，
@@ -2347,20 +2462,7 @@ window.addEventListener('resize', function () {
 <script>
 /* ===== Codex 接手：手机端 5 个细节优化 ===== */
 (function () {
-    // 1) 首屏骨架屏：JS 就绪后淡出（最迟 window load 兜底隐藏）
-    function hideSkeleton() {
-        var s = document.getElementById('pageSkeleton');
-        if (!s) return;
-        s.classList.add('hide');
-        setTimeout(function () { try { s.remove(); } catch (e) {} }, 400);
-    }
-    if (document.readyState === 'complete') { hideSkeleton(); }
-    else {
-        window.addEventListener('load', hideSkeleton);
-        setTimeout(hideSkeleton, 2500);  // 兜底：万一 load 迟迟不来也别一直挡着
-    }
-
-    // 2) 回到顶部按钮：下滑一段距离才出现
+    // 1) 回到顶部按钮：下滑一段距离才出现
     var topBtn = document.getElementById('wbTop');
     function toggleTop() {
         if (topBtn) topBtn.style.display = (window.scrollY || document.documentElement.scrollTop) > 800 ? 'flex' : 'none';
@@ -2410,6 +2512,27 @@ window.addEventListener('resize', function () {
     window.wbToggleTheme = function () {
         applyTheme(!document.body.classList.contains('light'));
     };
+    function applyLiquidGlass(on, announce) {
+        var enabled = !!on;
+        document.body.classList.toggle('wb-liquid-glass', enabled);
+        var item = document.querySelector('#wbMoreMenu [aria-pressed][data-wb-glass-toggle]');
+        if (item) item.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        try { _wbStoreSet('wbLiquidGlass', enabled ? '1' : '0'); } catch (e) {}
+        if (announce && typeof window.wbToast === 'function') {
+            window.wbToast(enabled ? '液态玻璃已开启' : '液态玻璃已关闭', {type: 'info', ms: 1800});
+        }
+    }
+    window.wbToggleLiquidGlass = function () {
+        applyLiquidGlass(!document.body.classList.contains('wb-liquid-glass'), true);
+    };
+    window.wbToggleMotion = function () {
+        var low = document.body.classList.toggle('wb-motion-low');
+        var item = document.querySelector('#wbMoreMenu [data-wb-motion-toggle]');
+        if (item) item.setAttribute('aria-pressed', low ? 'true' : 'false');
+        try { _wbStoreSet('wbMotion', low ? '0' : '1'); } catch (e) {}
+        if (low) document.querySelectorAll('.wb-spark').forEach(function (el) { if (el && el.remove) el.remove(); });
+        if (typeof window.wbToast === 'function') window.wbToast(low ? '已切换为低动效' : '已恢复完整动效', {type:'info', ms:1800});
+    };
     (function initTheme() {
         // 默认日间（白底柔和）：负责人实测反馈深色背景刺眼，白底 + 柔和点缀色为默认。
         // 用户手动切过夜间仍按记忆走：wbLight='0' 才夜间；没记录过的老用户一律日间。
@@ -2419,6 +2542,9 @@ window.addEventListener('resize', function () {
             if (v === '0') light = false; else if (v === '1') light = true;
         } catch (e) {}
         applyTheme(light);
+        applyLiquidGlass(document.body.classList.contains('wb-liquid-glass'), false);
+        var motionItem = document.querySelector('#wbMoreMenu [data-wb-motion-toggle]');
+        if (motionItem) motionItem.setAttribute('aria-pressed', document.body.classList.contains('wb-motion-low') ? 'true' : 'false');
     })();
 })();
 </script>
