@@ -582,7 +582,31 @@
             } catch (e) {}
         }
 
-        // 清空是不可逆的（会连本机草稿一起删），按钮又挪到了显眼位置，必须二次确认
+        var wbClearUndo = null;
+        var wbClearUndoTimer = null;
+        function wbUndoClear(snapshot) {
+            if (!snapshot || wbClearUndo !== snapshot) return;
+            clearTimeout(wbClearUndoTimer);
+            WB_SAVE_OFF = true;
+            WB_FORM_IDS.forEach(function (id) {
+                var field = document.getElementById(id), value = snapshot.values[id];
+                if (field) { field.value = value == null ? '' : value; field.dispatchEvent(new Event('change', { bubbles: true })); }
+            });
+            WB_CHECK_IDS.forEach(function (id) {
+                var field = document.getElementById(id);
+                if (field) { field.checked = !!snapshot.checks[id]; field.dispatchEvent(new Event('change', { bubbles: true })); }
+            });
+            if (snapshot.mode) {
+                var radio = document.querySelector('input[name=mode][value="' + snapshot.mode + '"]');
+                if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+            }
+            WB_SAVE_OFF = false;
+            wbSaveForm();
+            wbClearUndo = null;
+            wbToast('已恢复清空前的表单内容', { type: 'ok' });
+        }
+
+        // 清空需确认；8 秒内可从内存快照撤销，敏感字段不持久化。
         function wbClearFormAsk() {
             var n = 0;
             try {
@@ -592,13 +616,23 @@
                 });
             } catch (e) {}
             var msg = n > 0
-                ? '确定清空已填写的 ' + n + ' 项内容？本机草稿也会一起删除，无法恢复。'
-                : '确定清空表单并删除本机草稿？';
+                ? '确定清空已填写的 ' + n + ' 项内容？本机草稿也会一起删除，可在 8 秒内撤销。'
+                : '确定清空表单并删除本机草稿？可在 8 秒内撤销。';
             if (!window.confirm(msg)) return;
             wbClearForm();
         }
 
         function wbClearForm() {
+            var values = {}, checks = {};
+            WB_FORM_IDS.forEach(function (id) { var field = document.getElementById(id); if (field) values[id] = field.value; });
+            WB_CHECK_IDS.forEach(function (id) { var field = document.getElementById(id); if (field) checks[id] = field.checked; });
+            var mode = document.querySelector('input[name=mode]:checked');
+            var undoSnapshot = { values: values, checks: checks, mode: mode && mode.value };
+            wbClearUndo = undoSnapshot;
+            clearTimeout(wbClearUndoTimer);
+            wbClearUndoTimer = setTimeout(function () {
+                if (wbClearUndo === undoSnapshot) wbClearUndo = null;
+            }, 8000);
             WB_SAVE_OFF = true;   // 清空过程中触发的 change 不要再存一次
             try { _wbStoreDel(WB_FORM_KEY); } catch (e) {}
             try { _wbSessDel(WB_FORM_S_KEY); } catch (e) {}
@@ -613,7 +647,10 @@
             WB_SAVE_OFF = false;
             var box = document.getElementById('wbRestoreTip');
             if (box) box.style.display = 'none';
-            wbToast('已清空表单和本地草稿', { type: 'ok', ms: 2200 });
+            wbToast('已清空表单和本地草稿', {
+                type: 'ok', ms: 8000,
+                action: { label: '撤销', run: function () { wbUndoClear(undoSnapshot); } }
+            });
         }
 
         // 排查用的「运行日志」页签默认隐藏，URL 带 ?debug=1 才露出来（普通用户不需要，少一个 tab 少一分乱）
@@ -1195,6 +1232,14 @@
                     (opt.sub ? '<div class="wb-toast-sub">' + _esc(opt.sub) + '</div>' : '') +
                 '</div>' +
                 '<svg class="wb-toast-x" viewBox="0 0 24 24" aria-hidden="true" onclick="wbToastClose(\'' + id + '\')"><use href="#wb-i-cross"/></svg>';
+            if (opt.action && typeof opt.action.run === 'function') {
+                var action = document.createElement('button');
+                action.className = 'wb-toast-action';
+                action.type = 'button';
+                action.textContent = opt.action.label || '撤销';
+                action.addEventListener('click', function () { opt.action.run(); wbToastClose(id); });
+                el.querySelector('.wb-toast-main').appendChild(action);
+            }
             box.appendChild(el);
             while (box.children.length > 4) box.removeChild(box.firstChild);   // 最多 4 条，避免刷屏
             if (ms > 0) setTimeout(function () { wbToastClose(id); }, ms);
@@ -5022,6 +5067,34 @@
                         var _Q = [];
                         function _P(prio, fn) { _Q.push([prio, fn]); }
 
+                        _P(0, function () {
+                            var warnings = Array.isArray(data.data.consistency_warnings)
+                                ? data.data.consistency_warnings : [];
+                            var area = document.getElementById('resultArea');
+                            if (!area) return;
+                            var notice = area.querySelector('.wb-consistency-notice');
+                            if (!notice) {
+                                notice = document.createElement('aside');
+                                notice.className = 'wb-consistency-notice';
+                                notice.setAttribute('role', 'status');
+                                var heading = document.createElement('strong');
+                                heading.textContent = '材料数字口径提醒';
+                                var list = document.createElement('ul');
+                                notice.append(heading, list);
+                                var tabs = document.getElementById('resultTabs');
+                                if (tabs && tabs.parentNode === area) area.insertBefore(notice, tabs);
+                                else area.insertBefore(notice, area.firstChild);
+                            }
+                            var list = notice.querySelector('ul');
+                            list.replaceChildren();
+                            warnings.forEach(function (item) {
+                                var li = document.createElement('li');
+                                li.textContent = item && item.message ? item.message : '发现跨材料数字口径差异，请核对原始数据。';
+                                list.appendChild(li);
+                            });
+                            notice.hidden = warnings.length === 0;
+                        });
+
                         // ---- 0：分数，第一眼要看到的 ----
                         _P(0, function () {
                             document.getElementById('scoreNum').innerText = data.data.score;
@@ -7141,7 +7214,7 @@
         checkHealth();
         // 167 轮：心跳原来是无脑 30s 一次，切后台也在打，白耗移动端电量。
         // 改为「仅页面可见才请求」+ 失败退避（30s→60s→120s，上限 5 分钟），回到前台立刻补一次。
-        var _hbBase = 30000, _hbMul = 1;
+        var _hbBase = 30000, _hbMul = 1, _hbLast = Date.now();
         setInterval(function () {
             if (document.hidden) return;
             if (!window._wbHealthOk && _hbMul < 10) _hbMul *= 2;   // 连续失败就拉长间隔
@@ -7179,69 +7252,71 @@
             }
 
             /* 粒子网络背景 */
-            if (reduce) return;
-            var cv = document.getElementById('wbParticles');
-            if (!cv || !cv.getContext) return;
-            var ctx = cv.getContext('2d');
-            var W = 0, H = 0, dpr = 1, pts = [], raf = null;
+            if (!reduce) {
+                var cv = document.getElementById('wbParticles');
+                if (cv && cv.getContext) {
+                    var ctx = cv.getContext('2d');
+                    var W = 0, H = 0, dpr = 1, pts = [], raf = null;
 
-            function resize() {
-                dpr = Math.min(window.devicePixelRatio || 1, 2);
-                W = cv.width = Math.floor(window.innerWidth * dpr);
-                H = cv.height = Math.floor(window.innerHeight * dpr);
-                cv.style.width = window.innerWidth + 'px';
-                cv.style.height = window.innerHeight + 'px';
-                var n = Math.max(24, Math.min(64, Math.round(window.innerWidth / 20)));
-                pts = [];
-                for (var i = 0; i < n; i++) {
-                    pts.push({
-                        x: Math.random() * W,
-                        y: Math.random() * H,
-                        vx: (Math.random() - 0.5) * 0.24 * dpr,
-                        vy: (Math.random() - 0.5) * 0.24 * dpr,
-                        r: (Math.random() * 1.3 + 0.5) * dpr
-                    });
-                }
-            }
-
-            function draw() {
-                ctx.clearRect(0, 0, W, H);
-                var i, j, p, q, dx, dy, d2;
-                var LINK = 132 * dpr;
-                for (i = 0; i < pts.length; i++) {
-                    p = pts[i];
-                    p.x += p.vx; p.y += p.vy;
-                    if (p.x < 0 || p.x > W) p.vx *= -1;
-                    if (p.y < 0 || p.y > H) p.vy *= -1;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(150,205,255,.55)';
-                    ctx.fill();
-                    for (j = i + 1; j < pts.length; j++) {
-                        q = pts[j];
-                        dx = p.x - q.x; dy = p.y - q.y;
-                        d2 = dx * dx + dy * dy;
-                        if (d2 < LINK * LINK) {
-                            ctx.beginPath();
-                            ctx.moveTo(p.x, p.y);
-                            ctx.lineTo(q.x, q.y);
-                            ctx.strokeStyle = 'rgba(110,170,255,' + (0.18 * (1 - Math.sqrt(d2) / LINK)).toFixed(3) + ')';
-                            ctx.lineWidth = 0.6 * dpr;
-                            ctx.stroke();
+                    function resize() {
+                        dpr = Math.min(window.devicePixelRatio || 1, 2);
+                        W = cv.width = Math.floor(window.innerWidth * dpr);
+                        H = cv.height = Math.floor(window.innerHeight * dpr);
+                        cv.style.width = window.innerWidth + 'px';
+                        cv.style.height = window.innerHeight + 'px';
+                        var n = Math.max(24, Math.min(64, Math.round(window.innerWidth / 20)));
+                        pts = [];
+                        for (var i = 0; i < n; i++) {
+                            pts.push({
+                                x: Math.random() * W,
+                                y: Math.random() * H,
+                                vx: (Math.random() - 0.5) * 0.24 * dpr,
+                                vy: (Math.random() - 0.5) * 0.24 * dpr,
+                                r: (Math.random() * 1.3 + 0.5) * dpr
+                            });
                         }
                     }
+
+                    function draw() {
+                        ctx.clearRect(0, 0, W, H);
+                        var i, j, p, q, dx, dy, d2;
+                        var LINK = 132 * dpr;
+                        for (i = 0; i < pts.length; i++) {
+                            p = pts[i];
+                            p.x += p.vx; p.y += p.vy;
+                            if (p.x < 0 || p.x > W) p.vx *= -1;
+                            if (p.y < 0 || p.y > H) p.vy *= -1;
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                            ctx.fillStyle = 'rgba(150,205,255,.55)';
+                            ctx.fill();
+                            for (j = i + 1; j < pts.length; j++) {
+                                q = pts[j];
+                                dx = p.x - q.x; dy = p.y - q.y;
+                                d2 = dx * dx + dy * dy;
+                                if (d2 < LINK * LINK) {
+                                    ctx.beginPath();
+                                    ctx.moveTo(p.x, p.y);
+                                    ctx.lineTo(q.x, q.y);
+                                    ctx.strokeStyle = 'rgba(110,170,255,' + (0.18 * (1 - Math.sqrt(d2) / LINK)).toFixed(3) + ')';
+                                    ctx.lineWidth = 0.6 * dpr;
+                                    ctx.stroke();
+                                }
+                            }
+                        }
+                        raf = requestAnimationFrame(draw);
+                    }
+
+                    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+
+                    resize();
+                    window.addEventListener('resize', resize);
+                    document.addEventListener('visibilitychange', function () {
+                        if (document.hidden) { stop(); } else { stop(); draw(); }
+                    });
+                    draw();
                 }
-                raf = requestAnimationFrame(draw);
             }
-
-            function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
-
-            resize();
-            window.addEventListener('resize', resize);
-            document.addEventListener('visibilitychange', function () {
-                if (document.hidden) { stop(); } else { stop(); draw(); }
-            });
-            draw();
         /* ---------- 提示收敛：长说明收进字段旁的「?」图标 ----------
            评委反馈首页文案过载。原本 5 条长提示常驻，现在只留 1 条在表单顶部，
            其余进 tooltip：点/悬停才出现，不占版面。做成 fixed 浮层而不是 CSS ::after，
@@ -7533,6 +7608,83 @@
             if (w && w.contains(e.target)) return;   // 点按钮或菜单内部都不关（菜单项自己会关）
             wbMoreClose();
         });
+
+        // Ctrl/Cmd+K：集中访问高频动作，不增加顶栏常驻按钮。
+        var wbCommandActions = [
+            ['开始生成', function () { startWork(); }],
+            ['查看历史记录', function () { showHistory(); }],
+            ['使用说明', function () { showIntro(true); }],
+            ['清空重写', function () { wbClearFormAsk(); }],
+            ['回到页面顶部', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); }]
+        ];
+        var wbCommand = document.createElement('div');
+        wbCommand.id = 'wbCommandDialog';
+        wbCommand.className = 'wb-command-overlay';
+        wbCommand.setAttribute('role', 'dialog');
+        wbCommand.setAttribute('aria-modal', 'true');
+        wbCommand.setAttribute('aria-label', '快捷命令');
+        wbCommand.innerHTML = '<div class="wb-command-box"><label for="wbCommandInput">快捷命令</label><input id="wbCommandInput" type="search" autocomplete="off" placeholder="搜索操作..." aria-controls="wbCommandList"><div id="wbCommandList" role="listbox"></div><button type="button" class="wb-command-close">关闭</button></div>';
+        document.body.appendChild(wbCommand);
+        var wbCommandInput = wbCommand.querySelector('#wbCommandInput');
+        var wbCommandList = wbCommand.querySelector('#wbCommandList');
+        var wbCommandReturnFocus = null;
+        function wbCommandRender() {
+            var q = wbCommandInput.value.trim().toLowerCase();
+            wbCommandList.innerHTML = '';
+            wbCommandActions.filter(function (item) { return !q || item[0].toLowerCase().indexOf(q) >= 0; }).forEach(function (item, idx) {
+                var button = document.createElement('button');
+                button.type = 'button'; button.setAttribute('role', 'option'); button.textContent = item[0];
+                button.addEventListener('click', function () { wbCommandClose(); window.setTimeout(function () { try { item[1](); } catch (e) {} }, 0); });
+                if (!idx) button.setAttribute('aria-selected', 'true');
+                wbCommandList.appendChild(button);
+            });
+        }
+        function wbCommandOpen() {
+            wbCommandReturnFocus = document.activeElement;
+            wbCommand.classList.add('open'); wbCommandInput.value = ''; wbCommandRender(); wbCommandInput.focus();
+        }
+        function wbCommandClose() {
+            wbCommand.classList.remove('open');
+            if (wbCommandReturnFocus && wbCommandReturnFocus.focus) wbCommandReturnFocus.focus();
+        }
+        wbCommandInput.addEventListener('input', wbCommandRender);
+        wbCommand.querySelector('.wb-command-close').addEventListener('click', wbCommandClose);
+        wbCommand.addEventListener('click', function (e) { if (e.target === wbCommand) wbCommandClose(); });
+        wbCommand.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { e.preventDefault(); wbCommandClose(); }
+            if (e.key === 'Enter') { var first = wbCommandList.querySelector('button'); if (first) { e.preventDefault(); first.click(); } }
+            if (e.key === 'Tab') {
+                var controls = wbCommand.querySelectorAll('input,button');
+                if (e.shiftKey && document.activeElement === controls[0]) { e.preventDefault(); controls[controls.length - 1].focus(); }
+                else if (!e.shiftKey && document.activeElement === controls[controls.length - 1]) { e.preventDefault(); controls[0].focus(); }
+            }
+        });
+        document.addEventListener('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault(); if (wbCommand.classList.contains('open')) wbCommandClose(); else wbCommandOpen();
+            }
+            var moreMenu = document.getElementById('wbMoreMenu');
+            if (e.key === 'Escape' && moreMenu && moreMenu.style.display === 'block') wbMoreClose();
+        });
+        var wbReadBar = document.getElementById('wbReadingProgress');
+        var wbReadTarget = document.getElementById('proposalText');
+        var wbReadTick = false;
+        function wbUpdateReadingProgress() {
+            wbReadTick = false;
+            if (!wbReadBar || !wbReadTarget || !wbReadTarget.textContent.trim()) { if (wbReadBar) wbReadBar.classList.remove('visible'); return; }
+            var rect = wbReadTarget.getBoundingClientRect();
+            if (rect.bottom <= 0 || rect.top >= innerHeight) { wbReadBar.classList.remove('visible'); return; }
+            var total = Math.max(1, wbReadTarget.scrollHeight - innerHeight * .7);
+            var read = Math.max(0, Math.min(total, -rect.top + innerHeight * .15));
+            var pct = Math.round(read / total * 100);
+            wbReadBar.querySelector('span').style.width = pct + '%';
+            wbReadBar.setAttribute('aria-valuenow', String(pct));
+            wbReadBar.classList.add('visible');
+        }
+        window.addEventListener('scroll', function () { if (!wbReadTick) { wbReadTick = true; requestAnimationFrame(wbUpdateReadingProgress); } }, { passive: true });
+        window.addEventListener('resize', wbUpdateReadingProgress);
+        if (wbReadTarget && window.MutationObserver) new MutationObserver(wbUpdateReadingProgress).observe(wbReadTarget, { childList: true, subtree: true, characterData: true });
+        wbUpdateReadingProgress();
         // 色卡预览用 background 简写（最后一层可以带 color），但应用时拆成两条
         function wbBgCss(p) {
             return (p.img || '') + (p.color ? ((p.img ? ', ' : '') + p.color) : '');

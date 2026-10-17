@@ -261,6 +261,47 @@ class ProposalRevisionHttpTests(unittest.TestCase):
         self.assertEqual(result["totals"]["total_tokens"], 28)
         self.assertEqual(result["sections"][0]["section"], "市场分析")
 
+    def test_admin_llm_usage_page_is_guarded_and_served_from_active_static_root(self):
+        from unittest.mock import patch
+
+        status, _headers, _body = self._request("/admin/llm-usage")
+        self.assertEqual(status, 401)
+        with patch.object(self.app, "_require_admin", return_value=None):
+            status, _headers, body = self._request("/admin/llm-usage")
+        self.assertEqual(status, 200)
+        self.assertIn("每日用量".encode("utf-8"), body)
+
+    def test_user_state_persists_merges_and_isolates_preferences(self):
+        status, _headers, body = self._request("/api/user_state", {
+            "state": {"personalization": {"chatStyle": "formal", "theme": "light"}}
+        })
+        self.assertEqual(status, 200)
+        status, _headers, body = self._request("/api/user_state", {
+            "state": {"personalization": {"chatStyle": "concise"}}
+        })
+        self.assertEqual(status, 200)
+        state = json.loads(body)["state"]
+        self.assertEqual(state["personalization"], {"chatStyle": "concise", "theme": "light"})
+
+        from urllib.request import HTTPCookieProcessor
+        other = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        other_request = Request(self.base_url + "/api/me")
+        other.open(other_request, timeout=10).read()
+        response = other.open(Request(self.base_url + "/api/user_state"), timeout=10)
+        self.assertEqual(json.loads(response.read())["state"], {})
+
+        status, _headers, _body = self._request("/api/user_state", {"state": "invalid"})
+        self.assertEqual(status, 400)
+        status, _headers, _body = self._request("/api/user_state", {"state": {"x": "a" * (256 * 1024)}})
+        self.assertEqual(status, 413)
+        status, _headers, _body = self._request("/api/user_state", {"state": {"kept": "a" * 220000}})
+        self.assertEqual(status, 200)
+        status, _headers, _body = self._request("/api/user_state", {"state": {"extra": "b" * 60000}})
+        self.assertEqual(status, 413)
+        status, _headers, body = self._request("/api/user_state")
+        self.assertEqual(status, 200)
+        self.assertNotIn("extra", json.loads(body)["state"])
+
     def test_word_pdf_http_exports_cleanup_markdown_embed_chart_and_warn_soft_quality(self):
         from docx import Document
         from pypdf import PdfReader

@@ -31,6 +31,7 @@ from stage_reporter import (tasks, set_current_task, clear_current_task,
                             get_speech_stream, clear_speech_stream, set_partial)
 import progress
 import app_log
+from rate_limiter import RateLimiter
 
 
 # ---- 目录布局（2026-09-30 前后端分离重构）----
@@ -40,7 +41,10 @@ import app_log
 # 启动时 chdir 到本目录兜住，同样不用改。
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR = os.path.dirname(_BASE_DIR)
-FRONTEND_DIR = os.path.join(_ROOT_DIR, 'frontend')
+_SIBLING_FRONTEND_DIR = os.path.join(_ROOT_DIR, 'frontend')
+# 支持扁平部署（app.py 与 index.html 同级）和 backend/frontend 拆分部署。
+FRONTEND_DIR = (_BASE_DIR if os.path.isfile(os.path.join(_BASE_DIR, 'index.html'))
+                else _SIBLING_FRONTEND_DIR)
 DOCS_DIR = os.path.join(_ROOT_DIR, 'docs')
 
 app = Flask(__name__, static_folder=os.path.join(FRONTEND_DIR, 'static'))
@@ -420,6 +424,59 @@ def _require_uid():
     return None
 
 
+def _merge_user_state(current, incoming):
+    merged = dict(current) if isinstance(current, dict) else {}
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_user_state(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+@app.route('/api/user_state', methods=['GET', 'POST'])
+def user_state():
+    """Read or merge a small, uid-scoped preference document."""
+    uid = _current_uid()
+    conn = get_db()
+    try:
+        if request.method == 'GET':
+            row = conn.execute("SELECT prefs FROM user_prefs WHERE uid=?", (uid,)).fetchone()
+            try:
+                state = json.loads(row[0]) if row else {}
+            except (TypeError, ValueError):
+                state = {}
+            return jsonify({"success": True, "state": state if isinstance(state, dict) else {}})
+
+        data = request.get_json(silent=True) or {}
+        incoming = data.get("state", data.get("prefs"))
+        if not isinstance(incoming, dict):
+            return jsonify({"success": False, "error": "state 必须是 JSON 对象"}), 400
+        if len(json.dumps(incoming, ensure_ascii=False).encode("utf-8")) > 256 * 1024:
+            return jsonify({"success": False, "error": "偏好数据过大"}), 413
+
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT prefs FROM user_prefs WHERE uid=?", (uid,)).fetchone()
+        try:
+            current = json.loads(row[0]) if row else {}
+        except (TypeError, ValueError):
+            current = {}
+        state = _merge_user_state(current, incoming)
+        serialized = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+        if len(serialized.encode("utf-8")) > 256 * 1024:
+            conn.rollback()
+            return jsonify({"success": False, "error": "偏好数据过大"}), 413
+        conn.execute("INSERT OR REPLACE INTO user_prefs(uid, prefs) VALUES (?, ?)",
+                     (uid, serialized))
+        conn.commit()
+        return jsonify({"success": True, "state": state})
+    except sqlite3.Error:
+        conn.rollback()
+        return jsonify({"success": False, "error": "用户偏好暂不可用"}), 500
+    finally:
+        conn.close()
+
+
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
 # 2026-09-27 实测定档：DeepSeek 单 key 24 路并发零 429（max_tokens=1 探测）；
 # 本机（2C/1.7G）每路生成内存增量 <1MB 级，16 路同时生成毫无压力。
@@ -437,8 +494,9 @@ _gen_queue = collections.deque()   # 排队中的 task_id（FIFO）
 # 对当前单机小规模部署足够，若以后上多机/高并发再升级为共享存储（如 Redis）。
 _RATE_WINDOW_SEC = 60
 _RATE_LIMIT = 5
-_rate_lock = threading.Lock()
-_rate_hits = {}  # ip -> list[float] 命中时间戳（Unix 秒）
+_RATE_TOTAL_LIMIT = 20
+_rate_limiter = RateLimiter(_RATE_LIMIT, _RATE_WINDOW_SEC)
+_rate_total_limiter = RateLimiter(_RATE_TOTAL_LIMIT, _RATE_WINDOW_SEC)
 
 
 def _client_ip():
@@ -449,29 +507,15 @@ def _client_ip():
     return (request.remote_addr or 'unknown').strip()
 
 
-def _rate_limited():
-    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。
-    键优先用匿名用户 uid（cookie），其次才退回 IP——校级活动几百人常走同一个
-    校园网 NAT 出口，按 IP 限 5 次/分会把正常用户成片误伤。"""
+def _rate_limited(scope="generate"):
+    """按用户和操作分别限流，并保留较宽松的用户级总量上限。"""
     try:
         key = _current_uid() or _client_ip()
     except Exception:
         key = _client_ip()
-    now = time.time()
-    with _rate_lock:
-        hits = [t for t in _rate_hits.get(key, []) if now - t < _RATE_WINDOW_SEC]
-        if len(hits) >= _RATE_LIMIT:
-            _rate_hits[key] = hits
-            return True
-        hits.append(now)
-        _rate_hits[key] = hits
-        # 键过多时顺手清理，避免内存缓慢增长
-        if len(_rate_hits) > 5000:
-            for k in list(_rate_hits.keys()):
-                _rate_hits[k] = [t for t in _rate_hits[k] if now - t < _RATE_WINDOW_SEC]
-                if not _rate_hits[k]:
-                    del _rate_hits[k]
-        return False
+    operation_limited = _rate_limiter.is_limited(key, scope)
+    total_limited = _rate_total_limiter.is_limited(key, "all")
+    return operation_limited or total_limited
 
 
 # 后台/管理接口鉴权：配置 ADMIN_TOKEN 后，需在请求头带 X-Admin-Token 才能访问。
@@ -749,7 +793,7 @@ def _upload_rate_limited():
 
 
 # 后台/管理接口统一鉴权范围（194 轮 H14/C1：全部管理/内部路由必须登录，杜绝裸奔）
-_ADMIN_PAGE_PATHS = {"/admin", "/admin/panel", "/monitor", "/admin/report"}
+_ADMIN_PAGE_PATHS = {"/admin", "/admin/panel", "/admin/llm-usage", "/monitor", "/admin/report"}
 _ADMIN_API_EXACT = {
     "/api/feedback/export",
     "/api/feedback/priority",
@@ -796,6 +840,11 @@ def _admin_guard():
             resp.status_code = 429
             return resp
     return None
+
+
+# 管理端路由按功能渐进拆分，避免一次性搬迁 app.py 的高风险改动。
+from admin_usage import admin_usage_bp
+app.register_blueprint(admin_usage_bp)
 
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
@@ -890,6 +939,9 @@ def init_db():
                   username TEXT UNIQUE NOT NULL,
                   password_hash TEXT NOT NULL,
                   created_time TEXT)''')
+    # 用户偏好采用 uid 隔离的 JSON 文档；字段由前端逐步扩展。
+    c.execute('''CREATE TABLE IF NOT EXISTS user_prefs
+                 (uid TEXT PRIMARY KEY, prefs TEXT NOT NULL DEFAULT '{}')''')
     # 历史同步码表：短码 ↔ 匿名 uid（一键同步，不登录也能跨设备）
     c.execute('''CREATE TABLE IF NOT EXISTS uid_sync
                  (code TEXT PRIMARY KEY, uid TEXT NOT NULL)''')
@@ -2684,7 +2736,7 @@ h1{font-size:24px;margin:0 0 4px}
 @media(max-width:620px){body{padding:22px 14px}.hero{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.h{padding:15px;min-height:96px}.h .n{font-size:28px}}
 @media(max-width:400px){.hero{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
-<nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <div class="mode %s"><span class="badge">%s</span><div><b>当前后台身份</b><span>%s</span></div></div>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
@@ -3868,6 +3920,13 @@ def _run_generation(data):
                 payload[_k] = _strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))
     except Exception:
         pass
+    # 跨产物一致性只报告明确标注的数字冲突，不自动改写或阻断交付。
+    try:
+        from artifact_consistency import check_generation_artifacts
+        payload["consistency_warnings"] = check_generation_artifacts(payload)
+    except Exception as _consistency_error:
+        payload["consistency_warnings"] = []
+        print(f"[artifact_consistency] check failed: {_consistency_error}")
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
     payload["history_id"] = locals().get("_new_hid")
     # 历史在正文压缩闸门、完整度检测、去重/脱敏后处理之前就存了，导致打开历史
@@ -4091,9 +4150,9 @@ def _extract_project_name(text):
 @app.route('/api/generate', methods=['POST'])
 def generate():
     """⚠️ 已废弃：请改用 /api/generate_async + /api/status 轮询。保留仅为兼容旧前端。"""
-    if _rate_limited():
+    if _rate_limited("generate"):
         return jsonify({"success": False,
-                        "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"}), 429
+                        "error": "操作太频繁，请稍后再试（单项每分钟最多 5 次）"}), 429
     data = request.get_json(force=True, silent=True) or {}
     data["_user_id"] = _current_uid()
     try:
@@ -4150,9 +4209,9 @@ def _start_generation(data):
                                   "error": "今日生成次数已达上限，请明天再试"})
     except Exception:
         pass
-    if _rate_limited():
+    if _rate_limited("generate"):
         return None, jsonify({"success": False,
-                              "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
+                              "error": "操作太频繁，请稍后再试（单项每分钟最多 5 次）"})
     task_id = uuid.uuid4().hex
     tasks[task_id] = {"status": "queued", "stage": "queued", "updated_at": time.time(), "start_time": time.time(),
                       "mode": data.get("mode", "fast"), "data": data}
@@ -4307,7 +4366,7 @@ def restyle():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     style = data.get('style', 'formal')
-    if _rate_limited():
+    if _rate_limited("restyle"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
@@ -4340,7 +4399,7 @@ def rewrite_paragraph():
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
     instruction = data.get('instruction', '改写这段，让它更具体、更有说服力')
-    if _rate_limited():
+    if _rate_limited("rewrite"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
@@ -4369,7 +4428,7 @@ def proofread():
     """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
     data = request.get_json(force=True, silent=True) or {}
     text = data.get('text', '')
-    if _rate_limited():
+    if _rate_limited("proofread"):
         return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
@@ -5169,23 +5228,6 @@ def admin_quota():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/admin/llm-usage')
-def admin_llm_usage():
-    auth = _require_admin()
-    if auth:
-        return auth
-    try:
-        import competition_agents as _agents
-        from llm_usage_store import aggregate_usage
-        days = request.args.get("days", default=30, type=int)
-        limit = request.args.get("limit", default=20, type=int)
-        return jsonify({"success": True, **aggregate_usage(
-            _agents._LLM_USAGE_DB_PATH, days=days, limit=limit)})
-    except Exception as exc:
-        print("[llm_usage] aggregate failed: %s" % exc)
-        return jsonify({"success": False, "error": "Token 统计暂不可用"}), 500
 
 
 @app.route('/api/log_error', methods=['POST'])

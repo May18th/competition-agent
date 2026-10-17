@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Token 用量 | 科创赛事助手</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;color:#17212b;background:#f4f7f8}
+    *{box-sizing:border-box}body{margin:0;padding:24px 16px 48px}
+    main{max-width:1100px;margin:0 auto}.nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+    .nav a,.action{display:inline-flex;align-items:center;min-height:36px;padding:7px 12px;border:1px solid #d7e0e3;border-radius:6px;background:#fff;color:#263640;text-decoration:none;font-size:13px}
+    h1{font-size:24px;line-height:1.25;margin:0 0 6px}.sub{margin:0 0 20px;color:#63727b;font-size:13px}
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px}.toolbar label{font-size:13px;color:#51616b}
+    select,.action{font:inherit}.action{cursor:pointer}.action.primary{background:#087e78;color:#fff;border-color:#087e78}
+    .action:focus-visible,select:focus-visible,.nav a:focus-visible{outline:2px solid #087e78;outline-offset:2px}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px}
+    .metric,.section{background:#fff;border:1px solid #dfe7e9;border-radius:6px;padding:14px}
+    .metric .label{font-size:12px;color:#65747c}.metric .value{font-size:23px;font-weight:700;margin-top:5px;color:#122c34}
+    .section{margin-top:12px}.section h2{font-size:16px;margin:0 0 12px}
+    .tables{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 7px;text-align:left;border-bottom:1px solid #edf1f2}
+    th{font-weight:600;color:#5f7078}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+    .bars{display:grid;gap:9px}.bar-row{display:grid;grid-template-columns:92px minmax(40px,1fr) 100px;gap:8px;align-items:center;font-size:12px}
+    .bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#50616a}.bar-track{height:8px;background:#eaf0f1;border-radius:4px;overflow:hidden}
+    .bar-fill{height:100%;background:#12958d;border-radius:4px}.bar-value{text-align:right;font-variant-numeric:tabular-nums;color:#2f454d}
+    .state{min-height:20px;color:#65747c;font-size:13px}.state.error{color:#a33131}
+    .note{color:#728189;font-size:12px;margin:10px 0 0}
+    @media(max-width:720px){body{padding:18px 12px 32px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tables{grid-template-columns:1fr}}
+    @media(max-width:380px){.metric{padding:11px}.metric .value{font-size:20px}.bar-row{grid-template-columns:72px minmax(30px,1fr) 80px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+<main>
+  <nav class="nav" aria-label="管理导航">
+    <a href="/admin">总览</a><a href="/admin/panel">数据面板</a><a href="/admin/llm-usage" aria-current="page">Token 用量</a><a href="/monitor">动态监视</a><a href="/">主站</a>
+  </nav>
+  <h1>模型用量</h1>
+  <p class="sub">只统计调用元数据与 Token 数；用户标识已脱敏，不保存提示词和生成正文。</p>
+  <div class="toolbar">
+    <label for="range">统计周期</label>
+    <select id="range">
+      <option value="7">最近 7 天</option><option value="30" selected>最近 30 天</option><option value="90">最近 90 天</option>
+    </select>
+    <button id="refresh" class="action primary" type="button">刷新</button>
+    <span id="state" class="state" role="status" aria-live="polite"></span>
+  </div>
+  <section class="grid" aria-label="用量汇总">
+    <div class="metric"><div class="label">调用次数</div><div id="calls" class="value">—</div></div>
+    <div class="metric"><div class="label">总 Token</div><div id="total" class="value">—</div></div>
+    <div class="metric"><div class="label">输入 Token</div><div id="prompt" class="value">—</div></div>
+    <div class="metric"><div class="label">输出 Token</div><div id="completion" class="value">—</div></div>
+  </section>
+  <section class="section"><h2>每日用量</h2><div id="daily" class="bars"></div></section>
+  <div class="tables">
+    <section class="section"><h2>按任务/章节</h2><div id="sections"></div></section>
+    <section class="section"><h2>按模型</h2><div id="models"></div></section>
+  </div>
+  <section class="section"><h2>高用量匿名用户</h2><div id="users"></div><p class="note">用户列为不可逆摘要，不可用于还原账号身份。</p></section>
+</main>
+<script>
+(function(){
+  var state=document.getElementById('state');
+  function fmt(v){return Number(v||0).toLocaleString('zh-CN');}
+  function setText(id,value){document.getElementById(id).textContent=value;}
+  function table(target,rows,columns){
+    var host=document.getElementById(target);host.replaceChildren();
+    if(!rows||!rows.length){host.textContent='暂无记录';return;}
+    var t=document.createElement('table'),head=document.createElement('thead'),hr=document.createElement('tr');
+    columns.forEach(function(col){var th=document.createElement('th');th.textContent=col.label;if(col.numeric)th.className='num';hr.appendChild(th);});
+    head.appendChild(hr);t.appendChild(head);var body=document.createElement('tbody');
+    rows.forEach(function(row){var tr=document.createElement('tr');columns.forEach(function(col){var td=document.createElement('td');td.textContent=col.format?col.format(row[col.key]):String(row[col.key]??'—');if(col.numeric)td.className='num';tr.appendChild(td);});body.appendChild(tr);});
+    t.appendChild(body);host.appendChild(t);
+  }
+  function renderDaily(rows){
+    var host=document.getElementById('daily');host.replaceChildren();
+    if(!rows||!rows.length){host.textContent='暂无记录';return;}
+    var max=Math.max.apply(null,rows.map(function(x){return Number(x.total_tokens)||0;}))||1;
+    rows.forEach(function(row){var line=document.createElement('div');line.className='bar-row';
+      var label=document.createElement('span');label.className='bar-label';label.textContent=row.date||'—';
+      var track=document.createElement('span');track.className='bar-track';var fill=document.createElement('span');fill.className='bar-fill';fill.style.width=Math.max(0,Math.min(100,(Number(row.total_tokens)||0)*100/max))+'%';track.appendChild(fill);
+      var value=document.createElement('span');value.className='bar-value';value.textContent=fmt(row.total_tokens)+' tokens';
+      line.append(label,track,value);host.appendChild(line);
+    });
+  }
+  function load(){
+    state.className='state';state.textContent='加载中…';document.getElementById('refresh').disabled=true;
+    fetch('/api/admin/llm-usage?days='+encodeURIComponent(document.getElementById('range').value),{credentials:'same-origin',headers:{Accept:'application/json'}})
+      .then(function(res){if(res.status===401){throw new Error('管理员会话已失效，请重新登录。');}if(!res.ok){throw new Error('请求失败（HTTP '+res.status+'）');}return res.json();})
+      .then(function(data){if(!data.success)throw new Error(data.error||'用量数据暂不可用');var t=data.totals||{};
+        setText('calls',fmt(t.calls));setText('total',fmt(t.total_tokens));setText('prompt',fmt(t.prompt_tokens));setText('completion',fmt(t.completion_tokens));
+        renderDaily(data.daily);table('sections',data.sections,[{key:'section',label:'任务/章节'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
+        table('models',data.models,[{key:'model',label:'模型'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
+        table('users',data.users,[{key:'user_key',label:'用户摘要'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
+        state.textContent='已更新 · '+data.days+' 天';
+      })
+      .catch(function(err){state.className='state error';state.textContent=err.message;})
+      .finally(function(){document.getElementById('refresh').disabled=false;});
+  }
+  document.getElementById('refresh').addEventListener('click',load);
+  document.getElementById('range').addEventListener('change',load);
+  load();
+})();
+</script>
+</body>
+</html>
