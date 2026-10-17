@@ -1495,7 +1495,7 @@
             var tk = null;
             if (tracks.length) {
                 var tkey = (custom && custom.track) || '';
-                tk = tracks.filter(function (t) { return t.key === tkey; })[0] || tracks[0];
+                tk = tracks.filter(function (t) { return t.key === tkey; })[0] || null;
             }
 
             var sections;
@@ -1509,6 +1509,19 @@
                      _src: base._src || 'default',
                      _track: tk, _tracks: tracks };
         }
+
+        window.wbChatTrackContext = function () {
+            var current = evCurrent() || {};
+            return {
+                track: current._track ? current._track.key : '',
+                options: (current._tracks || []).map(function (track) {
+                    return { key: track.key, name: track.name };
+                })
+            };
+        };
+        window.wbChatCompetitionSelected = function () {
+            return _wbStoreGet(WB_COMP_CHOICE_KEY) === '1';
+        };
 
         // 选赛道：切换后章节跟着换成该赛道的结构（用户手动改过的章节优先保留）
         function evSetTrack(tkey) {
@@ -4754,6 +4767,16 @@
                 }
                 return;
             }
+            var _eventChoice = evCurrent() || {};
+            if ((_eventChoice._tracks || []).length > 1 && !_eventChoice._track) {
+                window._wbGenerating = false;
+                wbToast('请先选择参赛赛道', { type: 'warn', sub: '不同赛道的评审重点不同，确认后再开始生成' });
+                var _trackBox = document.getElementById('evTrackBox');
+                if (_trackBox && _trackBox.scrollIntoView) {
+                    try { _trackBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+                }
+                return;
+            }
 
             const btn = document.getElementById('startBtn');
             btn.disabled = true;
@@ -5433,6 +5456,26 @@
                 }
             });
         }
+
+        window.wbChatStartGeneration = function (payload) {
+            if (!payload || !payload.competition || !payload.idea) return false;
+            var comp = document.getElementById('competition');
+            var idea = document.getElementById('idea');
+            if (!comp || !idea) return false;
+            comp.value = String(payload.competition).slice(0, 120);
+            idea.value = String(payload.idea).slice(0, 1200);
+            try { wbMarkCompetitionChoice(comp.value); } catch (e) {}
+            try { onCompetitionChange(); } catch (e) {}
+            if (payload.track) {
+                try { evSetTrack(String(payload.track)); } catch (e) {}
+            }
+            if (payload.mode === 'fast' || payload.mode === 'deep') {
+                var modeInput = document.querySelector('input[name="mode"][value="' + payload.mode + '"]');
+                if (modeInput && !modeInput.checked) modeInput.click();
+            }
+            try { startWork(); } catch (e) { return false; }
+            return !!window._wbGenerating;
+        };
 
         // 档位徽章（结果区头部）：赛事固定 emoji 做视觉锚点，一眼认出是哪场比赛
         function wbTierBadgeHtml(mode, compName, deepTxt, fastTxt) {

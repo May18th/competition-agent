@@ -710,14 +710,31 @@
          连接一直占着，且用户看到的是「等完再一次性出字」）
        - 降级文案走 degradeNote/degradeMiss，命中本地预设就照样给答案，没命中给「再问一次」 */
     function pageContext() {
-        var competition = '', idea = '', mode = '';
+        var competition = '', competitionSelected = false, idea = '', mode = '', track = '', trackOptions = [];
         try { competition = String((document.getElementById('competition') || {}).value || '').trim(); } catch (e) {}
+        try {
+            competitionSelected = window.wbChatCompetitionSelected
+                ? !!window.wbChatCompetitionSelected()
+                : (sessionStorage.getItem('wbCompetitionChosen') === '1' ||
+                   localStorage.getItem('wbCompetitionChosen') === '1');
+        } catch (e) {}
         try { idea = String((document.getElementById('idea') || {}).value || '').trim(); } catch (e) {}
         try {
             var selectedMode = document.querySelector('input[name="mode"]:checked');
             mode = (selectedMode && selectedMode.value) || window._lastGenMode || '';
         } catch (e) {}
-        return { competition: competition.slice(0, 120), idea: idea.slice(0, 1200), mode: mode };
+        try {
+            var selectedTrack = window.wbChatTrackContext && window.wbChatTrackContext();
+            if (selectedTrack) {
+                track = selectedTrack.track || '';
+                trackOptions = selectedTrack.options || [];
+            }
+        } catch (e) {}
+        return {
+            competition: competition.slice(0, 120), idea: idea.slice(0, 1200),
+            competition_selected: competitionSelected,
+            mode: mode, track: track, track_options: trackOptions
+        };
     }
 
     function ask(force) {
@@ -759,6 +776,16 @@
             var item = null;
             try { item = JSON.parse(payload); } catch (e) { item = { token: payload }; }
             if (item.error_code) { fallback(); return true; }
+            if (item.event === 'generation') {
+                var started = false;
+                try {
+                    started = !!(window.wbChatStartGeneration && window.wbChatStartGeneration(item));
+                } catch (e) {}
+                if (!started) {
+                    finish('资料已整理，但首页生成流程没有启动。请确认赛事、项目创意和赛道后，点击首页「开始生成」。');
+                    return true;
+                }
+            }
             if (item.token) {
                 if (timer) { clearTimeout(timer); timer = null; }
                 if (!answerNode) { removeThinking(); answerNode = pushMsg('bot', ''); }

@@ -7181,11 +7181,80 @@ def _chat_page_context(data):
         return value.strip()[:limit]
 
     mode = raw.get("mode") if raw.get("mode") in ("fast", "deep") else ""
+    track_options = raw.get("track_options") if isinstance(raw.get("track_options"), list) else []
+    track_options = [
+        {"key": bounded_text(item.get("key"), 80), "name": bounded_text(item.get("name"), 120)}
+        for item in track_options if isinstance(item, dict) and item.get("key") and item.get("name")
+    ][:12]
     return {
         "competition": bounded_text(raw.get("competition"), 120),
+        "competition_selected": raw.get("competition_selected") is True,
         "idea": bounded_text(raw.get("idea"), 1200),
         "mode": mode,
+        "track": bounded_text(raw.get("track"), 80),
+        "track_options": track_options,
     }
+
+
+def _chat_extract_generation_idea(msg):
+    """只提取用户明确提供的项目主题，不能把生成指令本身当作创意。"""
+    text = str(msg or "").strip()
+    markers = ("项目主题", "项目创意", "项目方向", "主题", "我们做的是", "项目是")
+    for marker in markers:
+        pos = text.find(marker)
+        if pos >= 0:
+            value = text[pos + len(marker):].lstrip(" ：:是为，,。")
+            value = _re.split(r"(?:，|,|；|;)(?:请|麻烦|帮我)?(?:生成|写|起草|做)", value, maxsplit=1)[0]
+            value = value.strip(" \t\r\n，,。；;：:！？?!")
+            if len(value) >= 4 and not _re.search(r"^(为什么|怎么|如何|能否|可以吗|是否|是什么)", value):
+                return value[:1200]
+            return ""
+    match = _re.search(r"(?:生成|写|起草|做)(?:一份|一版|一个)?(?:深度版|简洁版)?(?:申报书|计划书|商业计划书|项目书|申报材料|申报文档|材料|文案)?\s*[:：]\s*(.+)$", text)
+    if match:
+        value = match.group(1).strip(" \t\r\n，,。；;：:！？?!")
+        if len(value) >= 4:
+            return value[:1200]
+    return ""
+
+
+def _chat_explicit_competition(msg):
+    """聊天中的赛事只接受消息内明确出现的赛事名/专属别名，不做宽泛语义猜测。"""
+    text = str(msg or "").strip().casefold()
+    if not text:
+        return ""
+    try:
+        from competition_agents import get_competition_profiles
+        matches = []
+        generic = {"创新创业", "创业", "大学生", "大赛", "竞赛", "科创"}
+        for profile in get_competition_profiles():
+            name = str(profile.get("name") or "").strip()
+            aliases = [name] + list(profile.get("aliases") or [])
+            for alias in aliases:
+                candidate = str(alias or "").strip()
+                if len(candidate) < 2 or candidate.casefold() in generic:
+                    continue
+                if candidate.casefold() in text:
+                    matches.append((len(candidate), name))
+        if matches:
+            matches.sort(key=lambda item: (-item[0], item[1]))
+            return matches[0][1]
+    except Exception as exc:
+        print("[chat] explicit competition detection failed: %s" % exc)
+    return ""
+
+
+def _chat_strip_competition_mentions(msg):
+    text = str(msg or "")
+    try:
+        from competition_agents import get_competition_profiles
+        aliases = []
+        for profile in get_competition_profiles():
+            aliases.extend([profile.get("name", "")] + list(profile.get("aliases") or []))
+        for alias in sorted({str(x).strip() for x in aliases if x}, key=len, reverse=True):
+            text = _re.sub(_re.escape(alias), "", text, flags=_re.IGNORECASE)
+    except Exception:
+        pass
+    return text.strip(" \t\r\n，,。；;：:")
 
 
 _CHAT_CONTEXTUAL_TERMS = (
@@ -7350,7 +7419,8 @@ _SYSTEM_BASE = (
     "4. 回答要可操作：给步骤、给结构、给要点清单，避免空话套话。\n"
     "5. 先直接回应用户问的内容；不要机械套用 FAQ，也不要在每次回答末尾重复推销平台能力。\n"
     "6. 未明确指定赛事时按跨赛事通用口径回答，必要时再询问赛事；不得默认 iCAN，也不要无故主动举 iCAN 为例。\n"
-    "7. 口吻：{tone}。可结合对话历史与【用户背景】理解追问。\n"
+    "7. 用户提出生成材料时，开工前必须确认赛事、必要的赛道和项目实际需求；缺少任一项就先追问，不能把请求句或模式名称当成项目主题，更不能先报已启动。\n"
+    "8. 口吻：{tone}。可结合对话历史与【用户背景】理解追问。\n"
 )
 
 
@@ -7711,11 +7781,13 @@ def chat():
 
     page_context = _chat_page_context(data)
     profile = _chat_profile_load(uid)
-    event_context = page_context.get("competition") or profile.get("competition") or ""
-    comp_name, comp_score = _detect_competition("%s %s" % (msg, event_context))
-    if comp_name and comp_score >= 40 and profile.get("competition") != comp_name:
-        _chat_profile_save(uid, "competition", comp_name)
-        profile["competition"] = comp_name
+    message_comp = _chat_explicit_competition(msg)
+    comp_name = message_comp or (page_context.get("competition") if page_context.get("competition_selected") else "")
+    page_context["competition"] = comp_name
+    if message_comp and page_context.get("competition") and message_comp != page_context.get("competition"):
+        page_context["track"] = ""
+        page_context["track_options"] = []
+    event_context = comp_name
 
     # ---- Phase 3：记忆命令 ----
     mem = _parse_memory(msg)
@@ -7779,29 +7851,77 @@ def chat():
     # ---- Phase 2：生成意图 ----
     gen_verb = any(w in msg for w in ("生成", "写一份", "写一版", "起草", "出一份", "帮我写", "帮我做", "帮我生成", "来一份", "做一份"))
     gen_obj = any(w in msg for w in ("申报书", "计划书", "商业计划", "项目书", "申报材料", "申报文档", "文案", "材料"))
-    if gen_verb and (gen_obj or comp_name):
-        idea = _re.sub(r"^(请|帮我|麻烦|能否|可以|想|要)\s*(帮我)?\s*(生成|写|起草|出|做|来|打造|创作)\s*", "", msg)
-        idea = _re.sub(r"(一份|一版|一个|这篇|的)?\s*(申报书|计划书|商业计划书|项目书|申报材料|申报文档|文案|材料)\s*$", "", idea).strip(" ：:，。")
-        idea = idea or page_context.get("idea", "")
-        if comp_name:
-            if not idea:
-                return _sse_text_reply("请先在首页填写项目创意，或直接告诉我项目要解决什么问题、用什么方案解决。")
-            data_g = {"idea": idea, "competition_name": comp_name, "mode": "fast"}
-            task_id, err = _start_generation(data_g)
-            if err is not None:
-                return err  # 已是 Response（429/限额等）
-            reply = ("✅ 已为你启动「**%s**」申报书生成（主题：%s）。\n\n"
-                     "生成约需 1~2 分钟，完成后在首页「历史记录」查看完整申报书，"
-                     "也可在那里一键导出 Word / PDF / PPT。\n任务ID：`%s`") % (comp_name, idea, task_id)
-            reply += "\n\n💡 小创建议：生成完成后，可让我帮你「智能校对」检查文字，或「模拟答辩」提前演练评委提问。"
-            _chat_persist(uid, 'user', msg, style)
-            _chat_persist(uid, 'bot', reply, style)
-            def _gen_stream():
-                yield _chat_sse({"event": "generation", "task_id": task_id, "comp_name": comp_name, "idea": idea})
-                yield _chat_sse({"token": reply})
-                yield "data: [DONE]\n\n"
-            return _chat_sse_response(_gen_stream())
-        return _sse_text_reply("好的，我可以帮你生成申报书。请先告诉我**参加哪个赛事**（如「挑战杯」「互联网+」），以及你的**项目创意**——一句话说清做什么、解决什么问题。")
+    pending_raw = profile.get("pending_generation") or ""
+    try:
+        pending = _json.loads(pending_raw) if pending_raw else {}
+    except Exception:
+        pending = {}
+    is_question_message = bool(_re.search(r"[?？]|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
+    is_generation_followup = bool(pending) and not is_question_message
+    if (gen_verb and (gen_obj or comp_name)) or is_generation_followup:
+        comp_name = comp_name or pending.get("competition", "")
+        if message_comp and pending.get("competition") and message_comp != pending.get("competition"):
+            pending["track"] = ""
+            pending["track_options"] = []
+        idea = page_context.get("idea") or _chat_extract_generation_idea(msg)
+        if not idea and is_generation_followup:
+            candidate_idea = _chat_extract_generation_idea(msg)
+            if not candidate_idea:
+                candidate_idea = _chat_strip_competition_mentions(msg)
+            is_question = bool(_re.search(r"[?？]|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
+            is_filler = bool(_re.fullmatch(r"(好|好的|嗯|是的|继续|可以|没问题)[呀啊！!。.]?", msg.strip()))
+            if len(candidate_idea) >= 4 and not is_question and not is_filler:
+                idea = candidate_idea[:1200]
+        idea = idea or pending.get("idea", "")
+        mode = ("deep" if "深度版" in msg else
+                "fast" if "简洁版" in msg else page_context.get("mode") or pending.get("mode") or "fast")
+        track_options = page_context.get("track_options") or pending.get("track_options") or []
+        selected_track = page_context.get("track") or pending.get("track", "")
+        if not selected_track and track_options:
+            folded = msg.casefold()
+            for option in track_options:
+                if option.get("name", "").casefold() in folded or option.get("key", "").casefold() in folded:
+                    selected_track = option["key"]
+                    break
+        missing = []
+        if not comp_name:
+            missing.append("赛事名称")
+        if len(track_options) > 1 and not selected_track:
+            missing.append("赛道")
+        if not idea:
+            missing.append("项目需求")
+        if missing:
+            details = []
+            if "赛事名称" in missing:
+                details.append("你准备参加的赛事全称")
+            if "赛道" in missing:
+                details.append("该赛事对应的赛道（可在首页赛道选项中选择）")
+            if "项目需求" in missing:
+                details.append("项目要解决什么问题、服务谁、准备怎么做，以及目前做到哪一步")
+            prompt = ("可以帮你做。开始前我需要先了解：" + "；".join(details) +
+                      "。你可以分几条消息补充，也可以填写首页对应信息；资料齐全后我再启动生成。")
+            pending = {
+                "competition": comp_name,
+                "idea": idea,
+                "mode": mode,
+                "track": selected_track,
+                "track_options": track_options,
+            }
+            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+            _chat_persist(uid, "user", msg, style)
+            _chat_persist(uid, "bot", prompt, style)
+            return _sse_text_reply(prompt)
+        reply = ("已收到你的项目需求，将按「%s」和「%s」走首页标准生成流程。" %
+                 (comp_name, "深度版" if mode == "deep" else "简洁版"))
+        _chat_profile_save(uid, "pending_generation", "")
+        _chat_persist(uid, 'user', msg, style)
+        _chat_persist(uid, 'bot', reply, style)
+        def _gen_stream():
+            yield _chat_sse({"event": "generation", "competition": comp_name,
+                             "idea": idea, "mode": mode, "track": selected_track})
+            yield _chat_sse({"token": reply})
+            yield "data: [DONE]\n\n"
+        return _chat_sse_response(_gen_stream())
 
     # ---- 产品 FAQ 预设（未识别赛事时）----
     if not comp_name:
@@ -7815,7 +7935,11 @@ def chat():
     # ---- 知识增强聊天（默认路径）----
     knowledge_query = "%s %s" % (event_context, msg)
     knowledge, kname = _build_knowledge(knowledge_query)
-    sys_prompt = _system_prompt(style, knowledge, profile)
+    prompt_profile = dict(profile)
+    prompt_profile.pop("pending_generation", None)
+    if not page_context.get("competition") and not message_comp:
+        prompt_profile.pop("competition", None)
+    sys_prompt = _system_prompt(style, knowledge, prompt_profile)
     proposal_context = ""
     proposal_terms = ("这份申报书", "刚生成", "初稿", "正文", "创新点", "帮我改", "怎么改", "优化", "点评", "评估")
     if any(term in msg for term in proposal_terms):

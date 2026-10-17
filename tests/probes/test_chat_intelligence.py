@@ -66,6 +66,7 @@ class ChatIntelligenceTests(unittest.TestCase):
             "stream": True,
             "context": {
                 "competition": "示例创新赛",
+                "competition_selected": True,
                 "idea": "校园实验室设备预约与冲突检测工具",
                 "mode": "deep",
             },
@@ -99,6 +100,21 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("具体赛事及赛道", answer)
         self.assertNotIn("iCAN", answer)
         self.assertNotIn("巡展20%", answer)
+
+    def test_unconfirmed_stale_competition_is_not_passed_as_chat_context(self):
+        captured = []
+        fake_llm = SimpleNamespace(stream=self._fake_stream(["按通用科创项目分析。"], captured))
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_build_knowledge", return_value=("", None)), \
+             patch.object(app_module, "_chat_reserve_quota", return_value=True), \
+             patch.object(app_module, "chat_llm", fake_llm):
+            response = self.client.post("/api/chat", json={
+                "message": "项目创新点应该怎么表达？",
+                "context": {"competition": "iCAN大学生创新创业大赛", "competition_selected": False},
+            }, buffered=True)
+        self.assertEqual(response.status_code, 200)
+        user_message = next(message.content for message in captured[0] if isinstance(message, HumanMessage))
+        self.assertNotIn("iCAN", user_message)
 
     def test_faq_avoids_unverified_fixed_chapter_export_and_word_counts(self):
         for question in ("章节有几章", "PPT有多少种风格", "导出有几个文件", "字数是多少"):
@@ -190,28 +206,158 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIsNone(app_module._chat_load_owned_record("alice", 2))
 
     def test_generation_uses_the_project_idea_from_the_page_and_waits_for_success(self):
-        started = []
         data = {
             "message": "帮我生成申报书",
             "context": {
                 "competition": "示例创新赛",
+                "competition_selected": True,
                 "idea": "校园实验室设备预约与冲突检测工具",
                 "mode": "deep",
             },
         }
         with patch.object(app_module, "_current_uid", return_value="alice"), \
              patch.object(app_module, "_detect_competition", return_value=("示例创新赛", 100)), \
-             patch.object(app_module, "_start_generation", side_effect=lambda payload: (
-                 started.append(payload) or ("task-1", None)
-             )):
+             patch.object(app_module, "_chat_reserve_quota") as reserve, \
+             patch.object(app_module, "_start_generation") as start:
             response = self.client.post("/api/chat", json=data, buffered=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "text/event-stream")
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
-        self.assertEqual(started[0]["idea"], data["context"]["idea"])
-        profile = chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")
-        self.assertNotIn("done_generation", profile)
+        body = response.get_data(as_text=True)
+        self.assertIn('"event":"generation"', body)
+        self.assertIn('"idea":"%s"' % data["context"]["idea"], body)
+        self.assertIn('"mode":"deep"', body)
+        reserve.assert_not_called()
+        start.assert_not_called()
+
+    def test_generation_request_without_requirements_never_defaults_to_profile_ican(self):
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_chat_profile_load", return_value={"competition": "iCAN大学生创新创业大赛"}), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "能帮我生成一份深度版材料吗",
+                "context": {"competition": "iCAN大学生创新创业大赛", "competition_selected": False,
+                            "idea": "", "mode": "deep"},
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertNotIn("iCAN", body)
+        self.assertIn("赛事全称", body)
+        self.assertIn("项目要解决什么问题", body)
+        start.assert_not_called()
+
+    def test_generation_does_not_treat_request_sentence_as_project_idea(self):
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", return_value=("示例创新赛", 100)), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "能帮我生成一份深度版材料吗",
+                "context": {"competition": "示例创新赛", "competition_selected": True, "idea": "", "mode": "deep"},
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertIn("项目要解决什么问题", body)
+        self.assertNotIn("主题：能帮我生成", body)
+        start.assert_not_called()
+
+    def test_generation_followup_collects_project_requirements_before_emitting_start_event(self):
+        first = {
+            "message": "帮我生成深度版申报材料",
+            "context": {"competition": "示例创新赛", "competition_selected": True, "idea": "", "mode": "deep"},
+        }
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", return_value=(None, 0)):
+            first_response = self.client.post("/api/chat", json=first, buffered=True)
+            pending = chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"]
+            self.assertIn("项目要解决什么问题", first_response.get_data(as_text=True))
+            self.assertEqual(json.loads(pending)["competition"], "示例创新赛")
+
+            followup = self.client.post("/api/chat", json={
+                "message": "校园社区老人不会使用智能手机，我想做一套语音助老终端",
+                "context": {"competition": "示例创新赛", "competition_selected": True, "idea": "", "mode": "deep"},
+            }, buffered=True)
+
+        body = followup.get_data(as_text=True)
+        self.assertIn('"event":"generation"', body)
+        self.assertIn("校园社区老人不会使用智能手机", body)
+        self.assertIn('"mode":"deep"', body)
+        self.assertEqual(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice").get("pending_generation"), "")
+
+    def test_pending_generation_does_not_turn_a_question_into_a_project_idea(self):
+        chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation", json.dumps({
+            "competition": "示例创新赛", "idea": "", "mode": "deep", "track": "", "track_options": []
+        }, ensure_ascii=False))
+        fake_llm = SimpleNamespace(stream=self._fake_stream(["项目需求决定材料的目标用户、方案和评审论证，先对齐这些信息才能避免写偏。"]))
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", return_value=(None, 0)), \
+             patch.object(app_module, "_build_knowledge", return_value=("", None)), \
+             patch.object(app_module, "_chat_reserve_quota", return_value=True), \
+             patch.object(app_module, "chat_llm", fake_llm), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "为什么一定要先确定项目主题？",
+                "context": {"competition": "示例创新赛", "competition_selected": True,
+                            "idea": "", "mode": "deep"},
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertIn("项目需求决定材料", body)
+        self.assertTrue(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+        start.assert_not_called()
+
+    def test_generic_innovation_phrase_does_not_identify_ican(self):
+        self.assertEqual(app_module._chat_explicit_competition("我做的是面向社区的创新创业服务项目"), "")
+        self.assertEqual(app_module._chat_explicit_competition("我准备参加挑战杯"), "挑战杯全国大学生课外学术科技作品竞赛")
+
+    def test_generation_requires_explicit_track_when_competition_has_multiple_tracks(self):
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", return_value=(None, 0)), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "帮我生成深度版申报书，项目主题：校园智能助老设备",
+                "context": {
+                    "competition": "iCAN大学生创新创业大赛",
+                    "competition_selected": True,
+                    "idea": "",
+                    "mode": "deep",
+                    "track_options": [
+                        {"key": "innovation", "name": "创新赛道"},
+                        {"key": "entrepreneurship", "name": "创业赛道"},
+                    ],
+                },
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertIn("赛道", body)
+        self.assertNotIn("iCAN", body)
+        start.assert_not_called()
+
+    def test_generation_extracts_explicit_topic_and_preserves_deep_mode(self):
+        self.assertEqual(
+            app_module._chat_extract_generation_idea("帮我生成深度版申报书，项目主题：校园智能助老设备"),
+            "校园智能助老设备",
+        )
+        self.assertEqual(
+            app_module._chat_extract_generation_idea("能帮我生成一份深度版材料吗"), ""
+        )
+
+    def test_frontend_chat_generation_uses_main_workflow_and_requires_track_choice(self):
+        with open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8") as stream:
+            app_js = stream.read()
+        with open(os.path.join(ROOT, "static", "wbchat.js"), encoding="utf-8") as stream:
+            chat_js = stream.read()
+        self.assertIn("window.wbChatStartGeneration", app_js)
+        self.assertIn("startWork();", app_js)
+        self.assertIn("window.wbChatStartGeneration(item)", chat_js)
+        self.assertIn("window.wbChatTrackContext", app_js)
+        self.assertIn("请先选择参赛赛道", app_js)
+        self.assertNotIn("|| tracks[0]", app_js)
 
     def test_defense_status_is_marked_only_after_successful_sse_completion(self):
         self._save_proposal("alice", "申报书中包含可运行原型与测试记录。")
