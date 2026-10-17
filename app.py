@@ -6793,6 +6793,10 @@ from flask import Response, stream_with_context
 
 from flask import Response, stream_with_context
 
+from flask import Response, stream_with_context
+import re as _re
+import json as _json
+
 _CHAT_NAME = "小创 · 科创赛事助手智能助手"
 _CHAT_STYLES = {
     "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
@@ -6813,7 +6817,6 @@ def _chat_style_key(v):
 
 
 def _chat_style_lead(style):
-    """预设答案的口吻前缀，让三档在预设命中时也能看出差异（concise 默认不加）。"""
     if style == "casual":
         return "嘿，简单说——"
     if style == "academic":
@@ -6847,6 +6850,8 @@ _CHAT_PRESET = [
      "首页「一键演示」直接载入预置样例结果（不真实生成、不耗额度），可查看完整评分/正文/图表/PPT 与导出。"),
     (("失败", "报错", "出错", "重试", "卡住", "打不开"),
      "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
+    (("记住", "记忆", "背景", "你是谁"),
+     "我是小创，你的科创赛事教练+模拟评委。你可以对我说「记住 参赛赛事=挑战杯」「记住 项目名=智能助老机器人」来建立长期背景，之后回答会更贴合你的情况。"),
 ]
 
 
@@ -6872,6 +6877,32 @@ try:
 except Exception as _e:
     print("[chat] chat_llm init failed: %s" % _e)
     chat_llm = None
+
+
+# ---- Phase 3：用户画像（长期记忆）----
+_PROFILE_FIELDS = {
+    "competition": "参赛赛事",
+    "project": "项目名",
+    "stage": "当前阶段",
+    "role": "身份/角色",
+    "goal": "目标",
+}
+
+
+def _chat_profile_load(uid):
+    try:
+        from chat_store import get_profile
+        return get_profile(_CHAT_DB_PATH, uid) or {}
+    except Exception:
+        return {}
+
+
+def _chat_profile_save(uid, field, value):
+    try:
+        from chat_store import set_profile
+        set_profile(_CHAT_DB_PATH, uid, field, value)
+    except Exception as exc:
+        print("[chat] profile save failed: %s" % exc)
 
 
 def _chat_persist(uid, role, content, style):
@@ -6900,7 +6931,6 @@ def _chat_reserve_quota():
 
 
 def _chat_sse(payload):
-    import json as _json
     return "data: %s\n\n" % _json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -6970,21 +7000,95 @@ def _build_knowledge(text):
     return "\n\n".join(parts), name
 
 
+def _chat_proofread(text):
+    """调用聊天模型做中文校对，返回 markdown 结果字符串；失败返回 None。"""
+    if not chat_llm:
+        return None
+    from langchain_core.messages import HumanMessage
+    prompt = ("你是中文文本校对专家。请找出下面文本里的错别字、语法错误、标点误用、语句不通顺等问题。\n"
+              "对每个问题输出：原文片段、问题类型、修正建议。\n\n"
+              "只输出 JSON 数组，格式：\n"
+              '[{"original":"错误原文","type":"错别字/语法/标点/语句不通","suggestion":"修正建议"}]\n'
+              "没有发现问题就输出 []。不要输出 JSON 以外的任何文字。\n\n"
+              f"文本：\n{text[:8000]}")
+    try:
+        resp = chat_llm.invoke([HumanMessage(content=prompt)])
+        raw = (resp.content or "").strip()
+        m = _re.search(r"\[.*\]", raw, _re.DOTALL)
+        issues = []
+        if m:
+            try:
+                issues = _json.loads(m.group(0))
+            except Exception:
+                issues = []
+    except Exception as exc:
+        print("[chat] proofread failed: %s" % exc)
+        return None
+    if not isinstance(issues, list) or not issues:
+        return "✅ 没发现明显错别字、语法或标点问题，文本较通顺。"
+    lines = ["我帮你校对出 **%d 处**可优化点：\n" % len(issues)]
+    for i, it in enumerate(issues, 1):
+        if not isinstance(it, dict):
+            continue
+        lines.append("%d. **%s** — 原文「%s」：%s" % (
+            i, it.get("type", ""), it.get("original", ""), it.get("suggestion", "")))
+    return "\n".join(lines)
+
+
+def _sse_text_reply(text):
+    def gen():
+        yield _chat_sse({"token": text})
+        yield "data: [DONE]\n\n"
+    return Response(gen(), mimetype="text/event-stream")
+
+
+def _parse_memory(msg):
+    """解析「记住 字段=值」类指令，返回 {内部字段: 值} 或 None。"""
+    mm = _re.match(r"^(记住|记忆|设置|更新|我是|我的)\s*[:：]?\s*(.+)$", msg)
+    if not mm:
+        return None
+    body = mm.group(2)
+    out = {}
+    for part in _re.split(r"[；;]", body):
+        part = part.strip()
+        if not part:
+            continue
+        seg = _re.split(r"\s*[=＝：:]\s*", part, 1)
+        if len(seg) != 2:
+            continue
+        k, v = seg[0].strip(), seg[1].strip()
+        key = None
+        for fk in _PROFILE_FIELDS:
+            fl = _PROFILE_FIELDS[fk]
+            if k == fl or k == fk or (fk in k) or (k in fk):
+                key = fk
+                break
+        if key and v:
+            out[key] = v
+    return out or None
+
+
 _SYSTEM_BASE = (
     "你是「小创」——资深科创赛事教练与模拟评委，服务于科创竞赛项目团队。\n"
-    "你的目标：帮用户把项目讲清楚、写扎实、答得稳。\n"
+    "你的目标：帮用户把项目讲清楚、写扎实、答得稳，并在用户需要时直接调用能力帮他生成或校对。\n"
     "知识原则（最重要）：\n"
     "1. 必须基于下方【赛事知识库】与官方规则作答，引用具体评分维度、章节要求、立项要点。\n"
     "2. 只回答与科创赛事、项目申报、商业计划、答辩路演、文档写作相关的问题；无关问题礼貌婉拒。\n"
     "3. 严禁编造数据、虚构政策或引用不存在的文件；资料未收录时明确说「暂无该赛事收录资料，以官方最新章程为准」。\n"
     "4. 回答要可操作：给步骤、给结构、给要点清单，避免空话套话。\n"
-    "5. 口吻：{tone}。可结合对话历史理解追问。\n"
+    "5. 口吻：{tone}。可结合对话历史与【用户背景】理解追问。\n"
 )
 
 
-def _system_prompt(style, knowledge):
+def _system_prompt(style, knowledge, profile):
     tone = _CHAT_STYLES.get(style, _CHAT_STYLES["concise"])["tone"]
     p = _SYSTEM_BASE.format(tone=tone)
+    if profile:
+        plines = ["【用户背景】"]
+        for k, v in profile.items():
+            if v:
+                plines.append("- %s：%s" % (_PROFILE_FIELDS.get(k, k), v))
+        p += "\n" + "\n".join(plines) + "\n"
     if knowledge:
         p += "\n===== 赛事知识库（仅作回答依据）=====\n" + knowledge + "\n===== 知识库结束 =====\n"
     return p
@@ -6992,16 +7096,16 @@ def _system_prompt(style, knowledge):
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """智能体聊天——赛事识别后走知识增强 LLM；未识别赛事走产品 FAQ 预设；演示只读仅预设。
-    升级：deepseek-chat 模型 + 知识库/RAG 注入 + 资深教练人设系统提示。"""
+    """智能体聊天 v2：知识增强 + deepseek-chat + 工具触发（生成/校对） + 长期画像记忆。"""
     data = request.get_json(silent=True) or {}
     msg = (data.get('message') or '').strip()
     if not msg:
         return jsonify({"success": False, "error": "请输入问题"}), 400
-    if len(msg) > 1000:
-        msg = msg[:1000]
+    if len(msg) > 1500:
+        msg = msg[:1500]
     style = _chat_style_key(data.get('style'))
     uid = _current_uid()
+
     # 演示只读：仅走产品预设，不接外部模型
     if _admin_session_role() == 'readonly':
         for kws, ans in _CHAT_PRESET:
@@ -7011,8 +7115,57 @@ def chat():
         return jsonify({"success": False,
                         "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位 / 导出等预设问题",
                         "error_code": "demo_readonly"}), 403
-    # 先识别赛事：识别到则走知识增强路径（不再被产品预设抢答）
+
+    # ---- Phase 3：记忆命令 ----
+    mem = _parse_memory(msg)
+    if mem:
+        for f, v in mem.items():
+            _chat_profile_save(uid, f, v)
+        desc = "；".join("%s=%s" % (_PROFILE_FIELDS.get(f, f), v) for f, v in mem.items())
+        return _sse_text_reply(
+            "✅ 已记住你的背景：**%s**。后续对话我会结合这些信息给你更贴合的建议。\n"
+            "（随时用「记住 字段=值」更新；可用字段：参赛赛事 / 项目名 / 当前阶段 / 身份角色 / 目标）" % desc)
+
+    # ---- 自动把识别到的赛事写入画像（跨轮记忆）----
     comp_name, comp_score = _detect_competition(msg)
+    if comp_name and comp_score >= 40:
+        prof = _chat_profile_load(uid)
+        if prof.get("competition") != comp_name:
+            _chat_profile_save(uid, "competition", comp_name)
+
+    # ---- Phase 2：校对意图 ----
+    if any(w in msg for w in ("校对", "润色", "错别字", "语病", "改错字", "检查文字", "检查这段", "校对错别字")):
+        text = _re.sub(r"^(请|帮我|麻烦)?\s*(校对|润色|改错字|检查错别字|检查语病|检查文字|校对错别字|帮我改)\s*[:：]?\s*", "", msg)
+        text = _re.sub(r"^(这[段句话]|以下内容|下面内容|这段文字)\s*[:：]?\s*", "", text).strip()
+        if len(text) < 8:
+            return _sse_text_reply("请把要校对的文字发给我～例如：「校对：我们的项目致力于解决老年人独居安全监测问题」")
+        result = _chat_proofread(text)
+        if result is None:
+            return jsonify({"success": False, "error_code": "upstream_error", "error": "校对服务暂不可用"}), 502
+        _chat_persist(uid, 'user', msg, style)
+        _chat_persist(uid, 'bot', result, style)
+        return _sse_text_reply(result)
+
+    # ---- Phase 2：生成意图 ----
+    gen_verb = any(w in msg for w in ("生成", "写一份", "写一版", "起草", "出一份", "帮我写", "帮我做", "帮我生成", "来一份", "做一份"))
+    gen_obj = any(w in msg for w in ("申报书", "计划书", "商业计划", "项目书", "申报材料", "申报文档", "文案", "材料"))
+    if gen_verb and (gen_obj or comp_name):
+        idea = _re.sub(r"^(请|帮我|麻烦|能否|可以|想|要)\s*(帮我)?\s*(生成|写|起草|出|做|来|打造|创作)\s*", "", msg)
+        idea = _re.sub(r"(一份|一版|一个|这篇|的)?\s*(申报书|计划书|商业计划书|项目书|申报材料|申报文档|文案|材料)\s*$", "", idea).strip(" ：:，。")
+        if comp_name:
+            data_g = {"idea": idea or msg, "competition_name": comp_name, "mode": "fast"}
+            task_id, err = _start_generation(data_g)
+            if err is not None:
+                return err  # 已是 Response（429/限额等）
+            reply = ("✅ 已为你启动「**%s**」申报书生成（主题：%s）。\n\n"
+                     "生成约需 1~2 分钟，完成后在首页「历史记录」查看完整申报书，"
+                     "也可在那里一键导出 Word / PDF / PPT。\n任务ID：`%s`") % (comp_name, idea or msg, task_id)
+            _chat_persist(uid, 'user', msg, style)
+            _chat_persist(uid, 'bot', reply, style)
+            return _sse_text_reply(reply)
+        return _sse_text_reply("好的，我可以帮你生成申报书。请先告诉我**参加哪个赛事**（如「挑战杯」「互联网+」），以及你的**项目创意**——一句话说清做什么、解决什么问题。")
+
+    # ---- 产品 FAQ 预设（未识别赛事时）----
     if not comp_name:
         for kws, ans in _CHAT_PRESET:
             if any(k in msg for k in kws):
@@ -7020,8 +7173,11 @@ def chat():
                 _chat_persist(uid, 'user', msg, style)
                 _chat_persist(uid, 'bot', reply, style)
                 return jsonify({"success": True, "reply": reply, "source": "preset", "style": style})
+
+    # ---- 知识增强聊天（默认路径）----
     knowledge, kname = _build_knowledge(msg)
-    sys_prompt = _system_prompt(style, knowledge)
+    profile = _chat_profile_load(uid)
+    sys_prompt = _system_prompt(style, knowledge, profile)
     if not chat_llm:
         return jsonify({"success": False, "error_code": "model_unavailable",
                         "error": "聊天模型未就绪，请联系管理员"}), 503
@@ -7039,7 +7195,8 @@ def chat():
                             "error": "模型调用失败，请稍后重试"}), 502
         _chat_persist(uid, 'user', msg, style)
         _chat_persist(uid, 'bot', reply, style)
-        return jsonify({"success": True, "reply": reply, "source": "llm", "style": style, "competition": kname})
+        return jsonify({"success": True, "reply": reply, "source": "llm", "style": style,
+                        "competition": kname, "profile": profile})
     if not _chat_reserve_quota():
         from competition_agents import get_quota_status
         return jsonify({"success": False, "error_code": "quota_exhausted",
@@ -7084,6 +7241,18 @@ def chat_history():
     except Exception as exc:
         print("[chat] history read failed: %s" % exc)
         return jsonify({"success": True, "messages": []})
+
+
+@app.route('/api/chat_profile', methods=['GET', 'POST'])
+def chat_profile():
+    uid = _current_uid()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        for f, v in (d.get('fields') or {}).items():
+            if f in _PROFILE_FIELDS:
+                _chat_profile_save(uid, f, v)
+        return jsonify({"success": True, "profile": _chat_profile_load(uid)})
+    return jsonify({"success": True, "profile": _chat_profile_load(uid), "fields": _PROFILE_FIELDS})
 
 
 @app.route('/api/chat_clear', methods=['POST'])

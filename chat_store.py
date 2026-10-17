@@ -85,3 +85,59 @@ def clear(db_path, uid):
             return cur.rowcount
         finally:
             conn.close()
+
+
+
+def ensure_profile_schema(db_path=None):
+    """确保用户画像表存在（与 chat_history 共用同一个 db 文件）。"""
+    path = db_path or _DEFAULT_DB_PATH
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with _LOCK:
+        conn = sqlite3.connect(path, timeout=5)
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS chat_profile ("
+                "uid TEXT NOT NULL, field TEXT NOT NULL, value TEXT, "
+                "updated_at TEXT, PRIMARY KEY(uid, field))"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_profile(db_path, uid):
+    """返回该用户的画像字典 {field: value}。"""
+    if not uid:
+        return {}
+    ensure_profile_schema(db_path)
+    with _LOCK:
+        conn = sqlite3.connect(db_path, timeout=5)
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            rows = conn.execute(
+                "SELECT field, value FROM chat_profile WHERE uid=?", (uid,)
+            ).fetchall()
+        finally:
+            conn.close()
+    return {r[0]: r[1] for r in rows}
+
+
+def set_profile(db_path, uid, field, value):
+    """写入/更新单个画像字段（upsert）。"""
+    if not uid or not field:
+        return
+    ensure_profile_schema(db_path)
+    updated_at = datetime.now().isoformat(timespec="seconds")
+    with _LOCK:
+        conn = sqlite3.connect(db_path, timeout=5)
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute(
+                "INSERT INTO chat_profile(uid, field, value, updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(uid, field) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (uid, field, str(value or ""), updated_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
