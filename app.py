@@ -7217,6 +7217,86 @@ def _chat_extract_generation_idea(msg):
     return ""
 
 
+_CHAT_RECOMMENDATION_TERMS = (
+    "没有灵感", "没灵感", "没有想法", "没想法", "不知道做什么", "不知道做啥",
+    "帮我推荐", "推荐一个项目", "推荐几个项目", "推荐一个方向", "推荐几个方向",
+    "给我推荐方向", "帮我想个项目", "帮我想一个项目", "帮我想个方向",
+    "想不出项目", "想不出方向", "还没想好做什么", "不知道选什么项目",
+)
+
+
+def _chat_is_recommendation_request(msg):
+    """识别创意探索请求，避免把「没有灵感」误当成已确认的项目主题。"""
+    text = str(msg or "").strip()
+    if not text:
+        return False
+    if any(term in text for term in _CHAT_RECOMMENDATION_TERMS):
+        return True
+    return bool(_re.search(r"(?:能|可以|请|帮我)?(?:给我|帮我)?(?:推荐|建议).{0,12}(?:项目|方向|选题|创意)", text))
+
+
+def _chat_recommendation_reply(comp_name, style):
+    """给创意探索一个可继续的起点，但不把候选方向写入项目或启动生成。"""
+    if comp_name:
+        body = (
+            "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。围绕「%s」，你可以先从这三类方向里挑一个：\n\n"
+            "1. **校园/社区服务**：找一个真实的高频小问题，做成可验证的工具或服务；\n"
+            "2. **绿色与公共治理**：围绕节能、资源循环或公共安全，先明确服务对象和改进指标；\n"
+            "3. **智能技术应用**：把你已有的技术特长落到一个具体场景，先说清楚谁在用、现在怎么做、准备改善什么。\n\n"
+            "这只是候选方向，不代表你的最终选题。回复一个编号，并告诉我你熟悉的领域、手头资源或想服务的人群，我再帮你收敛成可落地的项目题目。"
+        ) % comp_name
+    else:
+        body = (
+            "可以。我先不默认赛事，也不会把推荐内容直接当成项目开工。你可以先从三类方向想想：\n\n"
+            "1. **校园/社区服务**：从身边反复出现、有人愿意使用的问题入手；\n"
+            "2. **绿色与公共治理**：围绕节能、资源循环或公共安全寻找可量化的改进点；\n"
+            "3. **智能技术应用**：把已有技术特长放进一个明确场景，先确认用户和实际需求。\n\n"
+            "回复一个编号，再补充你的专业、兴趣或可用资源；我会据此帮你收敛方向，赛事和赛道等你确认后再进入生成。"
+        )
+    if style == "casual":
+        body = body.replace(
+            "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
+            "当然可以，先别急着开工。我给你几个方向参考，但不会把它们直接当成你的项目。"
+        ).replace(
+            "可以。我先不默认赛事，也不会把推荐内容直接当成项目开工。",
+            "当然可以，先别急着开工。我先给你几个方向参考，也不会替你默认赛事或直接开写。"
+        ).replace(
+            "这只是候选方向，不代表你的最终选题。",
+            "这些只是灵感起点，不会偷偷替你定题。"
+        ).replace(
+            "回复一个编号，并告诉我你熟悉的领域、手头资源或想服务的人群，我再帮你收敛成可落地的项目题目。",
+            "回复一个编号，再说说你熟悉什么、手里有什么资源，或者最想帮哪类人，我陪你把它收敛成真正能做的题目。"
+        )
+    elif style == "academic":
+        body = body.replace(
+            "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
+            "可以。在启动生成前，建议先完成方向筛选；以下仅作候选，不作为已确认的项目事实。"
+        ).replace(
+            "可以。我先不默认赛事，也不会把推荐内容直接当成项目开工。",
+            "可以。在确定赛事前，建议先完成方向筛选；以下仅作候选，不作为已确认的项目事实。"
+        ).replace(
+            "这只是候选方向，不代表你的最终选题。",
+            "以上为候选方向，最终选题仍需结合团队能力、资源条件和赛事要求核实。"
+        ).replace(
+            "回复一个编号，并告诉我你熟悉的领域、手头资源或想服务的人群，我再帮你收敛成可落地的项目题目。",
+            "请回复方向编号，并补充团队专业、可用资源及目标人群，我会据此进一步收敛问题定义、验证路径和项目题目。"
+        )
+    return body
+
+
+def _chat_missing_requirements_reply(style, details):
+    """生成前的固定追问也必须遵循当前聊天风格。"""
+    detail_text = "；".join(details)
+    if style == "casual":
+        return ("可以，先别急着生成，免得方向写偏。我还差这几项：%s。\n"
+                "你可以分几条慢慢补，也可以直接填首页对应信息；资料齐了我再开工。" % detail_text)
+    if style == "academic":
+        return ("在启动生成前，需要先核实以下输入：%s。\n"
+                "这些信息用于确定评审口径、内容边界与验证重点；请补充后再进入生成。" % detail_text)
+    return ("可以帮你做。开始前我需要先了解：%s。"
+            "你可以分几条消息补充，也可以填写首页对应信息；资料齐全后我再启动生成。" % detail_text)
+
+
 def _chat_explicit_competition(msg):
     """聊天中的赛事只接受消息内明确出现的赛事名/专属别名，不做宽泛语义猜测。"""
     text = str(msg or "").strip().casefold()
@@ -7856,8 +7936,18 @@ def chat():
         pending = _json.loads(pending_raw) if pending_raw else {}
     except Exception:
         pending = {}
-    is_question_message = bool(_re.search(r"[?？]|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
+    recommendation_intent = _chat_is_recommendation_request(msg)
+    is_question_message = bool(_re.search(r"[?？]|吗\s*$|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
     is_generation_followup = bool(pending) and not is_question_message
+    if recommendation_intent:
+        # 推荐只负责澄清方向；保留 pending_generation，等用户明确题目后再发 generation 事件。
+        recommendation_comp = comp_name or pending.get("competition", "")
+        if pending:
+            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+        reply = _chat_recommendation_reply(recommendation_comp, style)
+        _chat_persist(uid, "user", msg, style)
+        _chat_persist(uid, "bot", reply, style)
+        return _sse_text_reply(reply)
     if (gen_verb and (gen_obj or comp_name)) or is_generation_followup:
         comp_name = comp_name or pending.get("competition", "")
         if message_comp and pending.get("competition") and message_comp != pending.get("competition"):
@@ -7904,8 +7994,7 @@ def chat():
                 details.append("该赛事对应的赛道（可在首页赛道选项中选择）")
             if "项目需求" in missing:
                 details.append("项目要解决什么问题、服务谁、准备怎么做，以及目前做到哪一步")
-            prompt = ("可以帮你做。开始前我需要先了解：" + "；".join(details) +
-                      "。你可以分几条消息补充，也可以填写首页对应信息；资料齐全后我再启动生成。")
+            prompt = _chat_missing_requirements_reply(style, details)
             pending = {
                 "competition": comp_name,
                 "idea": idea,

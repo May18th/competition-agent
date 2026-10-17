@@ -310,6 +310,41 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertTrue(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"])
         start.assert_not_called()
 
+    def test_recommendation_request_does_not_start_generation_or_consume_pending_topic(self):
+        chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation", json.dumps({
+            "competition": "挑战杯全国大学生课外学术科技作品竞赛", "idea": "", "mode": "deep",
+            "track": "", "track_options": []
+        }, ensure_ascii=False))
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", return_value=(None, 0)), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "我现在没有灵感，你能帮我推荐一个吗",
+                "context": {"competition": "挑战杯全国大学生课外学术科技作品竞赛",
+                            "competition_selected": True, "idea": "", "mode": "deep"},
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertNotIn("已收到你的项目需求", body)
+        self.assertIn("候选方向", body)
+        self.assertIn("不会直接启动生成", body)
+        saved = json.loads(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+        self.assertEqual(saved["competition"], "挑战杯全国大学生课外学术科技作品竞赛")
+        self.assertEqual(saved["idea"], "")
+        start.assert_not_called()
+
+    def test_fixed_generation_prompts_follow_selected_chat_style(self):
+        self.assertIn("先别急着开工", app_module._chat_recommendation_reply("挑战杯", "casual"))
+        self.assertIn("仅作候选", app_module._chat_recommendation_reply("挑战杯", "academic"))
+        self.assertIn("资料齐全后我再启动生成", app_module._chat_missing_requirements_reply(
+            "concise", ["项目需求"]
+        ))
+        self.assertIn("评审口径、内容边界与验证重点", app_module._chat_missing_requirements_reply(
+            "academic", ["赛事名称", "项目需求"]
+        ))
+
     def test_track_only_followup_does_not_count_as_project_requirements(self):
         chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation", json.dumps({
             "competition": "iCAN大学生创新创业大赛", "idea": "", "mode": "deep", "track": "",
