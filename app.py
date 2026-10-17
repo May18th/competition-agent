@@ -1483,7 +1483,11 @@ def _export_data_from_request():
         if hid:
             rec = _fetch_record_from_source({'history_id': hid})
             if rec:
-                return dict(rec)
+                try:
+                    rec['history_id'] = hid
+                except Exception:
+                    pass
+                return rec
         return {}
     return request.get_json(force=True, silent=True) or {}
 
@@ -2059,9 +2063,18 @@ def export_defense():
 
 @app.route('/api/export_ppt')
 def export_ppt():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     text = data.get('text', '')
     title = data.get('title', '路演 PPT 大纲')
+    # 小创侧一键导出：支持 GET ?history_id= 直链回源（复用核心记录，不改原 POST text 行为）
+    if not text.strip():
+        _hid = request.args.get('history_id') or request.args.get('task_id')
+        if _hid:
+            _rec = _fetch_record_from_source({'history_id': _hid})
+            if _rec:
+                text = (_rec.get('proposal') or '').strip()
+                if not title or title == '路演 PPT 大纲':
+                    title = _rec.get('competition_name') or '路演 PPT 大纲'
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
     doc = _build_docx(title, text, doc_type='outline')

@@ -649,6 +649,71 @@
         genPollers = {};
     }
 
+    function renderGenDone(resultEl, fill, statusEl, previewEl, j) {
+        if (fill) fill.style.width = '100%';
+        if (statusEl) statusEl.textContent = '✅ 生成完成';
+        if (previewEl) previewEl.style.display = 'none';
+        var hid = j.data && j.data.history_id;
+        var html = '<div style="font-size:12.5px; color:var(--text);">申报书已生成完毕，可在此查看或继续在历史记录里导出。</div>';
+        if (hid) {
+            html += '<div style="margin-top:8px;">'
+                + '<button class="wbchat-gen-open" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--c-a,#0e7490); background:transparent; color:var(--c-a,#0e7490); cursor:pointer;">查看完整申报书</button>'
+                + '<button class="wbchat-gen-exp" data-ext="word" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出Word</button>'
+                + '<button class="wbchat-gen-exp" data-ext="pdf" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PDF</button>'
+                + '<button class="wbchat-gen-exp" data-ext="ppt" style="display:inline-block; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PPT</button>'
+                + '</div>';
+        }
+        if (resultEl) resultEl.innerHTML = html;
+        if (hid) {
+            var ob = resultEl.querySelector('.wbchat-gen-open');
+            if (ob) ob.addEventListener('click', function () {
+                try { setOpen(false); } catch (e) {}
+                try { if (typeof window.openHistory === 'function') window.openHistory(hid); else if (typeof openHistory === 'function') openHistory(hid); else location.href = '/?history_id=' + hid; } catch (e) { location.href = '/?history_id=' + hid; }
+            });
+            var exps = resultEl.querySelectorAll('.wbchat-gen-exp');
+            for (var ei = 0; ei < exps.length; ei++) {
+                (function (b) {
+                    b.addEventListener('click', function () {
+                        var ext = b.getAttribute('data-ext');
+                        var url = ext === 'pdf' ? '/api/export_pdf' : (ext === 'ppt' ? '/api/export_ppt' : '/api/export_word');
+                        window.open(url + '?history_id=' + encodeURIComponent(hid), '_blank');
+                    });
+                })(exps[ei]);
+            }
+        }
+    }
+
+    function restoreGenCard() {
+        var raw = null;
+        try { raw = sessionStorage.getItem('wbGenTask'); } catch (e) {}
+        if (!raw) return;
+        var info;
+        try { info = JSON.parse(raw); } catch (e) { try { sessionStorage.removeItem('wbGenTask'); } catch (e2) {} return; }
+        var id = info.taskId;
+        if (!id) return;
+        fetch('/api/status/' + encodeURIComponent(id) + '?_=' + Date.now(), { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+                if (!j || !j.success) { try { sessionStorage.removeItem('wbGenTask'); } catch (e) {} return; }
+                if (j.status === 'running' || j.status === 'queued') {
+                    startGenerationCard(id, info.compName, info.idea);
+                } else if (j.status === 'done') {
+                    var wrap = document.createElement('div');
+                    wrap.style.marginBottom = '10px';
+                    wrap.innerHTML = '<div style="display:inline-block; max-width:92%; padding:10px 12px; border-radius:12px 12px 12px 2px; background:var(--btn-ghost); color:var(--text); white-space:normal; word-break:break-word;">'
+                        + '<div style="font-weight:600; margin-bottom:6px;">✅ ' + esc(info.compName || '申报书') + ' 已生成</div>'
+                        + '<div class="wbchat-gen-result" style="margin-top:8px;"></div></div>';
+                    if (listEl) listEl.appendChild(wrap);
+                    renderGenDone(wrap.querySelector('.wbchat-gen-result'), null, null, null, j);
+                    try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+                    try { sessionStorage.removeItem('wbGenTask'); } catch (e) {}
+                } else {
+                    try { sessionStorage.removeItem('wbGenTask'); } catch (e) {}
+                }
+            })
+            .catch(function () { try { sessionStorage.removeItem('wbGenTask'); } catch (e) {} });
+    }
+
     function startGenerationCard(taskId, compName, idea) {
         if (!listEl) return;
         var wrap = document.createElement('div');
@@ -658,6 +723,7 @@
             + '<div style="font-size:11.5px; color:var(--text-dim); margin-bottom:8px;">主题：' + esc(idea || '') + '</div>'
             + '<div style="height:8px; border-radius:6px; background:rgba(148,163,184,.25); overflow:hidden;"><div class="wbchat-gen-fill" style="height:100%; width:0%; background:var(--c-a,#0e7490); transition:width .6s ease;"></div></div>'
             + '<div class="wbchat-gen-status" style="font-size:12px; margin-top:6px; color:var(--text);">正在安排生成引擎…</div>'
+            + '<div class="wbchat-gen-preview" style="display:none; font-size:11px; color:var(--text-dim); margin-top:8px; max-height:120px; overflow:auto; white-space:pre-wrap; word-break:break-word; line-height:1.5;"></div>'
             + '<div class="wbchat-gen-result" style="margin-top:8px;"></div>'
             + '</div>';
         listEl.appendChild(wrap);
@@ -665,7 +731,9 @@
         var fill = wrap.querySelector('.wbchat-gen-fill');
         var statusEl = wrap.querySelector('.wbchat-gen-status');
         var resultEl = wrap.querySelector('.wbchat-gen-result');
+        var previewEl = wrap.querySelector('.wbchat-gen-preview');
         var finished = false;
+        try { sessionStorage.setItem('wbGenTask', JSON.stringify({ taskId: taskId, compName: compName, idea: idea })); } catch (e) {}
         function tick() {
             if (finished) return;
             fetch('/api/status/' + encodeURIComponent(taskId) + '?_=' + Date.now(), { credentials: 'same-origin' })
@@ -679,28 +747,21 @@
                         var pct = Math.max(2, Math.min(99, j.pct || 0));
                         fill.style.width = pct + '%';
                         statusEl.textContent = (j.stage_label || '生成中') + ' · ' + pct + '%' + (j.eta_seconds ? ' · 预计 ' + j.eta_seconds + 's' : '');
+                        var _full = (j.partial_content || '');
+                        if (_full) {
+                            var _shown = _full.length > 220 ? (_full.slice(0, 220) + '\n…（草稿持续生成中，完成后点「查看完整申报书」看全文）') : _full;
+                            if (previewEl) { previewEl.style.display = 'block'; previewEl.textContent = '📝 草稿预览：\n' + _shown; }
+                        }
                     } else if (j.status === 'done') {
                         finished = true;
                         if (genPollers[taskId]) { try { clearInterval(genPollers[taskId].interval); } catch (e) {} }
-                        fill.style.width = '100%';
-                        statusEl.textContent = '✅ 生成完成';
-                        var hid = j.data && j.data.history_id;
-                        var html = '<div style="font-size:12.5px; color:var(--text);">申报书已生成完毕，可在此查看或继续在历史记录里导出。</div>';
-                        if (hid) {
-                            html += '<button class="wbchat-gen-open" style="display:inline-block; margin-top:6px; margin-right:8px; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--c-a,#0e7490); background:transparent; color:var(--c-a,#0e7490); cursor:pointer;">查看完整申报书</button>';
-                        }
-                        resultEl.innerHTML = html;
-                        if (hid) {
-                            var btn = resultEl.querySelector('.wbchat-gen-open');
-                            if (btn) btn.addEventListener('click', function () {
-                                try { setOpen(false); } catch (e) {}
-                                try { if (typeof window.openHistory === 'function') window.openHistory(hid); else if (typeof openHistory === 'function') openHistory(hid); else location.href = '/?history_id=' + hid; } catch (e) { location.href = '/?history_id=' + hid; }
-                            });
-                        }
+                        try { sessionStorage.removeItem('wbGenTask'); } catch (e) {}
+                        renderGenDone(resultEl, fill, statusEl, previewEl, j);
                         try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
                     } else if (j.status === 'error') {
                         finished = true;
                         if (genPollers[taskId]) { try { clearInterval(genPollers[taskId].interval); } catch (e) {} }
+                        try { sessionStorage.removeItem('wbGenTask'); } catch (e) {}
                         fill.style.width = '100%';
                         fill.style.background = '#dc2626';
                         statusEl.textContent = '⚠️ 生成失败：' + (j.error || '未知错误');
@@ -832,6 +893,7 @@
             if (!listEl || !listEl.children.length) restoreHistory();
             else refreshGreet();
             renderStyleBadge();
+            restoreGenCard();
             if (inputEl) { try { inputEl.focus(); } catch (e) {} }
         }
     }
