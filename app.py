@@ -7233,6 +7233,110 @@ def _system_prompt(style, knowledge, profile):
     return p
 
 
+def _chat_replace_first(value, original, suggestion):
+    """Replace one exact match in a saved proposal field without flattening its structure."""
+    if isinstance(value, str):
+        if original not in value:
+            return value, False
+        return value.replace(original, suggestion, 1), True
+    if isinstance(value, dict):
+        for key, child in value.items():
+            updated, found = _chat_replace_first(child, original, suggestion)
+            if found:
+                value[key] = updated
+                return value, True
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            updated, found = _chat_replace_first(child, original, suggestion)
+            if found:
+                value[index] = updated
+                return value, True
+    return value, False
+
+
+@app.route('/api/chat_apply_proofread', methods=['POST'])
+def chat_apply_proofread():
+    """Apply one exact proofreading suggestion to the current user's saved draft."""
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+
+    data = request.get_json(silent=True) or {}
+    uid = _current_uid()
+    try:
+        hid = int(data.get("history_id"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "缺少有效的 history_id"}), 400
+    original = data.get("original")
+    suggestion = data.get("suggestion")
+    if not isinstance(original, str) or not original or len(original) > 1000:
+        return jsonify({"success": False, "error": "原文片段无效"}), 400
+    if not isinstance(suggestion, str) or len(suggestion) > 2000:
+        return jsonify({"success": False, "error": "建议文本无效"}), 400
+
+    # Check ownership before quota reservation, then re-check inside the write transaction.
+    owned = _chat_load_owned_record(uid, hid)
+    if not owned:
+        return jsonify({"success": False,
+                        "error": "没找到属于当前账号的申报书"}), 404
+    _, found = _chat_replace_first(owned.get("proposal"), original, suggestion)
+    if not found:
+        return jsonify({"success": False, "error_code": "fragment_not_found",
+                        "error": "未找到匹配片段"}), 409
+    if not _chat_reserve_quota():
+        from competition_agents import get_quota_status
+        return jsonify({"success": False, "error_code": "quota_exhausted",
+                        "quota": get_quota_status()}), 429
+
+    import competition_agents as _agents
+    try:
+        # Share the core model concurrency gate so accepted writes wait behind the same workload cap.
+        with _agents._LLM_GATE:
+            conn = get_db()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT result_data FROM history WHERE id=? AND user_id=?",
+                    (hid, uid),
+                ).fetchone()
+                if not row:
+                    conn.rollback()
+                    return jsonify({"success": False,
+                                    "error": "没找到属于当前账号的申报书"}), 404
+                try:
+                    record = _json.loads(row[0] or "{}")
+                except (TypeError, ValueError):
+                    record = None
+                if not isinstance(record, dict):
+                    conn.rollback()
+                    return jsonify({"success": False,
+                                    "error": "申报书记录无法读取"}), 409
+                updated, replaced = _chat_replace_first(
+                    record.get("proposal"), original, suggestion
+                )
+                if not replaced:
+                    conn.rollback()
+                    return jsonify({"success": False, "error_code": "fragment_not_found",
+                                    "error": "未找到匹配片段"}), 409
+                record["proposal"] = updated
+                cur = conn.execute(
+                    "UPDATE history SET result_data=? WHERE id=? AND user_id=?",
+                    (_json.dumps(record, ensure_ascii=False), hid, uid),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    return jsonify({"success": False,
+                                    "error": "申报书保存失败，请重试"}), 409
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as exc:
+        print("[chat] proofread apply failed: %s" % exc)
+        return jsonify({"success": False,
+                        "error": "采纳失败，请稍后重试"}), 503
+
+    return jsonify({"success": True, "history_id": hid, "replaced": 1})
+
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """智能体聊天 v2：知识增强 + deepseek-chat + 工具触发（生成/校对） + 长期画像记忆。"""
@@ -7275,6 +7379,7 @@ def chat():
 
     # ---- Phase 2：校对意图 ----
     if any(w in msg for w in ("校对", "润色", "错别字", "语病", "改错字", "检查文字", "检查这段", "校对错别字")):
+        proofread_hid = None
         text = _re.sub(
             r"^(?:(?:请|麻烦)\s*)?(?:帮我\s*)?(?:智能)?(?:校对|润色|改错字|检查错别字|检查语病|检查文字|检查这段|帮我改)\s*(?:一下)?\s*[:：，,]?\s*",
             "", msg
@@ -7286,9 +7391,14 @@ def chat():
         ))
         if len(text) < 8 or refers_to_proposal:
             hid = data.get("history_id") or _chat_get_last_gen(uid)
-            text = _chat_proposal_text(_chat_load_owned_record(uid, hid))
+            record = _chat_load_owned_record(uid, hid)
+            text = _chat_proposal_text(record)
             if not text:
                 return _sse_text_reply("我暂时没找到你最近生成的申报书。你可以先生成一份，或把需要校对的文字直接粘贴过来。")
+            try:
+                proofread_hid = int(hid)
+            except (TypeError, ValueError):
+                proofread_hid = None
         if not _chat_reserve_quota():
             from competition_agents import get_quota_status
             return jsonify({"success": False, "error_code": "quota_exhausted",
@@ -7299,7 +7409,9 @@ def chat():
         _chat_persist(uid, 'user', msg, style)
         _chat_persist(uid, 'bot', md, style)
         _chat_profile_save(uid, 'done_proofread', '1')
-        return _sse_text_with_event(md, "proofread", {"issues": issues})
+        return _sse_text_with_event(md, "proofread", {
+            "issues": issues, "history_id": proofread_hid,
+        })
 
     # ---- 答辩模拟意图（复用核心申报书正文，不另造，支持多轮）----
     defense_kw = ("答辩模拟", "模拟答辩", "评委提问", "练习答辩", "模拟评委", "答辩练习", "评委问")

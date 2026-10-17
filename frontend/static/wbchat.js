@@ -1004,24 +1004,107 @@
         }
         if (wrap.children.length) box.appendChild(wrap);
     }
-    function renderProofreadCard(node, issues, text) {
+    function renderProofreadCard(node, issues, text, historyId) {
         var box = node.querySelector('.wbchat-bot-content') || node;
         if (!issues || !issues.length) {
             box.innerHTML = '<div style="padding:8px 10px;border-radius:8px;background:rgba(16,185,129,.12);color:#059669;font-size:13px;">✅ 文本校对通过，未发现明显问题。</div>';
             return;
         }
+        var applied = 0, working = false;
+        for (var j = 0; j < issues.length; j++) {
+            if (issues[j]._applyState === 'applied') applied++;
+            if (issues[j]._applyState === 'applying' || issues[j]._applyState === 'queued') working = true;
+        }
         var h = '<div class="wbchat-proof-card">';
-        h += '<div style="margin-bottom:6px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,.08);color:#dc2626;font-weight:600;font-size:12.5px;">🔍 校对出 ' + issues.length + ' 处可优化点</div>';
+        h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,.08);color:#dc2626;font-weight:600;font-size:12.5px;">'
+           + '<span>🔍 校对出 ' + issues.length + ' 处可优化点' + (applied ? '，已采纳 ' + applied + ' 处' : '') + '</span>';
+        if (historyId && issues.some(function (it) { return it._applyState !== 'applied' && it._applyState !== 'missing'; })) {
+            h += '<button type="button" data-proof-apply-all style="margin-left:auto;min-height:30px;padding:3px 10px;border:1px solid var(--c-a,#0e7490);border-radius:7px;background:var(--surface-solid,#fff);color:var(--c-a,#0e7490);font-size:12px;cursor:pointer;"'
+               + (working ? ' disabled' : '') + '>' + (working ? '正在采纳…' : '全部采纳') + '</button>';
+        }
+        h += '</div>';
         for (var i = 0; i < issues.length; i++) {
-            var it = issues[i];
+            var it = issues[i], state = it._applyState || '';
+            var stateText = state === 'applied' ? '已采纳' : (state === 'missing' ? '未找到匹配片段' : (state === 'applying' ? '正在保存…' : (state === 'queued' ? '等待采纳…' : (state === 'failed' ? (it._applyMessage || '采纳失败，可重试') : ''))));
+            var buttonLabel = '采纳';
+            if (state === 'applied') buttonLabel = '已采纳';
+            else if (state === 'applying') buttonLabel = '正在保存…';
+            else if (state === 'queued') buttonLabel = '等待采纳…';
+            else if (state === 'missing') buttonLabel = '未找到片段';
+            else if (state === 'failed') buttonLabel = '重试采纳';
+            var disabled = state === 'applied' || state === 'missing' || state === 'applying' || state === 'queued';
             h += '<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #f59e0b;border-radius:4px;background:var(--surface-2);">'
                + '<div style="font-size:12px;color:var(--text-dim);">[' + esc(it.type || '') + '] 原文：<span style="background:#fde68a;padding:0 2px;">' + esc(it.original || '') + '</span></div>'
-               + '<div style="font-size:12.5px;margin-top:2px;">建议：' + esc(it.suggestion || '') + '</div>'
-               + '</div>';
+               + '<div style="font-size:12.5px;margin-top:2px;">建议：' + esc(it.suggestion || '') + '</div>';
+            if (historyId) {
+                h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;">'
+                   + '<button type="button" data-proof-apply="' + i + '" style="min-height:28px;padding:2px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-solid,#fff);color:var(--c-a,#0e7490);font-size:11.5px;cursor:pointer;"'
+                   + (disabled ? ' disabled' : '') + '>'
+                   + buttonLabel + '</button>'
+                   + (stateText ? '<span aria-live="polite" style="font-size:11.5px;color:var(--text-dim);">' + esc(stateText) + '</span>' : '')
+                   + '</div>';
+            }
+            h += '</div>';
         }
         if (text) h += '<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">' + renderMarkdown(text) + '</div>';
         h += '</div>';
         box.innerHTML = h;
+
+        var stopApplyAll = false;
+        function renderAgain() { renderProofreadCard(node, issues, text, historyId); }
+        function applyOne(index) {
+            var issue = issues[index];
+            if (!issue || !historyId || issue._applyState === 'applying' || issue._applyState === 'applied' || issue._applyState === 'missing') return Promise.resolve();
+            issue._applyState = 'applying';
+            renderAgain();
+            return fetch('/api/chat_apply_proofread', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ history_id: historyId, original: issue.original || '', suggestion: issue.suggestion || '' })
+            }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+              .then(function (result) {
+                  if (result.ok && result.body && result.body.success) {
+                      issue._applyState = 'applied'; issue._applyMessage = '';
+                  } else if (result.body && result.body.error_code === 'fragment_not_found') {
+                      issue._applyState = 'missing'; issue._applyMessage = result.body.error || '未找到匹配片段';
+                  } else if (result.body && result.body.error_code === 'quota_exhausted') {
+                      issue._applyState = 'failed'; issue._applyMessage = '今日操作额度已用完'; stopApplyAll = true;
+                  } else {
+                      issue._applyState = 'failed'; issue._applyMessage = (result.body && result.body.error) || '采纳失败，可重试';
+                  }
+                  renderAgain();
+              }).catch(function () {
+                  issue._applyState = 'failed'; issue._applyMessage = '网络异常，采纳失败，可重试';
+                  renderAgain();
+              });
+        }
+        var applyButtons = box.querySelectorAll('[data-proof-apply]');
+        for (var k = 0; k < applyButtons.length; k++) {
+            applyButtons[k].addEventListener('click', function (event) {
+                applyOne(parseInt(event.currentTarget.getAttribute('data-proof-apply'), 10));
+            });
+        }
+        var allButton = box.querySelector('[data-proof-apply-all]');
+        if (allButton) allButton.addEventListener('click', function () {
+            for (var n = 0; n < issues.length; n++) {
+                if (issues[n]._applyState !== 'applied' && issues[n]._applyState !== 'missing') issues[n]._applyState = 'queued';
+            }
+            stopApplyAll = false;
+            renderAgain();
+            function next() {
+                if (stopApplyAll) {
+                    for (var y = 0; y < issues.length; y++) if (issues[y]._applyState === 'queued') issues[y]._applyState = '';
+                    renderAgain();
+                    return;
+                }
+                var index = -1;
+                for (var x = 0; x < issues.length; x++) if (issues[x]._applyState === 'queued') { index = x; break; }
+                if (index < 0) return;
+                issues[index]._applyState = '';
+                applyOne(index).then(next);
+            }
+            next();
+        });
     }
 
     /* ---------- 记忆管理面板 ---------- */
@@ -1104,7 +1187,7 @@
         busy = true;
         pushThinking();
 
-        var replied = false, answerNode = null, answerText = '', timer = null, ctl = null, proofNode = null, proofIssues = [];
+        var replied = false, answerNode = null, answerText = '', timer = null, ctl = null, proofNode = null, proofIssues = [], proofHistoryId = null;
         function finish(text, opts) {
             if (replied) return;
             if (timer) { clearTimeout(timer); timer = null; }
@@ -1147,7 +1230,8 @@
                 removeThinking();
                 proofNode = pushMsg('bot', '');
                 proofIssues = item.issues || [];
-                renderProofreadCard(proofNode, proofIssues, '');
+                proofHistoryId = item.history_id || null;
+                renderProofreadCard(proofNode, proofIssues, '', proofHistoryId);
                 replied = true;
                 return false;
             }
@@ -1156,7 +1240,7 @@
                 if (timer) { clearTimeout(timer); timer = null; }
                 if (proofNode) {
                     answerText += item.token;
-                    renderProofreadCard(proofNode, proofIssues, answerText);
+                    renderProofreadCard(proofNode, proofIssues, answerText, proofHistoryId);
                 } else if (!answerNode) {
                     removeThinking(); answerNode = pushMsg('bot', '');
                     answerText += item.token; updateBotMsg(answerNode, answerText);
