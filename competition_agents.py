@@ -14,6 +14,7 @@ import os
 import re
 import math
 import threading
+import time
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -57,7 +58,10 @@ _score_llm = ChatDeepSeek(
 import json as _json
 from datetime import datetime as _datetime
 
-_QUOTA_FILE = os.path.join(os.path.dirname(__file__), "quota.json")
+_QUOTA_FILE = os.path.abspath(os.getenv("COMPETITION_QUOTA_PATH") or
+                              os.path.join(os.path.dirname(__file__), "quota.json"))
+_LLM_USAGE_DB_PATH = os.path.abspath(os.getenv("COMPETITION_LLM_USAGE_PATH") or
+                                     os.path.join(os.path.dirname(__file__), "llm_usage.sqlite"))
 _QUOTA_DAILY_LIMIT = int(os.getenv("QUOTA_DAILY_LIMIT", "500"))
 
 
@@ -125,6 +129,7 @@ def _llm_invoke_with_quota(*args, **kwargs):
         _use_backup = (_backup_llm is not None) and (_llm_fail_count >= 3)
     _target = _backup_llm if _use_backup else _llm_invoke_original
     try:
+        _started = time.monotonic()
         with _LLM_GATE:
             result = _target(*args, **kwargs)
     except Exception:
@@ -138,7 +143,50 @@ def _llm_invoke_with_quota(*args, **kwargs):
         data = _quota_load()
         data["calls"] = data.get("calls", 0) + 1
         _quota_save(data)
+    _record_llm_usage(result, int((time.monotonic() - _started) * 1000), _target)
     return result
+
+
+def _record_llm_usage(result, duration_ms=0, target=None):
+    """Persist token metadata without ever storing prompts or model output."""
+    try:
+        usage = getattr(result, "usage_metadata", None) or {}
+        response_meta = getattr(result, "response_metadata", None) or {}
+        token_usage = response_meta.get("token_usage") or response_meta.get("usage") or {}
+        if not isinstance(usage, dict):
+            usage = {}
+        if not isinstance(token_usage, dict):
+            token_usage = {}
+        prompt_tokens = usage.get("input_tokens", usage.get("prompt_tokens",
+                         token_usage.get("prompt_tokens", token_usage.get("input_tokens", 0))))
+        completion_tokens = usage.get("output_tokens", usage.get("completion_tokens",
+                             token_usage.get("completion_tokens", token_usage.get("output_tokens", 0))))
+        total_tokens = usage.get("total_tokens", token_usage.get("total_tokens"))
+        if not any((prompt_tokens, completion_tokens, total_tokens)):
+            return
+        user_id = ""
+        stage = section = mode = task_id = ""
+        try:
+            from flask import g, has_request_context, request
+            if has_request_context():
+                user_id = getattr(g, "uid", "") or ""
+                stage = request.path
+                payload = request.get_json(silent=True) or {}
+                if isinstance(payload, dict):
+                    task_id = str(payload.get("task_id") or payload.get("history_id") or "")
+                    section = str(payload.get("section") or payload.get("chapter") or "")
+                    mode = str(payload.get("mode") or "")
+        except Exception:
+            pass
+        model_obj = getattr(target, "__self__", None) if target else None
+        model_name = getattr(model_obj, "model", "") or getattr(model_obj, "model_name", "")
+        from llm_usage_store import record_usage
+        record_usage(_LLM_USAGE_DB_PATH, task_id=task_id, user_id=user_id,
+                     stage=stage, section=section, mode=mode, model=model_name,
+                     prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                     total_tokens=total_tokens, duration_ms=duration_ms)
+    except Exception as exc:
+        print("[llm_usage] metadata persistence failed: %s" % exc)
 
 
 # ChatDeepSeek 是 pydantic 模型，需用 object.__setattr__ 绕过字段校验来 monkey-patch

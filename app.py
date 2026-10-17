@@ -148,7 +148,7 @@ def _gzip_response(resp):
 # 的 32 位 hex cookie 兼容接受，本次响应重签平滑升级，不丢老用户历史。
 
 def _load_uid_secret():
-    _p = os.path.join(os.path.dirname(__file__), '.uid_secret')
+    _p = os.getenv("COMPETITION_UID_SECRET_PATH") or os.path.join(os.path.dirname(__file__), '.uid_secret')
     try:
         with open(_p, encoding='utf-8') as _f:
             _s = _f.read().strip()
@@ -963,7 +963,8 @@ def _user_export_guard():
 
 
 # ============ 初始化数据库 ============
-DB_PATH = os.path.join(os.path.dirname(__file__), "competition.db")
+DB_PATH = os.path.abspath(os.getenv("COMPETITION_DB_PATH") or
+                          os.path.join(os.path.dirname(__file__), "competition.db"))
 
 def get_db():
     """统一 SQLite 连接：timeout=5 秒，写锁冲突时等待而非秒抛 database is locked。"""
@@ -1097,6 +1098,8 @@ def _seed_kb_if_needed():
     幂等：用 kb_meta.seed_stamp 记录已导入的种子指纹，重复启动不会重复插入；
     用户手动删光范文也不会被强行灌回。
     """
+    if os.getenv("COMPETITION_SKIP_KB_SEED") == "1":
+        return
     try:
         import json as _json
         import hashlib
@@ -4563,6 +4566,43 @@ def rewrite_paragraph():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
+def _revision_heading_keys(text):
+    return [_normalize_heading_title(match.group(2))
+            for line in (text or "").splitlines()
+            if (match := re.match(r"^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$", line))]
+
+
+def _find_revision_section(text, chapter):
+    lines = (text or "").splitlines(keepends=True)
+    target = _normalize_heading_title(chapter)
+    if not target:
+        return None
+    headings = []
+    offset = 0
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s{0,3}(#{1,2})\s+(.+?)\s*#*\s*$", line)
+        if match:
+            headings.append((index, offset, len(match.group(1)),
+                             _normalize_heading_title(match.group(2))))
+        offset += len(line)
+    matches = [item for item in headings if item[3] == target]
+    if len(matches) != 1:
+        return None
+    start_index, start_offset, level, _title = matches[0]
+    end_offset = len(text)
+    offset = start_offset + len(lines[start_index])
+    for line in lines[start_index + 1:]:
+        match = re.match(r"^\s{0,3}(#{1,2})\s+", line)
+        if match and len(match.group(1)) <= level:
+            end_offset = offset
+            break
+        offset += len(line)
+    return start_offset, end_offset
+
+
+_REVISION_END_MARKER = "<<<END_OF_REVISION>>>"
+
+
 @app.route('/api/revise_chapter', methods=['POST'])
 def revise_chapter():
     """按评委关注点/用户指令修订申报书，返回预览（不保存）。"""
@@ -4583,12 +4623,24 @@ def revise_chapter():
     proposal = (record or {}).get("proposal") or ""
     if not proposal:
         return jsonify({"success": False, "error": "申报书正文为空"}), 400
-    if not _chat_reserve_quota():
-        from competition_agents import get_quota_status
-        return jsonify({"success": False, "error_code": "quota_exhausted",
-                        "quota": get_quota_status()}), 429
     competition_name = (data.get("competition_name") or record.get("competition_name") or '').strip()
     mode = (data.get("mode") or 'fast').strip()
+    chapter = (data.get("chapter") or '').strip()
+    section_span = _find_revision_section(proposal, chapter) if chapter else None
+    if chapter and section_span is None:
+        return jsonify({"success": False, "error": "找不到唯一匹配的章节，请填写完整章节标题"}), 400
+    if not chapter and len(proposal) > 8000:
+        instruction_key = _normalize_heading_title(instruction)
+        candidates = [key for key in dict.fromkeys(_revision_heading_keys(proposal))
+                      if key and key in instruction_key]
+        if len(candidates) == 1:
+            chapter = candidates[0]
+            section_span = _find_revision_section(proposal, chapter)
+        if section_span is None:
+            return jsonify({"success": False, "error": "正文较长，请在修订要求中明确一个章节标题"}), 413
+    source = proposal[slice(*section_span)] if section_span else proposal
+    if len(source) > 8000:
+        return jsonify({"success": False, "error": "目标章节过长，请进一步缩小修订范围"}), 413
     prompt = (
         "你正在帮助团队修订一份科创赛事申报书。请严格基于原文结构和事实进行修订，"
         "不要编造正文未出现的数据、政策或案例。\n\n"
@@ -4596,16 +4648,39 @@ def revise_chapter():
         "版本：%s\n\n"
         "【修订要求】\n%s\n\n"
         "【原文】\n%s\n\n"
-        "请直接输出修订后的完整正文（保持 Markdown 章节结构，不要输出解释、点评或摘要）。"
-    ) % (competition_name or '未指定赛事', '深度版' if mode == 'deep' else '简洁版', instruction, proposal[:8000])
+        "请直接输出修订后的内容，必须保留原文中的全部章节标题，不要输出解释、点评或摘要。"
+        "最后单独一行输出标记 %s，标记前不得有省略号。"
+    ) % (competition_name or '未指定赛事', '深度版' if mode == 'deep' else '简洁版', instruction,
+         source, _REVISION_END_MARKER)
     try:
         from langchain_core.messages import HumanMessage
         import competition_agents as _agents
-        with _agents._LLM_GATE:
-            resp = _agents.llm.invoke([HumanMessage(content=prompt)])
-        revised = (resp.content or '').strip()
+        resp = _agents.llm.invoke([HumanMessage(content=prompt)], max_tokens=8192)
+        raw_revision = (resp.content or '').strip()
+        finish_reason = (getattr(resp, "response_metadata", {}) or {}).get("finish_reason")
+        if not raw_revision or finish_reason in ("length", "max_tokens") or \
+                not raw_revision.endswith(_REVISION_END_MARKER):
+            return jsonify({"success": False, "error_code": "incomplete_revision",
+                            "error": "模型返回内容不完整，原稿未修改，请缩小修订范围后重试"}), 502
+        revised_part = raw_revision[:-len(_REVISION_END_MARKER)].rstrip()
+        if not revised_part:
+            return jsonify({"success": False, "error_code": "incomplete_revision",
+                            "error": "模型未返回有效修订内容，原稿未修改，请重试"}), 502
+        missing_headings = [key for key in _revision_heading_keys(source)
+                            if key not in _revision_heading_keys(revised_part)]
+        if missing_headings:
+            return jsonify({"success": False, "error_code": "incomplete_revision",
+                            "error": "修订结果缺少原有章节标题，原稿未修改，请缩小修订范围后重试"}), 502
+        if section_span:
+            revised = proposal[:section_span[0]] + revised_part + proposal[section_span[1]:]
+        else:
+            revised = revised_part
     except Exception as exc:
         print("[revise_chapter] llm failed: %s" % exc)
+        if "今日 LLM 调用已达上限" in str(exc):
+            from competition_agents import get_quota_status
+            return jsonify({"success": False, "error_code": "quota_exhausted",
+                            "quota": get_quota_status()}), 429
         return jsonify({"success": False, "error_code": "upstream_error",
                         "error": "模型调用失败，请稍后重试"}), 502
     _chat_persist(uid, 'user', "修订申报书：%s" % instruction, data.get('style', 'concise'))
@@ -5386,6 +5461,23 @@ def admin_quota():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/admin/llm-usage')
+def admin_llm_usage():
+    auth = _require_admin()
+    if auth:
+        return auth
+    try:
+        import competition_agents as _agents
+        from llm_usage_store import aggregate_usage
+        days = request.args.get("days", default=30, type=int)
+        limit = request.args.get("limit", default=20, type=int)
+        return jsonify({"success": True, **aggregate_usage(
+            _agents._LLM_USAGE_DB_PATH, days=days, limit=limit)})
+    except Exception as exc:
+        print("[llm_usage] aggregate failed: %s" % exc)
+        return jsonify({"success": False, "error": "Token 统计暂不可用"}), 500
 
 
 @app.route('/api/log_error', methods=['POST'])
@@ -6526,7 +6618,8 @@ _CHAT_PRESET = [
 ]
 
 
-_CHAT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+_CHAT_DB_PATH = os.path.abspath(os.getenv("COMPETITION_CHAT_DB_PATH") or
+                                os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db"))
 
 
 def _chat_reserve_quota():
@@ -6607,6 +6700,26 @@ def apply_proposal_revision(history_id):
                 conn.rollback()
                 conn.close()
                 return jsonify({"success": False, "error": "缺少 proposal 内容"}), 400
+            previous_proposal = db_record.get("proposal") or ""
+            if any(key not in _revision_heading_keys(new_proposal)
+                   for key in _revision_heading_keys(previous_proposal)):
+                conn.rollback()
+                conn.close()
+                return jsonify({"success": False, "error": "修订稿缺少原有章节，未覆盖原稿"}), 422
+            try:
+                from export_quality import hard_content_issues
+                blind = _is_double_blind(data.get("competition_name") or db_record.get("competition_name"))
+                hard_issues = hard_content_issues(new_proposal, double_blind=blind)
+            except Exception as exc:
+                print("[proposal_revision] hard-content check failed: %s" % exc)
+                conn.rollback()
+                conn.close()
+                return jsonify({"success": False, "error": "修订稿校验暂不可用，原稿未修改"}), 503
+            if hard_issues:
+                conn.rollback()
+                conn.close()
+                return jsonify({"success": False, "error": "修订稿未通过安全校验，原稿未修改",
+                                "reasons": hard_issues}), 422
             db_record["_revision_previous"] = db_record.get("proposal")
             db_record["proposal"] = new_proposal
             db_record["competition_name"] = (data.get("competition_name") or '').strip() or db_record.get("competition_name", '')
