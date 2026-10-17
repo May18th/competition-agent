@@ -1,0 +1,501 @@
+/* =============================================================================
+   wbresult339.css —— 结果页信息架构（339 轮重做 / 374 轮健康度）
+   339 轮：结果页 12 章 + 8 图表平铺，用户看不到重点，不会翻到尾。
+   374 轮：补「健康度四合一状态灯」，任一红灯时顶部提示先处理再导出。
+
+   纪律：
+   1) 全文件不写死颜色 —— 一律 var(--wb-*, 回退 var(现有语义变量))。
+      theme-p0 那套 token 一旦落地，本文件无需改动即可跟着换肤。
+   2) 禁用 text-overflow:ellipsis / -webkit-line-clamp / white-space:nowrap，
+      长文本一律换行显示（337 轮红线）。
+   3) 对比度按 402 轮标准：正文取 --wb-text(≥4.5:1)，次要取 --wb-text-sub，
+      三级提示取 --wb-text-sub2，两套主题都过 AA。
+   ============================================================================= */
+
+/* ---- 局部 token：优先吃新的 --wb-*，没有就回落到现有语义变量 ---- */
+.wb339 {
+    --w339-text: var(--wb-text, var(--text));
+    --w339-text-sub: var(--wb-text-sub, var(--text-dim));
+    --w339-text-mute: var(--wb-text-sub2, var(--text-mute));
+    --w339-border: var(--wb-border, var(--line));
+    --w339-border-strong: var(--wb-border-strong, var(--line-strong));
+    --w339-card: var(--wb-card, var(--surface-solid));
+    --w339-surface: var(--wb-surface, var(--surface-2));
+    --w339-surface-3: var(--wb-surface-3, var(--surface-3));
+    --w339-accent: var(--wb-accent, var(--c-a));
+    --w339-accent-soft: var(--wb-accent-soft, var(--c-a-soft));
+    --w339-grad: var(--wb-accent-grad, linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%));
+    /* 通过：--ok 在日间没有成对深色，直接用主色（夜间 8.67:1 / 日间 5.36:1，双端过 AA） */
+    --w339-ok: var(--wb-ok-text, var(--c-a));
+    --w339-ok-bg: var(--wb-ok-bg, var(--c-a-soft));
+    --w339-ok-line: var(--wb-ok-line, var(--line-strong));
+    --w339-warn: var(--wb-warn-text, var(--warn-text));
+    --w339-warn-bg: var(--wb-warn-bg, var(--warn-bg));
+    --w339-warn-line: var(--wb-warn-line, var(--warn-line));
+    --w339-err: var(--wb-err-text, var(--err-text));
+    --w339-err-bg: var(--wb-err-bg, var(--err-bg));
+    --w339-err-line: var(--wb-err-line, var(--err-line));
+    --w339-radius: var(--wb-radius, 12px);
+}
+
+/* ============================ 外壳 ============================ */
+.wb339 {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--w339-text);
+}
+.wb339 * { box-sizing: border-box; }
+
+/* rail 布局：桌面左侧目录常驻 + 右侧正文。由 JS 在 ≥1100px 时套上，
+   窄屏自动退回 inline（目录变顶部抽屉），不做任何 DOM 破坏。 */
+.wb339-shell {
+    display: block;
+}
+.wb339-shell.is-rail {
+    display: grid;
+    grid-template-columns: 216px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+.wb339-main { min-width: 0; }
+
+/* ==================== ① 关键结论聚合区 ==================== */
+.wb339-hero {
+    background: var(--w339-card);
+    border: 1px solid var(--w339-border);
+    border-radius: var(--w339-radius);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+}
+.wb339-hero-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+.wb339-hero-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--w339-text);
+}
+.wb339-hero-sub {
+    font-size: 12px;
+    color: var(--w339-text-mute);
+}
+
+/* 三栏：评分 / 一句话定位 / 待改 3 处。窄屏自动堆叠。 */
+.wb339-hero-grid {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.wb339-score-card {
+    background: var(--w339-surface);
+    border: 1px solid var(--w339-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: left;
+}
+.wb339-score-num {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--w339-accent);
+    font-variant-numeric: tabular-nums;
+}
+.wb339-score-max {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--w339-text-sub);
+}
+.wb339-score-cap {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--w339-text-mute);
+    margin-top: 4px;
+    line-height: 1.6;
+}
+.wb339-score-dims {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--w339-border);
+    display: grid;
+    gap: 5px;
+}
+.wb339-dim-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--w339-text-sub);
+}
+.wb339-dim-val {
+    font-weight: 700;
+    color: var(--w339-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.wb339-oneliner {
+    background: var(--w339-accent-soft);
+    border-left: 3px solid var(--w339-accent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+}
+.wb339-oneliner-lab {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--w339-accent);
+    margin-bottom: 4px;
+}
+.wb339-oneliner-txt {
+    font-size: 14.5px;
+    color: var(--w339-text);
+    line-height: 1.75;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.wb339-issues-lab {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--w339-text-sub);
+    margin-bottom: 6px;
+}
+.wb339-issues {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+.wb339-issue {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--w339-border);
+    border-radius: 8px;
+    background: var(--w339-surface);
+}
+.wb339-issue-no {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    border-radius: 50%;
+    background: var(--w339-accent);
+    color: var(--w339-card);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+.wb339-issue-txt {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--w339-text);
+    line-height: 1.7;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.wb339-issue-jump {
+    flex: 0 0 auto;
+    align-self: center;
+    font-size: 12px;
+    color: var(--w339-accent);
+    background: transparent;
+    border: 1px dashed var(--w339-accent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.wb339-empty {
+    font-size: 13px;
+    color: var(--w339-text-mute);
+    line-height: 1.7;
+}
+
+/* ==================== ② 健康度四合一状态灯 ==================== */
+.wb339-health {
+    background: var(--w339-card);
+    border: 1px solid var(--w339-border);
+    border-radius: var(--w339-radius);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+.wb339-health-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.wb339-health-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--w339-text);
+}
+.wb339-health-sub {
+    font-size: 11.5px;
+    color: var(--w339-text-mute);
+}
+.wb339-lamps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+.wb339-lamp {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--w339-border);
+    background: var(--w339-surface);
+    color: var(--w339-text);
+    font: inherit;
+    cursor: pointer;
+}
+.wb339-lamp-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.wb339-dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--w339-text-mute);
+}
+.wb339-lamp-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--w339-text-sub);
+}
+.wb339-lamp-val {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--w339-text);
+    line-height: 1.4;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.wb339-lamp-note {
+    display: block;
+    margin-top: 3px;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--w339-text-mute);
+    line-height: 1.6;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+/* 四种状态：pass 绿 / warn 黄 / fail 红 / unknown 中性（不许把 unknown 画成 pass） */
+.wb339-lamp.s-pass { background: var(--w339-ok-bg); border-color: var(--w339-ok-line); }
+.wb339-lamp.s-pass .wb339-dot { background: var(--w339-ok); }
+.wb339-lamp.s-pass .wb339-lamp-val { color: var(--w339-ok); }
+
+.wb339-lamp.s-warn { background: var(--w339-warn-bg); border-color: var(--w339-warn-line); }
+.wb339-lamp.s-warn .wb339-dot { background: var(--w339-warn); }
+.wb339-lamp.s-warn .wb339-lamp-val { color: var(--w339-warn); }
+
+.wb339-lamp.s-fail { background: var(--w339-err-bg); border-color: var(--w339-err-line); }
+.wb339-lamp.s-fail .wb339-dot { background: var(--w339-err); }
+.wb339-lamp.s-fail .wb339-lamp-val { color: var(--w339-err); }
+
+.wb339-lamp.s-unknown { background: var(--w339-surface); border-color: var(--w339-border); }
+.wb339-lamp.s-unknown .wb339-dot { background: var(--w339-text-mute); }
+.wb339-lamp.s-unknown .wb339-lamp-val { color: var(--w339-text-sub); }
+
+/* 红灯横幅：任一 fail / warn 时提示先处理再导出 */
+.wb339-banner {
+    display: none;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    background: var(--w339-err-bg);
+    border: 1px solid var(--w339-err-line);
+    color: var(--w339-err);
+    font-size: 13px;
+    line-height: 1.75;
+}
+.wb339-banner.is-warn {
+    background: var(--w339-warn-bg);
+    border-color: var(--w339-warn-line);
+    color: var(--w339-warn);
+}
+.wb339-banner.is-on { display: flex; }
+.wb339-banner b { font-weight: 700; }
+.wb339-banner-txt { flex: 1 1 auto; min-width: 0; word-break: break-word; overflow-wrap: anywhere; }
+
+/* ==================== ③ 目录 + 锚点导航 ==================== */
+.wb339-toc {
+    background: var(--w339-card);
+    border: 1px solid var(--w339-border);
+    border-radius: var(--w339-radius);
+    padding: 12px 12px;
+    margin-bottom: 14px;
+}
+.wb339-shell.is-rail .wb339-toc {
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    margin-bottom: 0;
+}
+.wb339-toc-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.wb339-toc-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--w339-text);
+}
+.wb339-toc-toggle {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--w339-accent);
+    background: transparent;
+    border: 1px dashed var(--w339-accent);
+    border-radius: 6px;
+    padding: 3px 9px;
+    cursor: pointer;
+}
+.wb339-toc-group {
+    margin-bottom: 8px;
+}
+.wb339-toc-gname {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--w339-text-mute);
+    padding: 4px 6px 2px;
+}
+.wb339-toc-list {
+    display: grid;
+    gap: 2px;
+}
+.wb339-toc-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 9px;
+    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--w339-text-sub);
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.6;
+    cursor: pointer;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.wb339-toc-btn:hover { background: var(--w339-surface); color: var(--w339-text); }
+.wb339-toc-btn.is-on {
+    background: var(--w339-accent-soft);
+    border-left-color: var(--w339-accent);
+    color: var(--w339-accent);
+    font-weight: 600;
+}
+/* 跳转落点闪一下：让用户知道跳到哪了 */
+.wb339-flash {
+    box-shadow: 0 0 0 2px var(--w339-accent);
+}
+
+/* 移动端：目录收进抽屉 */
+.wb339-drawer-btn {
+    display: none;
+    width: 100%;
+    padding: 9px 12px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--w339-border);
+    background: var(--w339-surface);
+    color: var(--w339-text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.wb339-body { display: block; }
+.wb339-toc.is-collapsed .wb339-body { display: none; }
+
+/* ==================== ⑤ 写作构思纲要（有内容才渲染） ==================== */
+.wb339-outline {
+    background: var(--w339-card);
+    border: 1px solid var(--w339-border);
+    border-radius: var(--w339-radius);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+}
+.wb339-outline-head {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--w339-accent);
+    margin-bottom: 8px;
+}
+.wb339-outline-body {
+    font-size: 13.5px;
+    color: var(--w339-text);
+    line-height: 1.85;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.wb339-outline-body p { margin-bottom: 8px; }
+.wb339-outline-body ol,
+.wb339-outline-body ul { padding-left: 20px; margin-bottom: 8px; }
+.wb339-outline-body h1,
+.wb339-outline-body h2,
+.wb339-outline-body h3,
+.wb339-outline-body h4 {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--w339-accent);
+    margin: 10px 0 6px;
+}
+
+/* ==================== 窄屏适配 ==================== */
+/* 平板 / 小桌面：目录不再常驻左侧，退回顶部块 */
+@media (max-width: 1099px) {
+    .wb339-shell.is-rail {
+        display: block;
+    }
+    .wb339-shell.is-rail .wb339-toc {
+        position: static;
+        max-height: none;
+        overflow: visible;
+        margin-bottom: 12px;
+    }
+}
+@media (max-width: 820px) {
+    .wb339-hero { padding: 13px 14px; }
+    .wb339-hero-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .wb339-score-card { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .wb339-score-dims { width: 100%; margin-top: 8px; padding-top: 8px; }
+    .wb339-lamps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* 移动端目录默认收起，点「目录」展开 */
+    .wb339-drawer-btn { display: block; }
+    .wb339-toc.is-collapsed .wb339-body { display: none; }
+    .wb339-toc-title { font-size: 12.5px; }
+}
+@media (max-width: 420px) {
+    .wb339-lamps { grid-template-columns: minmax(0, 1fr); }
+}
+/* 尊重系统「减少动态效果」：平滑滚动关掉，直接跳 */
+@media (prefers-reduced-motion: reduce) {
+    .wb339-toc-btn, .wb339-lamp, .wb339-issue-jump { transition: none; }
+}
