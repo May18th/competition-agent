@@ -551,6 +551,13 @@
             'udTeam', 'udSite', 'udScale', 'udMetric', 'udCost', 'udExtra'];
         // 兼容旧引用（清空表单、字数统计等地方都用 WB_FORM_IDS 遍历）
         var WB_FORM_IDS = WB_FORM_SAFE.concat(WB_FORM_SENSITIVE);
+        var WB_COMP_CHOICE_KEY = 'wbCompetitionChosen';
+        function wbMarkCompetitionChoice(value) {
+            try {
+                if (String(value || '').trim()) _wbStoreSet(WB_COMP_CHOICE_KEY, '1');
+                else _wbStoreDel(WB_COMP_CHOICE_KEY);
+            } catch (e) {}
+        }
         // 勾选项要单独走 checked：混进 WB_FORM_IDS 的话 el.value 恒为 "on"，恢复时会被当成永远勾上
         var WB_CHECK_IDS = ['iterateOpt'];
 
@@ -718,6 +725,11 @@
             if (!d && !ds) return;
             d = d || {};
             ds = ds || {};
+            // 旧版本会自动保存 iCAN 默认值；没有用户主动选择标记时，将它迁移为空选状态。
+            if (d.competition === 'iCAN大学生创新创业大赛' && _wbStoreGet(WB_COMP_CHOICE_KEY) !== '1') {
+                delete d.competition;
+                try { _wbStoreSet(WB_FORM_KEY, JSON.stringify(d)); } catch (e) {}
+            }
             var safeHit = 0, sensHit = 0;
             // 中性字段：跨会话保留
             WB_FORM_SAFE.forEach(function (id) {
@@ -770,8 +782,14 @@
                 if (!el) return;
                 // 167 轮：400ms 防抖意味着连打一个长句要序列化二三十次（每次都要遍历全表单 + 写 localStorage），
                 // 手机上这是实打实的耗电项。改 1s；失焦时再补存一次，内容不会丢。
-                el.addEventListener('input', function () { clearTimeout(t); t = setTimeout(wbSaveForm, 1000); });
-                el.addEventListener('change', wbSaveForm);
+                el.addEventListener('input', function () {
+                    if (id === 'competition') wbMarkCompetitionChoice(el.value);
+                    clearTimeout(t); t = setTimeout(wbSaveForm, 1000);
+                });
+                el.addEventListener('change', function () {
+                    if (id === 'competition') wbMarkCompetitionChoice(el.value);
+                    wbSaveForm();
+                });
                 el.addEventListener('blur', wbSaveForm);
             });
             var radios = document.querySelectorAll('input[name=mode]');
@@ -788,14 +806,8 @@
             });
         })();
         wbLoadForm();
-        // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
-        // 并顺带把「赛事要求卡」渲染出来
+        // 留空表示尚未选赛事；只渲染通用状态，不代替用户选择。
         (function () {
-            var el = document.getElementById('competition');
-            if (el && !String(el.value || '').trim()) {
-                el.value = 'iCAN大学生创新创业大赛';
-                try { wbSaveForm(); } catch (e) {}
-            }
             try { onCompetitionChange(); } catch (e) {}
         })();
         // 存储被拦时明确说一次：否则「历史是空的」「草稿刷新就没了」对用户全是黑盒
@@ -2438,6 +2450,7 @@
             var el = document.getElementById('competition');
             if (!el) return;
             el.value = name || '';
+            wbMarkCompetitionChoice(el.value);
             wbCompClose();
             wbCompInput();
             onCompetitionChange();
@@ -2451,6 +2464,7 @@
             var _cur = String(el.value || '').trim();
             if (_cur && !window.confirm('确定清空已选赛事「' + _cur + '」？\n\n清空后需要重新选择赛事。')) return;
             el.value = '';
+            wbMarkCompetitionChoice('');
             wbCompClose();
             var clr = document.getElementById('compClear');
             if (clr) clr.style.display = 'none';

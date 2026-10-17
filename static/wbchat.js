@@ -51,6 +51,12 @@
        每条目三档口吻：b=简洁严谨（默认）/ f=轻松幽默 / a=学术详细 */
     var PRESET = [
         {
+            k: ['谁创造了你', '谁开发了你', '谁创建了你', '你的开发者是谁', '你的开发方是谁', '你是谁'],
+            b: '我是可创无限平台里的科创赛事助手“小创”。目前没有可核实的资料说明具体是哪位个人创建了我，我不会编造开发者信息。',
+            f: '我是可创无限平台里的小创，帮你处理科创赛事和备赛问题。具体是哪位开发者做的，我手头没有可靠资料，不乱猜。',
+            a: '我是可创无限平台提供的科创赛事助手“小创”。现有资料未列明具体个人开发者，因此无法准确确认创建者姓名；我不会将赛事主办方误称为开发者。'
+        },
+        {
             k: ['评分', '维度', '权重', '怎么打分', '评分标准'],
             b: '评分维度以所选赛事的官方口径为准，选中赛事后首页会显示该赛事的真实维度。例如 iCAN 创新赛道：创新性 35 / 实用性 25 / 原创性 20 / 技术方案 20（四项、双盲）。',
             f: '这个得看你报哪个赛事——官方口径说了算😉 选好赛事，首页就会把真实维度列出来。比如 iCAN 创新赛道是四门：创新性 35、实用性 25、原创性 20、技术方案 20，还是双盲评审。',
@@ -259,19 +265,6 @@
 
     function isMobile() { return window.innerWidth <= 768; }
 
-    /* ---------- 336：当前所选赛事名（开场白要用） ----------
-       首页赛事输入框是 #competition（input + datalist）。取不到就返回 ''，
-       由调用方退回不带赛事名的短句——绝不写死赛事名。 */
-    function currentCompName() {
-        try {
-            var el = document.getElementById('competition');
-            var v = el ? String(el.value || '').trim() : '';
-            if (!v) return '';
-            v = v.replace(/\s+/g, ' ');
-            return v.length > 20 ? v.slice(0, 20) : v;   // 开场白要短，过长截断（不加省略号）
-        } catch (e) { return ''; }
-    }
-
     /* ---------- 风格持久化：优先服务端（292 双端同步），降级 sessionStorage ---------- */
     function loadStyle() {
         // 先读本地降级值，保证首屏不闪；随后由服务端覆盖（服务端为准）
@@ -470,7 +463,6 @@
                     try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
                     saveStyle(this.getAttribute('data-style'));
                     setMenuOpen(false);
-                    refreshGreet();      // 399：开场白口吻跟着风格一起换，别留着上一个风格的旧话术
                     pushMsg('bot', '已切到「' + styleName() + '」，后面就按这个口吻聊。');
                 });
             }
@@ -624,14 +616,13 @@
         thinkNode = null;
     }
 
-    /* 336：pushMsg 增加 opts —— {sub: 次要小字, action: {label, onClick}, greet: true}
+    /* 336：pushMsg 增加 opts —— {sub: 次要小字, action: {label, onClick}}
        只用内联样式，不动任何 css 文件。 */
     function pushMsg(who, text, opts) {
         if (!listEl) return;
         opts = opts || {};
         var d = document.createElement('div');
         d.style.marginBottom = '10px';
-        if (opts.greet) d.setAttribute('data-wbgreet', '1');
         if (who === 'me') {
             d.style.textAlign = 'right';
             d.innerHTML = '<span style="display:inline-block; max-width:82%; padding:8px 11px;'
@@ -672,26 +663,20 @@
         if (historyLoaded || historyLoading || !listEl) return;
         historyLoading = true;
         if (inputEl) inputEl.disabled = true;
-        pushThinking();
         fetch('/api/chat_history', { method: 'GET', credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (j) {
-                removeThinking();
                 if (j && j.success && j.messages && j.messages.length) {
                     for (var i = 0; i < j.messages.length; i++) {
                         var m = j.messages[i];
                         pushMsg(m.role === 'user' ? 'me' : 'bot', m.content || '');
                     }
-                } else {
-                    pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
                 }
                 historyLoaded = true;
                 historyLoading = false;
                 if (inputEl) inputEl.disabled = false;
             })
             .catch(function () {
-                removeThinking();
-                if (!listEl.children.length) pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
                 historyLoaded = true;
                 historyLoading = false;
                 if (inputEl) inputEl.disabled = false;
@@ -708,7 +693,6 @@
           .then(function (j) {
               if (!j || !j.success) return;
               listEl.innerHTML = '';
-              pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
               historyLoaded = true;
           }).catch(function () {})
           .then(function () { button.disabled = false; });
@@ -828,45 +812,12 @@
         try { document.body.classList.toggle('wbchat-open', opened); } catch (e) {}
         if (opened) {
             if (!listEl || !listEl.children.length) restoreHistory();
-            else refreshGreet();
             renderStyleBadge();
             if (inputEl) { try { inputEl.focus(); } catch (e) {} }
         }
     }
 
     function toggle() { setOpen(!opened); }
-
-    /* ---------- 336：开场白——结合当前所选赛事，短句、引导式、不做功能清单自我介绍 ---------- */
-    function greetText() {
-        var c = currentCompName();
-        if (style === 'casual') {
-            return c ? ('我在～关于「' + c + '」的评分、档位、导出，想问啥直接说。')
-                     : '我在～评分、档位、导出这些，想问啥直接说。';
-        }
-        if (style === 'academic') {
-            return c ? ('我在。关于「' + c + '」的评分维度、档位差异与导出格式，可随时提问。')
-                     : '我在。关于评分维度、档位差异与导出格式，可随时提问。';
-        }
-        return c ? ('我在，关于「' + c + '」的评分、档位、导出，随时问。')
-                 : '我在，关于评分、档位、导出这些，随时问。';
-    }
-
-    function greetSub() {
-        return '想换个口吻，点右上角「风格」就行。';
-    }
-
-    /* 开场白节点还在（用户没聊过）时，按最新赛事名刷新文案 */
-    function refreshGreet() {
-        if (!listEl) return;
-        try {
-            var n = listEl.querySelector('[data-wbgreet="1"]');
-            if (!n) return;
-            var box = n.firstChild;
-            if (box && box.firstChild) box.firstChild.nodeValue = greetText();
-            var sub = box ? box.querySelector('div') : null;
-            if (sub) sub.textContent = greetSub();
-        } catch (e) {}
-    }
 
     function boot() {
         try {
@@ -897,13 +848,6 @@
             document.addEventListener('keydown', function (e) {
                 if (menuIsOpen() && e && (e.key === 'Escape' || e.keyCode === 27)) setMenuOpen(false);
             });
-            // 336：赛事输入框变化后，开场白跟着换赛事名（只在用户还没开聊时）
-            var compEl = document.getElementById('competition');
-            if (compEl) {
-                var onComp = function () { if (opened) refreshGreet(); };
-                compEl.addEventListener('change', onComp);
-                compEl.addEventListener('blur', onComp);
-            }
         } catch (e) {}
     }
 

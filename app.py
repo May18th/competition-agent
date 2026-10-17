@@ -6926,7 +6926,27 @@ def _chat_style_lead(style):
 
 
 # ---- 产品常见问题预设（不耗 LLM，快速准确；仅在未识别到赛事名时命中）----
+_CHAT_IDENTITY_ANSWER = (
+    '我是可创无限平台里的科创赛事助手“小创”。目前没有可核实的资料说明具体是哪位个人创建了我，'
+    '我不会编造开发者信息。'
+)
+
+
+def _chat_identity_answer(msg):
+    text = _re.sub(r"[\s，。！？?、,.!：:；;]+", "", str(msg or ""))
+    if len(text) > 48:
+        return None
+    identity_terms = (
+        "谁创造了你", "谁创造你", "谁开发了你", "谁开发你", "谁创建了你", "谁创建你",
+        "你是谁开发的", "你是谁创造的", "谁是你的开发者", "你的开发者是谁",
+        "你的开发方是谁", "你是谁",
+    )
+    return _CHAT_IDENTITY_ANSWER if any(term in text for term in identity_terms) else None
+
+
 _CHAT_PRESET = [
+    (("谁创造了你", "谁开发了你", "谁创建了你", "开发者是谁", "你是谁"),
+     _CHAT_IDENTITY_ANSWER),
     (("评分", "打分", "维度", "权重", "多少分"),
      "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
     (("章节", "结构", "几章", "目录"),
@@ -6951,7 +6971,7 @@ _CHAT_PRESET = [
      "首页「一键演示」直接载入预置样例结果（不真实生成、不耗额度），可查看完整评分/正文/图表/PPT 与导出。"),
     (("失败", "报错", "出错", "重试", "卡住", "打不开"),
      "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
-    (("记住", "记忆", "背景", "你是谁"),
+    (("记住", "记忆", "背景"),
      "我是小创，你的科创赛事教练+模拟评委。你可以对我说「记住 参赛赛事=挑战杯」「记住 项目名=智能助老机器人」来建立长期背景，之后回答会更贴合你的情况。"),
 ]
 
@@ -7661,9 +7681,14 @@ def chat():
         msg = msg[:1500]
     style = _chat_style_key(data.get('style'))
     uid = _current_uid()
+    identity_answer = _chat_identity_answer(msg)
 
     # 演示只读：仅走产品预设，不接外部模型
     if _admin_session_role() == 'readonly':
+        if identity_answer:
+            return jsonify({"success": True,
+                            "reply": _chat_style_lead(style) + identity_answer,
+                            "source": "preset", "style": style})
         for kws, ans in _CHAT_PRESET:
             if any(k in msg for k in kws):
                 return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
@@ -7671,6 +7696,13 @@ def chat():
         return jsonify({"success": False,
                         "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位 / 导出等预设问题",
                         "error_code": "demo_readonly"}), 403
+
+    # 身份类问题不应被当前赛事上下文带偏，也不需要调用模型或赛事知识库。
+    if identity_answer:
+        reply = _chat_style_lead(style) + identity_answer
+        _chat_persist(uid, 'user', msg, style)
+        _chat_persist(uid, 'bot', reply, style)
+        return _sse_text_reply(reply)
 
     page_context = _chat_page_context(data)
     profile = _chat_profile_load(uid)

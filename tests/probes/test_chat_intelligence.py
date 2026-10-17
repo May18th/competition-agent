@@ -93,6 +93,44 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIsNone(app_module._chat_find_preset("PPT项目如何突出评委关心的创新点"))
         self.assertIsNotNone(app_module._chat_find_preset("一键演示会扣额度吗"))
 
+    def test_identity_question_bypasses_selected_competition_and_llm(self):
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_detect_competition", side_effect=AssertionError("must not inspect event")), \
+             patch.object(app_module, "_chat_reserve_quota") as reserve, \
+             patch.object(app_module, "_build_knowledge", side_effect=AssertionError("must not query event KB")):
+            response = self.client.post("/api/chat", json={
+                "message": "谁创造了你",
+                "stream": True,
+                "context": {"competition": "iCAN大学生创新创业大赛"},
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/event-stream")
+        self.assertIn("可创无限平台", body)
+        self.assertIn("不会编造开发者信息", body)
+        self.assertNotIn("iCAN", body)
+        reserve.assert_not_called()
+
+    def test_identity_question_is_available_to_readonly_demo(self):
+        with patch.object(app_module, "_admin_session_role", return_value="readonly"):
+            response = self.client.post("/api/chat", json={"message": "你是谁开发的"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["source"], "preset")
+        self.assertIn("可创无限平台", response.get_json()["reply"])
+        self.assertEqual(self.client.get("/api/chat_history").get_json()["messages"], [])
+
+    def test_chat_ui_has_no_unsolicited_greeting_or_ican_default(self):
+        with open(os.path.join(ROOT, "static", "wbchat.js"), encoding="utf-8") as stream:
+            chat_js = stream.read()
+        with open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8") as stream:
+            app_js = stream.read()
+        self.assertNotIn("function greetText()", chat_js)
+        self.assertNotIn("pushMsg('bot', greetText()", chat_js)
+        self.assertNotIn("el.value = 'iCAN大学生创新创业大赛'", app_js)
+        self.assertIn("WB_COMP_CHOICE_KEY", app_js)
+
     def test_followup_can_use_only_the_current_users_saved_proposal(self):
         self._save_proposal("alice", "ALICE proposal: 通过可运行原型验证设备预约冲突检测。")
         self._save_proposal("bob", "BOB private proposal: 不得泄露。")
