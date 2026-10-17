@@ -344,9 +344,9 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("评审口径、内容边界与验证重点", app_module._chat_missing_requirements_reply(
             "academic", ["赛事名称", "项目需求"]
         ))
-        self.assertEqual(app_module._chat_style_key("评委视角"), "judge")
-        self.assertEqual(app_module._chat_style_key("创意发散"), "brainstorm")
-        self.assertEqual(app_module._chat_style_key("陪练教练"), "coach")
+        self.assertIn("结论先行", app_module._system_prompt("concise", "", {}))
+        self.assertIn("类比", app_module._system_prompt("casual", "", {}))
+        self.assertIn("事实、假设和待核实项", app_module._system_prompt("academic", "", {}))
         self.assertIn("截止日期", app_module._chat_smalltalk_answer("可以给我讲个笑话吗", "casual"))
         self.assertIn("风险矩阵", app_module._chat_smalltalk_answer("讲个笑话", "academic"))
 

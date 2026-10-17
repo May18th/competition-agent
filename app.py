@@ -6903,9 +6903,11 @@ _CHAT_STYLES = {
     "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
     "casual": {"label": "轻松幽默", "tone": "口语化、轻松幽默，可带一点趣味，但信息必须准确"},
     "academic": {"label": "学术详细", "tone": "引用赛事规则依据、展开论证，可适当详细"},
-    "judge": {"label": "评委视角", "tone": "站在评委审阅角度，优先指出证据、风险、评分关注点和可追问处"},
-    "brainstorm": {"label": "创意发散", "tone": "先发散再收敛，给出多个有差异的方向，并说明验证思路，避免替用户拍板"},
-    "coach": {"label": "陪练教练", "tone": "像项目教练一样循序追问、及时鼓励，给出下一步可执行动作"},
+}
+_CHAT_STYLE_CAPABILITIES = {
+    "concise": "结论先行；需要行动时给 3 步以内的执行清单；涉及风险时单列风险，不堆背景话。",
+    "casual": "先直接回应再展开；用自然口语、类比和适度幽默帮助理解；关键结论仍用清单或小标题落地，不装熟、不油腻。",
+    "academic": "明确事实、假设和待核实项；按赛事规则、评审维度、证据链展开；对缺少的数据标注边界，不用未经核验的结论替代证据。",
 }
 
 
@@ -6921,12 +6923,10 @@ def _chat_style_key(v):
 
 
 def _chat_style_lead(style):
-    if style in ("casual", "coach"):
+    if style == "casual":
         return "嘿，简单说——"
-    if style in ("academic", "judge"):
+    if style == "academic":
         return "依据官方规则口径："
-    if style == "brainstorm":
-        return "先发散一下——"
     return ""
 
 
@@ -7258,7 +7258,7 @@ def _chat_recommendation_reply(comp_name, style):
             "3. **智能技术应用**：把已有技术特长放进一个明确场景，先确认用户和实际需求。\n\n"
             "回复一个编号，再补充你的专业、兴趣或可用资源；我会据此帮你收敛方向，赛事和赛道等你确认后再进入生成。"
         )
-    if style in ("casual", "coach"):
+    if style == "casual":
         body = body.replace(
             "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
             "当然可以，先别急着开工。我给你几个方向参考，但不会把它们直接当成你的项目。"
@@ -7272,7 +7272,7 @@ def _chat_recommendation_reply(comp_name, style):
             "回复一个编号，并告诉我你熟悉的领域、手头资源或想服务的人群，我再帮你收敛成可落地的项目题目。",
             "回复一个编号，再说说你熟悉什么、手里有什么资源，或者最想帮哪类人，我陪你把它收敛成真正能做的题目。"
         )
-    elif style in ("academic", "judge"):
+    elif style == "academic":
         body = body.replace(
             "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
             "可以。在启动生成前，建议先完成方向筛选；以下仅作候选，不作为已确认的项目事实。"
@@ -7292,10 +7292,10 @@ def _chat_recommendation_reply(comp_name, style):
 def _chat_missing_requirements_reply(style, details):
     """生成前的固定追问也必须遵循当前聊天风格。"""
     detail_text = "；".join(details)
-    if style in ("casual", "coach"):
+    if style == "casual":
         return ("可以，先别急着生成，免得方向写偏。我还差这几项：%s。\n"
                 "你可以分几条慢慢补，也可以直接填首页对应信息；资料齐了我再开工。" % detail_text)
-    if style in ("academic", "judge"):
+    if style == "academic":
         return ("在启动生成前，需要先核实以下输入：%s。\n"
                 "这些信息用于确定评审口径、内容边界与验证重点；请补充后再进入生成。" % detail_text)
     return ("可以帮你做。开始前我需要先了解：%s。"
@@ -7307,14 +7307,11 @@ def _chat_smalltalk_answer(msg, style):
     text = str(msg or "").strip()
     if not _re.search(r"(讲个笑话|讲笑话|说个笑话|讲个段子|逗我笑|来个笑话)", text):
         return None
-    if style == "brainstorm":
-        return ("可以，先来个科创版：评委问“项目最大的风险是什么？”团队答“截止日期。”\n"
-                "评委又问“怎么解决？”团队答“先把这一页 PPT 做完。”")
-    if style in ("academic", "judge"):
+    if style == "academic":
         return ("可以，给你一个与项目答辩有关的轻松版：\n"
                 "评委：项目最大的风险是什么？\n团队：截止日期。\n"
                 "评委：如何应对？\n团队：先完成这一页 PPT，再做风险矩阵。")
-    if style in ("casual", "coach"):
+    if style == "casual":
         return ("当然可以，来个科创版：\n"
                 "评委问：“项目最大的风险是什么？”\n"
                 "团队答：“截止日期。”\n"
@@ -7533,6 +7530,9 @@ _SYSTEM_BASE = (
 def _system_prompt(style, knowledge, profile):
     tone = _CHAT_STYLES.get(style, _CHAT_STYLES["concise"])["tone"]
     p = _SYSTEM_BASE.format(tone=tone)
+    p += "\n【当前风格的回答协议】\n" + _CHAT_STYLE_CAPABILITIES.get(
+        style, _CHAT_STYLE_CAPABILITIES["concise"]
+    ) + "\n"
     if profile:
         plines = ["【用户背景】"]
         for k, v in profile.items():

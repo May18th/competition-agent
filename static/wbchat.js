@@ -25,16 +25,12 @@
     var STORE_KEY = 'wbChatStyle';           // 仅作服务端不可用时的降级（sessionStorage）
 
     /* 聊天风格取值必须与后端 /api/chat 的 style 入参一致：
-       concise=简洁严谨 / casual=轻松幽默 / academic=学术详细 / judge=评委视角 /
-       brainstorm=创意发散 / coach=陪练教练。
+       concise=简洁严谨 / casual=轻松幽默 / academic=学术详细。
        ⚠️ 我第一版写成了 brief/fun，与后端对不上会导致切了风格后端不生效，已对齐。 */
     var STYLES = [
-        { id: 'concise',  name: '简洁严谨', hint: '精炼直给要点，适合评委/正式场景' },
-        { id: 'casual',   name: '轻松幽默', hint: '口语化、带点趣味，适合日常答疑' },
-        { id: 'academic', name: '学术详细', hint: '引用规则依据、展开论证，适合深挖细节' },
-        { id: 'judge',    name: '评委视角', hint: '优先看证据、风险和评审追问点' },
-        { id: 'brainstorm', name: '创意发散', hint: '先给多个方向，再一起收敛选题' },
-        { id: 'coach',    name: '陪练教练', hint: '循序追问，拆成下一步可执行动作' }
+        { id: 'concise',  name: '简洁严谨', hint: '结论先行、步骤清单、风险单列' },
+        { id: 'casual',   name: '轻松幽默', hint: '自然口语、类比启发、适度幽默' },
+        { id: 'academic', name: '学术详细', hint: '规则依据、假设边界、证据链' }
     ];
     // 旧值兼容（第一版用过 brief/fun，已落在用户会话里的要能认出来）
     var STYLE_ALIAS = { 'brief': 'concise', 'fun': 'casual' };
@@ -124,15 +120,13 @@
         var hit = presetAnswer(q);
         if (hit) return hit;
         if (/(没有灵感|没灵感|没有想法|没想法|不知道做什么|不知道做啥|帮我推荐|推荐一个项目|推荐几个方向|帮我想个项目|想不出项目)/.test(String(q || ''))) {
-            if (style === 'casual' || style === 'coach') return '当然可以，先别急着开工。我先给你几个方向参考，也不会替你直接定题：校园/社区服务、绿色与公共治理、智能技术应用。告诉我你的专业、兴趣或手头资源，我陪你把方向收敛成具体题目。';
-            if (style === 'academic' || style === 'judge') return '可以。在启动生成前，建议先完成方向筛选。你可以从校园/社区服务、绿色与公共治理、智能技术应用中选择候选方向，再补充团队专业、可用资源及目标人群，我会据此进一步收敛项目题目。';
-            if (style === 'brainstorm') return '可以，先发散几个方向：校园/社区服务、绿色与公共治理、智能技术应用。你挑一个感兴趣的，我再帮你拆用户、场景和验证方法。';
+            if (style === 'casual') return '当然可以，先别急着开工。我先给你几个方向参考，也不会替你直接定题：校园/社区服务、绿色与公共治理、智能技术应用。告诉我你的专业、兴趣或手头资源，我陪你把方向收敛成具体题目。';
+            if (style === 'academic') return '可以。在启动生成前，建议先完成方向筛选。你可以从校园/社区服务、绿色与公共治理、智能技术应用中选择候选方向，再补充团队专业、可用资源及目标人群，我会据此进一步收敛项目题目。';
             return '可以。我先不把推荐内容当成你的项目，也不会直接启动生成。你可以先从校园/社区服务、绿色与公共治理、智能技术应用里挑一个方向，再告诉我你的专业、兴趣或手头资源，我会帮你收敛成具体题目。';
         }
         var tail = '可以问我：评分维度、档位差异、导出格式、字数口径、赛事选择、演示模式。';
-        if (style === 'casual' || style === 'coach') return '我是' + AGENT_NAME + '～ 这个我还没学会，换个问法试试？' + tail;
-        if (style === 'academic' || style === 'judge') return '我是' + AGENT_NAME + '。当前问题未命中本地知识条目，且后端问答服务暂不可用。' + tail;
-        if (style === 'brainstorm') return '这个问题我还没接住，我们可以换个角度拆拆看。' + tail;
+        if (style === 'casual') return '我是' + AGENT_NAME + '～ 这个我还没学会，换个问法试试？' + tail;
+        if (style === 'academic') return '我是' + AGENT_NAME + '。当前问题未命中本地知识条目，且后端问答服务暂不可用。' + tail;
         return '我是' + AGENT_NAME + '，擅长回答赛事相关的问题。' + tail;
     }
 
@@ -381,7 +375,7 @@
     /* 回显当前风格：气泡角标 + 标题栏标签文字 + 箭头方向 + aria，三处同步 */
     function renderStyleBadge() {
         if (styleBadge) {
-            styleBadge.textContent = style === 'casual' ? '趣' : (style === 'academic' ? '详' : (style === 'judge' ? '评' : (style === 'brainstorm' ? '创' : (style === 'coach' ? '练' : '简'))));
+            styleBadge.textContent = style === 'casual' ? '趣' : (style === 'academic' ? '详' : '简');
             styleBadge.title = '聊天风格：' + styleName() + '（点击切换）';
         }
         var active = document.getElementById('wbChatStyleCur');
