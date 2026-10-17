@@ -100,6 +100,12 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertNotIn("iCAN", answer)
         self.assertNotIn("巡展20%", answer)
 
+    def test_faq_avoids_unverified_fixed_chapter_export_and_word_counts(self):
+        for question in ("章节有几章", "PPT有多少种风格", "导出有几个文件", "字数是多少"):
+            answer = app_module._chat_find_preset(question)
+            self.assertIsNotNone(answer, question)
+            self.assertNotRegex(answer, r"8\s*章|31\s*套|12\s*个文件|1300\s*[~～-]\s*1500|1\.2\s*万")
+
     def test_chat_ui_sends_current_page_context(self):
         with open(os.path.join(ROOT, "static", "wbchat.js"), encoding="utf-8") as stream:
             chat_js = stream.read()
