@@ -9,6 +9,7 @@
 import threading
 import collections
 import uuid
+import tempfile
 import time
 import io
 import os
@@ -17,7 +18,7 @@ import re
 import gzip as _gzip
 import secrets as _secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, send_file, make_response, g
+from flask import Flask, request, jsonify, send_file, make_response, g, after_this_request
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1154,6 +1155,7 @@ latest_result = None
 
 # 历史记录
 import json
+import json as _json
 from datetime import datetime
 
 def _row_to_item(row):
@@ -2144,6 +2146,9 @@ def export_word():
     # 封面主标题用「项目名」；没传项目名/创意时，从正文第一行自动提取，避免封面只写「项目申报书」这种泛名
     project = _project_name_hint(data) or _extract_project_name(text) or title
     text = _clean_export_text(_strip_identifying_text(text))
+    # 导出件不得残留给作者看的占位符（【待你填写：团队名称】等），交给评委的正式件必须干净。
+    from export_recovery import sanitize_export_text
+    text = sanitize_export_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
@@ -2168,7 +2173,8 @@ def export_word():
             inject_charts(doc, charts)
         except Exception as e:
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
-    filepath = 'tmp_export_single.docx'
+    # 每个请求独立临时文件：避免并发导出互相覆盖（同一固定文件名会让两名用户拿到对方的件）
+    filepath = os.path.join(tempfile.gettempdir(), "wb_export_%s.docx" % uuid.uuid4().hex)
     doc.save(filepath)
     # 三轮·导出终检（第一百二十二轮）：回读产物，中文乱码/标题层级异常则删产物打回。
     # 暂不查 TOC（TOC 是另一处 docx_render 的活，先修乱码/标题，避免误伤现有导出）。
@@ -2195,6 +2201,15 @@ def export_word():
         print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
+    # 响应发完后删除本请求的临时 DOCX，避免临时目录累积；并发导出各自独立文件互不覆盖
+    @after_this_request
+    def _cleanup_export(resp):
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        return resp
+
     return _export_reply(data, filepath,
                          _export_filename(project, competition, title, '.docx'))
 
@@ -2212,6 +2227,9 @@ def export_pdf():
     if not text.strip():
         return jsonify({"error": "内容为空"}), 400
     text = _clean_export_text(_strip_identifying_text(text))
+    # 与 export_word 同口径：导出件剔除给作者看的占位符（【待你填写】等）
+    from export_recovery import sanitize_export_text
+    text = sanitize_export_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
         chapter_order = _official_chapter_titles(data.get('competition_name'))
@@ -2225,7 +2243,8 @@ def export_pdf():
     text = _append_ai_notice(text)      # PDF 不走 _build_docx，标注要在这里单独加一遍
     try:
         from pdf_render import render_markdown_to_pdf
-        filepath = 'tmp_export.pdf'
+        # 每个请求独立临时文件：避免并发导出互相覆盖
+        filepath = os.path.join(tempfile.gettempdir(), "wb_export_%s.pdf" % uuid.uuid4().hex)
         render_markdown_to_pdf(text, filepath, title=title)
     except Exception as e:
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
@@ -2242,6 +2261,15 @@ def export_pdf():
         pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
+    # 响应发完后删除本请求的临时 PDF，避免临时目录累积
+    @after_this_request
+    def _cleanup_pdf(resp):
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        return resp
+
     return _export_reply(data, filepath,
                          _export_filename(project, competition, title, '.pdf'))
 
@@ -4537,51 +4565,53 @@ def rewrite_paragraph():
 
 @app.route('/api/revise_chapter', methods=['POST'])
 def revise_chapter():
-    """第二百四十六/二百四十七轮：提出修改——自然语言指令 → 定位章节 → 定向修改 → 返回全文。
-
-    输入：instruction（要改什么）+ history_id（或 proposal 全文）。输出：修改后的完整
-    正文 + 旧正文（供前端做版本回退）。评分与导出的联动由前端拿新正文走现有接口完成。
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    instruction = (data.get('instruction') or '').strip()
-    if not instruction:
-        return jsonify({"success": False, "error": "请说明要修改什么"}), 400
-    if _rate_limited():
-        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
-    # 取正文：优先回源 history_id，其次用提交的 proposal
-    proposal = ''
-    hid = data.get('history_id')
-    if hid:
-        _rec = _fetch_record_from_source({'history_id': hid})
-        proposal = (_rec or {}).get('proposal', '') if _rec else ''
-    if not proposal:
-        proposal = data.get('proposal') or ''
-    if not proposal or not str(proposal).strip():
-        return jsonify({"success": False, "error": "没有可修改的正文"}), 400
+    """按评委关注点/用户指令修订申报书，返回预览（不保存）。"""
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+    data = request.get_json(silent=True) or {}
+    uid = _current_uid()
     try:
-        from competition_agents import llm
+        hid = int(data.get("history_id"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "缺少有效的 history_id"}), 400
+    instruction = (data.get("instruction") or '').strip()
+    if not instruction:
+        return jsonify({"success": False, "error": "请提供修订要求"}), 400
+    record = _chat_load_owned_record(uid, hid)
+    if not record:
+        return jsonify({"success": False, "error": "没找到属于当前账号的申报书"}), 404
+    proposal = (record or {}).get("proposal") or ""
+    if not proposal:
+        return jsonify({"success": False, "error": "申报书正文为空"}), 400
+    if not _chat_reserve_quota():
+        from competition_agents import get_quota_status
+        return jsonify({"success": False, "error_code": "quota_exhausted",
+                        "quota": get_quota_status()}), 429
+    competition_name = (data.get("competition_name") or record.get("competition_name") or '').strip()
+    mode = (data.get("mode") or 'fast').strip()
+    prompt = (
+        "你正在帮助团队修订一份科创赛事申报书。请严格基于原文结构和事实进行修订，"
+        "不要编造正文未出现的数据、政策或案例。\n\n"
+        "赛事：%s\n"
+        "版本：%s\n\n"
+        "【修订要求】\n%s\n\n"
+        "【原文】\n%s\n\n"
+        "请直接输出修订后的完整正文（保持 Markdown 章节结构，不要输出解释、点评或摘要）。"
+    ) % (competition_name or '未指定赛事', '深度版' if mode == 'deep' else '简洁版', instruction, proposal[:8000])
+    try:
         from langchain_core.messages import HumanMessage
-        prompt = f"""你是科创赛事申报书编辑。请根据用户的修改意见，定位申报书对应章节并修改，输出完整的修改后全文。
-
-修改意见：{instruction}
-
-要求：
-1. 只修改意见指向的章节/段落，其他章节原样保留、不得丢失；
-2. 保持 Markdown 结构、章节标题与序号不变；
-3. 保留已有事实数字与「测算值/示例值」标注，不编造具体型号、院校名、人名或实测数据；
-4. 新增数字一律标「测算值/示例值」，禁止留【待填写】等占位；
-5. 直接输出完整修改后的申报书全文，不要任何解释。
-
-原文：
-{str(proposal)[:12000]}
-"""
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=8000)
-        new_proposal = (resp.content or '').strip()
-        if not new_proposal or len(new_proposal) < 200:
-            return jsonify({"success": False, "error": "修改失败，输出异常，请重试"}), 500
-        return jsonify({"success": True, "proposal": new_proposal, "old_proposal": str(proposal)})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+        import competition_agents as _agents
+        with _agents._LLM_GATE:
+            resp = _agents.llm.invoke([HumanMessage(content=prompt)])
+        revised = (resp.content or '').strip()
+    except Exception as exc:
+        print("[revise_chapter] llm failed: %s" % exc)
+        return jsonify({"success": False, "error_code": "upstream_error",
+                        "error": "模型调用失败，请稍后重试"}), 502
+    _chat_persist(uid, 'user', "修订申报书：%s" % instruction, data.get('style', 'concise'))
+    _chat_persist(uid, 'bot', "已完成修订预览，用户可一键应用或继续修改。", data.get('style', 'concise'))
+    return jsonify({"success": True, "old_proposal": proposal, "proposal": revised,
+                    "history_id": hid})
 
 
 @app.route('/api/proofread', methods=['POST'])
@@ -6494,6 +6524,114 @@ _CHAT_PRESET = [
     (("失败", "报错", "出错", "重试", "卡住", "打不开"),
      "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
 ]
+
+
+_CHAT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+
+
+def _chat_reserve_quota():
+    """Atomically reserve one LLM call because llm.stream bypasses invoke's quota wrapper."""
+    import competition_agents as _agents
+    with _agents._quota_lock:
+        _data = _agents._quota_load()
+        before = int(_data.get("calls", 0) or 0)
+        if before >= _agents._QUOTA_DAILY_LIMIT:
+            return False
+        _data["calls"] = before + 1
+        _agents._quota_save(_data)
+        if int(_agents._quota_load().get("calls", 0) or 0) < before + 1:
+            return False
+    return True
+
+
+def _chat_persist(uid, role, content, style):
+    if not uid or _admin_session_role() == 'readonly':
+        return
+    try:
+        from chat_store import append_message
+        append_message(_CHAT_DB_PATH, uid, role, content, style)
+    except Exception as exc:
+        print("[chat] history write failed: %s" % exc)
+
+
+def _chat_load_owned_record(uid, history_id):
+    """Load a saved proposal only when it belongs to the current user."""
+    try:
+        hid = int(history_id)
+        conn = get_db()
+        try:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT result_data FROM history WHERE id=? AND user_id=?", (hid, uid)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        record = _json.loads(row["result_data"] or "{}")
+        return _clean_legacy_record(record) if isinstance(record, dict) else None
+    except (TypeError, ValueError, sqlite3.Error, _json.JSONDecodeError):
+        return None
+
+
+@app.route('/api/proposal_revision/<int:history_id>', methods=['POST'])
+def apply_proposal_revision(history_id):
+    """应用或撤销申报书修订。"""
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+    data = request.get_json(silent=True) or {}
+    uid = _current_uid()
+    action = (data.get("action") or "apply").strip().lower()
+    try:
+        conn = get_db()
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT result_data FROM history WHERE id=? AND user_id=?",
+            (history_id, uid)
+        ).fetchone()
+        if not row:
+            conn.rollback()
+            conn.close()
+            return jsonify({"success": False, "error": "记录不存在或无权限"}), 404
+        try:
+            db_record = _json.loads(row[0] or "{}")
+        except (TypeError, ValueError):
+            db_record = {}
+        if not isinstance(db_record, dict):
+            conn.rollback()
+            conn.close()
+            return jsonify({"success": False, "error": "申报书记录无法读取"}), 409
+        if action == "apply":
+            new_proposal = (data.get("proposal") or '').strip()
+            if not new_proposal:
+                conn.rollback()
+                conn.close()
+                return jsonify({"success": False, "error": "缺少 proposal 内容"}), 400
+            db_record["_revision_previous"] = db_record.get("proposal")
+            db_record["proposal"] = new_proposal
+            db_record["competition_name"] = (data.get("competition_name") or '').strip() or db_record.get("competition_name", '')
+        elif action == "undo":
+            previous = db_record.get("_revision_previous")
+            if previous is None:
+                conn.rollback()
+                conn.close()
+                return jsonify({"success": False, "error": "没有可撤销的修订"}), 409
+            db_record["proposal"] = previous
+            db_record.pop("_revision_previous", None)
+        else:
+            conn.rollback()
+            conn.close()
+            return jsonify({"success": False, "error": "不支持的操作"}), 400
+        conn.execute(
+            "UPDATE history SET result_data=? WHERE id=? AND user_id=?",
+            (_json.dumps(db_record, ensure_ascii=False), history_id, uid)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        print("[proposal_revision] failed: %s" % exc)
+        return jsonify({"success": False, "error": "操作失败，请稍后重试"}), 503
+    return jsonify({"success": True, "history_id": history_id, "action": action})
 
 
 @app.route('/api/chat', methods=['POST'])
