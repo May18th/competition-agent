@@ -128,8 +128,7 @@ class ChatIntelligenceTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "text/event-stream")
-        self.assertIn("可创无限平台", body)
-        self.assertIn("不会编造开发者信息", body)
+        self.assertIn("可创无限团队创造", body)
         self.assertNotIn("iCAN", body)
         reserve.assert_not_called()
 
@@ -139,7 +138,7 @@ class ChatIntelligenceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["source"], "preset")
-        self.assertIn("可创无限平台", response.get_json()["reply"])
+        self.assertIn("可创无限团队创造", response.get_json()["reply"])
         self.assertEqual(self.client.get("/api/chat_history").get_json()["messages"], [])
 
     def test_chat_ui_has_no_unsolicited_greeting_or_ican_default(self):
