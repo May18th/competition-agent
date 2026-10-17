@@ -7257,17 +7257,38 @@ def _chat_defense(uid, hid, round_no, answer, style):
         sys = ("你是资深科创赛事模拟评委。基于下面的申报书正文，预测评委最可能追问的 3 个高频问题；"
                "对每个问题给出：①评委想考察什么；②回答要点（2-3 条）；③常见失分点。"
                "用中文清晰分点列出，不要编造正文未出现的内容。"
-               "请用「Q1.」「Q2.」「Q3.」开头标注三个问题，方便用户逐一回答。")
+               "请用「Q1.」「Q2.」「Q3.」开头标注三个问题，方便用户逐一回答。"
+               "并在末尾附一张【答辩评分卡】，维度为回应问题、证据支撑、逻辑表达、风险意识；"
+               "首次预测阶段只输出评分维度与评分标准，不给用户虚构分数。")
         msgs = [SystemMessage(content=sys), HumanMessage(content="【申报书正文】\n" + str(_proposal)[:6000])]
         return _chat_stream_llm(msgs, uid, style, "模拟答辩", success_profile_field="done_defense")
     else:
         ctx = _chat_context(uid)
-        sys = ("你是资深科创赛事模拟评委。下面是申报书正文、你此前提的问题、用户的回答。"
-               "请：1) 点评用户刚才的回答（先说优点，再指出不足与改进建议）；"
-               "2) 就同一话题追问一个更深入的问题（开头用「追问：」）。不要编造正文未出现的内容。")
-        user = "【申报书正文】\n" + str(_proposal)[:6000] + "\n\n【第 %d 轮用户回答】%s" % (round_no, answer)
+        try:
+            _stored = _chat_profile_load(uid).get("defense_memory", "")
+            _memory = _json.loads(_stored) if _stored else {}
+        except (TypeError, ValueError):
+            _memory = {}
+        if not isinstance(_memory, dict) or str(_memory.get("history_id")) != str(hid):
+            _memory = {"history_id": str(hid), "rounds": []}
+        _prior_rounds = _memory.get("rounds") if isinstance(_memory.get("rounds"), list) else []
+        _prior_text = _json.dumps(_prior_rounds[-5:], ensure_ascii=False)
+        sys = ("你是资深科创赛事模拟评委。根据本轮回答与此前答辩记录，保持评价标准连续。"
+               "请先点评刚才的回答（优点、不足、可执行改进），再给答辩评分卡：回应问题、证据支撑、逻辑表达、风险意识四项各 1-5 分，"
+               "每项附一句依据；总分按四项相加/20，并用 5 格方块表示每项分值（■实心，□空心）。"
+               "分数只评价本轮回答，不等同赛事官方评分。最后就同一话题追问一个更深入的问题（开头用「追问：」）。"
+               "不得编造正文未出现的内容。")
+        user = ("【申报书正文】\n" + str(_proposal)[:6000]
+                + "\n\n【此前答辩记录】\n" + _prior_text
+                + "\n\n【第 %d 轮用户回答】%s" % (round_no, answer))
         msgs = [SystemMessage(content=sys)] + ctx + [HumanMessage(content=user)]
-        return _chat_stream_llm(msgs, uid, style, "答辩第%d轮" % round_no, success_profile_field=None)
+        def _save_defense_memory(reply):
+            rounds = list(_prior_rounds[-5:])
+            rounds.append({"round": int(round_no), "answer": str(answer)[:1200], "feedback": reply[:1800]})
+            _chat_profile_save(uid, "defense_memory", _json.dumps(
+                {"history_id": str(hid), "rounds": rounds[-6:]}, ensure_ascii=False))
+        return _chat_stream_llm(msgs, uid, style, "答辩第%d轮" % round_no,
+                                success_callback=_save_defense_memory)
 
 
 def _parse_memory(msg):
@@ -7893,6 +7914,8 @@ def _compute_suggestion(profile):
     if not profile:
         return None
     if not profile.get('done_generation'):
+        if not (profile.get("project") or profile.get("competition")):
+            return None
         return "💡 建议先生成一份申报书：把参赛赛事和项目创意告诉小创即可。"
     if not profile.get('done_proofread'):
         return "💡 初稿已生成，建议做一次「智能校对」检查错别字和语病。"
@@ -7901,7 +7924,7 @@ def _compute_suggestion(profile):
     return None
 
 
-def _chat_stream_llm(messages, uid, style, user_text, success_profile_field=None):
+def _chat_stream_llm(messages, uid, style, user_text, success_profile_field=None, success_callback=None):
     if not chat_llm:
         return jsonify({"success": False, "error_code": "model_unavailable",
                         "error": "聊天模型未就绪，请联系管理员"}), 503
@@ -7925,6 +7948,8 @@ def _chat_stream_llm(messages, uid, style, user_text, success_profile_field=None
                 _chat_persist(uid, 'bot', reply, style)
                 if success_profile_field:
                     _chat_profile_save(uid, success_profile_field, '1')
+                if success_callback:
+                    success_callback(reply)
             yield "data: [DONE]\n\n"
         except GeneratorExit:
             raise

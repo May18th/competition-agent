@@ -143,6 +143,34 @@ class ChatIntelligenceTests(unittest.TestCase):
             chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["done_defense"], "1"
         )
 
+    def test_defense_round_scores_are_scoped_and_accumulated_per_owned_work(self):
+        self._save_proposal("alice", "作品采用原型测试验证，已完成两轮用户访谈。")
+        captured = []
+        fake_llm = SimpleNamespace(stream=self._fake_stream(["本轮反馈与评分卡"], captured))
+        with patch.object(app_module, "_chat_load_owned_record", return_value={
+            "proposal": "作品采用原型测试验证，已完成两轮用户访谈。"
+        }), patch.object(app_module, "_chat_reserve_quota", return_value=True), \
+             patch.object(app_module, "chat_llm", fake_llm):
+            with app_module.app.test_request_context("/api/chat"):
+                first = app_module._chat_defense("alice", 1, 1, "我们做了测试。", "concise")
+                list(first.response)
+                second = app_module._chat_defense("alice", 1, 2, "访谈覆盖了目标用户。", "concise")
+                list(second.response)
+
+        prompts = "\n".join(message.content for message in captured[1])
+        self.assertIn("四项各 1-5 分", captured[1][0].content)
+        self.assertIn('"round": 1', prompts)
+        memory = json.loads(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["defense_memory"])
+        self.assertEqual([item["round"] for item in memory["rounds"]], [1, 2])
+        self.assertEqual(memory["history_id"], "1")
+
+    def test_suggestions_wait_for_project_context_and_follow_completion(self):
+        self.assertIsNone(app_module._compute_suggestion({"competition": ""}))
+        self.assertIn("先生成", app_module._compute_suggestion({"project": "校园设备工具"}))
+        self.assertIn("智能校对", app_module._compute_suggestion({
+            "done_generation": "1", "project": "校园设备工具"
+        }))
+
     def test_proofread_uses_latest_owned_proposal_and_reserves_quota(self):
         self._save_proposal("alice", "当前用户申报书的创新点和验证方法。")
         app_module._chat_set_last_gen("alice", 1)

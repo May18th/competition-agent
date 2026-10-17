@@ -140,6 +140,84 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    var DEFENSE_SCORE_LABELS = ['回应问题', '证据支撑', '逻辑表达', '风险意识'];
+
+    function parseDefenseScorecard(text) {
+        var source = String(text == null ? '' : text);
+        if (!/答辩评分卡/.test(source)) return null;
+        var lines = source.split(/\r?\n/), scores = [], found = {};
+        var headerLine = -1;
+        for (var h = 0; h < lines.length; h++) {
+            if (lines[h].indexOf('答辩评分卡') >= 0) { headerLine = h; break; }
+        }
+        if (headerLine < 0) return null;
+        for (var i = 0; i < lines.length; i++) {
+            if (i < headerLine) continue;
+            var line = lines[i].replace(/[>*_`#]/g, '');
+            for (var j = 0; j < DEFENSE_SCORE_LABELS.length; j++) {
+                var label = DEFENSE_SCORE_LABELS[j];
+                if (found[label]) continue;
+                var at = line.indexOf(label);
+                if (at < 0) continue;
+                var tail = line.slice(at + label.length, at + label.length + 100);
+                var squares = /[■□]{5}/.exec(tail);
+                var numeric = /(?:^|[：:\s])([1-5])\s*(?:\/\s*5|分(?:数|值)?(?=$|[\s，,。；;：:、])|(?=[、，,：:;；—–-]|$))/.exec(tail);
+                var value = squares ? (squares[0].match(/■/g) || []).length : (numeric ? Number(numeric[1]) : 0);
+                if (value >= 1 && value <= 5) found[label] = value;
+            }
+        }
+        for (var k = 0; k < DEFENSE_SCORE_LABELS.length; k++) {
+            if (!found[DEFENSE_SCORE_LABELS[k]]) return null;
+            scores.push(found[DEFENSE_SCORE_LABELS[k]]);
+        }
+        return scores;
+    }
+
+    function renderDefenseScorecard(scores) {
+        if (!scores || scores.length !== 4) return '';
+        for (var i = 0; i < scores.length; i++) {
+            if (scores[i] < 1 || scores[i] > 5 || Math.floor(scores[i]) !== scores[i]) return '';
+        }
+        var cx = 120, cy = 100, radius = 65, points = [];
+        for (var p = 0; p < scores.length; p++) {
+            var angle = (-Math.PI / 2) + p * (Math.PI / 2);
+            var scale = scores[p] / 5;
+            points.push((cx + Math.cos(angle) * radius * scale).toFixed(1) + ',' + (cy + Math.sin(angle) * radius * scale).toFixed(1));
+        }
+        var axes = '';
+        for (var a = 1; a <= 5; a++) {
+            var ring = [];
+            for (var r = 0; r < 4; r++) {
+                var theta = (-Math.PI / 2) + r * (Math.PI / 2);
+                ring.push((cx + Math.cos(theta) * radius * a / 5).toFixed(1) + ',' + (cy + Math.sin(theta) * radius * a / 5).toFixed(1));
+            }
+            axes += '<polygon points="' + ring.join(' ') + '" fill="none" stroke="currentColor" stroke-opacity=".17" stroke-width="1"/>';
+        }
+        var axisEnds = [[cx, cy - radius], [cx + radius, cy], [cx, cy + radius], [cx - radius, cy]];
+        for (var e = 0; e < axisEnds.length; e++) axes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + axisEnds[e][0] + '" y2="' + axisEnds[e][1] + '" stroke="currentColor" stroke-opacity=".24"/>';
+        var labelPositions = [[120, 18], [202, 104], [120, 191], [38, 104]];
+        var labels = '';
+        for (var l = 0; l < DEFENSE_SCORE_LABELS.length; l++) {
+            labels += '<text x="' + labelPositions[l][0] + '" y="' + labelPositions[l][1] + '" text-anchor="middle" font-size="10" fill="currentColor">' + DEFENSE_SCORE_LABELS[l] + '</text>';
+        }
+        var rows = '';
+        for (var s = 0; s < scores.length; s++) {
+            rows += '<div style="display:grid;grid-template-columns:5.5em 1fr 2.5em;gap:8px;align-items:center;margin:5px 0;font-size:12px">'
+                + '<span>' + DEFENSE_SCORE_LABELS[s] + '</span>'
+                + '<span aria-hidden="true" style="display:block;height:6px;border-radius:4px;background:var(--line,rgba(148,163,184,.3));overflow:hidden">'
+                + '<span style="display:block;width:' + (scores[s] * 20) + '%;height:100%;background:var(--c-a,#0e7490)"></span></span>'
+                + '<strong>' + scores[s] + '/5</strong></div>';
+        }
+        var description = DEFENSE_SCORE_LABELS.map(function (label, index) { return label + ' ' + scores[index] + ' 分'; }).join('，');
+        return '<section class="wbchat-scorecard" aria-label="答辩评分可视化" style="margin-top:10px;padding:10px;border:1px solid var(--line,rgba(148,163,184,.35));border-radius:8px;max-width:100%;">'
+            + '<h4 style="margin:0 0 4px;font-size:13px">答辩评分</h4>'
+            + '<svg viewBox="0 0 240 205" role="img" aria-label="' + description + '" style="display:block;width:min(100%,280px);height:auto;margin:0 auto;color:var(--text-dim,#526078)">'
+            + axes + '<polygon points="' + points.join(' ') + '" fill="var(--c-a,#0e7490)" fill-opacity=".22" stroke="var(--c-a,#0e7490)" stroke-width="2"/>'
+            + labels + '</svg>'
+            + '<div role="group" aria-label="四个答辩评分维度">' + rows + '</div>'
+            + '<p style="margin:7px 0 0;font-size:11px;line-height:1.5;color:var(--text-dim)">仅评价本轮回答，不等同赛事官方评分。</p></section>';
+    }
+
     function renderMarkdown(text) {
         var code = [];
         var html = esc(text).replace(/```([^\n]*)\n([\s\S]*?)```/g, function (_, lang, body) {
@@ -175,6 +253,7 @@
         closeList();
         html = out.join('');
         for (var c = 0; c < code.length; c++) html = html.replace('@@WBCODE' + c + '@@', code[c]);
+        html += renderDefenseScorecard(parseDefenseScorecard(text));
         return html;
     }
 
@@ -835,6 +914,8 @@
         setStyle: saveStyle,
         getStyle: function () { return style; },
         renderMarkdown: renderMarkdown,
+        parseDefenseScorecard: parseDefenseScorecard,
+        renderDefenseScorecard: renderDefenseScorecard,
         NAME: AGENT_NAME
     };
 
