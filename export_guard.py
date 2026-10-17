@@ -22,40 +22,79 @@ def _docx_text(docx_path):
 
 
 def check_word_toc(docx_path):
-    """检测 docx 是否含可刷新 TOC 目录域 + 是否有标题层级。"""
+    """417 轮重写：检测 docx 是否含封面页 + 目录页 + 标题层级。
+
+    旧版只认「TOC 域」，而 docx_render 渲染的是**静态目录**（WPS/手机 Word 不会
+    刷新域，静态目录才是能真看到的），结果长文档一律被判「缺少可刷新目录」误杀；
+    同时旧版死盯 Heading1，而申报书章节用的是 `## 一、xxx`（= Heading2），
+    于是「无 Heading1 章节标题」也是误报。两处误报叠起来 = 导出的说明书既没通过
+    校验、又让人以为目录逻辑有问题。
+
+    现在的判定，按「评委打开手机能看到什么」来定：
+      1. 封面：正文第一个标题之前必须有非空内容；
+      2. 目录：存在「目  录」标题段，且其后至少 2 条与正文标题同名的条目；
+         （TOC 域也算通过，二者有一即可）
+      3. 标题层级：Heading1~3 至少 1 个。
+    """
     if not os.path.exists(docx_path):
         return {"ok": False, "errors": [f"文件不存在：{docx_path}"], "warnings": []}
+
+    errors, warnings = [], []
     try:
         xml = _docx_text(docx_path)
     except Exception as e:
         return {"ok": False, "errors": [f"读取 docx 失败：{e}"], "warnings": []}
 
-    errors, warnings = [], []
-    # 标题层级：按「实际存在的最高层级」判定，不再硬要求 Heading1。
-    # 第二百三十五轮：渲染器把正文的「## 章节」挂成 Heading2，全文没有 Heading1 是
-    # 正常的（文档主名在封面、正文一级章节即 ##），旧规则一律误判「无 Heading1」。
-    # 只要任一 Heading 层级存在，TOC 域就抓得到内容，不该判死。
-    counts = {lv: len(re.findall(r'w:val="Heading%d"' % lv, xml)) for lv in (1, 2, 3, 4)}
-    if not any(counts.values()):
-        errors.append("无 Heading 章节标题（正文未挂标题样式，目录域抓不到内容）")
-    else:
-        top = min(lv for lv, n in counts.items() if n)
-        if top > 1:
-            warnings.append("最高层级标题为 Heading%d（正文一级章节即此层），目录按其生成" % top)
-        if counts.get(2) == 0 and sum(counts.values()) > 3:
-            warnings.append("无 Heading2 小节标题（长文档通常应有）")
+    # ---- 标题层级：Heading1~3 任一即可（申报书章节多为 Heading2）----
+    n_head = sum(len(re.findall(r'w:val="Heading%d"' % i, xml)) for i in (1, 2, 3))
+    if n_head == 0:
+        errors.append("无章节标题（Heading1~3 一个都没有）")
 
-    # TOC 域：w:fldSimple 的 instr 含 TOC，或 instrText 含 TOC
-    has_toc = ('w:fldSimple' in xml and 'TOC' in xml) or re.search(r'<w:instrText[^>]*>\s*TOC\b', xml) is not None
-    # 短文档豁免 TOC：docx_render.build_docx 对去空白后 < 2500 字的文档刻意不生成目录
-    # （只有三五条目却占整页，大半空白）。门禁必须同口径，否则简洁版一律被这条拦死。
-    plain = re.sub(r'\s', '', ''.join(re.findall(r'<w:t[^>]*>(.*?)</w:t>', xml, re.S)))
-    if not has_toc:
-        if len(plain) < 2500:
-            warnings.append("短文档（去空白 %d 字）按排版规范不生成目录，已豁免 TOC 域检查" % len(plain))
-        else:
-            errors.append("缺少可刷新目录（TOC 域）")
+    try:
+        import docx as _docx
+        d = _docx.Document(docx_path)
+        paras = [p.text.strip() for p in d.paragraphs]
+    except Exception as e:
+        return {"ok": False, "errors": [f"读取 docx 段落失败：{e}"], "warnings": []}
+
+    # ---- 目录页 ----
+    toc_idx = -1
+    for i, t in enumerate(paras):
+        if re.match(r'^目\s*录$', t or ''):
+            toc_idx = i
+            break
+    has_toc_field = re.search(r'<w:instrText[^>]*>\s*TOC\b', xml) is not None
+    if toc_idx < 0 and not has_toc_field:
+        errors.append("缺少目录页（未找到「目  录」章节列表）")
+    elif toc_idx >= 0:
+        # 目录条目数：目录标题之后、直到第一个 Heading 样式段落为止的非空行
+        entries = 0
+        for i in range(toc_idx + 1, min(toc_idx + 60, len(paras))):
+            st = (d.paragraphs[i].style.name or '').lower()
+            if st.startswith('heading'):
+                break
+            if paras[i]:
+                entries += 1
+        if entries < 2:
+            warnings.append(f"目录条目仅 {entries} 条（正文章节可能没被识别为标题）")
+
+    # ---- 封面页：第一个标题之前必须有内容 ----
+    first_head = -1
+    for i, p in enumerate(d.paragraphs):
+        if (p.style.name or '').lower().startswith('heading') and p.text.strip():
+            first_head = i
+            break
+    if first_head <= 0:
+        errors.append("缺少封面页（正文第一个标题之前没有任何内容）")
+    elif not any(paras[i] for i in range(first_head)):
+        errors.append("封面页为空（有段落但无文字，项目名/赛事/团队都没写上去）")
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def check_word_cover_toc(docx_path):
+    """语义化别名：封面 + 目录 + 标题层级一起查（417 轮）。"""
+    return check_word_toc(docx_path)
 
 
 def _docx_headings(docx_path):

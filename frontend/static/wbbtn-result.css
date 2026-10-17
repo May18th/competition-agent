@@ -1,0 +1,239 @@
+/* =============================================================================
+   wbbtn-result.css —— 结果页按钮外观统一（283 轮 · 补充2）
+   只做外观：尺寸 / 圆角 / 配色 / 层级 / 微动效。不动结构、不动文案、不藏功能。
+   加载在 style.css 之后，同优先级规则天然胜出；
+   只有 index.html 里带内联 style 的「复制」按钮被迫用 !important（内联压不住）。
+   主题：全部走现有变量（--c-a / --c-a-rgb / --line / --text-dim / --btn-ghost ...），
+        深色(body 默认)与浅色(body.light)各有一套前景/阴影，白底不刺眼。
+   ============================================================================= */
+
+/* ---------- 本地变量：一处改，全站按钮跟着改 ---------- */
+:root {
+    --wbbtn-h: 36px;                 /* 桌面最小可点高度 */
+    --wbbtn-r: 12px;                 /* 主操作圆角 */
+    --wbbtn-r-sub: 10px;             /* 次操作圆角 */
+    --wbbtn-tint: rgba(var(--c-a-rgb), .12);   /* 品牌浅底 */
+    --wbbtn-tint-2: rgba(var(--c-a-rgb), .18); /* hover 加深 */
+    --wbbtn-edge: rgba(var(--c-a-rgb), .34);   /* 品牌描边 */
+    --wbbtn-sh: 0 4px 14px rgba(var(--c-a-rgb), .18);
+    --wbbtn-sh-lg: 0 7px 20px rgba(var(--c-a-rgb), .30);
+    --wbbtn-bg: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%);
+    /* 深色主题主色偏亮（#38bdf8），配深墨字才有对比；浅色主题见下 */
+    --wbbtn-fg: #05202f;
+}
+body.light {
+    --wbbtn-sh: 0 4px 14px rgba(var(--c-a-rgb), .22);
+    --wbbtn-sh-lg: 0 7px 20px rgba(var(--c-a-rgb), .26);
+    /* 浅色主题主色是深青 #0e7490，白字对比 5.36:1 */
+    --wbbtn-fg: #fff;
+}
+
+/* =============================================================================
+   1) 主操作：「去导出中心下载 →」  (#wbStyleBar)
+      实测 33px 高 → 统一 ≥36px（移动端 ≥40px）；品牌渐变 + 12px 圆角 + 16px 中粗
+      + hover 提亮 + active 按压下沉 1px
+   ============================================================================= */
+#wbStyleBar > button[onclick^="wbGoExport("] {
+    min-height: var(--wbbtn-h);
+    padding: 8px 18px;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--wbbtn-fg);
+    background: var(--wbbtn-bg);
+    border: none;
+    border-radius: var(--wbbtn-r);
+    box-shadow: var(--wbbtn-sh);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+#wbStyleBar > button[onclick^="wbGoExport("]:hover {
+    filter: brightness(1.07);
+    box-shadow: var(--wbbtn-sh-lg);
+}
+#wbStyleBar > button[onclick^="wbGoExport("]:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px rgba(var(--c-a-rgb), .26);
+}
+
+/* =============================================================================
+   2) 胶囊次操作：评分总览 / 评分依据 / 提交前自查  (.wb-subtab)
+      实测 31px → ≥36px；浅底 + 描边 + 圆角；选中=品牌实底，未选中=灰字
+   ============================================================================= */
+.wb-subtabs .wb-subtab {
+    min-height: var(--wbbtn-h);
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--text-dim);
+    background: var(--btn-ghost);
+    border: 1px solid var(--line);
+    border-radius: var(--wbbtn-r-sub);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .18s ease, color .18s ease, border-color .18s ease,
+                box-shadow .18s ease, transform .18s ease;
+}
+.wb-subtabs .wb-subtab:hover {
+    color: var(--text);
+    background: var(--wbbtn-tint-2);
+    border-color: var(--wbbtn-edge);
+}
+.wb-subtabs .wb-subtab:active { transform: translateY(1px); }
+.wb-subtabs .wb-subtab.active {
+    color: var(--wbbtn-fg);
+    background: var(--wbbtn-bg);
+    border-color: transparent;
+    font-weight: 600;
+    box-shadow: var(--wbbtn-sh);
+}
+.wb-subtabs .wb-subtab.active:hover {
+    color: var(--wbbtn-fg);
+    background: var(--wbbtn-bg);
+    filter: brightness(1.07);
+}
+
+/* =============================================================================
+   3) 小号复制按钮（规则解析 / 同质化检测 / 申报书全文 标题行内的「复制」）
+      实测 25px、4px 圆角 → ≥36px、圆角 10px、浅底描边
+      这三个按钮在 index.html 里带内联 style，只能用 !important 覆盖
+   ============================================================================= */
+h3 > button[onclick^="copyText("] {
+    min-height: var(--wbbtn-h);
+    padding: 7px 12px !important;
+    font-size: 14px !important;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--text-dim);
+    background: var(--btn-ghost) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--wbbtn-r-sub) !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    vertical-align: middle;
+    cursor: pointer;
+    transition: background .18s ease, color .18s ease, border-color .18s ease,
+                transform .18s ease;
+}
+h3 > button[onclick^="copyText("]:hover {
+    color: var(--text);
+    background: var(--wbbtn-tint-2) !important;
+    border-color: var(--wbbtn-edge) !important;
+}
+h3 > button[onclick^="copyText("]:active { transform: translateY(1px); }
+
+/* =============================================================================
+   4) 结果页栏目 tab：导出中心 / 前期分析 / 深度分析 / 申报与评审 /
+                     可视化图表 / 答辩准备 / 范文库  (#resultTabs .tab)
+      原先接近裸文本 → 未选中：灰字 + 透明底（hover 出浅品牌底）
+                       选中：品牌浅底 + 品牌色下划线 + 品牌色加粗字 + 轻投影
+   ============================================================================= */
+#resultTabs .tab {
+    min-height: var(--wbbtn-h);
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: var(--wbbtn-r);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: color .18s ease, background .18s ease, border-color .18s ease,
+                box-shadow .18s ease, transform .18s ease;
+}
+#resultTabs .tab:hover {
+    color: var(--text);
+    background: var(--wbbtn-tint);
+}
+#resultTabs .tab:active { transform: translateY(1px); }
+#resultTabs .tab.active {
+    color: var(--c-a);
+    font-weight: 600;
+    background: var(--wbbtn-tint);
+    border-color: var(--wbbtn-edge);
+    border-bottom-color: var(--c-a);
+    box-shadow: 0 3px 10px rgba(var(--c-a-rgb), .16);
+}
+#resultTabs .tab.active .wb-ico { color: var(--c-a); opacity: 1; }
+
+/* =============================================================================
+   5) 右侧浮动区：悬浮「导出」主按钮 + 展开面板里的次按钮 + 回到顶部圆钮
+      与上面同一套语言：主=品牌渐变实底，次=浅底描边，统一圆角与按压动效
+   ============================================================================= */
+#wbFabMain {
+    color: var(--wbbtn-fg);
+    background: var(--wbbtn-bg);
+    border: none;
+    box-shadow: var(--wbbtn-sh-lg);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+#wbFabMain:hover { filter: brightness(1.07); }
+#wbFabMain:active {
+    transform: translateY(1px);
+    box-shadow: 0 4px 12px rgba(var(--c-a-rgb), .28);
+}
+
+#wbFabPanel button {
+    min-height: var(--wbbtn-h);
+    padding: 8px 14px;
+    font-size: 13.5px;
+    line-height: 1.3;
+    color: var(--text-dim);
+    background: var(--btn-ghost);
+    border: 1px solid var(--line);
+    border-radius: var(--wbbtn-r-sub);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: background .18s ease, color .18s ease, border-color .18s ease,
+                transform .18s ease;
+}
+#wbFabPanel button:hover {
+    color: var(--text);
+    background: var(--wbbtn-tint-2);
+    border-color: var(--wbbtn-edge);
+}
+#wbFabPanel button:active { transform: translateY(1px); }
+
+#wbTop {
+    color: var(--text-dim);
+    background: var(--surface-solid);
+    border: 1px solid var(--line);
+    box-shadow: 0 6px 18px rgba(var(--c-a-rgb), .16);
+    transition: color .18s ease, background .18s ease, border-color .18s ease,
+                transform .18s ease, box-shadow .18s ease;
+}
+#wbTop:hover {
+    color: var(--c-a);
+    background: var(--wbbtn-tint);
+    border-color: var(--wbbtn-edge);
+}
+#wbTop:active { transform: translateY(1px); }
+
+/* =============================================================================
+   移动端：手指可点区域放大到 ≥40px（只调变量 + 少量内边距，规则不重复写）
+   ============================================================================= */
+@media (max-width: 768px) {
+    :root { --wbbtn-h: 40px; }
+    #wbStyleBar > button[onclick^="wbGoExport("] { padding: 9px 18px; }
+    .wb-subtabs .wb-subtab { padding: 9px 16px; font-size: 14px; }
+    h3 > button[onclick^="copyText("] { padding: 8px 14px !important; }
+    #resultTabs .tab { padding: 9px 14px; }
+    #wbFabPanel button { padding: 9px 14px; }
+}

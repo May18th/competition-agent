@@ -1,0 +1,302 @@
+/* ============================================================
+ * 283 轮：①前台历史弹窗按钮 ②后台数据面板控件 —— 外观规范
+ * ------------------------------------------------------------
+ * 文件：static/wbbtn-admin.css（在 style.css 之后加载，同特异度天然胜出）
+ *
+ * 为什么单独一个文件：283 轮这批改动横跨前台历史弹窗与 /admin/panel，
+ * 拆成独立文件避免多人同时改 style.css / app.py 互相覆盖。
+ *
+ * 命中哪些元素（都是 grep 出来的真实选择器，不是猜的）：
+ *   ① .history-open / .history-del
+ *      static/app.js:6047/6048、6247、6265/6266（历史条目右侧按钮组）
+ *      注：按钮外层容器是 app.js 拼的 inline style="display:flex;gap:6px"，
+ *          gap 内联压不住，所以用 margin-left 补足到视觉间距 10px。
+ *   ② .fbfilter select （app.py:2976-2981 三个下拉：类型/排序/每页条数）
+ *     .fbpager .fbpg（app.py:2952-2958 四个翻页：首页/上一页/下一页/末页）
+ *     a[href="/api/feedback/export"]（app.py:3157 下载全部反馈 Excel）
+ *
+ * 关于 !important：全文件只有一处（下面 B3 的 color），
+ * 因为导出链接的 color 是写死在 HTML 的 inline style 里，外部选择器盖不动。
+ * 其余全部靠「后加载 + 同特异度」胜出，不用 !important。
+ *
+ * 关于双主题：
+ *   · 前台 index.html 有 :root（夜）/ body.light（日）两套变量，① 直接用变量，自动跟随；
+ *     只有「主按钮文字颜色」需要为浅色单独翻白（变量里没有 fg 色，只能显式覆盖一次）。
+ *   · /admin/panel 是独立页面、不加载 style.css、没有这些变量，
+ *     所以 ② 里每个 var() 都带浅色兜底值 undefined 时自动落到后台自己的浅色调，
+ *     将来后台接了站点主题也能自动跟随。
+ * ============================================================ */
+
+/* ============================================================
+ * A. 前台历史弹窗：条目右侧「打开 / 删除」
+ * ============================================================ */
+
+/* ---------- A1.「打开」= 主操作：品牌主色实色 + 光感 + 圆角 ----------
+ * 沿用站内「开始生成」的语言（style.css:631 .btn-primary 是实色 var(--c-a)，
+ * 不是渐变——站内已明确去渐变，避免演示时花哨），只在阴影上做「光感」。 */
+.history-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    /* 容器自带 inline gap:6px，这里补 4px → 按钮间距 10px（要求 ≥8px） */
+    margin-left: 4px;
+    min-height: 36px;
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    line-height: 1.2;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    background: var(--c-a, #0e7490);
+    /* 夜间主题（默认）主色是亮青 #38bdf8，深靛文字才有对比，与 .btn-primary 同值 */
+    color: #06283d;
+    box-shadow: 0 4px 12px rgba(var(--c-a-rgb, 14, 116, 144), .28),
+                inset 0 1px 0 rgba(255, 255, 255, .22);
+    transition: background .18s ease, box-shadow .18s ease,
+                transform .12s ease, filter .18s ease;
+}
+
+.history-open:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 6px 18px rgba(var(--c-a-rgb, 14, 116, 144), .38),
+                inset 0 1px 0 rgba(255, 255, 255, .26);
+    transform: translateY(-1px);
+}
+
+/* 按压下沉 + 轻触点-1px，给出明确的点击反馈 */
+.history-open:active {
+    transform: translateY(1px);
+    filter: brightness(.96);
+    box-shadow: 0 2px 6px rgba(var(--c-a-rgb, 14, 116, 144), .30);
+}
+
+/* ---------- A2.「删除」= 危险操作：描边弱化，悬停才显危险色 ----------
+ * 原来是常驻浅红底 + 6px 圆角，跟「打开」放在一起层级不清；
+ * 现在常态只是一条浅描边的次按钮，鼠标移上去才转为红系，视觉降权。 */
+.history-del {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    margin-left: 4px;
+    min-height: 36px;
+    padding: 8px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid var(--line, rgba(40, 60, 120, .16));
+    border-radius: 12px;
+    background: var(--btn-ghost, rgba(20, 30, 70, .07));
+    color: var(--text-dim, #55618a);
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease,
+                color .18s ease, transform .12s ease;
+}
+
+.history-del:hover {
+    background: var(--err-bg, rgba(220, 38, 38, .08));
+    border-color: var(--err-line, rgba(220, 38, 38, .35));
+    color: var(--err-text, #b91c1c);
+}
+
+.history-del:active {
+    transform: translateY(1px);
+}
+
+/* 键盘可达性：两个按钮都给清晰焦点环（只补视觉，不动功能） */
+.history-open:focus-visible,
+.history-del:focus-visible {
+    outline: 2px solid rgba(var(--c-a-rgb, 14, 116, 144), .55);
+    outline-offset: 2px;
+}
+
+/* 浅色（日间）主题：主色是深青 #0e7490，深靛字压不住，翻白（对比 5.36，过 AA） */
+body.light .history-open {
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(var(--c-a-rgb, 14, 116, 144), .26),
+                inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+/* ---------- A3. 移动端：可点区域 ≥44px ---------- */
+@media (max-width: 768px) {
+    .history-open,
+    .history-del {
+        min-height: 44px;
+        padding: 11px 16px;
+        flex: 0 0 auto;
+    }
+
+    /* 手机上 :hover 不可靠，:active 才是真实反馈 */
+    .history-open:active {
+        background: var(--c-a, #0e7490);
+        box-shadow: 0 2px 6px rgba(var(--c-a-rgb, 14, 116, 144), .34);
+    }
+
+    .history-del:active {
+        background: var(--err-bg, rgba(220, 38, 38, .12));
+        border-color: var(--err-line, rgba(220, 38, 38, .35));
+        color: var(--err-text, #b91c1c);
+    }
+}
+
+/* ============================================================
+ * B. 后台数据面板 /admin/panel：下拉 / 翻页 / 导出按钮
+ *    （前台没有这些 class，本段在 index.html 里加载也不会误伤）
+ * ============================================================ */
+
+/* ---------- B1. 三个下拉选择器：24px → 36px（移动端 40px） ---------- */
+.fbfilter select {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 36px;
+    /* 右侧留 32px 给自定义箭头，避免文字压到箭头上 */
+    padding: 8px 32px 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.3;
+    color: var(--text-soft, #374151);
+    background-color: var(--surface-solid, #ffffff);
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 4.3 6 7.9l3.4-3.6' fill='none' stroke='%2364748b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 11px center;
+    background-size: 12px 12px;
+    border: 1px solid var(--line, rgba(40, 60, 120, .18));
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+    cursor: pointer;
+    transition: border-color .18s ease, box-shadow .18s ease,
+                background-color .18s ease;
+}
+
+.fbfilter select:hover {
+    border-color: rgba(var(--c-a-rgb, 14, 116, 144), .50);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+}
+
+.fbfilter select:focus,
+.fbfilter select:focus-visible {
+    outline: none;
+    border-color: rgba(var(--c-a-rgb, 14, 116, 144), .75);
+    box-shadow: 0 0 0 3px rgba(var(--c-a-rgb, 14, 116, 144), .14);
+}
+
+/* ---------- B2. 翻页四个按钮：31px → 36px（移动端 40px） ---------- */
+.fbpager .fbpg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 8px 15px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    color: var(--text-soft, #374151);
+    background: var(--surface-solid, #ffffff);
+    border: 1px solid var(--line, rgba(40, 60, 120, .18));
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+    transition: background .18s ease, border-color .18s ease,
+                color .18s ease, transform .12s ease, box-shadow .18s ease;
+}
+
+.fbpager .fbpg:hover {
+    background: rgba(var(--c-a-rgb, 14, 116, 144), .08);
+    border-color: rgba(var(--c-a-rgb, 14, 116, 144), .45);
+    color: var(--c-a, #0e7490);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, .10);
+    transform: translateY(-1px);
+}
+
+.fbpager .fbpg:active {
+    transform: translateY(1px);
+    background: rgba(var(--c-a-rgb, 14, 116, 144), .14);
+}
+
+/* 首页/末页到头不可点：保持原有弱化，去掉 hover 抬升 */
+.fbpager .fbpg.dis {
+    opacity: .45;
+    pointer-events: none;
+    box-shadow: none;
+    transform: none;
+}
+
+/* 页码信息不与按钮抢注意力 */
+.fbpager .fbnow {
+    font-size: 12.5px;
+    color: var(--wb-text-dim, var(--text-mute, #6b7280));
+    padding: 0 2px;
+}
+
+/* ---------- B3.「⬇ 下载全部反馈 Excel」：透明直角裸链接 → 图标按钮 ---------- */
+a[href="/api/feedback/export"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    border-radius: 12px;
+    border: 1px solid rgba(37, 99, 235, .30);
+    background: rgba(37, 99, 235, .07);
+    /* 全文件唯一一处 !important：原链接把 color:#2563eb 写死在 HTML 的
+       inline style 里，任何外部选择器都盖不动，只能这样赢。 */
+    color: #1d4ed8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+    transition: background .18s ease, border-color .18s ease,
+                transform .12s ease, box-shadow .18s ease;
+}
+
+a[href="/api/feedback/export"]:hover {
+    background: rgba(37, 99, 235, .13);
+    border-color: rgba(37, 99, 235, .48);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, .18);
+    transform: translateY(-1px);
+}
+
+a[href="/api/feedback/export"]:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 3px rgba(37, 99, 235, .20);
+}
+
+a[href="/api/feedback/export"]:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, .55);
+    outline-offset: 2px;
+}
+
+/* ---------- B4. 后台移动端：可点区域拉到 40px（与后台自带 640px 断点对齐） ---------- */
+@media (max-width: 640px) {
+    .fbfilter select,
+    .fbpager .fbpg,
+    a[href="/api/feedback/export"] {
+        min-height: 40px;
+        padding: 10px 15px;
+    }
+
+    .fbfilter select {
+        padding-right: 32px;
+    }
+
+    /* 触摸反馈：移动端 :hover 不可靠，:active 给瞬时反馈 */
+    .fbpager .fbpg:active {
+        background: rgba(var(--c-a-rgb, 14, 116, 144), .18);
+        transform: translateY(1px);
+    }
+
+    a[href="/api/feedback/export"]:active {
+        background: rgba(37, 99, 235, .18);
+        transform: translateY(1px);
+    }
+}

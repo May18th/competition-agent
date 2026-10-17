@@ -10,8 +10,10 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                TableStyle, HRFlowable, KeepTogether)
+from reportlab.platypus import (SimpleDocTemplate, BaseDocTemplate, PageTemplate,
+                                Frame, Paragraph, Spacer, Table, TableStyle,
+                                HRFlowable, KeepTogether, PageBreak, Image)
+from reportlab.platypus.tableofcontents import TableOfContents
 
 
 def _register_cjk():
@@ -127,6 +129,87 @@ def _next_nonempty(lines, start):
     return None
 
 
+# ============ 章节编号注入（导出件是正式材料，章节必须带编号） ============
+# 与 docx_render._number_heading_blocks 保持同一套规则（两链路各自实现，规则必须一致）：
+#   ##  → 一、二、三、…（一级章节，中文数字）
+#   ### → （一）（二）…（二级小节，每章重新起算）
+#   已带编号的标题原样保留不重复加；#（文档主标题）与 #### 及以下不编号。
+
+_RE_NUM_HEAD = re.compile(
+    r'^(?:'
+    r'第[一二三四五六七八九十百0-9]+[章节篇部讲]'      # 第一章 / 第2章
+    r'|[一二三四五六七八九十百]+[、.．]'               # 一、 二.
+    r'|[（(][一二三四五六七八九十百]+[）)]'             # （一） (二)
+    r'|\d{1,2}(?:\.\d{1,2}){0,3}[、.．]'              # 1. / 2、 / 1.2.
+    r'|\d{1,2}(?:\.\d{1,2})+\s'                      # 1.1 / 10.2.1（多级+空格）
+    r'|[①②③④⑤⑥⑦⑧⑨⑩]'
+    r')'
+)
+
+
+def _cn_num(n):
+    """阿拉伯数字 → 中文数字（一、二、… 十一、… 二十一、…）。"""
+    digits = '零一二三四五六七八九'
+    if n <= 0:
+        return ''
+    if n >= 100:
+        return str(n)
+    if n < 10:
+        return digits[n]
+    if n == 10:
+        return '十'
+    if n < 20:
+        return '十' + digits[n - 10]
+    tens, ones = divmod(n, 10)
+    return digits[tens] + '十' + (digits[ones] if ones else '')
+
+
+def _number_headings(text):
+    """给 markdown 的 ## / ### 标题行注入中文编号；返回处理后的全文。
+
+    - 已带编号的标题（一、 / 1. / 1.1 / （一） / 第X章…）原样保留、不重复加号，
+      但照样推进计数器，保证后面的裸标题拿到与位置对应的号
+    - 代码围栏（``` … ```）内的行一律不动
+    - `# `（文档主标题，本渲染器用作题头）与 `#### ` 不编号
+    """
+    lines = (text or '').split('\n')
+    out, cn1, cn2, in_code = [], 0, 0, False
+    # 2026-10-01 P2 修复（与 docx_render._number_heading_blocks 同步）：
+    # 孤立裸标题夹在已编号章节序列中间时，按位置注入的号会与原文自带编号撞车
+    # （出现两个「五、」）。注入前只查【后文】的 H2 是否已占该号——查全量会把
+    # 编号漂移后的前文标题也算进来误伤（实测「后裸标题」被误判撞五、）。
+    _h2_titles = []
+    for _l in lines:
+        _m = re.match(r'^(#{2,3})\s+(.*)$', _l)
+        if _m and _m.group(1) == '##':
+            _h2_titles.append(_m.group(2).strip())
+    _h2_seen = -1
+    for line in lines:
+        if line.strip().startswith('```'):
+            in_code = not in_code
+            out.append(line)
+            continue
+        if not in_code:
+            m = re.match(r'^(#{2,3})\s+(.*)$', line)
+            if m:
+                title = m.group(2).strip()
+                if m.group(1) == '##':
+                    _h2_seen += 1
+                    cn1 += 1
+                    cn2 = 0
+                    if title and not _RE_NUM_HEAD.match(title):
+                        _pref = _cn_num(cn1) + '、'
+                        # 后文已有该编号（原文自带）→ 裸标题保持不编号，防撞车
+                        if not any(t.startswith(_pref) for t in _h2_titles[_h2_seen + 1:]):
+                            line = '## %s、%s' % (_cn_num(cn1), title)
+                else:
+                    cn2 += 1
+                    if title and not _RE_NUM_HEAD.match(title):
+                        line = '### （%s）%s' % (_cn_num(cn2), title)
+        out.append(line)
+    return '\n'.join(out)
+
+
 def _flow(text):
     flow, lines, i = [], text.split("\n"), 0
     while i < len(lines):
@@ -195,26 +278,138 @@ def _flow(text):
     return flow
 
 
-def render_markdown_to_pdf(markdown_text, out_path, title="申报书"):
-    """把 Markdown 文本渲染成 A4 PDF。成功返回 out_path，失败抛异常。"""
+def _chart_path(chart):
+    """Resolve a chart URL to the local generated asset without trusting a path."""
+    if not isinstance(chart, dict):
+        return ''
+    name = os.path.basename(str(chart.get('url') or '').split('?', 1)[0])
+    if not name:
+        return ''
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generated')
+    path = os.path.join(base, name)
+    return path if os.path.isfile(path) else ''
+
+
+def _chart_story(charts, tables):
+    """Build a restrained appendix so PDF never silently drops structured media."""
+    story = []
+    charts = charts if isinstance(charts, list) else []
+    tables = tables if isinstance(tables, list) else []
+    usable_charts = [(c, _chart_path(c)) for c in charts if _chart_path(c)]
+    usable_tables = [t for t in tables if isinstance(t, dict) and t.get('header') and t.get('rows')]
+    if not usable_charts and not usable_tables:
+        return story
+    story.append(PageBreak())
+    story.append(Paragraph('数据图表与结构化附表', _H1))
+    story.append(Paragraph('图表沿用本次生成记录中的结构化数据；来源与测算口径请在提交前逐项核对。', _NOTE))
+    for chart, path in usable_charts:
+        story.append(Paragraph(_clean(chart.get('title') or '数据图表'), _H2))
+        try:
+            img = Image(path)
+            img._restrictSize(15.5 * cm, 8.8 * cm)
+            img.hAlign = 'CENTER'
+            story.append(img)
+        except Exception:
+            continue
+        caption = str(chart.get('caption') or '').strip()
+        source = str(chart.get('source') or '').strip()
+        note = '；'.join(x for x in (caption, '来源：' + source if source else '') if x)
+        if note:
+            story.append(Paragraph(_clean(note), _NOTE))
+        story.append(Spacer(1, 8))
+    for table in usable_tables:
+        story.append(Paragraph(_clean(table.get('title') or '结构化附表'), _H2))
+        rows = [table.get('header')] + list(table.get('rows') or [])
+        rows = [[Paragraph(_clean(str(cell)), _NOTE if ri else _BULLET) for cell in row]
+                for ri, row in enumerate(rows[:9])]
+        if rows:
+            col_count = max(len(r) for r in rows)
+            rows = [r + [Paragraph('', _NOTE)] * (col_count - len(r)) for r in rows]
+            tbl = Table(rows, repeatRows=1, hAlign='LEFT')
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8ECF7')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#C9D0E4')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            story.append(tbl)
+            story.append(Spacer(1, 8))
+    return story
+
+
+class _PdfDocTemplate(BaseDocTemplate):
+    """Small TOC-aware template; page numbers come from ReportLab, not estimates."""
+    def __init__(self, filename, **kwargs):
+        super().__init__(filename, **kwargs)
+        frame = Frame(self.leftMargin, self.bottomMargin,
+                      self.width, self.height, id='normal')
+        self.addPageTemplates([PageTemplate(id='main', frames=[frame],
+                                            onPage=_footer)])
+
+    def afterFlowable(self, flowable):
+        if not isinstance(flowable, Paragraph):
+            return
+        style = getattr(flowable, 'style', None)
+        name = getattr(style, 'name', '') if style else ''
+        level = 0 if name == 'h1' else (1 if name == 'h2' else -1)
+        if level >= 0:
+            self.notify('TOCEntry', (level, flowable.getPlainText(), self.page))
+
+
+def _footer(canvas, docobj):
+    canvas.saveState()
+    canvas.setFont(_FONT, 8.5)
+    canvas.setFillColor(colors.HexColor('#8A93A8'))
+    canvas.drawCentredString(A4[0] / 2.0, 0.85 * cm, '%d' % docobj.page)
+    canvas.restoreState()
+
+
+def render_markdown_to_pdf(markdown_text, out_path, title="申报书", subtitle=None,
+                          charts=None, tables=None, include_toc=True):
+    """把 Markdown 文本渲染成带封面/目录/媒体的 A4 PDF。"""
     markdown_text = markdown_text or ""
     # 若正文没有以一级标题（# 标题）开头，补一个文档主标题，避免 PDF 上来就是「## 项目简介」没有题头
     stripped = markdown_text.lstrip()
     if not re.match(r"^#\s+", stripped):
         markdown_text = ("# %s\n\n" % (title or "申报书")) + markdown_text
+    # 章节编号注入：#（题头）不动，## → 一、二、…，### → （一）（二）…
+    markdown_text = _number_headings(markdown_text)
 
-    def _footer(canvas, docobj):
-        canvas.saveState()
-        canvas.setFont(_FONT, 8.5)
-        canvas.setFillColor(colors.HexColor("#8A93A8"))
-        canvas.drawCentredString(A4[0] / 2.0, 0.85 * cm, "%d" % docobj.page)
-        canvas.restoreState()
-
-    doc = SimpleDocTemplate(
+    # 封面标题不再在目录后的正文重复出现；正文其余层级完整保留。
+    body_lines = markdown_text.splitlines()
+    if body_lines and re.match(r'^#\s+', body_lines[0].strip()):
+        body_lines = body_lines[1:]
+        while body_lines and not body_lines[0].strip():
+            body_lines.pop(0)
+    body_text = '\n'.join(body_lines)
+    body_flow = _flow(body_text)
+    has_headings = any(re.match(r'^##\s+', x.strip()) for x in body_lines)
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle('toc1', fontName=_FONT, fontSize=11, leading=18,
+                       leftIndent=0, firstLineIndent=0, spaceAfter=3),
+        ParagraphStyle('toc2', fontName=_FONT, fontSize=10, leading=16,
+                       leftIndent=18, firstLineIndent=0, spaceAfter=2),
+    ]
+    story = [Spacer(1, 5.0 * cm), Paragraph(_clean(title or '申报书'), _TITLE)]
+    if subtitle:
+        story.append(Spacer(1, 0.4 * cm))
+        story.append(Paragraph(_clean(subtitle), _SUB))
+    story.append(Spacer(1, 1.0 * cm))
+    story.append(Paragraph('协作草稿 · 提交前请核对数据来源、署名与赛事要求', _NOTE))
+    story.append(PageBreak())
+    if include_toc and has_headings:
+        story.extend([Paragraph('目录', _H1), toc, PageBreak()])
+    story.extend(body_flow)
+    story.extend(_chart_story(charts, tables))
+    doc = _PdfDocTemplate(
         out_path, pagesize=A4,
         leftMargin=2.2 * cm, rightMargin=2.2 * cm,
         topMargin=2.0 * cm, bottomMargin=2.0 * cm,
         title=title,
     )
-    doc.build(_flow(markdown_text), onFirstPage=_footer, onLaterPages=_footer)
+    doc.multiBuild(story)
     return out_path

@@ -217,6 +217,88 @@ def _is_sep(line):
     return bool(_RE_SEP.match(line)) and '-' in line
 
 
+# ============ 章节编号注入（导出件是正式材料，章节必须带编号） ============
+
+# 标题已带编号的形态：中文数字（一、 / （一））、阿拉伯数字（1. / 1.1 / 2、）、
+# 「第X章/节/篇/部」、带圈序号。命中任意一种就不再重复加号。
+# 注意：纯「数字+空格」（如「5G」「2026 规划」）不算已编号，否则会被误跳过。
+# 与 pdf_render._RE_NUM_HEAD 保持同一套规则（两链路各自实现，规则必须一致）。
+_RE_NUM_HEAD = re.compile(
+    r'^(?:'
+    r'第[一二三四五六七八九十百0-9]+[章节篇部讲]'      # 第一章 / 第2章
+    r'|[一二三四五六七八九十百]+[、.．]'               # 一、 二.
+    r'|[（(][一二三四五六七八九十百]+[）)]'             # （一） (二)
+    r'|\d{1,2}(?:\.\d{1,2}){0,3}[、.．]'              # 1. / 2、 / 1.2.
+    r'|\d{1,2}(?:\.\d{1,2})+\s'                      # 1.1 / 10.2.1（多级+空格）
+    r'|[①②③④⑤⑥⑦⑧⑨⑩]'
+    r')'
+)
+
+
+def _cn_num(n):
+    """阿拉伯数字 → 中文数字（申报书章节惯例：一、二、… 十一、… 二十一、…）。"""
+    digits = '零一二三四五六七八九'
+    if n <= 0:
+        return ''
+    if n >= 100:
+        return str(n)                  # 超过 99 章的极端情况，退回阿拉伯数字
+    if n < 10:
+        return digits[n]
+    if n == 10:
+        return '十'
+    if n < 20:
+        return '十' + digits[n - 10]
+    tens, ones = divmod(n, 10)
+    return digits[tens] + '十' + (digits[ones] if ones else '')
+
+
+def _number_heading_blocks(blocks):
+    """给正文标题注入中文编号（在渲染层做，不要求上游 LLM 输出带编号）。
+
+    - H2（markdown ``##``，一级章节）→ 一、二、三、…
+    - H3（markdown ``###``，二级小节）→ （一）（二）…，遇到新的 H1/H2 章节重新起算
+    - 已带编号的标题（一、 / 1. / 1.1 / （一） / 第X章…）原样保留、不重复加号，
+      但照样推进计数器，保证后面的裸标题拿到与位置对应的号
+    - H1（文档主标题）与 H4 及以下不编号；封面/页眉/合规标注不经此函数，不受影响
+
+    必须在 build_docx 收集目录标题之前调用：目录条目和正文标题共用这份
+    blocks，在这里编号一次，两边自动一致（目录是手写静态列表，跟着正文走）。
+    """
+    cn1 = 0        # 一级章节计数（一、二、…）
+    cn2 = 0        # 二级小节计数（（一）（二）…），每进新章重置
+    out = []
+    for _bi, blk in enumerate(blocks):
+        if blk[0] != 'h':
+            out.append(blk)
+            continue
+        level, text = blk[1], (blk[2] or '').strip()
+        if not text:
+            out.append(blk)
+            continue
+        if level == 1:
+            cn2 = 0                   # 裸「一、xxx」章也是新章，小节重新起算
+        elif level == 2:
+            cn1 += 1
+            cn2 = 0
+            if not _RE_NUM_HEAD.match(text):
+                # 2026-10-01 P2 修复（评委视角实测）：孤立裸标题夹在已编号章节序列
+                # 中间时，按位置注入的号会与原文自带的下一个编号撞车（出现两个
+                # 「五、」）。注入前向后看一眼：后面的 H2 已占这个号就保持裸标题
+                # 不编号（附录式小节），计数器照常推进。
+                _pref = _cn_num(cn1) + '、'
+                if any(b[0] == 'h' and b[1] == 2 and (b[2] or '').strip().startswith(_pref)
+                       for b in blocks[_bi + 1:]):
+                    pass
+                else:
+                    text = '%s、%s' % (_cn_num(cn1), text)
+        elif level == 3:
+            cn2 += 1
+            if not _RE_NUM_HEAD.match(text):
+                text = '（%s）%s' % (_cn_num(cn2), text)
+        out.append(('h', level, text))
+    return out
+
+
 def _split_row(line):
     return [c.strip() for c in line.strip().strip('|').split('|')]
 
@@ -559,48 +641,11 @@ def _paginate_headings(doc, headings):
         return None
 
 
-def _toc_field_begin(doc):
-    """开一个 TOC 域（begin + instrText + separate），之后写入的段落即「域结果缓存」。
-
-    这样做一次满足两端：Word 打开可按 F9 刷新成自动目录；WPS / 手机不刷新域时
-    直接显示下面的静态缓存（含真实页码），不会出现空目录或占位「1」。
-    """
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(0)
-    r = p.add_run()
-    fc = OxmlElement('w:fldChar')
-    fc.set(qn('w:fldCharType'), 'begin')
-    r._r.append(fc)
-    r = p.add_run()
-    it = OxmlElement('w:instrText')
-    it.set(qn('xml:space'), 'preserve')
-    it.text = r'TOC \o "1-2" \h \z \u'
-    r._r.append(it)
-    r = p.add_run()
-    fs = OxmlElement('w:fldChar')
-    fs.set(qn('w:fldCharType'), 'separate')
-    r._r.append(fs)
-    return p
-
-
-def _toc_field_end(doc):
-    """闭合上面开的 TOC 域。"""
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(0)
-    r = p.add_run()
-    fe = OxmlElement('w:fldChar')
-    fe.set(qn('w:fldCharType'), 'end')
-    r._r.append(fe)
-    return p
-
-
 def _add_toc(doc, headings, toc_pages=None):
-    """目录页：TOC 域 + 静态页码结果缓存。
+    """目录页：逐条列出真实标题，页码写死真实数字（不再依赖 PAGEREF 域刷新）。
 
-    WPS / 手机预览不会像 Word 那样自动更新域，所以静态目录（真实页码）作为
-    TOC 域的结果缓存写进去 —— 不刷新时照常可读，Word 里按 F9 即刷新为自动目录。
+    WPS / 手机预览不会像 Word 那样自动更新域，PAGEREF 会一直显示占位「1」，
+    所以这里由 build_docx 先渲染算出真实页码后，直接写静态数字。
     toc_pages 拿不到某条页码时，该条只写标题、不写页码（绝不出现「1」）。
     """
     toc_pages = toc_pages or {}
@@ -608,9 +653,6 @@ def _add_toc(doc, headings, toc_pages=None):
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.space_after = Pt(16)
     _font(p.add_run('目  录'), SZ_ER, CN_HEI, bold=True)
-
-    # 第二百三十五轮：导出门禁要「可刷新目录（TOC 域）」，此前只有静态段落 → 一律判缺。
-    _toc_field_begin(doc)
 
     for level, text, mark in headings:
         p = doc.add_paragraph()
@@ -638,8 +680,6 @@ def _add_toc(doc, headings, toc_pages=None):
             tr = p.add_run()
             tr._r.append(OxmlElement('w:tab'))
             _font(p.add_run(str(page)), SZ_XIAOSI, CN_SONG)
-
-    _toc_field_end(doc)
 
 
 # ============ 各类块渲染 ============
@@ -932,29 +972,30 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
     :return:            python-docx Document
     """
     prof = PROFILES.get(doc_type, PROFILES['default'])
+    # 封面不能是空页：项目名取不到时退回文档类型名，至少让评委看到这是什么材料
+    title = (title or '').strip() or (header_title or '').strip() or '项目申报材料'
+    # 417 轮：封面与目录不再是「按文档类型碰运气」。用户手机实测导出的说明书
+    # 直接从「一、项目背景与痛点」开始——没有封面页也没有目录页，评委翻到的就是裸正文。
+    # 现在改成：只要调用方没显式关掉（目前没有这种调用方），一律出封面；
+    # 目录只要有 ≥2 个章节标题就出。杜绝「偶尔有偶尔没有」。
     if cover is None:
-        cover = prof['cover']
+        cover = True
     if toc is None:
-        toc = prof['toc']
-    blocks = _blocks(text or '')
-    # 2026-09-30 417-1 残留修复：短文档静默丢目录
-    # 旧逻辑：正文 <2500 字一律关目录 -> 简洁版/短申报书导出后无目录（豆包 P0-1 投诉场景）。
-    # 新逻辑：有封面的正式文档(cover=True) 按「章节数 >=3」出目录，不受字数限制；
-    #         无封面的简洁文档仍按字数阈值，避免目录页大半空白。
-    if toc:
-        _plain_len = len((text or '').replace('\n', '').replace(' ', ''))
-        _h_cnt = 0
-        for _b in blocks:
-            if _b[0] == 'h' and _b[1] <= 3:
-                _h_cnt += 1
-        if not (cover and _h_cnt >= 3) and _plain_len < 2500:
-            toc = False
+        toc = True
+
+    # 章节编号注入必须在收集目录标题之前完成：目录条目和正文标题共用这份 blocks
+    blocks = _number_heading_blocks(_blocks(text or ''))
     # 先收集标题，用来生成目录（目录条目必须和正文一一对应）
     headings, _bm_id = [], 0
     for blk in blocks:
         if blk[0] == 'h' and blk[1] <= 3:
             _bm_id += 1
             headings.append((blk[1], blk[2], '_toc_%d' % _bm_id))
+    # 目录页只有 1 条还不如不给（整页一行，观感像出错）；正文极短同理。
+    if toc and len(headings) < 2:
+        toc = False
+    if toc and len((text or '').replace('\n', '').replace(' ', '')) < 600:
+        toc = False
 
     def _assemble(toc_pages_arg):
         doc = Document()

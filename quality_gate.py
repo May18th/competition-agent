@@ -13,28 +13,29 @@ def check_generation(result, mode="deep"):
     issues = []
     proposal = result.get("proposal") or ""
     n = len(re.sub(r'[#*`\-|>\[\]（）()\s]', '', proposal))
-    if mode == "deep" and n < 6000:
-        issues.append(f"深度版正文 {n} 字 < 6000 下限")
-    if not (result.get("rich_charts") or result.get("rich_tables")):
+    # 2026-10-01（深度版信息密度导向改造）：深度版无硬性字数下限，2500 只是
+    # 异常检测线（低于它大概率截断/漏章，生成端 _expand_to_length 同口径），
+    # 通常篇幅 2500～5000 字、以信息完整为准，不再拿 6000 硬卡。
+    if mode == "deep" and n < 2500:
+        issues.append(f"深度版正文 {n} 字 < 2500 异常检测线（疑似截断/漏章，请核对章节完整性）")
+    # 2026-10-01（271 号记录误杀复盘）：富媒体检查按 mode 走——fast（简洁版）
+    # 链路本来就没有图表管线（rich_charts/rich_tables 只在 deep 解析），
+    # 按 deep 标准审 fast 必然误报「富媒体为空」。
+    if mode == "deep" and not (result.get("rich_charts") or result.get("rich_tables")):
         issues.append("富媒体（图表/表格）为空")
     if mode == "deep" and not result.get("rich_deck"):
         issues.append("rich_deck（路演PPT）为空")
     for k in ("defense_questions", "ppt_outline"):
         if not result.get(k):
             issues.append(f"模块缺失：{k}")
-    # 第二百三十轮补：篇幅分层——简洁版非核心板块（竞品/商业/风险/技术）应摘要级，
-    # 超出上限即判定「篇幅与优先级倒挂」，打回精简。
-    if mode == "fast":
-        _noncore = ("competitor_analysis", "business_model", "risk_analysis", "tech_solution")
-        for _k in _noncore:
-            _v = len(re.sub(r'\s', '', result.get(_k) or ""))
-            if _v > 800:
-                issues.append(f"简洁版非核心板块篇幅过长：{_k}（{_v} 字 > 800 摘要级上限）")
-    # 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版均适用）：
-    # 空话段落占比 >30% 判定凑数，两档一起打回。
+    # 防凑数（145/146 轮）：空话段落占比 >30% 判定凑数，两档一起打回。
     _eok, _eissues = check_depth(proposal)
     if not _eok:
         issues.extend(_eissues)
+    # 获奖作品反面失分模式（2026-10 蒸馏第 8 节）：普适项两档都查，结构项只查 deep
+    _aok, _aissues = check_award_pitfalls(proposal, mode)
+    if not _aok:
+        issues.extend(_aissues)
     return (not issues), issues
 
 
@@ -109,29 +110,74 @@ def check_pptx(path):
     return (not issues), issues
 
 
-def check_pdf(path, max_pages=20, max_bytes=50 * 1024 * 1024):
-    """PDF 终检：页数/体积/中文乱码。
+# 417 轮：各赛事对提交 PDF 的页数/体积限制。
+# 只放有明确依据的条目；没配到的一律走 DEFAULT_PDF_LIMIT 的宽松值，
+# 宁可放过也不能因为「没配」就把用户的正式提交件判死。
+PDF_LIMITS = [
+    # iCAN 官网要求：作品说明书（申报书）正文不超过 20 页
+    {"match": ("ican",), "max_pages": 20, "max_mb": 10,
+     "label": "iCAN 作品说明书/申报书"},
+    # 「挑战杯」中国大学生创业计划竞赛：申报书正文一般控制在 30 页内（保守值）
+    {"match": ("挑战杯", "创青春"), "max_pages": 30, "max_mb": 15,
+     "label": "挑战杯申报书"},
+]
+# 未匹配到赛事时的兜底：宽松，不误杀
+DEFAULT_PDF_LIMIT = {"max_pages": 40, "max_mb": 20, "label": "通用文档"}
 
-    max_pages / max_bytes 默认按 iCAN 官方口径（应用方案 PDF ≤20 页 / ≤50MB）；
-    调用方（export_pdf）可按赛事 word_requirement 传入更精确的上限。
+
+def pdf_limits_for(competition_name="", doc_title=""):
+    """按赛事名（模糊匹配）取 PDF 页数/体积限制，返回 {"max_pages","max_mb","label"}。"""
+    comp = (competition_name or "").lower()
+    doc = (doc_title or "")
+    for item in PDF_LIMITS:
+        for kw in item["match"]:
+            if kw.lower() in comp or kw in doc:
+                return {"max_pages": item["max_pages"],
+                        "max_mb": item["max_mb"], "label": item["label"]}
+    return dict(DEFAULT_PDF_LIMIT)
+
+
+def _pdf_trim_suggestions(n_pages, mb, limit):
+    """超限时的可执行删减建议——必须带数字，不许写「请精简内容」这种废话。"""
+    tips = []
+    if n_pages > limit["max_pages"]:
+        over = n_pages - limit["max_pages"]
+        tips.append("需删掉 %d 页（当前 %d 页 → 上限 %d 页）" % (over, n_pages, limit["max_pages"]))
+        tips.append("优先合并连续的数据页：把财务测算、市场规模、成本结构三张表压到 1～2 页并排排版")
+        tips.append("附录类内容（访谈记录、问卷原题、代码清单、参考文献）移出正文或改放网盘链接")
+        tips.append("每章的「小结」段落整段删掉，评委看的是数据与结论，不是总结")
+        if over >= 8:
+            tips.append("超出较多（%d 页），建议回到结果页把正文按章节重写为精简版再导出" % over)
+    if mb > limit["max_mb"]:
+        over_mb = round(mb - limit["max_mb"], 1)
+        tips.append("需压掉约 %.1fMB（当前 %.1fMB → 上限 %dMB）" % (over_mb, mb, limit["max_mb"]))
+        tips.append("图片/图表统一降到 150dpi，通常能减 30%～50% 体积")
+        tips.append("删除正文里重复出现的同一张架构图/流程图，只保留一处")
+        if n_pages and mb / max(n_pages, 1) > 0.5:
+            tips.append("当前平均每页 %.2fMB，明显是图太重；优先压图而不是删字" % (mb / n_pages))
+    return tips
+
+
+def check_pdf(path, competition_name=None, doc_title=None, detail=False):
+    """PDF 导出终检。
+
+    向后兼容：不传 competition_name/doc_title 时行为与 417 轮前完全一致，
+    只查体积 3MB / 无页面 / 中文乱码，返回 (ok, issues) 二元组。
+    detail=True 时返回 dict：{"ok","errors","warnings","suggestions","pages","mb","limit"}。
     """
     issues = []
+    pages, mb = 0, 0.0
     try:
         import os as _os
         sz = _os.path.getsize(path)
-        if sz > max_bytes:
-            issues.append(
-                f"PDF 体积超限（{sz // 1024}KB > {max_bytes // 1024 // 1024}MB），"
-                f"建议压缩图片或删减图表后重试")
+        mb = sz / (1024.0 * 1024.0)
+        if sz > 3 * 1024 * 1024:
+            issues.append(f"PDF 体积超限（{sz // 1024}KB > 3MB）")
         from pypdf import PdfReader
         r = PdfReader(path)
-        n = len(r.pages)
-        if n < 1:
+        pages = len(r.pages)
+        if pages < 1:
             issues.append("PDF 无页面")
-        elif n > max_pages:
-            issues.append(
-                f"PDF 页数超限（{n} 页 > {max_pages} 页），"
-                f"建议删减次要章节或压缩图表/表格后重试")
         _txt = ""
         for p in r.pages[:3]:
             try:
@@ -142,10 +188,52 @@ def check_pdf(path, max_pages=20, max_bytes=50 * 1024 * 1024):
             issues.append("PDF 中文乱码")
     except Exception as e:
         issues.append(f"pdf 检查失败：{e}")
-    return (not issues), issues
+
+    if not detail:
+        return (not issues), issues
+
+    # 基础检查里「3MB 体积」这条太紧：带图的申报书轻松过 3MB，但 iCAN 上限是 10MB，
+    # 拿 3MB 去卡等于误杀正式提交件。detail 路径下它降为 warning，
+    # 真正的页数/体积红线交给下面按赛事取到的限制来判。
+    errors = [x for x in issues if "体积超限" not in x]
+    warnings = [x for x in issues if "体积超限" in x]
+    suggestions = []
+    limit = pdf_limits_for(competition_name, doc_title)
+    if pages and pages > limit["max_pages"]:
+        errors.append("本 PDF 共 %d 页，超出%s要求（≤%d 页）"
+                      % (pages, limit["label"], limit["max_pages"]))
+    if mb and mb > limit["max_mb"]:
+        errors.append("本 PDF 共 %.1fMB，超出%s要求（≤%dMB）"
+                      % (mb, limit["label"], limit["max_mb"]))
+    if errors:
+        suggestions = _pdf_trim_suggestions(pages, mb, limit)
+    elif pages and pages >= limit["max_pages"] - 2:
+        warnings.append("页数已接近上限（%d/%d 页），再补充内容就会超限"
+                        % (pages, limit["max_pages"]))
+    return {"ok": not errors, "errors": errors, "warnings": warnings,
+            "suggestions": suggestions, "pages": pages,
+            "mb": round(mb, 2), "limit": limit}
 
 
-def check_zip(path, expect_count=12):
+# 打包期望文件数（mode 感知，2026-10-01 fast 打包 422 修复）：
+# fast（简洁版）链路没有路演 PPT 管线，「一键打包全部」只有 11 个文件，
+# 拿 deep 的 12 硬卡会把 fast 记录直接判「文件数不足」→ 422 核心功能不可用。
+# deep 全家桶 12 件（含路演 PPT），fast 11 件（无 PPT）。
+ZIP_EXPECT = {"deep": 12, "fast": 11}
+
+
+def check_zip(path, expect_count=None, mode="deep"):
+    """zip 导出终检：文件数 / 体积。
+
+    新签名（向后兼容）：
+    - check_zip(path)                      → 按 deep 期望 12 件，与历史默认行为一致
+    - check_zip(path, mode="fast")         → 按 fast 期望 11 件
+    - check_zip(path, expect_count=N)      → 显式传入优先（老调用方式不受影响）
+    - check_zip(path, 5)                  → 位置参数仍视为 expect_count
+    返回 (ok, issues)。
+    """
+    if expect_count is None:
+        expect_count = ZIP_EXPECT.get(mode, ZIP_EXPECT["deep"])
     issues = []
     try:
         import os as _os
@@ -208,16 +296,39 @@ def check_review(review_str, proposal=""):
 
 
 # ============ 总审质检（第一百三十四轮，轻量规则，不引重模型） ============
+# 板块中文名（警告文案要用户能看懂，不暴露内部字段名）
+_TOTAL_MODULE_NAMES = {
+    "parsed_rules": "赛事规则解析", "similarity_report": "相似度初检",
+    "competitor_analysis": "竞品分析", "business_model": "商业模式",
+    "risk_analysis": "风险分析", "tech_solution": "技术方案",
+    "implementation_plan": "实施计划", "social_value": "社会价值",
+    "project_summary": "项目简介", "proposal": "申报书正文",
+    "judge_feedback": "评委反馈", "defense_questions": "答辩问题预测",
+    "ppt_outline": "PPT大纲", "speech_script": "路演讲稿",
+}
+
+# deep 专属板块：fast（简洁版）工作流没有 plan/social/summary 三个节点，
+# 这三块只在 deep 链路生成（见 competition_agents.py 的 fast_app / deep_workflow）
+_DEEP_ONLY_MODULES = ("implementation_plan", "social_value", "project_summary")
+
+
 def check_total(result, mode="deep"):
-    """板块完整性 + 跨板块数字一致性检查。返回 (ok, issues)。"""
+    """板块完整性 + 跨板块数字一致性检查。返回 (ok, issues)。
+
+    2026-10-01（271 号记录误杀复盘）：板块清单按 mode 走——fast 链路没有
+    implementation_plan / social_value / project_summary 这三个 deep 专属板块，
+    拿 deep 全家桶审 fast 必然「缺板块」误报。数字冲突检查两档都保留（只警告）。
+    """
     issues = []
     _modules = ["parsed_rules", "similarity_report", "competitor_analysis", "business_model",
                 "risk_analysis", "tech_solution", "implementation_plan", "social_value",
                 "project_summary", "proposal", "judge_feedback", "defense_questions",
                 "ppt_outline", "speech_script"]
+    if mode != "deep":
+        _modules = [m for m in _modules if m not in _DEEP_ONLY_MODULES]
     for m in _modules:
         if not (result.get(m) or "").strip():
-            issues.append(f"缺板块：{m}")
+            issues.append(f"缺板块：{_TOTAL_MODULE_NAMES.get(m, m)}")
     # 跨板块一致性：同一关键词在不同板块出现不同数值 → 冲突
     import re as _re
     _kw = ("市场规模", "客单价", "月收入", "单价", "成本", "毛利率", "转化率", "用户数", "付费率", "日均")
@@ -238,7 +349,7 @@ def check_total(result, mode="deep"):
             _agg.setdefault(k, set()).update(vals)
     for k, vals in _agg.items():
         if len(vals) > 1:
-            issues.append(f"跨板块数字冲突：{k} 出现 {sorted(vals)} 多版本")
+            issues.append(f"跨板块数字冲突：{k}出现{'/'.join(sorted(vals))}多个版本，已按正文原文导出，请核对统一口径")
     return (not issues), issues
 
 
@@ -254,8 +365,111 @@ def check_content(text):
             issues.append(f"套话：{c}")
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', text or ""):
         issues.append("疑似泄露院校名（双盲）")
-    if re.search(r'(指导老师|指导教师|导师)\s*[:：]?\s*(?!负责|统筹|整体|管理|协调|组织|设计|开发|运营|推广|主持|参与|带领|姓名|由团队|待填)[\u4e00-\u9fa5]{2,4}', text or ""):
+    if re.search(r'(指导老师|指导教师|导师)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}', text or ""):
         issues.append("疑似泄露导师姓名")
+    return (not issues), issues
+
+
+# ============ L3 扩展：获奖作品反面失分模式检查（2026-10 蒸馏，docs/获奖作品写作规范_蒸馏.md 第 8 节） ============
+# 与 judge_paradigm.json 互补不重复：那边是「评委批评语」注入模拟评委 LLM；
+# 这里把 12 条反面模式中可程序化的 9 条做成正则/结构检查（#4 #11 #12 见下方注释说明）。
+# 普适项（#1 空话 / #2 无数据论断 / #5 痛点泛泛 / #6 财务浮夸 / #10 落地含糊）两档都查；
+# 结构项（#3 概念堆砌 / #7 拍脑袋 / #8 前三页密度 / #9 六要素）只查 deep——fast 篇幅短、
+# 章节结构不同，查了必误杀。
+_EMPTY_GRAND = re.compile(r'(?:助力|推动|服务|赋能)(?:乡村振兴|碳达峰|碳中和|教育公平|数字化转型|高质量发展|共同富裕)')
+_LEAD_CLAIM = re.compile(r'国内领先|国际先进|国际领先|行业领先|全国领先|业内领先')
+_PAIN_VAGUE = re.compile(r'面临很多问题|面临许多问题|需求旺盛|痛点众多|存在诸多问题|问题日益突出|尚无有效(?:的)?解决方案')
+_HOT_CONCEPTS = ("人工智能", "大模型", "数字孪生", "元宇宙", "区块链", "物联网", "大数据", "机器学习", "深度学习", "神经网络", "生成式AI", "边缘计算")
+_GROWTH_RATE = re.compile(r'(?:年增|年增长|同比增长|年增长率|增速)[^。；\n]{0,8}?(\d+(?:\.\d+)?)\s*[%％]')
+_GROSS_MARGIN = re.compile(r'毛利率[^。；\n]{0,8}?(\d+(?:\.\d+)?)\s*[%％]')
+_GROW_TIMES = re.compile(r'增长[^。；\n]{0,6}?(\d+(?:\.\d+)?)\s*倍')
+_BIG_MARKET = re.compile(r'千亿|万亿')
+_SURVEY_TRACE = re.compile(r'走访|访谈|问卷|样本|实地调研|深度调研')
+_VAGUE_DOING = re.compile(r'正在对接|正在洽谈|即将敲定|逐步落地|持续推进')
+_SIX_ELEMENTS = (("痛点", r'痛点|难题|困境|困扰|面临.{0,6}问题'),
+                 ("方案", r'解决方案|技术方案|产品形态|产品介绍|方案设计'),
+                 ("验证数据", r'试点|实测|测试结果|验证数据|实验数据'),
+                 ("商业模式", r'商业模式|盈利模式|收费模式|付费'),
+                 ("财务", r'财务|成本结构|盈亏平衡|毛利率|收入'),
+                 ("团队", r'团队|分工|成员'))
+
+
+def _sentences(text):
+    return [s for s in re.split(r'[。；;！!？?\n]', text or "") if s.strip()]
+
+
+def check_award_pitfalls(text, mode="deep"):
+    """获奖作品反面失分模式检查（蒸馏文档第 8 节 12 条）。
+
+    12 条处置：#1 空话排比 / #2 无数据论断 / #5 痛点泛泛 / #6 财务浮夸 /
+    #10 落地含糊 为普适项；#3 概念堆砌 / #7 市场拍脑袋 / #8 前三页数据密度 /
+    #9 六要素闭环 仅 deep。#4 术语堆砌（技术章开头价值陈述）与 #11 答辩背稿
+    属生成端与答辩稿管线的指令约束（已写入 competition_agents._AWARD_SPEC），
+    正文正则无法可靠判定，不在此查；#12 格式硬伤已由 L2（docx/pdf）与
+    check_total（跨板块数字一致性）覆盖，不重复。
+    返回 (ok, issues)。
+    """
+    text = text or ""
+    issues = []
+
+    # #1 空话排比 /「正确的废话」：大词组合直接命中；「助力/赋能/推动」句无数字绑定按句计数
+    if _EMPTY_GRAND.search(text):
+        issues.append("社会价值空话：出现「助力/服务/推动 + 乡村振兴/碳达峰/教育公平」类不可核验大词（正确的废话，评委点名批评模式）")
+    _empty_talk = [s for s in _sentences(text)
+                   if re.search(r'助力|推动', s) and not re.search(r'\d', s)]
+    if len(_empty_talk) >= 3:
+        issues.append(f"空话句过多：{len(_empty_talk)} 个「助力/推动」句不带任何数字")
+
+    # #2 无数据论断：领先类断言所在句无数字即报（评委原话「这句话没有任何意义」）
+    _lead_hits = [s for s in _sentences(text) if _LEAD_CLAIM.search(s) and not re.search(r'\d', s)]
+    if _lead_hits:
+        issues.append(f"无数据论断：{len(_lead_hits)} 处「国内领先/国际先进」类断言不带对比数字（{_LEAD_CLAIM.search(_lead_hits[0]).group() if _lead_hits else ''}）")
+
+    # #5 痛点泛泛：评委视为「无效数据、无调研」的泛化表述
+    _vague = _PAIN_VAGUE.search(text)
+    if _vague:
+        issues.append(f"痛点泛泛：出现「{_vague.group()}」（无人群无场景无数据，判无效痛点）")
+
+    # #6 财务过乐观：增长率 >300% / 毛利率 >80% / 「增长 N 倍」N>=9
+    for m in _GROWTH_RATE.finditer(text):
+        if float(m.group(1)) > 300:
+            issues.append(f"财务浮夸：年增速 {m.group(1)}%（超 300% 区间，须给保守情景兜底与推导链）")
+            break
+    for m in _GROSS_MARGIN.finditer(text):
+        if float(m.group(1)) > 80:
+            issues.append(f"财务浮夸：毛利率 {m.group(1)}%（超 80% 区间，评委一眼判不合理）")
+            break
+    for m in _GROW_TIMES.finditer(text):
+        if float(m.group(1)) >= 9:
+            issues.append(f"财务浮夸：「增长 {m.group(1)} 倍」（等同于年增 900% 式翻车）")
+            break
+
+    # #10 落地描述含糊：「正在对接/持续推进」式等于没说（预期目标单独成段是合法的，「正在对接」不是）
+    _vdoing = len(_VAGUE_DOING.findall(text))
+    if _vdoing >= 2:
+        issues.append(f"落地描述含糊：「正在对接/持续推进」类表述出现 {_vdoing} 处（要么写已发生的事实，要么写计划与时点）")
+
+    if mode == "deep":
+        # #3 概念堆砌蹭热点：热点概念词种类 >=6 提示核对（每个概念应对应实际功能）
+        _kinds = [c for c in _HOT_CONCEPTS if c in text]
+        if len(_kinds) >= 6:
+            issues.append(f"疑似概念堆砌：热点技术概念出现 {len(_kinds)} 种（{'、'.join(_kinds[:4])}…），请核对每个概念都有对应实际功能")
+
+        # #7 市场规模拍脑袋：千亿/万亿或占有率断言，全文却无任何调研过程痕迹
+        if _BIG_MARKET.search(text) and not _SURVEY_TRACE.search(text):
+            issues.append("市场规模拍脑袋：出现千亿/万亿级市场但全文无调研痕迹（走访/访谈/问卷/样本）")
+
+        # #8 前三页数据密度：第一章（前两个 ## 标题之间）数字锚点 < 2 判定开头无硬数据
+        _heads = [m.start() for m in re.finditer(r'^#{1,3}\s', text, re.M)]
+        _first = text[_heads[0]:_heads[1]] if len(_heads) >= 2 else text[:800]
+        if len(re.findall(r'\d', _first)) < 2:
+            issues.append("前3页法则不达标：第一章没有至少 2 个数字锚点（评委前 3 页看不到「痛点+方案+硬数据」直接失分）")
+
+        # #9 六要素闭环：商业逻辑缺项（技术强但闭环缺失得不了高分）
+        _miss = [name for name, pat in _SIX_ELEMENTS if not re.search(pat, text)]
+        if _miss:
+            issues.append("商业闭环六要素缺项：" + "、".join(_miss))
+
     return (not issues), issues
 
 
@@ -304,13 +518,14 @@ def _cjk(text):
 
 
 def score_export(result, mode="deep"):
-    """给一份生成结果打分（0-100，5 维度）。
+    """给一份生成结果打分（0-100，5 维度）。返回 (score, dims, reasons, hard_reasons)。
 
-    放行阈值在调用方 `_export_review_gate` 按档位判定：深度版 ≥85、简洁版 ≥80。
-    这里只算分，不做放行判断。
-
-    维度：内容完整性 30 + 结构规范性 25 + 数据真实性 25 + 格式合规 10 + 逻辑一致性 10。
-    一票否决项（第一百二十三轮）：任一命中直接 0 分打回。
+    2026-10-01（用户反馈「网站的功能就是帮用户修改，而不是让他们自己改」）：
+    - hard_reasons 非空（正文乱码这类「文本非法」）时 score=0，调用方据此拒绝导出；
+    - 其余所有问题（评分不足、缺图表、占位符、双盲泄露、编造来源等）只进 reasons，
+      由导出层作为警告随文件放行，不再作为拒绝导出的理由。
+    - 富媒体/路演PPT 缺失的扣分检查只在 deep 模式生效——fast 链路没有图表与
+      deck 管线（271 号记录误杀复盘）。
     """
     dims = {"内容完整性": 30, "结构规范性": 25, "数据真实性": 25,
             "格式合规": 10, "逻辑一致性": 10}
@@ -318,29 +533,36 @@ def score_export(result, mode="deep"):
     proposal = result.get("proposal") or ""
     n = _cjk(proposal)
 
-    # ---- 一票否决（任一命中直接 0 分） ----
-    veto = []
+    # ---- 硬错误（文本非法，可拒绝导出）与软问题（只警告放行）分开 ----
+    hard = []
+    soft = []
+    if proposal.count("?") > max(3, len(proposal) * 0.3) or "？？" in proposal:
+        hard.append("中文乱码（? 占比过高）")
     if not proposal.strip():
-        veto.append("导出内容为空")
-    elif proposal.count("?") > max(3, len(proposal) * 0.3) or "？？" in proposal:
-        veto.append("中文乱码（? 占比过高）")
+        # 最终导出文本是否为空由导出接口判 400（那边才是真正要拦的空内容），
+        # 这里只提示记录侧正文为空，供用户核对，不作为拒绝理由。
+        soft.append("记录正文为空，已按页面文本导出")
     if re.search(r'【[^】]*】|待你填写|待补充|TBD|TODO', proposal):
-        veto.append("存在【】占位符/待补提示")
+        soft.append("存在【】占位符/待补提示，建议替换为实际内容后再提交")
     if re.search(r'据《.{0,30}202\d.{0,20}》', proposal):
-        veto.append("无来源的机构+年份数据（编造嫌疑）")
+        soft.append("存在无来源的「机构+年份」数据引用（编造嫌疑），请核实或删除")
+    # 2026-10-01 收紧：[:：]? 可选导致「指导教师意见/与导师沟通」这类正常提及被误杀
+    # （实测 268 号记录命中 4 处全是误判）。分隔符必须存在，只抓「指导教师：张三」式真签名。
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', proposal) or \
-       re.search(r'(指导老师|指导教师|导师|负责人|队长)\s*[:：]?\s*(?!负责|统筹|整体|管理|协调|组织|设计|开发|运营|推广|主持|参与|带领|姓名|由团队|待填)[\u4e00-\u9fa5]{2,4}', proposal):
-        veto.append("双盲信息泄露（院校/导师/姓名）")
-    if veto:
-        return 0, dims, ["一票否决：" + v for v in veto]
+       re.search(r'(指导老师|指导教师|导师|负责人|队长)\s*[:：]\s*[\u4e00-\u9fa5]{2,4}\s*(?:$|[，。、；！？,.;!?）)\]])', proposal, re.M):
+        soft.append("疑似双盲信息泄露（院校/导师/姓名），提交前请自行确认已脱敏")
+    if hard:
+        return 0, dims, ["一票否决：" + h for h in hard] + soft, hard
+    reasons.extend(soft)
 
     # 内容完整性
-    if mode == "deep" and n < 6000:
-        dims["内容完整性"] -= 10; reasons.append(f"正文 {n} 字 < 6000")
-    if not (result.get("rich_charts") or result.get("rich_tables")):
-        dims["内容完整性"] -= 8; reasons.append("缺图表/表格")
+    # 2026-10-01：与 check_generation 同步——深度版无硬性字数下限，2500 为异常检测线
+    if mode == "deep" and n < 2500:
+        dims["内容完整性"] -= 6; reasons.append(f"正文 {n} 字 < 2500（疑似截断/漏章）")
+    if mode == "deep" and not (result.get("rich_charts") or result.get("rich_tables")):
+        dims["内容完整性"] -= 8; reasons.append("深度版缺图表/表格")
     if mode == "deep" and not result.get("rich_deck"):
-        dims["内容完整性"] -= 7; reasons.append("缺路演PPT")
+        dims["内容完整性"] -= 7; reasons.append("深度版缺路演PPT")
     _miss = (result.get("completeness") or {}).get("missing") or []
     if _miss:
         dims["内容完整性"] -= 5; reasons.append("缺章节：" + "、".join(_miss[:3]))
@@ -350,22 +572,30 @@ def score_export(result, mode="deep"):
         dims["内容完整性"] -= 20
         reasons.extend(_diss)
 
+    # 获奖作品反面失分模式（2026-10 蒸馏第 8 节）：命中按数据真实性扣分，
+    # 每条 3 分、上限 15 分，只警告放行不拒导出（与 soft 口径一致）
+    _gok, _giss = check_award_pitfalls(proposal, mode)
+    if not _gok:
+        dims["数据真实性"] -= min(15, 3 * len(_giss))
+        reasons.extend(_giss)
+
     # 结构规范性：Markdown 标题层级（>3 视为规范）
     _heads = [l for l in proposal.split("\n") if l.strip().startswith("#")]
     if len(_heads) < 4:
         dims["结构规范性"] -= 8; reasons.append(f"标题层级过少（{len(_heads)}）")
 
     # 数据真实性：套话 / 编造来源 / 占位 / 双盲泄露
+    # （占位/编造引用/院校名三条已在 soft 警告里给过用户文案，这里只扣分不重复报）
     for c in _CLICHE:
         if c in proposal:
             dims["数据真实性"] -= 3; reasons.append(f"套话：{c}")
             break
     if re.search(r'据《.{0,30}202\d.{0,20}》', proposal):
-        dims["数据真实性"] -= 6; reasons.append("疑似编造「机构+年份」引用")
+        dims["数据真实性"] -= 6
     if re.search(r'【|待你填写|待补充|TBD|TODO', proposal):
-        dims["数据真实性"] -= 5; reasons.append("存在占位符")
+        dims["数据真实性"] -= 5
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', proposal):
-        dims["数据真实性"] -= 4; reasons.append("疑似泄露院校名（双盲）")
+        dims["数据真实性"] -= 4
 
     # 格式合规：占位（无体积信息，这里用相似度近似）
     _sim = result.get("similarity")
@@ -378,122 +608,4 @@ def score_export(result, mode="deep"):
         dims["逻辑一致性"] -= 4; reasons.append("疑似复读")
 
     score = max(0, sum(dims.values()))
-    return score, dims, reasons
-
-
-# ============ 367 评委预审报告（10 项扣分点，纯规则启发式） ============
-def preview_report(proposal="", mode="deep", title=""):
-    """评委视角预审：10 项常见扣分点，每项 pass/doubt/missing + 一句判据。
-
-    纯规则启发式、不调 LLM、不查库；供 /api/judge_preview 直接复用。
-    返回 dict：{total, pass, items:[{key,label,status,note}], summary}
-    """
-    txt = proposal or ""
-    body = re.sub(r'[#*`>\[\]()（）\s]', '', txt)
-    items = []
-
-    def _verdict(ok, missing):
-        if ok:
-            return "pass"
-        return "missing" if missing else "doubt"
-
-    # 1 项目名一眼看懂
-    name = (title or "").strip()
-    name_ok = 2 <= len(name) <= 20 and not re.search(r'[A-Za-z]{6,}', name)
-    items.append({
-        "key": "project_name", "label": "项目名一眼看懂",
-        "status": _verdict(name_ok, not name),
-        "note": "项目名 2~20 字且无长英文串" if name_ok else ("未提供项目名" if not name else "项目名偏长或含长英文，建议口语化"),
-    })
-
-    # 2 痛点量化（背景段有数字/百分比）
-    pain_ok = bool(re.search(r'(\d+(\.\d+)?[%％]|\d+\s*(人|元|万|亿|次|小时|分钟|天|件|家))', txt))
-    items.append({
-        "key": "pain_quantified", "label": "痛点量化",
-        "status": _verdict(pain_ok, False),
-        "note": "背景/痛点含量化数字" if pain_ok else "痛点缺少数字支撑，建议补充规模/占比/频次",
-    })
-
-    # 3 实测数据
-    measured = re.findall(r'(实测|测试|实验|仿真|试点|验证)[^。；\n]{0,30}?\d', txt)
-    measured_ok = len(measured) > 0
-    items.append({
-        "key": "measured_data", "label": "实测数据",
-        "status": _verdict(measured_ok, False),
-        "note": f"命中 {len(measured)} 处实测/验证数据" if measured_ok else "未见实测/验证数据，建议补充真实测试或试点结果",
-    })
-
-    # 4 竞品对比
-    comp_ok = bool(re.search(r'(竞品|对比|现有方案|传统|市面|同类|优于|相比|行业)', txt))
-    items.append({
-        "key": "competitor", "label": "竞品对比",
-        "status": _verdict(comp_ok, False),
-        "note": "含竞品/现有方案对比" if comp_ok else "缺少竞品对比，建议列出同类方案并说明差异",
-    })
-
-    # 5 版权与AI披露
-    disc_ok = bool(re.search(r'(版权|授权|许可|开源|AI|人工智能|算法|大模型|生成式|数据来源)', txt))
-    items.append({
-        "key": "disclosure", "label": "版权与AI披露",
-        "status": _verdict(disc_ok, False),
-        "note": "含版权/技术来源披露" if disc_ok else "建议说明数据来源、版权授权与是否使用AI生成",
-    })
-
-    # 6 团队真实
-    team_ok = bool(re.search(r'(团队|成员|分工|负责人|指导老师|队长)', txt))
-    fict = any(k in txt for k in ('李然', '张明', '小李', '王雨桐', '王明', '刘洋'))
-    items.append({
-        "key": "team", "label": "团队真实",
-        "status": "doubt" if fict else _verdict(team_ok, not team_ok),
-        "note": "疑似虚构人名，需替换" if fict else ("含团队/分工说明" if team_ok else "缺少团队信息，建议补充真实成员与分工"),
-    })
-
-    # 7 财务可信
-    fin_ok = bool(re.search(r'(成本|营收|收入|利润|预算|融资|单价|售价|ROI|毛利)[^\n]{0,30}?\d', txt))
-    items.append({
-        "key": "finance", "label": "财务可信",
-        "status": _verdict(fin_ok, False),
-        "note": "财务/成本有数字支撑" if fin_ok else "财务数据缺失或无数值，建议补充成本/营收估算",
-    })
-
-    # 8 字数达标
-    n = len(body)
-    minc, maxc = (6000, 20000) if mode == "deep" else (800, 3000)
-    wc_ok = minc <= n <= maxc
-    items.append({
-        "key": "word_count", "label": "字数达标",
-        "status": _verdict(wc_ok, False),
-        "note": f"{n} 字（{mode} 档 {minc}~{maxc}）" if wc_ok else f"{n} 字，偏离 {mode} 档 {minc}~{maxc} 区间",
-    })
-
-    # 9 格式规范
-    h2 = len(re.findall(r'^#{1,3}\s+\S', txt, re.M))
-    placeholder = re.search(r'(待填写|待补充|TBD|TODO)', txt)
-    fmt_ok = h2 >= 3 and not placeholder
-    items.append({
-        "key": "format", "label": "格式规范",
-        "status": _verdict(fmt_ok, False),
-        "note": f"{h2} 个标题，无占位符" if fmt_ok else ("存在占位符（待填写/TODO）" if placeholder else f"章节标题不足 3 个（{h2}）"),
-    })
-
-    # 10 查重过关（基础自检：10 字以上中文串重复率）
-    dup_ratio = 0.0
-    runs = re.findall(r'[\u4e00-\u9fa5]{10,}', txt)
-    if runs:
-        from collections import Counter
-        c = Counter(runs)
-        dup_ratio = sum(v - 1 for v in c.values() if v > 1) / max(len(runs), 1)
-    plag_ok = dup_ratio < 0.08
-    items.append({
-        "key": "plagiarism", "label": "查重过关",
-        "status": _verdict(plag_ok, False),
-        "note": f"自检重复率 {dup_ratio:.0%}" if plag_ok else f"自检重复率 {dup_ratio:.0%} 偏高，建议改写重复段",
-    })
-
-    passed = sum(1 for it in items if it["status"] == "pass")
-    return {
-        "total": 10,
-        "pass": passed,
-        "items": items,
-        "summary": f"10 项中 {passed} 项通过，{10 - passed} 项需关注",
-    }
+    return score, dims, reasons, hard

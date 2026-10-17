@@ -1,0 +1,102 @@
+/* =============================================================================
+   第三百〇二轮（P0）：右下角悬浮控件统一垂直堆叠
+   -----------------------------------------------------------------------------
+   问题（豆包实测截图实锤）：聊天悬浮按钮 #wbChatBubble 与「回到顶部」#wbTop、
+   「一键到底部」#wbBottom 相互重叠遮挡，桌面端与移动端都有。
+
+   根因（是查出来的，不是猜的）：
+     · 289 轮在 wbfix295.css 里把 #wbTop 从 bottom:150px 挪到了 78px；
+     · 但 #wbBottom 是 242 轮写在 style.css 里的 bottom:96px —— 那个 96 是
+       按「wbTop = 150」推算出来的。wbTop 一挪，两者就压在一起：
+       wbTop 占 78~126，wbBottom 占 96~140，重叠 30px；
+     · #wbChatBubble 的 bottom:140px 又正好贴着 #wbBottom 的顶边，间距 0。
+
+   修法：四个控件从下往上统一排队，相邻间距固定 12px（满足「间距 ≥12px」），
+   尺寸统一 48px。
+
+   两条加载纪律：
+     1. 本文件必须在 wbfix295.css **之后** 引入，否则会被它的 !important 压回去；
+     2. 全部用 !important —— 因为 #wbChatBubble 的定位是 wbchat.js 用
+        inline style 写的，inline style 只有 !important 的样式规则压得住。
+
+   项目红线遵守情况：不改配色语言（沿用 wbbtn-result.css），不涉及图片，
+   不新增 text-overflow:ellipsis / -webkit-line-clamp / white-space:nowrap。
+   ============================================================================= */
+
+/* ---------- 队形（自下而上）：fab 16 → ↑ 76 → ↓ 136 → 聊天 196 ----------
+   桌面端：每个 48px 高，相邻两块的底边差 60px = 高 48 + 间距 12。 */
+#wbFabMain {
+    right: 16px !important;
+    bottom: 16px !important;
+    width: 48px !important;
+    height: 48px !important;
+}
+
+#wbTop {
+    right: 16px !important;
+    bottom: 76px !important;
+    width: 48px !important;
+    height: 48px !important;
+}
+
+#wbBottom {
+    right: 16px !important;
+    bottom: 136px !important;
+    width: 48px !important;
+    height: 48px !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+}
+
+#wbChatBubble {
+    right: 16px !important;
+    bottom: 196px !important;
+    width: 48px !important;
+    height: 48px !important;
+    z-index: 2600 !important;
+}
+
+/* ---------- 小屏：队形不变，只把尺寸收到 44~46px -------------------
+   间距仍按底边差算：fab 12~58 / ↑ 70~114 / ↓ 126~170 / 聊 182~228，
+   相邻间距都是 12px，手指目标也都 ≥44px。 */
+@media (max-width: 768px) {
+    #wbFabMain {
+        right: 12px !important;
+        bottom: 12px !important;
+        width: 46px !important;
+        height: 46px !important;
+    }
+    #wbTop {
+        right: 12px !important;
+        bottom: 70px !important;
+        width: 44px !important;
+        height: 44px !important;
+    }
+    #wbBottom {
+        right: 12px !important;
+        bottom: 126px !important;
+        width: 44px !important;
+        height: 44px !important;
+    }
+    #wbChatBubble {
+        right: 12px !important;
+        bottom: 182px !important;
+        width: 46px !important;
+        height: 46px !important;
+    }
+}
+
+/* ---------- 聊天面板展开时：↑ / ↓ 让位 -----------------------------
+   桌面面板是 360×520、钉在 right:16 / bottom:140，会压住 ↑(76~124) 与
+   ↓(136~184)。面板 z-index 2700 虽然在它们上面，但按钮边缘会从面板底下
+   透出来，看着能点、点下去却是面板 —— 干脆淡出并停止接收点击。
+   fab 在 16~64，不在面板范围内，保持可用。 */
+body.wbchat-open #wbTop,
+body.wbchat-open #wbBottom {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+#wbTop,
+#wbBottom {
+    transition: opacity .18s ease;
+}

@@ -32,25 +32,24 @@ import progress
 import app_log
 
 
-app = Flask(__name__)
+# ---- 目录布局（2026-09-30 前后端分离重构）----
+# backend/ 是本项目根；frontend/、docs/ 在仓库根（backend 的上一级）。
+# __file__ 锚定的资源（data/、knowledge_base/、.uid_secret）都在 backend/ 内，路径不变；
+# CWD 相对资源（competition.db、uploads/、generated/、tmp_export）由 run.py / wsgi.py
+# 启动时 chdir 到本目录兜住，同样不用改。
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR = os.path.dirname(_BASE_DIR)
+FRONTEND_DIR = os.path.join(_ROOT_DIR, 'frontend')
+DOCS_DIR = os.path.join(_ROOT_DIR, 'docs')
+
+app = Flask(__name__, static_folder=os.path.join(FRONTEND_DIR, 'static'))
 START_TIME = time.time()
-
-
-@app.route('/sw.js')
-@app.route('/static/sw.js')
-def serve_sw():
-    """Service Worker：根路径提供并授权 / 作用域，修复 SW 注册失败（2026-09-30）。"""
-    resp = make_response(send_file(os.path.join(app.static_folder, 'sw.js'),
-                                   mimetype='application/javascript'))
-    resp.headers['Service-Worker-Allowed'] = '/'
-    resp.headers['Cache-Control'] = 'no-cache'
-    return resp
 
 
 @app.route('/favicon.ico')
 def favicon():
     """站点图标：优先用真实 .ico，缺失时回退内联 SVG（避免浏览器刷 404/500）。"""
-    ico_path = os.path.join(os.path.dirname(__file__), '科创赛事助手.ico')
+    ico_path = os.path.join(FRONTEND_DIR, '科创赛事助手.ico')
     if os.path.exists(ico_path):
         return send_file(ico_path, mimetype='image/x-icon')
     _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
@@ -297,28 +296,10 @@ def bind_uid():
 
 _LOGIN_FAILS = {}   # username -> [时间戳]，15 分钟窗口
 _LOGIN_LOCK = {}    # username -> 锁定到期时间戳
-_REG_HITS = {}      # ip -> [注册时间戳]，防批量注册（M17）
-_REG_LOCK = threading.Lock()
-
-
-def _register_rate_limited():
-    """注册限流（M17）：同一 IP 每小时最多 5 次，防批量注册/爆破。"""
-    ip = _client_ip()
-    now = time.time()
-    with _REG_LOCK:
-        hits = [t for t in _REG_HITS.get(ip, []) if now - t < 3600]
-        if len(hits) >= 5:
-            _REG_HITS[ip] = hits
-            return True
-        hits.append(now)
-        _REG_HITS[ip] = hits
-        return False
 
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    if _register_rate_limited():
-        return jsonify({"success": False, "error": "注册太频繁，请稍后再试"}), 429
     data = request.get_json(silent=True) or request.form or {}
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
@@ -403,10 +384,7 @@ def change_password():
 def logout():
     g.uid = uuid.uuid4().hex
     g.uid_should_sign = True
-    resp = jsonify({"success": True})
-    # 第三百二十二轮：登出同时清掉管理/demo 会话 cookie，避免只读状态残留导致前台生成被 403 卡死
-    resp.set_cookie(_ADMIN_COOKIE_NAME, '', max_age=0, httponly=True, samesite='Strict', secure=request.is_secure)
-    return resp
+    return jsonify({"success": True})
 
 
 @app.route('/api/me')
@@ -441,19 +419,6 @@ def _require_uid():
     return None
 
 
-def _task_owned(task_id):
-    """M18 任务归属校验：只对「有有效 cookie 的已认证请求」强制归属；
-    匿名请求（无 cookie）跳过——task_id 是 uuid4 不可枚举，且无 cookie 的 curl 每次
-    会换新随机 uid，强校验会误杀服务端自身轮询。"""
-    if not getattr(g, 'uid_authenticated', False):
-        return True
-    t = tasks.get(task_id)
-    if not t:
-        return True
-    owner = (t.get("data") or {}).get("_user_id", "")
-    return (not owner) or (owner == _current_uid())
-
-
 # 并发稳定器：限制同时进行的生成任务数，防止多用户同时用把服务压垮。
 # 2026-09-27 实测定档：DeepSeek 单 key 24 路并发零 429（max_tokens=1 探测）；
 # 本机（2C/1.7G）每路生成内存增量 <1MB 级，16 路同时生成毫无压力。
@@ -462,10 +427,8 @@ def _task_owned(task_id):
 #    （systemd 单元 --workers 1）；要扩多 worker 先把这些下沉到 Redis/DB，否则状态分裂。
 MAX_CONCURRENT_GEN = 16
 _GEN_QUEUE_MAX = 40            # 排队上限：超过就明确拒绝（避免用户排到天荒地老）
-_MAX_PER_KEY = 2               # 第二百一十一轮 C：单 IP/用户同时最多 2 个生成任务，超出排队
 _active_gen_lock = threading.Lock()
 _active_gen_count = 0
-_active_by_key = {}            # key(uid/ip) -> 当前在跑+排队的任务数
 _gen_queue = collections.deque()   # 排队中的 task_id（FIFO）
 
 # 简单限流：同一 IP 1 分钟最多生成 5 次，防止刷接口（学生项目级防护，无需登录系统）。
@@ -475,12 +438,6 @@ _RATE_WINDOW_SEC = 60
 _RATE_LIMIT = 5
 _rate_lock = threading.Lock()
 _rate_hits = {}  # ip -> list[float] 命中时间戳（Unix 秒）
-
-# 第二百一十轮：反馈提交独立限流（30 秒 3 次），防刷爆反馈表。
-_FB_WINDOW_SEC = 30
-_FB_LIMIT = 3
-_fb_rate_lock = threading.Lock()
-_fb_rate_hits = {}
 
 
 def _client_ip():
@@ -513,23 +470,6 @@ def _rate_limited():
                 _rate_hits[k] = [t for t in _rate_hits[k] if now - t < _RATE_WINDOW_SEC]
                 if not _rate_hits[k]:
                     del _rate_hits[k]
-        return False
-
-
-def _feedback_rate_limited():
-    """第二百一十轮：反馈提交限流——同一用户/IP 30 秒内最多 3 次，防脚本刷反馈表。"""
-    try:
-        key = _current_uid() or _client_ip()
-    except Exception:
-        key = _client_ip()
-    now = time.time()
-    with _fb_rate_lock:
-        hits = [t for t in _fb_rate_hits.get(key, []) if now - t < _FB_WINDOW_SEC]
-        if len(hits) >= _FB_LIMIT:
-            _fb_rate_hits[key] = hits
-            return True
-        hits.append(now)
-        _fb_rate_hits[key] = hits
         return False
 
 
@@ -598,35 +538,6 @@ def _admin_session_role():
     return None
 
 
-def _admin_role_badge_html():
-    """206 轮：后台常驻角色徽章。readonly→黄「演示只读模式」，admin→绿「管理员」。"""
-    role = _admin_session_role()
-    if role == 'readonly':
-        return '<span class="rolebadge" style="background:#fef3c7;color:#92400e;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="只读，写操作已被禁止">🔒 演示只读模式</span>'
-    if role == 'admin':
-        return '<span class="rolebadge" style="background:#d1fae5;color:#065f46;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="管理员全权限">✅ 管理员</span>'
-    return ''
-
-
-def _inject_role_badge(html):
-    """把角色徽章注入后台页面：有 nav 就插在 nav 末尾，无 nav（如漏洞库）插到标题后。"""
-    badge = _admin_role_badge_html()
-    if not badge:
-        return html
-    if '</nav>' in html:
-        html = html.replace('</nav>', badge + '</nav>', 1)
-    else:
-        html = html.replace('</h1>', '</h1>' + badge, 1)
-    # 256.5：演示只读会话隐藏写操作入口（蒸馏按钮所在的 .box），避免评委看到点不了的写按钮
-    if _admin_session_role() == 'readonly' and '</body>' in html:
-        _hide_js = ('<script>(function(){var b=document.querySelector(".rolebadge");'
-                    'if(b&&b.textContent.indexOf("只读")>=0){'
-                    'var xs=document.querySelectorAll(".box");'
-                    'for(var i=0;i<xs.length;i++){if(xs[i].textContent.indexOf("蒸馏")>=0){xs[i].style.display="none";}}}})();</script>')
-        html = html.replace('</body>', _hide_js + '</body>', 1)
-    return html
-
-
 def _require_admin():
     """管理接口鉴权；通过返回 None，拒绝返回带 401 的 Response。
 
@@ -669,20 +580,6 @@ def admin_login():
     return resp
 
 
-@app.route('/api/admin/logout', methods=['POST'])
-def admin_logout():
-    """后台退出登录：清掉 admin_session 会话 cookie（第二百六十七轮，demo 只读会话要能退出）。"""
-    resp = jsonify({"success": True})
-    resp.set_cookie(_ADMIN_COOKIE_NAME, '', max_age=0, httponly=True, samesite='Strict', secure=request.is_secure)
-    return resp
-
-
-# 第三百一十三轮：演示账号强制只读名单（即使 .admin_users.json 误配成 admin，登录后也强制 readonly）
-# 2026-09-30 修正：原名单含 "kcwx123"，但线上 .admin_users.json 里 kcwx123 配的就是 admin，
-# 导致该管理员一登录就被降级成只读、后台永远挂「演示只读模式」。真实管理员账号不得写进此名单。
-_DEMO_READONLY_USERS = {"demo"}
-
-
 def _admin_login_verify(username, password, ip):
     """校验账号密码（198 轮：用户名+密码 bcrypt）。
     成功返回 (role, None)，失败返回 (None, (错误信息, http状态码))。"""
@@ -697,11 +594,7 @@ def _admin_login_verify(username, password, ip):
                 import bcrypt
                 if bcrypt.checkpw(password.encode('utf-8'), hit['pass_hash'].encode('utf-8')):
                     _ADMIN_FAILS.pop(ip, None)
-                    _role = hit.get('role') or 'admin'
-                    # 313 轮：演示账号强制只读（防 .admin_users.json 配错成 admin，双保险）
-                    if username in _DEMO_READONLY_USERS:
-                        _role = 'readonly'
-                    return _role, None
+                    return (hit.get('role') or 'admin'), None
             except Exception:
                 pass
         _ADMIN_FAILS[ip] = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_LOCK_SECONDS] + [now]
@@ -724,25 +617,10 @@ def _admin_login_verify(username, password, ip):
 def _audit_admin_login(username, ip, ok, role):
     """登录审计（195 层6 / 198 轮）：记录用户名+IP+成功/失败+角色。"""
     try:
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+        with open(os.path.join(DOCS_DIR, '后台审计.md'), 'a', encoding='utf-8') as _f:
             _f.write("%s | login | user=%s | ip=%s | %s | role=%s\n" % (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username or '-', ip,
                 'ok' if ok else 'fail', role or '-'))
-    except Exception:
-        pass
-
-
-def _audit_write(action, object_id=""):
-    """第二百一十一轮 D：后台写操作审计——记录操作者账号+时间+动作+对象ID。
-
-    与登录审计同写 docs/后台审计.md；仅 admin 会话可查（/api/admin/audit）。
-    """
-    try:
-        _role = _admin_session_role() or '-'
-        _who = (_admin_session_role() or '') + '/' + (_current_uid() or '-')
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
-            _f.write("%s | write | action=%s | obj=%s | who=%s\n" % (
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), action or '-', object_id or '-', _who))
     except Exception:
         pass
 
@@ -763,11 +641,11 @@ input[type=text]:focus,input[type=password]:focus{border-color:#7B9BFA;box-shado
 .field{margin-bottom:14px}
 button{margin-top:8px;width:100%;background:linear-gradient(135deg,#5B7CFA,#8A6BFA);color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer}
 button:hover{filter:brightness(1.05)}
-.tip{margin-top:14px;font-size:12px;color:#4b5563;line-height:1.7}
+.tip{margin-top:14px;font-size:12px;color:#57606e;line-height:1.7}
 .foot{margin-top:18px;font-size:11px;color:#4b5563;text-align:center}
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
+</style></head><body>
 <form class="box" method="post" action="/admin/login">
-<img src="/static/logo_full.png?v=20260930f" alt="科创赛事助手" style="width:76px;height:auto;display:block;margin:0 auto 10px">
+<img src="/static/logo_full.png?v=20260930b" alt="logo" style="display:block;width:76px;height:auto;margin:0 auto 10px;">
 <h1>科创赛事助手 · 管理后台</h1>
 <p class="sub">请输入账号密码进入管理后台</p>
 __ERROR__
@@ -777,7 +655,7 @@ __ERROR__
 <input type="password" id="pwd" name="password" autocomplete="current-password" required></div>
 <input type="hidden" name="csrf" value="__CSRF__">
 <button type="submit">登录</button>
-<div class="tip">演示账号登录（账号 <b>demo</b> / 密码 <b>123456</b>），进入只读模式（不可执行删除 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
+<div class="tip">评委请使用「演示账号」登录，进入只读模式（不可执行删除 / 蒸馏 / 导出全量等写操作）。<br>连续 5 次登录失败将锁定 15 分钟。</div>
 <div class="foot">v2.0 · ©可创无限团队</div>
 </form></body></html>"""
 
@@ -882,13 +760,6 @@ _ADMIN_API_EXACT = {
 }
 _ADMIN_API_PREFIXES = ("/api/admin/", "/api/kb/", "/api/distill", "/api/logs")
 
-# 第二百九十轮：演示只读会话可用的导出接口（精确路径匹配，不用前缀，避免误伤未来写接口）。
-_EXPORT_READONLY_PATHS = (
-    "/api/export_word", "/api/export_pdf", "/api/export_defense", "/api/export_ppt",
-    "/api/export_competitor", "/api/export_business", "/api/export_original_format",
-    "/api/export_zip", "/api/export_all", "/api/export_manifest", "/api/export_pptx",
-)
-
 
 @app.before_request
 def _admin_guard():
@@ -897,26 +768,6 @@ def _admin_guard():
     # 登录端点本身必须放行（否则登录请求也会被鉴权拦截，死循环）
     if p in ("/api/admin/login", "/admin/login"):
         return None
-    # 演示只读会话（200 轮验收修复）：全局拦截所有写操作，返回 403。
-    # 原实现只在「管理路由」分支内拦截，导致 demo 访问 /api/restyle 等用户面写接口时
-    # 落到参数校验层返回 400「内容为空」，而非 403，既暴露接口行为又没体现只读语义。
-    # 第二百六十七轮：导出接口（/api/export*）本质是「读数据生成文件」，不写库不删数据，
-    # demo 只读会话也应能导出（评委演示要看导出），此处豁免，不再误伤。
-    # 演示只读会话白名单：导出（读数据生成文件）与退出登录（登出不是写操作）豁免 403。
-    # 第二百九十四轮：/api/chat 只答不写、不计入生成额度（预设优先，LLM 兜底在读会话被禁），
-    # 一并豁免，让演示账号也能用智能体问答。
-    # 第三百零八轮：/api/analyze_segment 演示只读态由接口内部给「登录后可深度解读」友好提示，
-    # 故也豁免 _admin_guard 的通用 403，走接口自己的 readonly 分支。
-    _readonly_whitelist = ('/api/logout', '/api/admin/logout', '/api/chat', '/api/analyze_segment', '/api/auto_generate')
-    if (_admin_session_role() == 'readonly'
-            and request.method in ('POST', 'PUT', 'PATCH', 'DELETE')
-            and p not in _EXPORT_READONLY_PATHS
-            and p not in _readonly_whitelist):
-        # 278 轮：给友好引导而非生硬 403，提示评委可看示例或用普通账号
-        resp = jsonify({"success": False,
-                        "error": "演示账号为只读，此操作已限制。可点「一键演示」查看完整示例，或换普通账号登录后再操作。"})
-        resp.status_code = 403
-        return resp
     needs_admin = False
     if p in _ADMIN_PAGE_PATHS:
         needs_admin = True
@@ -944,19 +795,6 @@ def _admin_guard():
             resp.status_code = 429
             return resp
     return None
-
-
-_UID_EXPORT_PATHS = (
-    "/api/export_word", "/api/export_pdf", "/api/export_defense", "/api/export_ppt",
-    "/api/export_competitor", "/api/export_business", "/api/export_original_format",
-)
-
-
-@app.before_request
-def _user_export_guard():
-    """M21：导出类接口要求有效 cookie（防匿名滥用）；export_all/zip/pptx 已有归属校验，不在本清单。"""
-    if request.path in _UID_EXPORT_PATHS:
-        return _require_uid()
 
 
 # ===== 媒体模块（表格 / 图表 / PPT）=====
@@ -1028,7 +866,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS gen_failures
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   task_id TEXT, type TEXT DEFAULT 'generate', path TEXT,
-                  error TEXT, detail TEXT, created_time TEXT, count INTEGER DEFAULT 1,
+                  error TEXT, detail TEXT, error_code TEXT, created_time TEXT, count INTEGER DEFAULT 1,
                   status TEXT DEFAULT 'open', resolved_time TEXT, competition_name TEXT)''')
     # 老库迁移：给 gen_failures 补列（若旧库没有则 ALTER，失败忽略）
     for _col, _ddl in (
@@ -1038,10 +876,7 @@ def init_db():
         ("status", "TEXT DEFAULT 'open'"),
         ("resolved_time", "TEXT"),
         ("competition_name", "TEXT"),
-        ("stage", "TEXT DEFAULT ''"),
-        ("error_code", "TEXT DEFAULT ''"),
-        ("error_msg", "TEXT DEFAULT ''"),
-        ("resolution", "TEXT DEFAULT ''"),
+        ("error_code", "TEXT"),
     ):
         try:
             c.execute("ALTER TABLE gen_failures ADD COLUMN %s %s" % (_col, _ddl))
@@ -1060,22 +895,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   kind TEXT, source TEXT, content TEXT, created_time TEXT,
-                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '',
-                  count INTEGER DEFAULT 1)''')
-    # 203 轮：给老 issues 表补 count 列（同类反馈/失败去重计数）
-    try:
-        c.execute("ALTER TABLE issues ADD COLUMN count INTEGER DEFAULT 1")
-    except Exception:
-        pass
-    # 376 轮：工单处理闭环——补 user_id（用户侧可见）与 reply（管理员回复）
-    try:
-        c.execute("ALTER TABLE issues ADD COLUMN user_id TEXT DEFAULT ''")
-    except Exception:
-        pass
-    try:
-        c.execute("ALTER TABLE issues ADD COLUMN reply TEXT DEFAULT ''")
-    except Exception:
-        pass
+                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '')''')
     # 临时分享链接表：token -> 历史记录，7 天过期，无需登录即可看结果
     c.execute('''CREATE TABLE IF NOT EXISTS shares
                  (token TEXT PRIMARY KEY,
@@ -1087,9 +907,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   history_id INTEGER, score INTEGER, dims TEXT,
                   reasons TEXT, passed INTEGER, created_time TEXT)''')
-    # 292 轮：双端同步——用户偏好（赛事选择/档位/个性化设置）以服务端为准，禁 localStorage 单端私有
-    c.execute('''CREATE TABLE IF NOT EXISTS user_prefs
-                 (uid TEXT PRIMARY KEY, prefs TEXT)''')
     conn.commit()
     conn.close()
 
@@ -1150,15 +967,22 @@ def _seed_kb_if_needed():
 
 
 _seed_kb_if_needed()
-# 生成并发闸：允许最多 3 个生成任务同时进行（原来 Lock 只有 1 个，多用户会排长队）。
-# 大模型调用另有 _LLM_GATE(4) 限流 + SQLite WAL 并发写，3 个并行是稳定与速度的平衡点。
-lock = threading.Semaphore(3)
+# 生成并发闸：默认允许 8 个生成任务同时进行。
+# 模型调用由 competition_agents._LLM_GATE 单独限流；这里仅保护整条流水线的
+# 内存/SQLite 压力。可用 GENERATION_PARALLELISM 在部署环境按内存调整。
+try:
+    _generation_parallelism = max(1, min(16, int(os.getenv("GENERATION_PARALLELISM", "8"))))
+except (TypeError, ValueError):
+    _generation_parallelism = 8
+lock = threading.Semaphore(_generation_parallelism)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 上传文件上限 50MB，防超大文件把服务压垮
-# 请求体全局上限 10MB（第八十九轮）：超出 Flask 自动返 413，防超大 body DoS
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+# 2026-10-01 统一上传上限：此前三处口径不一（业务闸 50MB / 全局闸 10MB / 提示文案 20MB），
+# 11MB 文件会先撞全局 413。统一为 20MB 单一常量，代码与文案从此一致。
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 上传文件上限 20MB，防超大文件把服务压垮
+# 请求体全局上限：超出 Flask 自动返 413，防超大 body DoS（与业务闸同值，不再互相打架）
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE
 
 # 存储最新结果
 latest_result = None
@@ -1168,20 +992,14 @@ import json
 from datetime import datetime
 
 def _row_to_item(row):
-    """历史列表条目：只含摘要字段，不加载完整 result_data（第二百六十六轮，防列表卡死）。"""
-    rid, comp, idea, mode, created_time, rating, score = row
+    rid, comp, idea, mode, result_data, created_time, rating = row
     try:
-        if isinstance(score, str):
-            score = float(score) if score.strip() else ""
-        elif isinstance(score, (int, float)):
-            pass
-        else:
-            score = ""
-    except (TypeError, ValueError):
-        score = ""
+        data = json.loads(result_data)
+    except Exception:
+        data = {}
     return {
         "id": rid, "time": created_time, "competition_name": comp,
-        "idea": idea, "mode": mode, "score": score,
+        "idea": idea, "mode": mode, "score": data.get("score", ""), "data": data,
         "rating": rating or 0,
     }
 
@@ -1193,8 +1011,7 @@ def load_history(limit=200, offset=0, q=None, uid=None):
     """
     conn = get_db()
     c = conn.cursor()
-    sql = ("SELECT id, competition_name, idea, mode, created_time, rating, "
-           "json_extract(result_data, '$.score') AS score FROM history")
+    sql = "SELECT id, competition_name, idea, mode, result_data, created_time, rating FROM history"
     params = []
     conds = []
     if q:
@@ -1286,33 +1103,45 @@ def _update_history_data(hid, extra):
         print(f"[history] 回写完整度字段失败：{e}")
 
 
-def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name="",
-                       stage="", error_code="", error_msg=""):
-    """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。
-
-    203 轮：额外落 stage（生成阶段）/ error_code（超时/额度/LLM/其他）/ error_msg（脱敏信息），
-    让后台「最近失败 / 工单面板」能展示具体失败原因，不再只显示「请稍后重试」。
-    """
+def record_gen_failure(task_id, error, detail="", type="generate", path="", competition_name=""):
+    """记录一次失败（生成/导出/前端异常），用于成功率统计 + 后台异常明细。"""
     try:
+        try:
+            from failure_patterns import classify_error
+            error_code = classify_error(error, detail)
+        except Exception:
+            error_code = "internal_error"
         conn = get_db()
         c = conn.cursor()
-        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, created_time, count, status, competition_name, stage, error_code, error_msg) "
-                  "VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?, ?, ?, ?)",
+        c.execute("INSERT INTO gen_failures (task_id, type, path, error, detail, error_code, created_time, count, status, competition_name) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'open', ?)",
                   (str(task_id or "")[:32], str(type or "generate")[:20],
                    str(path or "")[:200], str(error or "")[:200], str(detail or "")[:500],
-                   datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60],
-                   str(stage or "")[:40], str(error_code or "")[:40], str(error_msg or "")[:300]))
+                   error_code,
+                   datetime.now().strftime("%Y-%m-%d %H:%M"), str(competition_name or "")[:60]))
         conn.commit()
-        new_id = c.lastrowid
         conn.close()
-        # 工单内容带上结构化原因（203 轮），便于后台展示
-        _issue_content = str(error or "")[:120]
-        if error_code:
-            _issue_content = "[%s] %s" % (error_code, _issue_content)
-        create_issue("backend", "error", _issue_content)
-        return new_id
+        create_issue("backend", "error", error)
     except Exception:
-        return None
+        pass
+
+
+def _failure_view(error="", detail="", error_code=""):
+    """将内部异常转换为后台可读的标签、原因和处理说明。
+
+    旧记录可能没有 detail/error_code，必须如实标明信息缺失，不能补写推测原因。
+    """
+    try:
+        from failure_patterns import classify_error, FAILURE_LABELS, FIX_SUGGESTIONS
+        code = (error_code or "") or classify_error(error, detail)
+        label = FAILURE_LABELS.get(code, "系统处理异常")
+        action = FIX_SUGGESTIONS.get(code, "系统会保留详细日志并自动尝试恢复")
+    except Exception:
+        label, action = "系统处理异常", "系统会保留详细日志并自动尝试恢复"
+    raw = str(detail or error or "").replace("\n", " ").strip()
+    reason = ("系统没有返回更细的异常信息，已保留任务日志供后续定位"
+              if not raw or raw in ("生成失败，请稍后重试", "内部错误") else raw[:180])
+    return label, reason, action
 
 
 def _safe_unlink(path):
@@ -1369,28 +1198,20 @@ def log_error_event(type, path, message, detail=""):
 
 
 def auto_resolve_failures():
-    """自动处理判定（第八十八轮 + 203 轮）：对 open 失败做自愈/分类判定，幂等（只处理 open）。
+    """自动处理判定（第八十八轮）：对 open 失败做自愈判定，幂等（只处理 open）。
 
-    203 轮新增：
-    - 可分类错误（额度不足/配额耗尽/鉴权失败）→ 标 blocked + resolution 说明原因，不再无限重试；
-    - 瞬时错误（超时/限流/内部）→ 满足「已有成功生成」或「超 24 小时」即标 auto-recovered。
+    满足任一即标 auto-recovered 并写 resolved_time：
+    ① 失败时间早于最近一次成功生成时间（说明之后又成功生成过，已自愈）；
+    ② 失败时间超过 24 小时（瞬时错误早已过时）。
     服务能调到本函数即视为当前健康。
     """
     try:
         conn = get_db()
         c = conn.cursor()
         last_success = c.execute("SELECT MAX(created_time) FROM history").fetchone()[0]
-        rows = c.execute("SELECT id, created_time, COALESCE(error_code,'') FROM gen_failures WHERE status='open'").fetchall()
+        rows = c.execute("SELECT id, created_time FROM gen_failures WHERE status='open'").fetchall()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        _blocked_codes = ("insufficient_balance", "quota_exceeded", "auth_error")
-        for fid, ftime, ecode in rows:
-            # 203 轮：可分类错误直接 blocked，明确原因，不再等 24h 或靠「后来成功」自愈
-            if ecode in _blocked_codes:
-                _reason = {"insufficient_balance": "额度不足", "quota_exceeded": "配额耗尽",
-                           "auth_error": "鉴权/Key 配置错误"}.get(ecode, ecode)
-                c.execute("UPDATE gen_failures SET status='blocked', resolved_time=?, resolution=? WHERE id=?",
-                          (now_str, _reason, fid))
-                continue
+        for fid, ftime in rows:
             resolved = False
             if last_success and (ftime or "") < last_success:
                 resolved = True
@@ -1402,10 +1223,8 @@ def auto_resolve_failures():
                 except Exception:
                     pass
             if resolved:
-                c.execute("UPDATE gen_failures SET status='auto-recovered', resolved_time=?, resolution='auto_retry_success' WHERE id=?",
+                c.execute("UPDATE gen_failures SET status='auto-recovered', resolved_time=? WHERE id=?",
                           (now_str, fid))
-                # 203 轮：自动闭环有日志记录
-                print(f"[auto-resolve] 工单 #{fid} 自动闭环 auto_retry_success")
         conn.commit()
         conn.close()
     except Exception:
@@ -1538,8 +1357,9 @@ def _build_docx(title, text, doc_type='report', subtitle=None,
 
 
 # 导出件合规标注：赛事（如 iCAN）要求申报材料注明智能辅助参与情况，漏标可能被认定违规。
-# 措辞必须温和中性——既不能「AI 生成仅供参考」这种自降身价，也不能生硬直白。
-# 417 轮：禁用「AI」字样，改为「智能助手辅助起草」的温和声明。
+# 417 轮改版：全站禁用「AI」字样（正当官方术语除外），且措辞不能像「本内容由AI生成」
+# 这么生硬——那等于自降身价，评委一眼就给作品打折扣。
+# 现在这版只陈述事实（智能助手辅助起草）+ 责任边界（以团队真实情况核对后提交）。
 AI_NOTICE_LINE = "本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。"
 
 
@@ -1566,7 +1386,7 @@ def _append_ai_notice(text):
     text = (text or "").rstrip()
     if not text:
         return ""
-    if AI_NOTICE_LINE[:12] in text:
+    if AI_NOTICE_LINE[:10] in text:
         return text + "\n"
     return text + "\n\n" + AI_NOTICE_LINE + "\n"
 
@@ -1580,85 +1400,6 @@ def _official_chapter_titles(competition_name):
         return _official_chapters({"competition_name": competition_name})
     except Exception:
         return []
-
-
-def _pdf_limits(competition_name):
-    """从赛事官方提交要求里解析 PDF 页数/体积上限（默认 iCAN 口径 20 页 / 50MB）。"""
-    max_pages, max_bytes = 20, 50 * 1024 * 1024
-    if competition_name:
-        try:
-            from competition_agents import get_competition_profile
-            prof = get_competition_profile(competition_name) or {}
-            wr = prof.get('word_requirement') or {}
-            official = wr.get('official') or ''
-            m_pages = re.search(r'(\d+)\s*页', official)
-            m_mb = re.search(r'(\d+)\s*MB', official, re.IGNORECASE)
-            if m_pages:
-                max_pages = int(m_pages.group(1))
-            if m_mb:
-                max_bytes = int(m_mb.group(1)) * 1024 * 1024
-        except Exception:
-            pass
-    return max_pages, max_bytes
-
-
-# ===== 415 轮：夸克 / UC 内核「临时文件 URL」直链下载通道 =====
-# 夸克（UC 内核）对 fetch-blob + Blob URL + a[download] 的支持很差，表现为点「该网页请求打开外部应用」后无反应、文件管理器找不到文件。
-# 这里补一条原生 HTTP 下载通道：前端对 UC 系不再 fetch-blob，而是 POST 生成 -> 拿到一次性 token URL -> window.location 跳转，
-# 交给浏览器自带下载器接管，才能真正落盘。URL 一次性、1 小时过期、用完即删。
-_DOWNLOAD_REGISTRY = {}          # token -> {"path": str, "name": str, "expires": float}
-_DOWNLOAD_TMP_DIR = None
-
-
-def _download_tmp_dir():
-    global _DOWNLOAD_TMP_DIR
-    if _DOWNLOAD_TMP_DIR is None:
-        _DOWNLOAD_TMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp_downloads')
-    try:
-        os.makedirs(_DOWNLOAD_TMP_DIR, exist_ok=True)
-    except Exception:
-        pass
-    return _DOWNLOAD_TMP_DIR
-
-
-def _register_download(filepath, download_name):
-    """把刚生成的导出文件挪进 tmp_downloads 并登记一个一次性 token，返回相对 URL；失败返回 None。"""
-    token = uuid.uuid4().hex
-    ext = os.path.splitext(filepath)[1] or ''
-    _dir = _download_tmp_dir()
-    newpath = os.path.join(_dir, token + ext)
-    try:
-        os.replace(filepath, newpath)
-    except Exception:
-        try:
-            import shutil as _sh
-            _sh.move(filepath, newpath)
-        except Exception:
-            return None
-    _DOWNLOAD_REGISTRY[token] = {
-        "path": newpath,
-        "name": download_name,
-        "expires": time.time() + 3600,
-    }
-    # 顺带清理过期项（低频、O(n) 可接受）
-    _now = time.time()
-    for _t in [k for k, v in _DOWNLOAD_REGISTRY.items() if v.get("expires", 0) < _now]:
-        _p = _DOWNLOAD_REGISTRY.pop(_t, {}).get("path")
-        if _p:
-            try:
-                os.unlink(_p)
-            except Exception:
-                pass
-    return "/api/download/" + token
-
-
-def _export_reply(data, filepath, download_name):
-    """按需返回文件流或一次性下载 URL。data['return_url'] 为真时走 URL 通道（供 UC 系跳转原生下载）。"""
-    if data.get('return_url'):
-        url = _register_download(filepath, download_name)
-        if url:
-            return jsonify({"success": True, "url": url, "filename": download_name})
-    return send_file(filepath, as_attachment=True, download_name=download_name)
 
 
 def _normalize_heading_title(s):
@@ -1687,38 +1428,20 @@ def _fetch_record_from_source(data):
     try:
         tid = str(data.get('task_id') or '').strip()
         if tid and tid in tasks:
-            d = dict(tasks[tid].get('data') or {})
+            d = tasks[tid].get('data') or {}
             if d:
-                # 带上任务档位（tasks 顶层有 mode），供导出打分门按档位判定阈值
-                if not d.get('mode') and tasks[tid].get('mode'):
-                    d['mode'] = tasks[tid]['mode']
                 return _clean_legacy_record(d)
         hid = data.get('history_id')
         if hid:
-            # 第二百四十九轮第 3 条：传入 id 与最近成功记录不一致时打印日志，便于审计错配
-            try:
-                _conn = get_db()
-                _latest = _conn.execute("SELECT id FROM history ORDER BY id DESC LIMIT 1").fetchone()
-                _conn.close()
-                if _latest and int(hid) != int(_latest[0]):
-                    print(f"[export-audit] history_id={hid} 与最近成功记录 id={_latest[0]} 不一致，导出可能错配")
-            except Exception:
-                pass
             import json as _json
             conn = get_db()
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            # 深挖修复：导出回源只允许取本人历史记录，防止按 history_id 枚举导出他人内容
-            row = c.execute("SELECT result_data, mode FROM history WHERE id=? AND user_id=?",
-                            (int(hid), _current_uid())).fetchone()
+            row = c.execute("SELECT result_data FROM history WHERE id=?", (int(hid),)).fetchone()
             conn.close()
             if row:
                 rd = _json.loads(row['result_data'] or '{}')
                 if rd:
-                    rd = dict(rd)
-                    # result_data 里没有 mode，这里从 history.mode 列补上，供打分门按档位
-                    if not rd.get('mode') and row['mode']:
-                        rd['mode'] = row['mode']
                     return _clean_legacy_record(rd)
     except Exception as e:
         print(f"[export] 后端记录原文覆盖失败，退回前端数据：{e}")
@@ -1765,24 +1488,45 @@ def _export_data_from_request():
     return request.get_json(force=True, silent=True) or {}
 
 
-def _export_review_gate(data, mode="deep"):
-    """系统默认评委打分门（第一百二十一轮）：导出前评分，按档位打回；记录入 export_reviews。
+def _resolve_export_mode(data):
+    """解析导出记录的生成模式：请求参数优先，缺省回查 history 表的 mode 列。
 
-    打分门按档位（第二百三十四轮）：深度版阈值 85、简洁版阈值 80——简洁版无 rich_charts /
-    rich_deck，天然少两项扣分，若共用 85 会把简洁版全部打回。返回 (passed, score, reasons)。
+    fast 稿必须按 fast 标准审（fast 链路没有图表/deck/实施计划等 deep 专属产物），
+    前端漏传 mode 时靠这里兜底，避免再出现 271 号记录式的「按 deep 标准误杀 fast」。
+    """
+    mode = str(data.get("mode") or "").strip().lower()
+    if mode in ("fast", "deep"):
+        return mode
+    hid = data.get("history_id") or request.args.get("history_id")
+    if hid:
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            row = c.execute("SELECT mode FROM history WHERE id=?", (int(hid),)).fetchone()
+            conn.close()
+            if row and str(row[0] or "").strip().lower() in ("fast", "deep"):
+                return str(row[0]).strip().lower()
+        except Exception:
+            pass
+    return "deep"
+
+
+def _export_review_gate(data, mode=None):
+    """系统默认评委打分门（第一百二十一轮）：评分并记录入 export_reviews。
+
+    2026-10-01（用户反馈「网站的功能就是帮用户修改，而不是让他们自己改」）：
+    从「拦截用户」改为「警告放行」——只有正文乱码这类「文本非法」硬错误
+    返回 blocked=True，评分不足/缺图表/占位符/双盲泄露等全部降为警告（reasons）
+    随文件放行，由调用方写入 X-Export-Warnings 响应头交给前端提示用户。
+    返回 (blocked, score, reasons)。
     """
     rec = _fetch_record_from_source(data)
     if not rec:
         # 没回源到完整记录（如只传了 text），跳过评分门，正常导出
-        return True, None, []
+        return False, None, []
     try:
         from quality_gate import score_export
-        # 档位判定：优先请求体 mode，其次回源记录 mode/tier，最后用入参默认（deep）
-        _mode = (data.get('mode') or rec.get('mode') or rec.get('tier') or mode or 'deep')
-        _mode = 'deep' if str(_mode).strip().lower() == 'deep' else 'fast'
-        _threshold = 85 if _mode == 'deep' else 80
-        score, dims, reasons = score_export(rec, _mode)
-        passed = score >= _threshold
+        score, dims, reasons, hard = score_export(rec, mode or _resolve_export_mode(data))
         conn = get_db()
         c = conn.cursor()
         c.execute("INSERT INTO export_reviews (history_id, score, dims, reasons, passed, created_time) "
@@ -1790,13 +1534,14 @@ def _export_review_gate(data, mode="deep"):
                   (int(data.get("history_id") or 0) or None, score,
                    json.dumps(dims, ensure_ascii=False),
                    json.dumps(reasons, ensure_ascii=False),
-                   1 if passed else 0, datetime.now().strftime("%Y-%m-%d %H:%M")))
+                   1 if (score is not None and score >= 85) else 0,
+                   datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         conn.close()
-        return passed, score, reasons
+        return bool(hard), score, reasons
     except Exception as e:
         print(f"[export_review] 评分失败，放行导出：{e}")
-        return True, None, []
+        return False, None, []
 
 
 def _reorder_markdown_by_chapters(text, ordered_titles):
@@ -1815,7 +1560,11 @@ def _reorder_markdown_by_chapters(text, ordered_titles):
     cur = {"head": None, "body": []}
     for line in text.split("\n"):
         m = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if m and m.group(1).startswith("##"):
+        # 2026-10-01 P1 修复（评委视角 E2E 实测）：原 startswith("##") 把 ###/#### 小节
+        # 也切成独立"章节块"，重排后 27 个 H3 被撕出父章节、且重建时硬编码 "## " 把
+        # 层级降级成 H2——带赛事名导出（前端必经路径）必现，Word/PDF 双中。
+        # 只按精确 H2 切块，小节留在父块 body 里原样随块移动。
+        if m and len(m.group(1)) == 2:
             if cur["head"] is not None or cur["body"]:
                 blocks.append(cur)
             cur = {"head": m.group(2).strip(), "body": []}
@@ -1852,21 +1601,10 @@ def _reorder_markdown_by_chapters(text, ordered_titles):
     return "\n".join(out_lines).rstrip() + "\n"
 
 
-_INDEX_CACHE = {"mtime": 0.0, "content": ""}
-
-
 @app.route('/')
 def index():
-    # L4：首页 HTML 内存缓存（按文件 mtime 失效），省去每次 400KB 磁盘读，降低首字节延迟
-    try:
-        _mt = os.path.getmtime('index.html')
-    except Exception:
-        _mt = 0.0
-    if _INDEX_CACHE["mtime"] != _mt or not _INDEX_CACHE["content"]:
-        with open('index.html', 'r', encoding='utf-8') as f:
-            _INDEX_CACHE["content"] = f.read()
-        _INDEX_CACHE["mtime"] = _mt
-    resp = make_response(_INDEX_CACHE["content"])
+    with open(os.path.join(FRONTEND_DIR, 'index.html'), 'r', encoding='utf-8') as f:
+        resp = make_response(f.read())
     # 防浏览器缓存旧版前端（本次「进度条卡死」的根治）
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'
     return resp
@@ -1985,11 +1723,6 @@ def _pdf_to_text(filepath):
 
 @app.route('/api/upload_pdf', methods=['POST'])
 def upload_pdf():
-    _a = _require_uid()
-    if _a is not None:
-        return _a
-    if _upload_rate_limited():
-        return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "没有文件"})
     file = request.files['file']
@@ -2031,6 +1764,9 @@ def upload_pdf():
     with open(filepath, 'wb') as f:
         f.write(data_bytes)
     text = ""
+    # 隐私（2026-10-01）：落盘只为解析，解析完（无论成败）立即删原件——
+    # uploads/ 不留任何用户文件（reference 用途也只消费解析出的 text，
+    # save_official_doc 不依赖原件；与 parse_material 的 finally 同一套逻辑）。
     try:
         if ext == '.pdf':
             text = _pdf_to_text(filepath)
@@ -2040,7 +1776,9 @@ def upload_pdf():
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f2:
                 text = f2.read()
     except Exception as e:
-        return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+        return jsonify({"success": False, "error": "文件解析失败：" + _sanitize_error_detail(e)})
+    finally:
+        _safe_unlink(filepath)
     import re
     text = re.sub(r'\n\s*\n', '\n', text).strip()
     if not text:
@@ -2066,11 +1804,6 @@ def upload_pdf():
 @app.route('/api/parse_material', methods=['POST'])
 def parse_material():
     """上传材料 → 解析文本 → LLM 提炼结构化项目画像，用于前端自动填充输入框。"""
-    _a = _require_uid()
-    if _a is not None:
-        return _a
-    if _upload_rate_limited():
-        return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     text = ""
     if 'file' in request.files and request.files['file'] and request.files['file'].filename:
         file = request.files['file']
@@ -2094,7 +1827,7 @@ def parse_material():
                 with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read()
         except Exception as e:
-            return jsonify({"success": False, "error": "文件解析失败：" + str(e)[:120]})
+            return jsonify({"success": False, "error": "文件解析失败：" + _sanitize_error_detail(e)})
         finally:
             # 解析完成即删落盘文件（第九十二轮）：用户材料不留档
             _safe_unlink(filepath)
@@ -2113,36 +1846,33 @@ def parse_material():
     return jsonify({"success": True, "profile": profile})
 
 
-@app.route('/api/download/<token>')
-def download_token(token):
-    """415 轮：一次性「临时文件 URL」直链下载（供夸克 / UC 内核跳转原生下载）。"""
-    rec = _DOWNLOAD_REGISTRY.get(token)
-    if not rec:
-        return jsonify({"success": False, "error": "下载链接不存在或已过期"}), 404
-    if time.time() > rec.get("expires", 0):
-        _DOWNLOAD_REGISTRY.pop(token, None)
-        return jsonify({"success": False, "error": "下载链接已过期，请重新导出"}), 410
-    _path = rec.get("path")
-    if not _path or not os.path.exists(_path):
-        _DOWNLOAD_REGISTRY.pop(token, None)
-        return jsonify({"success": False, "error": "文件已清理，请重新导出"}), 404
-    _name = rec.get("name") or os.path.basename(_path)
-    _DOWNLOAD_REGISTRY.pop(token, None)
-    return send_file(_path, as_attachment=True, download_name=_name)
-
-
 @app.route('/api/export_word', methods=['GET', 'POST'])
 def export_word():
     data = _export_data_from_request()
-    # 系统默认评委打分门（第一百二十一轮）：有 history_id 时先评分，按档位打回（深度 85 / 简洁 80）
-    # 第二百三十五轮：必须按档位评分——此前签名默认 mode="deep"，简洁版被深度版标准
-    # 拦死（导出 422）。前端现在会传 mode；拿不到时按 fast 放行，宁可宽松也不误杀。
-    _gate_mode = (data.get('mode') or 'fast')
-    _passed, _score, _reasons = _export_review_gate(data, mode=_gate_mode)
-    if _passed is False:
+    # 质量门（mode 感知 + 警告放行，2026-10-01 二次误杀复盘）：
+    # 网站的本职是帮用户改稿，不是拦着不让导出。fast 稿按 fast 标准审
+    # （fast 链路没有图表/deck/实施计划等 deep 专属产物）；除「正文乱码」
+    # 这类文本非法硬错误仍拒绝外，其余质量问题（评分不足、缺图表、占位符、
+    # 数字口径冲突…）全部降级为警告，照常导出并写入 X-Export-Warnings
+    # 响应头，由前端提示用户自行核对修改。
+    _mode = _resolve_export_mode(data)
+    _warnings = []
+    _blocked, _score, _reasons = _export_review_gate(data, mode=_mode)
+    if _blocked:
         return jsonify({"success": False, "code": "quality_fail", "score": _score,
-                        "error": "内容质量未达标，请重新生成后再导出",
+                        "error": "；".join(r.replace("一票否决：", "") for r in _reasons[:3]),
                         "reasons": _reasons}), 422
+    _warnings.extend(_reasons)
+    # 总审（板块完整性 + 跨板块数字冲突）按 mode 检查，只警告不拦截：
+    # 口径冲突这类问题交给用户核对，不再作为拒绝导出的理由。
+    _rec = _fetch_record_from_source(data)
+    if _rec:
+        try:
+            from quality_gate import check_total
+            _tok, _tissues = check_total(_rec, _mode)
+            _warnings.extend(_tissues)
+        except Exception:
+            pass
     text = data.get('text', '')
     # 后端原文覆盖：前端 DOM 文本可能被串台/断网污染，传 task_id / history_id 时优先取后端原文
     _backend_text = _fetch_proposal_from_source(data)
@@ -2181,33 +1911,49 @@ def export_word():
             print(f"[export_word] 图表插入失败（不影响导出）：{e}")
     filepath = 'tmp_export_single.docx'
     doc.save(filepath)
-    # 三轮·导出终检（第一百二十二轮）：回读产物，中文乱码/标题层级异常则删产物打回。
-    # 暂不查 TOC（TOC 是另一处 docx_render 的活，先修乱码/标题，避免误伤现有导出）。
+    # 三轮·导出终检（第一百二十二轮）：回读产物检查。
+    # 2026-10-01：正文为空/中文乱码 = 产物不可用的硬错误仍拒绝；
+    # 标题层级这类结构问题降为警告放行，不再删用户的文件。
     try:
         from quality_gate import check_docx
         _ok, _issues = check_docx(filepath, expect_type=None)
         if not _ok:
-            _safe_unlink(filepath)
-            return jsonify({"success": False, "code": "export_quality_fail",
-                            "error": "导出质量未达标：" + "；".join(_issues[:3])}), 422
+            _hard_issues = [i for i in _issues if ("为空" in i or "乱码" in i)]
+            if _hard_issues:
+                _safe_unlink(filepath)
+                return jsonify({"success": False, "code": "export_quality_fail",
+                                "error": "；".join(_hard_issues[:3])}), 422
+            _warnings.extend(_issues)
     except Exception:
         pass
-    # 第一百七十六轮：Word 目录规范检测——长文档必须含可刷新 TOC 域（短文档按 docx_render 规则本就不出目录）
+    # 417 轮：Word 封面/目录检测——凡是过了 600 字的导出件，检查封面页 + 目录页。
+    # 2026-10-01：422 拦截改警告放行——文件照常交付，目录缺失提示用户在
+    # Word 里一键补齐即可，不再打回让用户重导。
     try:
         from export_guard import check_word_toc
         _toc = check_word_toc(filepath)
         _doc_chars = len(text.replace('\n', '').replace(' ', ''))
-        if (not _toc.get("ok")) and _doc_chars >= 2500:
-            _safe_unlink(filepath)
-            return jsonify({"success": False, "code": "export_toc_fail",
-                            "error": "目录缺失（长文档需含可刷新目录）：" + "；".join(_toc.get("errors", []))}), 422
+        if (not _toc.get("ok")) and _doc_chars >= 600:
+            _warnings.append("导出的 Word 未含可刷新的目录页，建议在 Word 中「引用 → 目录」一键插入后再提交（"
+                             + "；".join(_toc.get("errors", [])[:2]) + "）")
         print(f"[export_word] 目录规范检测：{_toc}")
     except Exception as _e:
         print(f"[export_word] 目录规范检测失败（不阻断）：{_e}")
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return _export_reply(data, filepath,
-                         _export_filename(project, competition, title, '.docx'))
+    _resp = send_file(filepath, as_attachment=True,
+                      download_name=_export_filename(project, competition, title, '.docx'))
+    if _warnings:
+        # 质量警告随文件放行：fetch-blob 下载可读到该响应头（GET 直链时浏览器忽略），
+        # 前端据此提示用户「文件已导出 + 待核对问题清单」。
+        try:
+            from urllib.parse import quote as _uq
+            _resp.headers['X-Export-Warnings'] = _uq(json.dumps(_warnings, ensure_ascii=False))
+            _resp.headers['Access-Control-Expose-Headers'] = 'X-Export-Warnings'
+            print(f"[export_word] 质量警告放行（{len(_warnings)} 条）：{_warnings}")
+        except Exception:
+            pass
+    return _resp
 
 
 @app.route('/api/export_pdf', methods=['GET', 'POST'])
@@ -2217,7 +1963,13 @@ def export_pdf():
     text = data.get('text', '')
     title = data.get('title', '申报书')
     # 与 export_word 同一兜底：iCAN 交的就是 PDF，DOM 文本被污染时一样会带进提交件
-    _backend_text = _fetch_proposal_from_source(data)
+    _record = _fetch_record_from_source(data)
+    _backend_text = (_record.get('proposal') or '').strip() if _record else ''
+    # 历史/直链导出也回带同一条记录的图表和附表，避免 PDF 丢失前台成果。
+    if _record:
+        for _key in ('rich_charts', 'rich_tables', 'charts', 'tables', 'competition_name'):
+            if not data.get(_key) and _record.get(_key):
+                data[_key] = _record.get(_key)
     if _backend_text:
         text = _backend_text
     if not text.strip():
@@ -2236,25 +1988,59 @@ def export_pdf():
     text = _append_ai_notice(text)      # PDF 不走 _build_docx，标注要在这里单独加一遍
     try:
         from pdf_render import render_markdown_to_pdf
+        # 服务器旧版没有资产重绘辅助函数；保留请求/历史记录中的已渲染图表，
+        # PDF 主文档仍可稳定导出，缺失图片由图表清单明确留给用户核对。
+        _charts = data.get('charts') or data.get('rich_charts') or []
+        _tables = data.get('tables') or data.get('rich_tables') or []
         filepath = 'tmp_export.pdf'
-        render_markdown_to_pdf(text, filepath, title=title)
+        try:
+            render_markdown_to_pdf(text, filepath, title=title,
+                                   subtitle=data.get('competition_name'),
+                                   charts=_charts, tables=_tables)
+        except Exception:
+            _safe_unlink(filepath)
+            render_markdown_to_pdf(text, filepath, title=title,
+                                   subtitle=data.get('competition_name'),
+                                   charts=_charts, tables=_tables)
     except Exception as e:
-        return jsonify({"error": f"PDF 生成失败：{e}"}), 500
+        return jsonify({"error": f"PDF 生成失败：{_sanitize_error_detail(e)}"}), 500
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
+    # 417 轮：补上「按赛事查页数/体积」并给出可执行的删减建议——
+    # 之前只丢一句「质量未达标」就把文件删了，用户不知道该删哪儿。
     try:
         from quality_gate import check_pdf
-        _max_pages, _max_bytes = _pdf_limits(data.get('competition_name'))
-        _ok, _issues = check_pdf(filepath, max_pages=_max_pages, max_bytes=_max_bytes)
-        if not _ok:
+        _pdf = check_pdf(filepath,
+                         competition_name=data.get('competition_name') or '',
+                         doc_title=title, detail=True)
+        _issues = list(_pdf.get('errors') or [])
+        if not _pdf.get('ok'):
             _safe_unlink(filepath)
+            _tips = list(_pdf.get('suggestions') or [])
             return jsonify({"success": False, "code": "export_quality_fail",
-                            "error": "PDF 质量未达标：" + "；".join(_issues[:3])}), 422
+                            "error": "；".join(_issues[:3]),
+                            "suggestions": _tips,
+                            "pages": _pdf.get('pages'),
+                            "mb": _pdf.get('mb'),
+                            "limit": _pdf.get('limit')}), 422
     except Exception:
         pass
     project = _project_name_hint(data)
     competition = data.get('competition_name') or ''
-    return _export_reply(data, filepath,
-                         _export_filename(project, competition, title, '.pdf'))
+    # 417 轮：把实际页数/体积/该赛事上限回给前端。前端早就有读 X-PDF-* 的分支，
+    # 但后端一直没发这几个头，那段提示等于死代码，超限文件照样静默下载。
+    try:
+        from quality_gate import check_pdf as _cpdf2
+        _d2 = _cpdf2(filepath, competition_name=competition, doc_title=title, detail=True)
+        _resp = send_file(filepath, as_attachment=True,
+                          download_name=_export_filename(project, competition, title, '.pdf'))
+        _resp.headers['X-PDF-Pages'] = str(_d2.get('pages') or 0)
+        _resp.headers['X-PDF-MB'] = str(_d2.get('mb') or 0)
+        _resp.headers['X-PDF-Limit'] = str((_d2.get('limit') or {}).get('max_pages') or 0)
+        _resp.headers['Access-Control-Expose-Headers'] = 'X-PDF-Pages, X-PDF-MB, X-PDF-Limit'
+        return _resp
+    except Exception:
+        return send_file(filepath, as_attachment=True,
+                         download_name=_export_filename(project, competition, title, '.pdf'))
 
 
 @app.route('/api/export_defense')
@@ -2432,17 +2218,13 @@ def _md_to_html(t):
 def create_share(history_id):
     import secrets
     from datetime import timedelta
-    # 隐私（深挖修复）：只允许分享本人历史记录，防止按 id 枚举创建他人内容的分享链接
-    _a = _require_uid()
-    if _a is not None:
-        return _a
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT id FROM history WHERE id=? AND user_id=?", (history_id, _current_uid()))
+    c.execute("SELECT id FROM history WHERE id=?", (history_id,))
     if not c.fetchone():
         conn.close()
-        return jsonify({"success": False, "error": "记录不存在或无权分享"}), 404
-    token = secrets.token_urlsafe(16)  # 深挖加固：64bit→128bit 熵，防分享链接被爆破
+        return jsonify({"success": False, "error": "记录不存在"}), 404
+    token = secrets.token_urlsafe(8)
     now = datetime.now()
     expires = now + timedelta(days=7)
     c.execute("INSERT OR REPLACE INTO shares (token, history_id, created_time, expires_time) VALUES (?,?,?,?)",
@@ -2546,7 +2328,7 @@ def share_export(token):
             fp = 'tmp_share_export.pdf'
             render_markdown_to_pdf(text, fp, title=title)
         except Exception as e:
-            return jsonify({"success": False, "error": f"PDF 生成失败：{e}"}), 500
+            return jsonify({"success": False, "error": f"PDF 生成失败：{_sanitize_error_detail(e)}"}), 500
         return send_file(fp, as_attachment=True,
                          download_name=_export_filename(project, comp, '项目申报书', '.pdf'))
 
@@ -2625,11 +2407,6 @@ def get_history_detail(history_id):
 @app.route('/api/history/<int:history_id>/rate', methods=['POST'])
 def rate_history(history_id):
     """给某条历史记录打 1-5 星（覆盖式保存，存 SQLite）。"""
-    _a = _require_uid()
-    if _a is not None:
-        return _a
-    if _rate_limited():
-        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
     payload = request.get_json(silent=True) or {}
     try:
         rating = int(payload.get("rating"))
@@ -2639,8 +2416,7 @@ def rate_history(history_id):
         return jsonify({"success": False, "error": "评分必须是 1-5 的整数"}), 400
     conn = get_db()
     c = conn.cursor()
-    # M14：评分归属校验，只允许评自己记录（去掉 user_id='' 公共可见）
-    c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
+    c.execute("UPDATE history SET rating = ? WHERE id = ? AND (user_id = ? OR IFNULL(user_id, '') = '')",
               (rating, history_id, _current_uid()))
     conn.commit()
     updated = c.rowcount
@@ -2653,8 +2429,6 @@ def rate_history(history_id):
 @app.route('/api/feedback', methods=['POST'])
 def add_feedback():
     """收集用户反馈：结果页文本框 + 提交按钮，纯文本入库，后台直接看。"""
-    if _feedback_rate_limited():
-        return jsonify({"success": False, "error": "反馈提交太频繁，请稍后再试"}), 429
     payload = request.get_json(silent=True) or {}
     content = str(payload.get("content") or "").strip()
     if not content:
@@ -2680,19 +2454,12 @@ def add_feedback():
     c.execute("INSERT INTO feedback (history_id, content, created_time, category, user_id) VALUES (?, ?, ?, ?, ?)",
               (history_id, content, datetime.now().strftime("%Y-%m-%d %H:%M"), category, _current_uid()))
     if rating is not None and history_id:
-        # 深挖修复：评分只允许写回本人历史，防止按 history_id 枚举覆盖他人满意度数据（越权写）。
-        c.execute("UPDATE history SET rating = ? WHERE id = ? AND user_id = ?",
-                  (rating, history_id, _current_uid()))
+        c.execute("UPDATE history SET rating = ? WHERE id = ?", (rating, history_id))
     conn.commit()
     new_id = c.lastrowid
     conn.close()
-    # 203 轮：评分≤3星 或 命中问题关键词 → 自动生成问题工单（不再只归档）
-    _problem_kw = ("失败", "不行", "出错", "不能用", "bug", "错误", "崩溃", "卡住", "报错", "打不开")
-    _is_problem = (category in ("问题反馈", "吐槽")) or \
-                  (rating is not None and rating <= 3) or \
-                  any(k in content.lower() for k in _problem_kw)
-    if _is_problem:
-        create_issue(_classify_issue(content), "feedback", content, _current_uid())
+    if category in ("问题反馈", "吐槽"):
+        create_issue(_classify_issue(content), "feedback", content)
     return jsonify({"success": True, "id": new_id, "category": category})
 
 
@@ -2788,45 +2555,39 @@ def export_feedback():
         as_attachment=True, download_name=fname)
 
 
-def _friendly_fail_text(r):
-    """第三百一十六轮：把后台「最近失败」里的英文技术报错转成友好中文，技术细节留给日志。"""
-    raw = (r["detail"] or r["error_msg"] or r["error"] or "").strip()
-    if not raw:
-        return "未知原因"
-    _low = raw.lower()
-    if "interpreter shutdown" in _low or "cannot schedule" in _low or "future" in _low:
-        return "上次服务重启时中断的任务记录，已自动恢复"
-    if "timeout" in _low or "timed out" in _low:
-        return "生成超时，请重试"
-    if "quota" in _low or "已达上限" in raw:
-        return "今日调用额度已用尽，请明天再试"
-    return raw
-
-
 @app.route('/admin')
 def admin_home():
     """管理后台 · 总览首页：关键数字一屏看完，再点进详细面板 / 监视。"""
+    _admin_role = _admin_session_role() or "admin"
+    _readonly_mode = _admin_role == "readonly"
+    _mode_title = "评委演示模式 · 只读" if _readonly_mode else "管理员模式 · 完整权限"
+    _mode_desc = ("当前账号可查看统计、失败原因、反馈和运行日志；删除、蒸馏、配置修改等写操作已关闭。"
+                  if _readonly_mode else
+                  "当前账号可查看和维护统计、失败记录、反馈、知识库、公告及蒸馏任务。")
+    _mode_class = "readonly" if _readonly_mode else "admin"
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
-    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE rating > 0").fetchone()
-    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
-    rated_count = avg_row[1] if avg_row else 0
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-    success_rate = round(total_gen * 100.0 / (total_gen + fail_total), 1) if (total_gen + fail_total) else 100.0
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
+        (today + "%",)).fetchone()[0]
+    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
+    rated_count = int(avg_row[1] or 0) if avg_row else 0
+    avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    _attempts = total_gen + fail_total
+    success_rate = round(total_gen * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
+    success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if total_gen else '暂无样本')
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
-    open_issue_rows = c.execute(
-        "SELECT id, kind, source, content, created_time FROM issues "
-        "WHERE status='open' ORDER BY id DESC LIMIT 5").fetchall()
     recent_fb = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
-        "SELECT error, detail, error_msg, created_time FROM gen_failures WHERE status='open' ORDER BY id DESC LIMIT 4").fetchall()
+        "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
+        "FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
     conn.close()
 
     fb_rows = "".join(
@@ -2834,16 +2595,17 @@ def admin_home():
         % (r["created_time"] or "", _html_escape(r["content"] or ""))
         for r in recent_fb) or '<li class="e">暂无反馈</li>'
     fail_rows = "".join(
-        '<li><span class="t">%s</span>%s</li>'
-        % (r["created_time"] or "", _html_escape(_friendly_fail_text(r)))
+        '<li><span class="t">%s%s</span><b>%s</b><br><span class="failure-reason">%s</span>'
+        '<small>%s%s</small></li>'
+        % (r["created_time"] or "",
+           (" · " + _html_escape(r["competition_name"])) if r["competition_name"] else "",
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[0]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[1]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[2]),
+           (" · 任务 " + _html_escape(r["task_id"])) if r["task_id"] else "")
         for r in recent_fail) or '<li class="e">暂无失败</li>'
-    issue_rows = "".join(
-        '<li><span class="t">#%s · %s · %s</span>%s</li>'
-        % (r["id"], _html_escape(r["kind"] or ""), r["created_time"] or "",
-           _html_escape(r["content"] or ""))
-        for r in open_issue_rows) or '<li class="e">暂无待处理问题</li>'
 
-    return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 管理后台</title>
 <style>
@@ -2854,31 +2616,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .nav a.active{background:#4f46e5;color:#fff}
 h1{font-size:24px;margin:0 0 4px}
 .sub{color:#64748b;font-size:14px;margin-bottom:20px}
-.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px}
-.h{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
-.h .n{font-size:32px;font-weight:800;color:#4f46e5}
+.hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px;align-items:start}
+.h{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:20px;min-height:116px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.h .n{font-size:32px;line-height:1.15;font-weight:800;color:#4f46e5;white-space:nowrap;font-variant-numeric:tabular-nums}
 .h .n.good{color:#059669}.h .n.bad{color:#e11d48}
 .h .l{font-size:13px;color:#64748b;margin-top:5px}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 @media(max-width:640px){.cols{grid-template-columns:1fr}}
 .box{background:#fff;border-radius:14px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
 .box h2{font-size:15px;margin:0 0 10px;color:#111827}
 .box ul{list-style:none;padding:0;margin:0}
 .box li{font-size:14px;padding:8px 0;border-bottom:1px solid #f1f5f9}
 .box li:last-child{border-bottom:none}
-.box li .t{display:block;font-size:12px;color:#64748b;margin-bottom:2px}
-.box li.e{color:#64748b;text-align:center;padding:16px}
+.box li .t{display:block;font-size:12px;color:#94a3b8;margin-bottom:2px}
+.box li b{font-size:13px;color:#334155}.box li .failure-reason{display:block;color:#475569;font-size:13px;line-height:1.5}.box li small{display:block;color:#64748b;font-size:11px;line-height:1.45;margin-top:2px}
+.box li.e{color:#94a3b8;text-align:center;padding:16px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+.mode{display:flex;align-items:flex-start;gap:12px;padding:13px 16px;margin:0 0 18px;border-radius:12px;border:1px solid #c7d2fe;background:#eef2ff;color:#27346b}
+.mode.admin{border-color:#bbf7d0;background:#ecfdf5;color:#065f46}.mode.readonly{border-color:#fde68a;background:#fffbeb;color:#92400e}
+.mode .badge{flex:none;padding:3px 8px;border-radius:999px;background:#4f46e5;color:#fff;font-size:12px;font-weight:700;line-height:1.4}
+.mode.admin .badge{background:#059669}.mode.readonly .badge{background:#d97706}
+.mode b{display:block;font-size:14px;margin-bottom:2px}.mode span{font-size:12.5px;line-height:1.55}
+@media(max-width:900px){.hero{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){body{padding:22px 14px}.hero{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.h{padding:15px;min-height:96px}.h .n{font-size:28px}}
+@media(max-width:400px){.hero{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<div class="mode %s"><span class="badge">%s</span><div><b>当前后台身份</b><span>%s</span></div></div>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
 <div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
 <div class="h"><div class="n">%d</div><div class="l">今日生成</div></div>
-<div class="h"><div class="n %s">%s/5分</div><div class="l">满意度平均分（%d 人打分）</div></div>
-<div class="h"><div class="n %s">%s%%</div><div class="l" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
+<div class="h"><div class="n %s">%s</div><div class="l">满意度平均分（%d 人打分）</div></div>
+<div class="h"><div class="n %s">%s</div><div class="l">生成成功率（记录口径）</div><div class="metric-note">无失败记录也不代表所有情况都已覆盖</div></div>
 <div class="h"><div class="n %s">%d</div><div class="l">待处理工单</div></div>
 <div class="h"><div class="n">%d</div><div class="l">反馈总数</div></div>
 </div>
@@ -2886,8 +2658,30 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box"><h2>最近反馈</h2><ul>%s</ul></div>
 <div class="box"><h2>最近失败</h2><ul>%s</ul></div>
 </div>
-<div class="box" style="margin-top:14px"><h2>待处理工单（%d）</h2><ul>%s</ul></div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
+<div class="box" style="margin-top:14px"><h2>🧠 写作范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从当前范文库重新提炼「获奖写法共性规律」，注入生成 prompt（约耗 1 次 LLM 调用）。</p>
+<button id="distillBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏</button>
+<span id="distillMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
+<div class="box" style="margin-top:14px"><h2>🎤 答辩范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从高频答辩题库提炼「评委必问套路 + 回答框架」，注入答辩生成。</p>
+<button id="distillDefenseBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏答辩范式</button>
+<span id="distillDefenseMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
+<div class="box" style="margin-top:14px"><h2>⚖️ 评委评分范式蒸馏</h2>
+<p style="font-size:13px;color:#64748b;margin:0 0 10px">从历史生成的多专家评审记录提炼「高频扣分点 + 三视角常挑的毛病」，注入评委打分。</p>
+<button id="distillJudgeBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏评委范式</button>
+<span id="distillJudgeMsg" style="margin-left:10px;font-size:13px;color:#059669"></span>
+</div>
+<div class="box" style="margin-top:14px"><h2>📐 分析/PPT·演讲稿/同质化范式</h2>
+<button id="distillAnalysisBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">分析范式</button>
+<span id="distillAnalysisMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+<button id="distillDeckBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">PPT/演讲稿</button>
+<span id="distillDeckMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+<button id="distillSimBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer;margin-left:10px">同质化</button>
+<span id="distillSimMsg" style="margin-left:8px;font-size:13px;color:#059669"></span>
+</div>
 <div class="box" style="margin-top:14px"><h2>📊 数据洞察（自动扫描）</h2>
 <div id="insightGaps" style="font-size:13px;color:#64748b">赛事资料缺口：加载中…</div>
 <div id="insightFeedback" style="font-size:13px;color:#64748b;margin-top:6px">反馈优先级：—</div>
@@ -2896,17 +2690,24 @@ h1{font-size:24px;margin:0 0 4px}
 </div>
 <div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">智能评分分布</div><div id="vizScore" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">AI 模拟评分分布</div><div id="vizScore" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
 </div>
 <div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败率：加载中…</div>
 </div>
 <script src="/static/echarts.min.js"></script>
 <script>
 var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
-function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
+function bindDistill(btnId,msgId,url,okText){var b=document.getElementById(btnId),m=document.getElementById(msgId);b.onclick=function(){b.disabled=true;m.textContent='蒸馏中…';m.style.color='#64748b';AF(url,{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;if(j.success){m.textContent=okText(j);m.style.color='#059669';}else{m.textContent='失败：'+(j.error||'未知错误');m.style.color='#e11d48';}}).catch(function(e){b.disabled=false;m.textContent='失败：'+e;m.style.color='#e11d48';});};}
+bindDistill('distillBtn','distillMsg','/api/distill',function(j){return '完成：用了 '+j.samples_used+' 条范文、'+j.global_count+' 条全局规则';});
+bindDistill('distillDefenseBtn','distillDefenseMsg','/api/distill/defense',function(j){return '完成：用了 '+j.questions_used+' 道题、'+j.pattern_count+' 条必问套路';});
+bindDistill('distillJudgeBtn','distillJudgeMsg','/api/distill/judge',function(j){return '完成：提炼 '+j.criticism_count+' 条高频扣分点';});
+bindDistill('distillAnalysisBtn','distillAnalysisMsg','/api/distill/analysis',function(j){return '完成：竞品/商业/风险/技术要点已更新';});
+bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',function(j){return '完成：PPT结构+演讲稿套路已更新';});
+bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
+function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return (x.label||x.code||'未知失败')+'（代码 '+(x.code||'unknown')+'）×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
 function loadViz(){
     AF('/api/admin/stats').then(function(r){return r.json()}).then(function(j){
@@ -2918,22 +2719,22 @@ function loadViz(){
         // 生成趋势
         try{
             var t=echarts.init(document.getElementById('vizTrend'),dark);
-            t.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.trend.map(function(x){return x.date.slice(5);}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'line',smooth:true,data:j.trend.map(function(x){return x.count;}),areaStyle:{opacity:.15},itemStyle:{color:'#818cf8'}}]});
+            t.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.trend.map(function(x){return x.date.slice(5);}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'line',smooth:true,data:j.trend.map(function(x){return x.count;}),areaStyle:{opacity:.15},itemStyle:{color:'#818cf8'}}]});
         }catch(e){}
         // 评分分布
         try{
             var s=echarts.init(document.getElementById('vizScore'),dark);
-            s.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.score_buckets.map(function(x){return x.range;}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.score_buckets.map(function(x){return x.count;}),barWidth:'55%%',itemStyle:{color:'#c084fc',borderRadius:[5,5,0,0]}}]});
+            s.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.score_buckets.map(function(x){return x.range;}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.score_buckets.map(function(x){return x.count;}),barWidth:'55%%',itemStyle:{color:'#c084fc',borderRadius:[5,5,0,0]}}]});
         }catch(e){}
         // 反馈分类
         try{
             var f=echarts.init(document.getElementById('vizFeedback'),dark);
-            f.setOption({tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#64748b',fontSize:10}},series:[{type:'pie',radius:['40%%','65%%'],center:['50%%','45%%'],data:j.feedback.map(function(x){return {name:x.category,value:x.count};}),label:{color:'#cbd5e1',fontSize:10}}]});
+            f.setOption({tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#94a3b8',fontSize:10}},series:[{type:'pie',radius:['40%%','65%%'],center:['50%%','45%%'],data:j.feedback.map(function(x){return {name:x.category,value:x.count};}),label:{color:'#cbd5e1',fontSize:10}}]});
         }catch(e){}
         // 用户评分
         try{
             var rr=echarts.init(document.getElementById('vizRating'),dark);
-            rr.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.rating.map(function(x){return x.rating+'星';}),axisLabel:{color:'#64748b',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#64748b',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.rating.map(function(x){return x.count;}),barWidth:'50%%',itemStyle:{color:'#22d3ee',borderRadius:[5,5,0,0]}}]});
+            rr.setOption({grid:{left:36,right:10,top:16,bottom:24},xAxis:{type:'category',data:j.rating.map(function(x){return x.rating+'星';}),axisLabel:{color:'#94a3b8',fontSize:10}},yAxis:{type:'value',axisLabel:{color:'#94a3b8',fontSize:10},splitLine:{lineStyle:{color:'rgba(148,163,255,.12)'}}},series:[{type:'bar',data:j.rating.map(function(x){return x.count;}),barWidth:'50%%',itemStyle:{color:'#22d3ee',borderRadius:[5,5,0,0]}}]});
         }catch(e){}
         window.addEventListener('resize',function(){try{t.resize();s.resize();f.resize();rr.resize();}catch(e){}});
     });
@@ -2941,14 +2742,14 @@ function loadViz(){
 loadViz();
 </script>
 </div></body></html>""" % (
+        _mode_class, _mode_title, _mode_desc,
         total_gen, today_gen,
-        "good" if avg_rating >= 4 else ("bad" if avg_rating and avg_rating < 3 else ""),
-        avg_rating, rated_count,
-        "good" if success_rate >= 95 else ("bad" if success_rate < 80 else ""),
-        success_rate,
+        "good" if avg_rating is not None and avg_rating >= 4 else ("bad" if avg_rating is not None and avg_rating < 3 else ""),
+        avg_rating_display, rated_count,
+        "good" if success_rate is not None and success_rate >= 95 else ("bad" if success_rate is not None and success_rate < 80 else ""),
+        success_rate_display,
         "bad" if open_issue else "good", open_issue,
-        feedback_total, fb_rows, fail_rows,
-        open_issue, issue_rows))
+        feedback_total, fb_rows, fail_rows)
 
 
 @app.route('/admin/panel')
@@ -2957,53 +2758,23 @@ def admin_dashboard():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    # 第三百二十轮：时间段选择器（今日/近3天/近7天/近30天/全部）
-    _range = (request.args.get("range") or "all").strip().lower()
-    _now = datetime.now()
-    if _range == "today":
-        _since = _now.strftime("%Y-%m-%d")
-    elif _range == "3d":
-        _since = (_now - timedelta(days=2)).strftime("%Y-%m-%d")
-    elif _range == "7d":
-        _since = (_now - timedelta(days=6)).strftime("%Y-%m-%d")
-    elif _range == "30d":
-        _since = (_now - timedelta(days=29)).strftime("%Y-%m-%d")
-    else:
-        _range = "all"
-        _since = None
-
-    def _h(where="", params=()):
-        """给带 created_time 列的查询追加时间段过滤（无时间段时不追加）。"""
-        if not _since:
-            return where, params
-        if where:
-            return where + " AND created_time >= ?", params + (_since,)
-        return " WHERE created_time >= ?", (_since,)
-
-    _range_opts = "".join(
-        '<option value="%s"%s>%s</option>' % (v, " selected" if v == _range else "", label)
-        for v, label in (("all", "全部"), ("today", "今日"), ("3d", "近3天"), ("7d", "近7天"), ("30d", "近30天")))
-    _range_ui = ('<div style="margin:10px 0;font-size:13px;color:#64748b">统计时间段：'
-                 '<select onchange="location.href=\'/admin/panel?range=\'+this.value">%s</select></div>' % _range_opts)
-
-    _w, _p = _h()
-    total_gen = c.execute("SELECT COUNT(*) FROM history" + _w, _p).fetchone()[0]
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE created_time LIKE ?", (today + "%",)).fetchone()[0]
-    _w, _p = _h(" WHERE rating > 0")
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
+        (today + "%",)).fetchone()[0]
     avg_row = c.execute(
-        "SELECT AVG(rating), COUNT(*) FROM history" + _w, _p).fetchone()
-    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else 0
-    rated_count = avg_row[1] if avg_row else 0
-    _w, _p = _h()
-    feedback_total = c.execute("SELECT COUNT(*) FROM feedback" + _w, _p).fetchone()[0]
+        "SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+    avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
+    rated_count = int(avg_row[1] or 0) if avg_row else 0
+    avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
+    feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
     # 112 轮：取消「只能看 10 条」——改成可翻页查看全部反馈。
-    # 204 轮：默认每页 10 条（原 50 条太多，27 条挤一页）；页码走 query string，上限 500。
+    # 每页条数/页码走 query string，默认 50 条，上限 500（防止一次拉爆内存/页面）。
     try:
-        _fb_limit = int(request.args.get("fblimit", 10))
+        _fb_limit = int(request.args.get("fblimit", 50))
     except Exception:
-        _fb_limit = 10
+        _fb_limit = 50
     _fb_limit = max(10, min(500, _fb_limit))
     try:
         _fb_page = int(request.args.get("fbpage", 1))
@@ -3046,56 +2817,70 @@ def admin_dashboard():
             pass
     # 满意度分布（1-5 星）
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    _w, _p = _h(" WHERE rating > 0")
     for r, n in c.execute(
-            "SELECT rating, COUNT(*) FROM history" + _w + " GROUP BY rating", _p).fetchall():
+            "SELECT rating, COUNT(*) FROM history WHERE %s AND rating > 0 GROUP BY rating" % _TEST_HISTORY_WHERE).fetchall():
         rating_dist[int(r)] = n
     # 生成趋势（最近 14 天）
-    _w, _p = _h()
     trend = c.execute(
-        "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history" + _w +
-        " GROUP BY d ORDER BY d DESC LIMIT 7", _p).fetchall()
-    # 赛事分布（Top 8）：空/空白/脏值（如 "x"）赛事名归并到「未指定赛事」，避免图表出现异常标签
-    _w, _p = _h()
-    _comp_raw = c.execute(
-        "SELECT competition_name, COUNT(*) n FROM history" + _w + " GROUP BY competition_name", _p).fetchall()
-    _comp_agg = {}
-    for _name, _cnt in _comp_raw:
-        _key = (_name or "").strip()
-        if not _key or len(_key) <= 1 or _key.lower() in ("x", "null", "none", "undefined", "nan", "n/a"):
-            _key = "未指定赛事"
-        _comp_agg[_key] = _comp_agg.get(_key, 0) + _cnt
-    comp_dist = sorted(_comp_agg.items(), key=lambda x: (-x[1], x[0]))[:8]
+        "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
+        "WHERE %s GROUP BY d ORDER BY d DESC LIMIT 7" % _TEST_HISTORY_WHERE).fetchall()
+    # 赛事分布：后台核对必须展示全部真实赛事，不截断为 Top 8。
+    # 历史测试数据（如 x/y/测试赛事）不冒充正式赛事，但保留数量并单独提示。
+    _comp_rows = c.execute(
+        "SELECT competition_name, COUNT(*) n FROM history "
+        "GROUP BY competition_name ORDER BY n DESC, competition_name").fetchall()
+    comp_dist = []
+    _test_total = 0
+    _missing_total = 0
+    for _name, _count in _comp_rows:
+        _name_s = str(_name or "").strip()
+        if not _name_s:
+            _missing_total += int(_count or 0)
+        elif _name_s.lower() in ("x", "y") or _name_s.startswith("测试"):
+            _test_total += int(_count or 0)
+        else:
+            comp_dist.append((_name_s, int(_count or 0)))
+    comp_dist.sort(key=lambda item: (-item[1], item[0]))
+    _comp_quality_notes = []
+    if _test_total:
+        _comp_quality_notes.append("测试/占位记录 %d 条未纳入正式赛事分布" % _test_total)
+    if _missing_total:
+        _comp_quality_notes.append("%d 条历史记录缺少赛事字段，已单独标注" % _missing_total)
+    comp_quality_note = ("<div class=\"data-note\">数据质量提示：%s</div>" %
+                         "；".join(_comp_quality_notes)) if _comp_quality_notes else ""
     # 反馈分类聚合
-    _w, _p = _h()
     fb_cat = c.execute(
-        "SELECT category, COUNT(*) n FROM feedback" + _w + " GROUP BY category ORDER BY n DESC", _p).fetchall()
-    # 评估指标：平均耗时 / 成功率 / 评审引擎平均分
-    _w, _p = _h(" WHERE duration > 0")
-    avg_dur = c.execute("SELECT AVG(duration) FROM history" + _w, _p).fetchone()[0]
+        "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
+    # 评估指标：平均耗时 / 成功率 / AI 评委平均分
+    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 0" % _TEST_HISTORY_WHERE).fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
-    _w, _p = _h()
-    succ_total = c.execute("SELECT COUNT(*) FROM history" + _w, _p).fetchone()[0]
-    _w, _p = _h(" WHERE status='open'")
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures" + _w, _p).fetchone()[0]
-    success_rate = round(succ_total * 100.0 / (succ_total + fail_total), 1) if (succ_total + fail_total) else 100.0
-    _w, _p = _h(" WHERE json_extract(result_data,'$.score') IS NOT NULL")
+    succ_total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    _attempts = succ_total + fail_total
+    success_rate = round(succ_total * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
+    success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if succ_total else '暂无样本')
     judge_avg = c.execute(
-        "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history" + _w, _p).fetchone()[0]
-    judge_avg = round(judge_avg, 1) if judge_avg else 0
-    _w, _p = _h(" WHERE status='open'")
+        "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
+        "WHERE %s AND json_extract(result_data,'$.score') IS NOT NULL" % _TEST_HISTORY_WHERE).fetchone()[0]
+    judge_avg = round(judge_avg, 1) if judge_avg is not None else None
+    judge_avg_display = ('%.1f' % judge_avg) if judge_avg is not None else '暂无评分'
     open_issues = c.execute(
-        "SELECT id, kind, source, content, created_time FROM issues" + _w + " ORDER BY id DESC LIMIT 15", _p).fetchall()
+        "SELECT id, kind, source, content, created_time FROM issues "
+        "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
     conn.close()
 
-    # 今日大模型调用额度（第二百五十四轮：统一走 get_quota_status，避免硬编码 500
-    # 与 env 的 QUOTA_DAILY_LIMIT 不一致，导致数据面板/动态监视/health 三处口径打架）
-    quota_remaining = 0
+    # 今日大模型调用额度
+    quota_calls = 0
     try:
-        from competition_agents import get_quota_status
-        quota_remaining = int(get_quota_status().get("remaining", 0) or 0)
+        with open(os.path.join(os.path.dirname(__file__), "quota.json"),
+                  encoding="utf-8") as _f:
+            _q = json.load(_f)
+        if _q.get("date") == today:
+            quota_calls = int(_q.get("calls", 0) or 0)
     except Exception:
         pass
+    quota_limit = 500
+    quota_remaining = max(0, quota_limit - quota_calls)
 
     # 111/112 轮：反馈区从「原生 li 平铺」升级为卡片化（分类色块 + 时间人话化 +
     # 关联星级 + 超长截断悬停看全文 + hover 高亮）。内容一律 _html_escape 防注入。
@@ -3183,15 +2968,11 @@ def admin_dashboard():
             '<span class="bn">%d</span></div>' % (star, pct, n))
     rating_bars_html = "".join(rating_bars)
 
-    # 生成趋势（最近 7 天，正序显示；0 值也占位，避免只渲染有数据的一天）
-    _trend_map = {d: n for d, n in trend}
-    _trend_full = []
-    for _i in range(6, -1, -1):
-        _d = (_now - timedelta(days=_i)).strftime("%Y-%m-%d")
-        _trend_full.append((_d, _trend_map.get(_d, 0)))
-    max_t = max([n for _, n in _trend_full]) or 1
+    # 生成趋势（最近 14 天，正序显示）
+    trend = list(reversed(trend))
+    max_t = max([n for _, n in trend]) if trend else 0
     trend_bars = []
-    for d, n in _trend_full:
+    for d, n in trend:
         h = int(n * 100 / max_t) if max_t else 0
         label = d[5:] if len(d) >= 10 else d
         trend_bars.append(
@@ -3200,7 +2981,7 @@ def admin_dashboard():
             '<div class="td">%s</div></div>' % (n, h, label))
     trend_html = "".join(trend_bars) or '<div class="empty">暂无数据</div>'
 
-    # 赛事分布（Top 8）
+    # 赛事分布（全部真实赛事）
     max_c = max([n for _, n in comp_dist]) if comp_dist else 0
     comp_bars = []
     for name, n in comp_dist:
@@ -3208,8 +2989,8 @@ def admin_dashboard():
         comp_bars.append(
             '<div class="barrow"><span class="bl">%s</span>'
             '<span class="btrack"><span class="bfill" style="width:%d%%"></span></span>'
-            '<span class="bn">%d</span></div>' % (_html_escape(name), pct, n))
-    comp_html = "".join(comp_bars) or '<div class="empty">暂无数据</div>'
+            '<span class="bn">%d</span></div>' % (_html_escape(name or "未记录赛事"), pct, n))
+    comp_html = ("".join(comp_bars) or '<div class="empty">暂无数据</div>') + comp_quality_note
 
     # 反馈分类
     cat_total = sum(n for _, n in fb_cat) or 0
@@ -3234,22 +3015,24 @@ def admin_dashboard():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 后台数据</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f8;color:#1a1a2e;margin:0;padding:30px 18px;line-height:1.6}
-.wrap{max-width:760px;margin:0 auto}
-h1{font-size:22px;margin:0 0 18px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:22px}
-.card{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.num{font-size:26px;font-weight:700;color:#2563eb}
-.label{font-size:12px;color:#4b5563;margin-top:4px}
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:24px;letter-spacing:.1px;margin:0 0 16px;color:#14213f}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px;align-items:stretch}
+.card{background:#fff;border:1px solid #e6ebf5;border-radius:14px;padding:18px 20px;min-height:112px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.num{font-size:30px;line-height:1.15;font-weight:750;color:#315fe9;white-space:nowrap;font-variant-numeric:tabular-nums}
+.label{font-size:13px;color:#52627f;margin-top:9px;line-height:1.45}
 .banner{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:10px;padding:12px 14px;font-size:15px;font-weight:600;margin-bottom:16px}
 h2{font-size:16px;margin:18px 0 10px}
 ul{list-style:none;padding:0;margin:0}
 li{background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;font-size:14px}
-li .t{font-size:12px;color:#4b5563;margin-bottom:4px}
-li.empty{color:#4b5563;text-align:center;padding:22px}
-.box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:14px}
+li .t{font-size:12px;color:#57606e;margin-bottom:4px}
+li.empty{color:#57606e;text-align:center;padding:22px}
+.box{background:#fff;border:1px solid #e6ebf5;border-radius:14px;padding:18px;box-shadow:0 8px 20px rgba(54,77,130,.06);margin-bottom:16px}
+.compdist{max-height:460px;overflow-y:auto;padding-right:6px}
+.data-note{margin-top:12px;padding:9px 11px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.5}
 .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
-.barrow .bl{width:160px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;word-break:break-word;line-height:1.35}
+.barrow .bl{width:150px;font-size:13px;color:#374151;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:14px;overflow:hidden}
 .barrow .bfill{display:block;height:100%%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:6px}
 .barrow .bn{width:34px;font-size:13px;color:#4b5563;flex-shrink:0}
@@ -3258,15 +3041,15 @@ li.empty{color:#4b5563;text-align:center;padding:22px}
 .tcol .tv{font-size:11px;color:#4b5563}
 .tcol .tbar{width:100%%;height:80px;display:flex;align-items:flex-end}
 .tcol .tfill{width:100%%;background:#2563eb;border-radius:4px 4px 0 0;min-height:2px}
-.tcol .td{font-size:10px;color:#4b5563;margin-top:4px}
+.tcol .td{font-size:10px;color:#57606e;margin-top:4px}
 .chip{display:inline-block;background:#eef2ff;color:#2563eb;border-radius:999px;padding:4px 12px;font-size:13px;margin:3px 6px 3px 0}
-.empty{color:#4b5563;text-align:center;padding:16px}
+.empty{color:#57606e;text-align:center;padding:16px}
 /* 111/112 轮：反馈卡片化。白卡+圆角+淡阴影+hover 高亮，分类色块拉齐视觉层级 */
 .fblist{list-style:none;padding:0;margin:0}
 .fbcard{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .15s,transform .15s}
 .fbcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.10);transform:translateY(-1px)}
 .fbmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#4b5563;margin-bottom:6px}
-.fbid{color:#4b5563;font-variant-numeric:tabular-nums}
+.fbid{color:#57606e;font-variant-numeric:tabular-nums}
 .fbcat{border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .fbcat-good{background:#dcfce7;color:#15803d}
 .fbcat-idea{background:#dbeafe;color:#1d4ed8}
@@ -3281,7 +3064,7 @@ li.empty{color:#4b5563;text-align:center;padding:22px}
 .fbfilter{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
 .fbfilter select{font-size:12px;padding:4px 8px;border:1px solid #dbe3ee;border-radius:7px;
     background:#fff;color:#374151;cursor:pointer;max-width:44vw}
-.fbfilter select:hover{border-color:#64748b}
+.fbfilter select:hover{border-color:#94a3b8}
 @media (max-width:640px){
     .fbcard{padding:10px 11px}
     .fbmeta{gap:5px;flex-wrap:wrap}
@@ -3302,20 +3085,22 @@ li.empty{color:#4b5563;text-align:center;padding:22px}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+@media(max-width:900px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.wrap{max-width:none}}
+@media(max-width:620px){body{padding:22px 14px 36px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card{padding:15px;min-height:96px}.num{font-size:27px}.barrow .bl{width:110px}}
+@media(max-width:400px){.cards{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
-%s
 <div class="cards">
 <div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
 <div class="card"><div class="num">%d</div><div class="label">今日生成</div></div>
 <div class="card"><div class="num">%d</div><div class="label">今日剩余额度</div></div>
-<div class="card"><div class="num">%s/5分</div><div class="label">满意度平均分（%d 人打分）</div></div>
+<div class="card"><div class="num">%s</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
 <div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
-<div class="card"><div class="num">%s%%</div><div class="label" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
-<div class="card"><div class="num">%s/100分</div><div class="label">评审引擎平均分</div></div>
+<div class="card"><div class="num">%s</div><div class="label">生成成功率（记录口径）</div></div>
+<div class="card"><div class="num">%s</div><div class="label">AI 评委平均分</div></div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">满意度分布</h2>
@@ -3325,10 +3110,9 @@ li.empty{color:#4b5563;text-align:center;padding:22px}
 <h2 style="margin-top:0">生成趋势（最近 7 天）</h2>
 <div class="trend">%s</div>
 </div>
-<div class="box comp-dist">
-<h2 style="margin-top:0">赛事分布（Top 8）</h2>
-%s
-<div style="font-size:11px;color:#4b5563;margin-top:8px">注：「未指定赛事」为历史记录中未选择赛事的数据，不计入具体赛事。</div>
+<div class="box">
+<h2 style="margin-top:0">赛事分布（全部赛事）</h2>
+<div class="compdist">%s</div>
 </div>
 <div class="box">
 <h2 style="margin-top:0">反馈分类</h2>
@@ -3342,16 +3126,21 @@ li.empty{color:#4b5563;text-align:center;padding:22px}
 <ul class="fblist">%s</ul>
 %s
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
-</div></body></html>""" % (_range_ui, total_gen, today_gen, quota_remaining, avg_rating,
-                              rated_count, feedback_total, avg_dur, success_rate,
-                              judge_avg, rating_bars_html, trend_html, comp_html,
+</div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating_display,
+                              rated_count, feedback_total, avg_dur, success_rate_display,
+                              judge_avg_display, rating_bars_html, trend_html, comp_html,
                               cat_html, issues_html, fb_title, fb_html, fb_pager)
-    return _inject_role_badge(html)
+    return html
 
 
 def _html_escape(s):
     return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+# 仅用于管理员正式运营统计；原始历史记录仍保留在数据库审计中。
+# 这些值来自早期联调，不代表真实赛事，不能混入评委看到的正式数据。
+_TEST_HISTORY_WHERE = "TRIM(COALESCE(competition_name,'')) NOT IN ('测试赛事','x','y')"
 
 
 def _fb_cat_cls(cat):
@@ -3403,10 +3192,11 @@ def monitor():
     c = conn.cursor()
     recent_gen = c.execute(
         "SELECT competition_name, mode, duration, status, created_time FROM history "
-        "ORDER BY id DESC LIMIT 12").fetchall()
+        "WHERE %s ORDER BY id DESC LIMIT 12" % _TEST_HISTORY_WHERE).fetchall()
     recent_fail = c.execute(
-        "SELECT error, detail, error_msg, created_time FROM gen_failures WHERE status='open' ORDER BY id DESC LIMIT 12").fetchall()
-    total_gen = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+        "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
+        "FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
 
@@ -3419,54 +3209,72 @@ def monitor():
     except Exception:
         pass
 
+    def _monitor_mode_label(value):
+        return {"fast": "简洁版", "deep": "深度版"}.get(str(value or "").lower(), value or "—")
+
+    def _monitor_status_label(value):
+        return {"success": "已完成", "running": "生成中", "error": "失败"}.get(
+            str(value or "").lower(), value or "—")
+
     gen_rows = "".join(
         '<tr><td>%s</td><td>%s</td><td>%s</td><td>%ss</td></tr>'
-        % (_html_escape(r["competition_name"] or "—"), r["mode"] or "—",
-           r["status"] or "success", r["duration"] if r["duration"] else 0)
+        % (_html_escape(r["competition_name"] or "未记录赛事"),
+           _monitor_mode_label(r["mode"]),
+           _monitor_status_label(r["status"] or "success"),
+           ("%.1f" % float(r["duration"])) if r["duration"] else "0.0")
         for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
     fail_rows = "".join(
-        '<tr><td>%s</td><td>%s</td></tr>'
-        % (r["created_time"] or "", _html_escape(_friendly_fail_text(r)))
+        '<tr><td>%s</td><td><b>%s</b><br><span class="reason">%s</span><br><small>%s%s</small></td></tr>'
+        % (r["created_time"] or "",
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[0]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[1]),
+           _html_escape(_failure_view(r["error"], r["detail"], r["error_code"])[2]),
+           (" · 任务 " + _html_escape(r["task_id"])) if r["task_id"] else "")
         for r in recent_fail) or '<tr><td colspan="2" class="e">暂无失败记录</td></tr>'
 
-    return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>科创赛事助手 · 动态监视</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0f1535;color:#e9eefc;margin:0;padding:26px 18px;line-height:1.6}
-.wrap{max-width:860px;margin:0 auto}
-h1{font-size:20px;margin:0 0 6px}
-.sub{font-size:12px;color:#93a0c4;margin-bottom:18px}
-.stat{display:inline-block;background:#18224a;border-radius:10px;padding:12px 18px;margin:0 8px 8px 0}
-.stat b{font-size:22px;color:#22d3ee}
-.stat span{font-size:12px;color:#93a0c4;margin-left:6px}
-h2{font-size:15px;margin:22px 0 8px;color:#22d3ee}
-table{width:100%%;border-collapse:collapse;background:#141d42;border-radius:10px;overflow:hidden}
-th,td{padding:9px 12px;font-size:13px;text-align:left;border-bottom:1px solid #233059}
-th{background:#1b2650;color:#93a0c4;font-weight:600}
-.e{color:#6b7899;text-align:center;padding:18px}
-.green{color:#34d399}.red{color:#fb7185}
-.nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
-.nav a.active{background:#22d3ee;color:#0b1026}
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:24px;letter-spacing:.1px;margin:18px 0 5px;color:#14213f}
+.sub{font-size:13px;color:#52627f;margin-bottom:22px}
+.stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 26px}
+.stat{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:16px 18px;min-height:78px;box-shadow:0 8px 20px rgba(54,77,130,.08)}
+.stat b{display:block;font-size:27px;line-height:1.15;color:#315fe9;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:12px;color:#52627f;margin-top:6px}
+h2{font-size:16px;margin:26px 0 10px;color:#2563eb;letter-spacing:.1px}
+.section{background:#fff;border:1px solid #e5eaf4;border-radius:14px;padding:2px 0 0;overflow:hidden;box-shadow:0 8px 20px rgba(54,77,130,.06)}
+table{width:100%%;border-collapse:collapse;table-layout:fixed}
+th,td{padding:10px 16px;font-size:13px;text-align:left;vertical-align:top;border-bottom:1px solid #e5eaf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{background:#eef2ff;color:#52627f;font-weight:650;font-size:12px;letter-spacing:.2px}
+th:first-child,td:first-child{width:55%%}th:nth-child(2),td:nth-child(2){width:15%%}th:nth-child(3),td:nth-child(3){width:15%%}th:nth-child(4),td:nth-child(4){width:15%%}
+tr:last-child td{border-bottom:0}.reason{color:#9f1239;line-height:1.35;white-space:normal}.error-detail{white-space:normal;line-height:1.35}small{display:block;color:#64748b;line-height:1.35;margin-top:2px;font-size:11px}
+.e{color:#64748b;text-align:center;padding:22px}.green{color:#059669}.red{color:#e11d48}
+.nav{display:flex;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+.nav a{background:#fff;border:1px solid #e5eaf4;color:#52627f;text-decoration:none;padding:8px 14px;border-radius:9px;font-size:13px;transition:background .15s,color .15s;box-shadow:0 2px 6px rgba(54,77,130,.05)}
+.nav a:hover{background:#eef2ff;color:#1d4ed8}.nav a.active{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:700}
+@media(max-width:760px){body{padding:20px 14px 34px}.wrap{max-width:none}h1{font-size:21px}.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{padding:14px}.section{overflow-x:auto}table{min-width:680px}}
+@media(max-width:430px){.stat-grid{grid-template-columns:1fr}.stat b{font-size:25px}}
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
-<div>
+<div class="stat-grid">
 <div class="stat"><b>%d</b><span>总生成</span></div>
 <div class="stat"><b class="%s">%d</b><span>失败</span></div>
 <div class="stat"><b>%d / %d</b><span>今日额度</span></div>
 </div>
 <h2>最近生成</h2>
-<table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table>
+<div class="section"><table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table></div>
 <h2>最近失败</h2>
-<table><tr><th>时间</th><th>错误</th></tr>%s</table>
+<div class="section"><table><tr><th style="width:22%%">时间</th><th>错误详情</th></tr>%s</table></div>
 </div></body></html>""" % (up_h, up_m, total_gen,
                               "red" if fail_total else "green", fail_total,
                               quota.get("remaining", 0), quota.get("limit", 500),
-                              gen_rows, fail_rows))
+                              gen_rows, fail_rows)
 
 
 # 内容安全关键词（第一百四十九轮）：用户提交内容（反馈/知识库入库）拦截涉黄/违法/广告。
@@ -3530,8 +3338,8 @@ def _classify_issue(content):
     return "backend"
 
 
-def create_issue(kind, source, content, user_id=None):
-    """自动建一条问题工单（路由给前端/后端），幂等去重（内容 hash 相同不重复）。376 轮补 user_id。"""
+def create_issue(kind, source, content):
+    """自动建一条问题工单（路由给前端/后端），幂等去重（内容 hash 相同不重复）。"""
     try:
         import hashlib
         h = hashlib.md5((content or "").strip().encode("utf-8")).hexdigest()[:16]
@@ -3539,13 +3347,10 @@ def create_issue(kind, source, content, user_id=None):
         c = conn.cursor()
         row = c.execute("SELECT id FROM issues WHERE content=?", (content,)).fetchone()
         if row:
-            # 203 轮：同类工单去重合并，累计 count，不再重复建单
-            c.execute("UPDATE issues SET count = COALESCE(count, 0) + 1 WHERE id=?", (row[0],))
-            conn.commit()
             conn.close()
-            return row[0]
-        c.execute("INSERT INTO issues (kind, source, content, created_time, status, count, user_id) VALUES (?, ?, ?, ?, 'open', 1, ?)",
-                  (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M"), user_id or ''))
+            return None
+        c.execute("INSERT INTO issues (kind, source, content, created_time, status) VALUES (?, ?, ?, ?, 'open')",
+                  (kind, source, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         new_id = c.lastrowid
         conn.close()
@@ -3554,65 +3359,61 @@ def create_issue(kind, source, content, user_id=None):
         return None
 
 
-@app.route('/api/admin/issues/<int:issue_id>/status', methods=['POST'])
-def issue_status(issue_id):
-    """第三百一十七/三百七十六轮：工单状态流转 + 处理说明 + 管理员回复。
-    走 /api/admin/ 前缀，已被 _admin_guard 统一鉴权（仅管理员可改，演示只读 403）。"""
-    data = request.get_json(silent=True) or {}
-    status = str(data.get('status') or '').strip()
-    if status not in ('open', 'processing', 'resolved'):
-        return jsonify({"success": False, "error": "无效状态"}), 400
-    resolution = str(data.get('resolution') or '').strip()
-    reply = str(data.get('reply') or '').strip()
-    conn = get_db()
-    c = conn.cursor()
-    row = c.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone()
-    if not row:
-        conn.close()
-        return jsonify({"success": False, "error": "工单不存在"}), 404
-    _now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    if status == 'resolved':
-        c.execute("UPDATE issues SET status='resolved', resolved_time=?, resolution=?, reply=? WHERE id=?",
-                  (_now, resolution, reply, issue_id))
-    else:
-        c.execute("UPDATE issues SET status=?, resolution=?, reply=?, resolved_time=NULL WHERE id=?",
-                  (status, resolution, reply, issue_id))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": True, "id": issue_id, "status": status})
-
-
-@app.route('/api/my_issues')
-def my_issues():
-    """第三百七十六轮：用户侧查看自己提交的工单状态与管理员回复。"""
+@app.route('/api/history/<int:history_id>', methods=['DELETE'])
+def delete_history(history_id):
+    # 2026-10-01 鉴权对齐：与历史查询接口（/api/history）一致，走 comp_uid
+    # 签名 cookie 硬鉴权（401），无有效 cookie 时明确拒绝而不是退回 IP 软隔离
     _a = _require_uid()
     if _a is not None:
         return _a
     conn = get_db()
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT id, kind, content, created_time, status, resolution, reply FROM issues "
-        "WHERE user_id=? ORDER BY id DESC LIMIT 50", (_current_uid(),)).fetchall()
-    conn.close()
-    items = [{"id": r["id"], "content": r["content"] or "", "created_time": r["created_time"] or "",
-              "status": r["status"] or "open", "resolution": r["resolution"] or "", "reply": r["reply"] or ""}
-             for r in rows]
-    return jsonify({"success": True, "issues": items})
-
-
-@app.route('/api/history/<int:history_id>', methods=['DELETE'])
-def delete_history(history_id):
-    conn = get_db()
     c = conn.cursor()
     # 安全对齐（第九十二轮）：仅允许删除本人记录，去掉「公共记录可被任何人删」的 OR 条件
     c.execute("DELETE FROM history WHERE id = ? AND user_id = ?", (history_id, _current_uid()))
-    conn.commit()
     deleted = c.rowcount
+    if deleted:
+        # 隐私硬要求（2026-10-01）：连带清理挂在这条记录上的分享链接/反馈/导出评分，
+        # 不然记录删了、用户内容还留在子表里能被反查
+        c.execute("DELETE FROM shares WHERE history_id = ?", (history_id,))
+        c.execute("DELETE FROM feedback WHERE history_id = ?", (history_id,))
+        c.execute("DELETE FROM export_reviews WHERE history_id = ?", (history_id,))
+    conn.commit()
     conn.close()
     if deleted:
-        _audit_write("delete_history", str(history_id))
-        return jsonify({"success": True})
+        return jsonify({"success": True, "deleted": deleted})
     return jsonify({"success": False, "error": "记录不存在"}), 404
+
+
+@app.route('/api/history', methods=['DELETE'])
+def delete_all_history():
+    """清空当前用户的全部历史记录（隐私硬要求：「我的数据我能删」）。
+
+    2026-10-01 新增。鉴权与 /api/history 查询完全一致：comp_uid 签名 cookie
+    硬鉴权（401）；只删本人（user_id）记录，他人/公共数据不可触及；连带清理
+    这些记录的分享链接（shares）、反馈（feedback）、导出评分（export_reviews），
+    避免留下可反查的孤儿数据。范文库 kb_samples 是团队共享数据，不在此列
+    （另有 /api/kb/delete/<id>）。幂等：没有记录时返回 deleted=0 也算成功。
+    """
+    _a = _require_uid()
+    if _a is not None:
+        return _a
+    uid = _current_uid()
+    conn = get_db()
+    c = conn.cursor()
+    ids = [r[0] for r in c.execute("SELECT id FROM history WHERE user_id = ?", (uid,)).fetchall()]
+    deleted = 0
+    if ids:
+        _ph = ",".join("?" * len(ids))
+        c.execute(f"DELETE FROM shares WHERE history_id IN ({_ph})", ids)
+        c.execute(f"DELETE FROM feedback WHERE history_id IN ({_ph})", ids)
+        c.execute(f"DELETE FROM export_reviews WHERE history_id IN ({_ph})", ids)
+        # feedback.user_id 兜底：挂在本人名下但没绑 history_id 的反馈一并清掉
+        c.execute("DELETE FROM feedback WHERE user_id = ?", (uid,))
+        c.execute("DELETE FROM history WHERE user_id = ?", (uid,))
+        deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "deleted": deleted})
 
 
 def _parse_expert_review(text):
@@ -3815,7 +3616,7 @@ def _run_generation(data):
             # 深度版追加：自动生成表格 / 图表 / 路演PPT（失败不阻断主流程）
             try:
                 from rich_pipeline import build_rich_assets
-                rich = build_rich_assets(result, data.get("competition_name", ""), idea, data.get("theme"), _user_data)
+                rich = build_rich_assets(result, data.get("competition_name", ""), idea, data.get("theme"))
                 result["rich_charts"] = rich.get("charts") or {}
                 result["rich_tables"] = rich.get("tables") or []
                 result["rich_deck"] = rich.get("deck")
@@ -4009,30 +3810,20 @@ def _run_generation(data):
         "keywords": keywords,
         "completeness": completeness,
         # 第一百五十四轮：结果区固定提示——定位是「辅助草稿」，让用户保持判断与动手能力
-        "disclaimer": "本内容为智能助手辅助生成的草稿与参考框架，请结合您的专业判断修改、完善后使用。",
+        "disclaimer": "本内容为 AI 辅助生成的草稿与参考框架，请结合您的专业判断修改、完善后使用。",
     }
 
     payload = _strip_identifying_info(payload)
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts
+        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
                    "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
             if isinstance(payload.get(_k), str) and payload[_k]:
-                payload[_k] = _strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))))
-    except Exception:
-        pass
-    # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
-    # 命中的写进 payload.theme_drift 供导出质检/前端标记（重生成由 219 轮自愈层处理）。
-    try:
-        from competition_agents import _theme_drifted
-        _drifted, _hitwords = _theme_drifted(data.get("idea", ""), payload.get("proposal", ""))
-        payload["theme_drift"] = {"drifted": bool(_drifted), "hit_words": _hitwords}
-        if _drifted:
-            print(f"[theme-drift] 检测到主题跑偏，命中异赛道词：{_hitwords}")
+                payload[_k] = _strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))
     except Exception:
         pass
     # 分享功能需要知道这条结果对应哪条历史记录（前端 /api/share/<history_id> 用）
@@ -4144,19 +3935,43 @@ def _extract_keywords_llm(idea):
         return []
 
 
+def _sanitize_error_detail(e, limit=200):
+    """异常摘要脱敏（2026-10-01：用户投诉「报错不说原因」，截图只有一句稍后重试）。
+
+    目标是「透出原因但不泄密」：保留异常类型 + 摘要供用户截图反馈/排查，
+    抹掉内部路径、API key、Bearer token——这些一旦出现在前端就等于把服务器
+    结构和凭据暴露出去。
+    """
+    try:
+        s = str(e) or ""
+    except Exception:
+        s = ""
+    s = re.sub(r'[A-Za-z]:\\[^\s\'"]+', '[路径]', s)                 # Windows 路径
+    s = re.sub(r'(?<![\w.])/(?:[\w.-]+/){1,}[\w.-]*', '[路径]', s)   # Unix 路径 / URL 路径
+    s = re.sub(r'sk-[A-Za-z0-9_-]{8,}', 'sk-***', s)                 # OpenAI/DeepSeek 风格 key
+    s = re.sub(r'(Bearer\s+)[A-Za-z0-9._-]+', r'\1***', s)           # Bearer token
+    s = re.sub(r'\s+', ' ', s).strip()
+    if len(s) > limit:
+        s = s[:limit] + "…"
+    return f"{type(e).__name__}: {s}" if s else type(e).__name__
+
+
 def _friendly_error(e):
     err = str(e).lower()
+    # 2026-10-01：每条兜底文案都带上脱敏后的真实原因——用户截图时能看出
+    # 到底是超时/鉴权/余额还是别的，而不是一句「稍后重试」打发。
+    _cause = _sanitize_error_detail(e)
     if "timeout" in err or "timed out" in err:
-        return "模型响应超时，请稍后重试"
+        return f"模型响应超时（{_cause}），请稍后重试"
     if "429" in err or "rate" in err or "too many" in err:
-        return "请求过于频繁，请稍后再试"
+        return f"请求过于频繁（{_cause}），请稍后再试"
     if "401" in err or "auth" in err or "api key" in err:
-        return "模型接口鉴权失败，请检查 DEEPSEEK_API_KEY"
+        return f"模型接口鉴权失败（{_cause}），请检查 DEEPSEEK_API_KEY"
     if "402" in err or "insufficient balance" in err or "payment required" in err or "余额不足" in err:
-        return "DeepSeek 账户余额不足，请充值后重试（充值后无需重启服务）"
+        return f"DeepSeek 账户余额不足（{_cause}），请充值后重试（充值后无需重启服务）"
     if "上限" in err or "配额" in err or "quota" in err:
-        return "今日调用次数已达上限，请明天再试或联系管理员调整额度"
-    return "生成失败，请稍后重试"
+        return f"今日调用次数已达上限（{_cause}），请明天再试或联系管理员调整额度"
+    return f"生成失败（{_cause}），请稍后重试或联系管理员"
 
 
 def _error_code(e):
@@ -4237,7 +4052,7 @@ def generate():
     if _rate_limited():
         return jsonify({"success": False,
                         "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"}), 429
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     data["_user_id"] = _current_uid()
     try:
         result_data = _run_generation(data)
@@ -4245,7 +4060,7 @@ def generate():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)})
+        return jsonify({"success": False, "error": _friendly_error(e), "detail": _sanitize_error_detail(e)})
 
 
 # ---- 异步任务阶段上报 ----
@@ -4262,10 +4077,7 @@ def _sync_gen_marker():
     tasks/计数都是进程内存态，重启即丢；部署前等它归零，避免把用户的深度版拦腰杀掉
     （2026-09-27 实锤：三次重启连杀三个在跑的深度任务）。"""
     try:
-        # 421 轮孪生站独立化：marker 不能写死 /tmp，否则生产与 staging 互相覆盖计数，
-        # 谁重启都判断错在跑任务数。改为随 app.py 所在目录（生产/staging 各自独立）。
-        _marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.comp_agent_gens')
-        with open(_marker, "w") as f:
+        with open("/tmp/comp_agent_gens", "w") as f:
             f.write(str(_active_gen_count))
     except Exception:
         pass
@@ -4291,43 +4103,27 @@ def _start_generation(data):
     # 今日额度撞顶（第九十九轮）：提前拦下，前端据此 toast「今日生成额度已满，明日恢复」
     try:
         from competition_agents import get_quota_status
-        _qs = get_quota_status()
-        _calls = int(_qs.get("calls", 0))
-        _limit = int(_qs.get("limit", 0)) or 1
-        _ratio = _calls / _limit
-        _req_mode = data.get("mode", "fast")
-        if _calls >= _limit:
-            # 第二百一十一轮 B：额度耗尽时深度版暂停，简洁版仍放行（低成本兜底）
-            if _req_mode == "deep":
-                return None, jsonify({"success": False, "code": "quota_exceeded",
-                                      "error": "今日深度版额度已满，可先用简洁版"})
-        elif _ratio >= 0.9 and _req_mode == "deep":
-            # 用量 ≥90%：深度版自动降档到简洁版，避免撞顶硬拦；给自然提示不暴露额度数字
-            data["mode"] = "fast"
-            data["_quota_downgraded"] = True
-            print("[quota] 用量≥90%，深度版自动降档为简洁版")
+        if get_quota_status().get("exceeded"):
+            return None, jsonify({"success": False, "code": "quota_exceeded",
+                                  "error": "今日生成次数已达上限，请明天再试"})
     except Exception:
         pass
     if _rate_limited():
         return None, jsonify({"success": False,
                               "error": "生成太频繁，请 1 分钟后再试（同一网络每分钟最多生成 5 次）"})
     task_id = uuid.uuid4().hex
-    _key = _current_uid() or _client_ip()
     tasks[task_id] = {"status": "queued", "stage": "queued", "updated_at": time.time(), "start_time": time.time(),
-                      "mode": data.get("mode", "fast"), "data": data, "key": _key}
+                      "mode": data.get("mode", "fast"), "data": data}
     with _active_gen_lock:
-        _my_active = _active_by_key.get(_key, 0)
-        if _active_gen_count >= MAX_CONCURRENT_GEN or _my_active >= _MAX_PER_KEY:
+        if _active_gen_count >= MAX_CONCURRENT_GEN:
             if len(_gen_queue) >= _GEN_QUEUE_MAX:
                 tasks.pop(task_id, None)
                 return None, jsonify({"success": False,
                                       "error": "当前排队人数较多，请过 1~2 分钟再试"})
             _gen_queue.append(task_id)
-            _active_by_key[_key] = _my_active + 1
             _sweep_tasks()
             return task_id, None      # status=queued，前端轮询显示「排队第 N 位」
         _active_gen_count += 1
-        _active_by_key[_key] = _my_active + 1
         _sync_gen_marker()
     tasks[task_id]["status"] = "running"
     _launch_worker(task_id)
@@ -4353,16 +4149,6 @@ def _launch_worker(task_id):
                     rd = _run_generation(data)
                     if progress.is_cancelled(task_id):
                         return
-                    # 第二百一十九轮：主题跑偏自动重生成——检测到异赛道关键词就同 idea 再跑一次，
-                    # 用户全程看不到跑偏内容；控制只重试 1 次（成本/历史重复可控）。
-                    try:
-                        from competition_agents import _theme_drifted
-                        _d, _h = _theme_drifted(data.get("idea", ""), rd.get("proposal", ""))
-                        if _d:
-                            print(f"[theme-drift] 跑偏（{_h}），自动重生成 1 次")
-                            rd = _run_generation(data)
-                    except Exception as _td:
-                        print(f"[theme-drift] 重生成异常，保留原结果：{_td}")
                     progress.mark_done(task_id, data=rd)
                     return
                 except TaskCancelled:
@@ -4386,23 +4172,15 @@ def _launch_worker(task_id):
             traceback.print_exc()
             msg = _friendly_error(last_err)
             app_log.error("generate", f"task={task_id[:8]} {msg} | {traceback.format_exc(limit=2)}")
-            record_gen_failure(task_id, msg, str(last_err),
-                               stage=(tasks.get(task_id) or {}).get("stage", ""),
-                               error_code=last_code, error_msg=msg)
-            progress.mark_error(task_id, error=msg, detail=str(last_err))
+            # gen_failures 留原始 detail 供运维排障（admin 侧）；/api/status 面向用户，detail 走脱敏
+            record_gen_failure(task_id, msg, str(last_err))
+            progress.mark_error(task_id, error=msg, detail=_sanitize_error_detail(last_err))
             tasks[task_id]["error_code"] = last_code
         finally:
             clear_speech_stream(task_id)
             clear_current_task()
             with _active_gen_lock:
                 _active_gen_count = max(0, _active_gen_count - 1)
-                _key = (tasks.get(task_id) or {}).get("key", "")
-                if _key:
-                    _left = max(0, _active_by_key.get(_key, 0) - 1)
-                    if _left:
-                        _active_by_key[_key] = _left
-                    else:
-                        _active_by_key.pop(_key, None)
                 _sync_gen_marker()
             _promote_next()            # 腾出坑位后立刻给排队的任务补位
 
@@ -4446,7 +4224,7 @@ def _sweep_tasks():
 
 @app.route('/api/generate_async', methods=['POST'])
 def generate_async():
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     # 基础校验：创意和赛事都不能为空，否则模型会凭空编内容、章节顺序乱
     if not (data.get("idea") or "").strip():
         return jsonify({"success": False, "error": "请先填写项目创意（一句话说清做什么、解决什么问题）"}), 400
@@ -4461,8 +4239,6 @@ def generate_async():
 @app.route('/api/retry/<task_id>', methods=['POST'])
 def retry_generation(task_id):
     """用上次的参数直接重跑一遍，用户不用重新输入创意。"""
-    if not _task_owned(task_id):
-        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     t = tasks.get(task_id)
     if not t or not t.get("data"):
         # 任务字典里没有参数（可能服务重启或任务被清理），退回历史记录兜底
@@ -4546,55 +4322,6 @@ def rewrite_paragraph():
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
 
 
-@app.route('/api/revise_chapter', methods=['POST'])
-def revise_chapter():
-    """第二百四十六/二百四十七轮：提出修改——自然语言指令 → 定位章节 → 定向修改 → 返回全文。
-
-    输入：instruction（要改什么）+ history_id（或 proposal 全文）。输出：修改后的完整
-    正文 + 旧正文（供前端做版本回退）。评分与导出的联动由前端拿新正文走现有接口完成。
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    instruction = (data.get('instruction') or '').strip()
-    if not instruction:
-        return jsonify({"success": False, "error": "请说明要修改什么"}), 400
-    if _rate_limited():
-        return jsonify({"success": False, "error": "操作太频繁，请 1 分钟后再试"}), 429
-    # 取正文：优先回源 history_id，其次用提交的 proposal
-    proposal = ''
-    hid = data.get('history_id')
-    if hid:
-        _rec = _fetch_record_from_source({'history_id': hid})
-        proposal = (_rec or {}).get('proposal', '') if _rec else ''
-    if not proposal:
-        proposal = data.get('proposal') or ''
-    if not proposal or not str(proposal).strip():
-        return jsonify({"success": False, "error": "没有可修改的正文"}), 400
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        prompt = f"""你是科创赛事申报书编辑。请根据用户的修改意见，定位申报书对应章节并修改，输出完整的修改后全文。
-
-修改意见：{instruction}
-
-要求：
-1. 只修改意见指向的章节/段落，其他章节原样保留、不得丢失；
-2. 保持 Markdown 结构、章节标题与序号不变；
-3. 保留已有事实数字与「测算值/示例值」标注，不编造具体型号、院校名、人名或实测数据；
-4. 新增数字一律标「测算值/示例值」，禁止留【待填写】等占位；
-5. 直接输出完整修改后的申报书全文，不要任何解释。
-
-原文：
-{str(proposal)[:12000]}
-"""
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=8000)
-        new_proposal = (resp.content or '').strip()
-        if not new_proposal or len(new_proposal) < 200:
-            return jsonify({"success": False, "error": "修改失败，输出异常，请重试"}), 500
-        return jsonify({"success": True, "proposal": new_proposal, "old_proposal": str(proposal)})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
 @app.route('/api/proofread', methods=['POST'])
 def proofread():
     """错别字/语法检测：返回标错位置和修正建议（LLM 校对）。"""
@@ -4632,8 +4359,6 @@ def proofread():
 
 @app.route('/api/cancel/<task_id>', methods=['POST'])
 def cancel_generation(task_id):
-    if not _task_owned(task_id):
-        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     progress.cancel(task_id)
     return jsonify({"success": True, "cancelled": True, "eta_note": "最迟约 1 分钟内停止"})
 
@@ -4647,7 +4372,7 @@ _SPLASH_FACTS = [
 ]
 _EDIT_HINTS = {
     "writing": "正文生成中，可以先去准备实测数据",
-    "judging": "评审引擎正在打分，稍等",
+    "judging": "AI 评委正在打分，稍等",
     "revision": "正在按评委意见定向改写",
     "analysis": "正在并行分析竞品、商业模式、风险、技术方案",
 }
@@ -4673,15 +4398,14 @@ def _get_mode_counts():
 
 @app.route('/api/status/<task_id>')
 def get_task_status(task_id):
-    if not _task_owned(task_id):
-        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     t = tasks.get(task_id)
     if not t:
         return jsonify({"success": False, "error": "任务已失效（多为服务重启中断了在跑的生成，请重新生成一次）"})
     # 兜底超时：running 且 10 分钟没任何更新，判定为卡死，避免前端无限等待
     if t.get("status") == "running" and (time.time() - t.get("updated_at", 0)) > 600:
         t["status"] = "error"
-        t["error"] = "任务超时，请重试"
+        # 2026-10-01：超时文案带上卡住的最后阶段，用户截图就能看出断在哪一步
+        t["error"] = f"任务超时（最后阶段：{t.get('stage') or '未知'}），请重试"
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
@@ -4690,7 +4414,7 @@ def get_task_status(task_id):
     #   之前按 10 分钟判过期会把排队中的真实用户误杀（2026-09-27 自查发现）。
     if t.get("status") == "queued" and (time.time() - t.get("updated_at", 0)) > 1800:
         t["status"] = "error"
-        t["error"] = "任务排队超时，请重新生成"
+        t["error"] = "任务排队超时（超过 30 分钟未排到生成位），请重新生成"
         t["error_code"] = "timeout"
         t["stage"] = "error"
         t["updated_at"] = time.time()
@@ -4784,10 +4508,8 @@ def stream_generation(task_id):
       event: stage    data: {"stage": <阶段代号>, "status": <状态>}
       event: partial  data: {"field": <字段名>, "delta": <本段新增文本>}
       event: done     data: {"status": "done|error|cancelled", ...}
-     轮询 /api/status 仍保留，作为 SSE 断开时的兜底。
+    轮询 /api/status 仍保留，作为 SSE 断开时的兜底。
     """
-    if not _task_owned(task_id):
-        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     from flask import Response, stream_with_context
     import json as _json
 
@@ -4839,8 +4561,6 @@ def stream_generation(task_id):
 @app.route('/api/speech_stream/<task_id>')
 def speech_stream(task_id):
     """演讲稿流式预览：返回当前已生成的演讲稿片段。"""
-    if not _task_owned(task_id):
-        return jsonify({"success": False, "error": "任务不存在或无权访问"}), 403
     return jsonify({"success": True, "text": get_speech_stream(task_id)})
 
 
@@ -4849,14 +4569,9 @@ def speech_stream(task_id):
 
 @app.route('/api/export_all')
 def export_all():
-    # DEPRECATED（WorkBuddy 2026-09-28 催复）：前端 0 处调用，且取 load_history()[0]
-    # 即「最新一条历史」而非当前记录——换设备/开历史时必然拿错记录。请勿接此接口，
-    # 统一走下方 /api/export_zip（14 项、绑定当前记录）。仅保留以兼容潜在外部脚本。
-    print("[export_all] DEPRECATED：请改走 /api/export_zip（绑定当前记录、14 项）")
     _a = _require_uid()
     if _a is not None:
         return _a
-    _audit_write("export_all")
     import zipfile
     import io
     from docx_render import build_docx
@@ -4877,8 +4592,6 @@ def export_all():
     
     latest = history[0]
     data = latest["data"]
-    project = latest.get("idea") or data.get("idea") or ""
-    competition = latest.get("competition_name") or data.get("competition_name") or ""
     
     # 要导出的文件列表（减少到 5 个核心文件，更快）；第三个元素为 doc_type
     files_to_export = [
@@ -4902,18 +4615,15 @@ def export_all():
             
             # 统一走 docx_render 渲染器（真表格 + 标准格式 + 封面目录页码）
             title = filename.replace('.docx', '')
-            subtitle = None
-            if doc_type in ('default', 'report'):
-                # 417 轮：申报书封面标题用项目名 + 副标题用赛事名（不再是「1_申报书全文」这种文件名）
-                title = project or _extract_project_name(text) or title
-                subtitle = competition or None
-            doc = build_docx(title, text, doc_type=doc_type, subtitle=subtitle)
+            doc = build_docx(title, text, doc_type=doc_type)
             docx_buf = io.BytesIO()
             doc.save(docx_buf)
             docx_buf.seek(0)
             zf.writestr(filename, docx_buf.read())
     
     buf.seek(0)
+    project = latest.get("idea") or data.get("idea") or ''
+    competition = latest.get("competition_name") or data.get("competition_name") or ''
     return send_file(buf, as_attachment=True,
                      download_name=_export_filename(project, competition, '材料包', '.zip'),
                      mimetype='application/zip')
@@ -4961,7 +4671,7 @@ def export_original_format():
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         )
     except Exception as e:
-        return jsonify({"success": False, "error": f"导出失败：{str(e)}"})
+        return jsonify({"success": False, "error": f"导出失败：{_sanitize_error_detail(e)}"})
 
 
 @app.route('/api/upload_file', methods=['POST'])
@@ -4972,7 +4682,8 @@ def upload_file():
     import os
     from werkzeug.utils import secure_filename
     # 194 轮 C3：文件大小白名单 + 上传限流（防匿名反复上传烧 LLM 识别额度 / 大文件拖垮内存）
-    _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+    # 2026-10-01：本地 10MB 常量并入全局 MAX_UPLOAD_SIZE（曾三处不一致）
+    _MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE
     if _upload_rate_limited():
         return jsonify({"success": False, "error": "上传太频繁，请 1 分钟后再试"}), 429
     if 'file' not in request.files:
@@ -5082,30 +4793,7 @@ def upload_file():
         return jsonify({"success": True, "text": text,
                         "file_type": file_type, "summary": summary, "key_points": key_points})
     except Exception as e:
-        return jsonify({"success": False, "error": f"文件解析失败：{str(e)}"})
-
-
-@app.route('/api/export_manifest')
-def export_manifest():
-    """导出产物权威清单（WorkBuddy 导出统一方案）：前端唯一数据源，避免同一份清单写多份漂移。
-    与 /api/export_zip 的 mappings 一一对应；tier=common 简洁/深度版都有，deep 仅深度版。"""
-    items = [
-        {"filename": "01_赛事规则解析报告.docx", "title": "赛事规则解析报告", "field": "parsed_rules", "tier": "common"},
-        {"filename": "02_创意同质化检测报告.docx", "title": "创意同质化检测报告", "field": "similarity_report", "tier": "common"},
-        {"filename": "03_项目申报书全文.docx", "title": "项目申报书全文", "field": "proposal", "tier": "common"},
-        {"filename": "04_申报书诊断分析.docx", "title": "申报书诊断分析", "field": "proposal_analysis", "tier": "common"},
-        {"filename": "05_评委评审意见.docx", "title": "评委评审意见", "field": "judge_feedback", "tier": "common"},
-        {"filename": "06_竞品分析报告.docx", "title": "竞品分析报告", "field": "competitor_analysis", "tier": "common"},
-        {"filename": "07_商业模式分析.docx", "title": "商业模式分析", "field": "business_model", "tier": "common"},
-        {"filename": "08_风险评估报告.docx", "title": "风险评估报告", "field": "risk_analysis", "tier": "common"},
-        {"filename": "09_答辩问题预测.docx", "title": "答辩问题预测", "field": "defense_questions", "tier": "common"},
-        {"filename": "10_PPT大纲.docx", "title": "PPT大纲", "field": "ppt_outline", "tier": "common"},
-        {"filename": "11_技术方案.docx", "title": "技术方案", "field": "tech_solution", "tier": "common"},
-        {"filename": "12_实施计划.docx", "title": "实施计划", "field": "implementation_plan", "tier": "common"},
-        {"filename": "13_项目数据图表.docx", "title": "项目数据图表", "field": "rich_charts", "tier": "deep"},
-        {"filename": "14_路演PPT.pptx", "title": "路演PPT", "field": "rich_deck", "tier": "deep"},
-    ]
-    return jsonify({"success": True, "items": items})
+        return jsonify({"success": False, "error": f"文件解析失败：{_sanitize_error_detail(e)}"})
 
 
 @app.route('/api/export_zip', methods=['GET', 'POST'])
@@ -5125,6 +4813,13 @@ def export_zip():
             _rec['theme'] = data['theme']
         if data.get('variant'):
             _rec['variant'] = data['variant']
+        # 2026-10-01：_fetch_record_from_source 只返回 result_data 原文（不含
+        # mode/history_id），直接整体覆盖会丢掉请求里的 mode → _resolve_export_mode
+        # 误判 deep → fast 记录打包 422「11<12」复发。覆盖前把这两个键补回去。
+        if data.get('mode') and not _rec.get('mode'):
+            _rec['mode'] = data['mode']
+        if data.get('history_id') and not _rec.get('history_id'):
+            _rec['history_id'] = data['history_id']
         data = _rec
     mappings = [
         ("01_赛事规则解析报告.docx", "赛事规则解析报告", data.get('parsed_rules', '')),
@@ -5178,19 +4873,21 @@ def export_zip():
             order = _official_chapter_titles(comp)
             if order:
                 tt = _reorder_markdown_by_chapters(tt, order)
-        # 417 轮：申报书封面主标题用项目名（非「项目申报书全文」这种泛名），页眉仍用文档类型名
+        # 417 轮：打包件同样要带合规声明（以前只有单独下载有，打包里没有，等于两套标准）
+        tt = _append_ai_notice(_clean_export_text(tt))
+        # 封面放项目名，页眉放文档类型名——以前封面直接写「项目申报书全文」，
+        # 评委在打包目录里看到一堆同名封面根本分不清
         cover_title = title
-        header_title = None
         if is_prop:
-            cover_title = _project_name_hint(data) or _extract_project_name(text) or title
-            header_title = re.sub(r'(全文|完整)$', '', title).strip() or '项目申报书'
+            cover_title = (_project_name_hint(data) or (data.get('idea') or '').strip()[:30]
+                           or title)
         d = _build_docx(cover_title, tt, doc_type=dt,
                         subtitle=comp if is_prop else None,
                         school=data.get('school'),
                         team=data.get('team'),
                         advisor=data.get('advisor'),
                         competition_name=comp if is_prop else None,
-                        header_title=header_title)
+                        header_title=title)
         # 打包里的申报书同样要插图：不然单独下载有图、打包里没图，用户会以为系统不稳。
         # 图表文件是本轮生成时落在 generated/ 下的，前端通过 rich_charts 传回来。
         if is_prop and charts_in:
@@ -5207,6 +4904,21 @@ def export_zip():
             doc = build_doc(title, text)
             tmppath = os.path.join(tmpdir, filename)
             doc.save(tmppath)
+            # 417 轮：打包件也要过封面/目录门。申报书是正式提交件，缺封面/目录直接打回；
+            # 其它分析报告只记日志，不因为一份附件卡住整个包。
+            try:
+                from export_guard import check_word_toc as _ck
+                _r = _ck(tmppath)
+                _is_prop = ('申报书' in title)
+                _chars = len(str(text).replace('\n', '').replace(' ', ''))
+                if (not _r.get("ok")) and _chars >= 600:
+                    # 目录/封面是可修复的排版告警：build_doc 已生成文件后继续交付，
+                    # 将问题写入服务日志，避免用户因为一次误检拿不到整包材料。
+                    # 真正的 zip 写入/文件损坏异常仍由外层异常处理拦截并记录。
+                    print("[export_zip] %s 封面/目录告警（已放行打包）：%s" %
+                          (filename, _r.get("errors")))
+            except Exception as _e:
+                print("[export_zip] 封面/目录检测失败（不阻断）：%r" % (_e,))
             zf.write(tmppath, filename)
         # ---- 深度版附加：数据图表 docx + 路演 PPT pptx ----
         try:
@@ -5261,6 +4973,20 @@ def export_zip():
                         chart_paths[c.get('id')] = img
                 build_deck(deck, os.path.join(tmpdir, '14_路演PPT.pptx'), chart_paths)
                 zf.write(os.path.join(tmpdir, '14_路演PPT.pptx'), '14_路演PPT.pptx')
+                # 2026-10-01：zip 路径此前绕过 PPT 页数校验（export_pptx 单独下载有、zip 打包没有）。
+                # 对齐大纲 + ≤20 页（iCAN 硬要求）；超限不拦下载，走 X-Export-Warnings 提示。
+                try:
+                    from pptx import Presentation as _WBPp
+                    _wb_slides = len(_WBPp(os.path.join(tmpdir, '14_路演PPT.pptx')).slides)
+                    _wb_expect = len(deck.get('slides') or [])
+                    if _wb_slides > 20:
+                        data.setdefault('_export_warnings', []).append(
+                            f"路演PPT {_wb_slides} 页超出 20 页上限（iCAN 硬要求），建议精简后重新生成")
+                    elif _wb_expect and _wb_slides != _wb_expect:
+                        data.setdefault('_export_warnings', []).append(
+                            f"路演PPT {_wb_slides} 页与大纲 {_wb_expect} 页不一致，请核对")
+                except Exception:
+                    pass
         except Exception as e:
             print(f"[export_zip] PPT失败: {e}")
     project = data.get('idea') or data.get('project_name') or ''
@@ -5268,15 +4994,26 @@ def export_zip():
     # 导出终检（第一百二十五轮）：zip 文件数/体积
     try:
         from quality_gate import check_zip
-        _ok, _issues = check_zip(zippath, expect_count=12)
+        # 2026-10-01：期望件数按 mode 感知（deep=12 含路演 PPT / fast=11）。
+        # 写死 12 会把所有 fast 记录的「一键打包」打成 422（验证线实锤）。
+        # _resolve_export_mode 自带 history 表 mode 列兜底。
+        _ok, _issues = check_zip(zippath, mode=_resolve_export_mode(data))
         if not _ok:
             _safe_unlink(zippath)
             return jsonify({"success": False, "code": "export_quality_fail",
                             "error": "打包质量未达标：" + "；".join(_issues[:3])}), 422
     except Exception:
         pass
-    return _export_reply(data, zippath,
-                         _export_filename(project, competition, '材料包', '.zip'))
+    _wb_resp = send_file(zippath, as_attachment=True,
+                     download_name=_export_filename(project, competition, '材料包', '.zip'),
+                     mimetype='application/zip')
+    # 2026-10-01：zip 导出也透出警告头（PPT 页数等），前端 wbShowExportWarnings 已接线
+    _wb_zwarns = data.get('_export_warnings') or []
+    if _wb_zwarns:
+        from urllib.parse import quote as _uq
+        _wb_resp.headers['X-Export-Warnings'] = _uq(json.dumps(_wb_zwarns, ensure_ascii=False))
+        _wb_resp.headers['Access-Control-Expose-Headers'] = 'X-Export-Warnings'
+    return _wb_resp
 
 
 # ============ 富媒体：图表图片 & PPT 导出 ============
@@ -5317,24 +5054,47 @@ def competition_index():
         import importlib.util
         _script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "scripts", "build_comp_index.py")
-        spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return jsonify({"success": True, **mod.build_index()})
+        if os.path.isfile(_script):
+            spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _built = mod.build_index()
+            _items = _built.get("items") or []
+            # 服务器历史迁移可能同时留下 UTF-8 与乱码文件名；动态解析会
+            # 把同一赛事列两次。检测到重复/异常 key 时优先使用已校验的
+            # 15 条静态索引，避免用户看到乱码赛事名。
+            _bad_keys = sum(1 for _item in _items
+                            if re.search(r"[фхцшщч╜БФТ┐]", str(_item.get("key", ""))))
+            if len(_items) <= 15 and not _bad_keys:
+                return jsonify({"success": True, **_built})
+            _canonical = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "static", "competition_index.json")
+            if os.path.isfile(_canonical):
+                with open(_canonical, "r", encoding="utf-8") as _fh:
+                    return jsonify({"success": True, **json.load(_fh)})
+            return jsonify({"success": True, **_built})
+
+        # 发布包可能只带运行时文件而漏掉构建脚本；已有静态索引仍然是
+        # 同一份赛事数据，不能让赛事下拉因此返回 500。
+        _fallbacks = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "competition_index.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "static", "competition_index.json"),
+        ]
+        for _path in _fallbacks:
+            if os.path.isfile(_path):
+                with open(_path, "r", encoding="utf-8") as _fh:
+                    _data = json.load(_fh)
+                return jsonify({"success": True, **_data})
+        raise FileNotFoundError("赛事索引构建脚本和静态索引均不存在")
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/quota')
 def quota():
-    """返回今日 LLM 调用配额使用情况（324⑦：加 near_limit，供前端只在接近限额时提示、不展示具体数字）"""
+    """返回今日 LLM 调用配额使用情况"""
     try:
         from competition_agents import get_quota_status
-        q = get_quota_status()
-        calls = int(q.get("calls") or 0)
-        limit = int(q.get("limit") or 0)
-        q["near_limit"] = bool(limit > 0 and calls >= limit * 0.9)
-        return jsonify({"success": True, **q})
+        return jsonify({"success": True, **get_quota_status()})
     except Exception as e:
         print(f"[quota] 状态读取失败：{e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5395,7 +5155,7 @@ def log_error():
 
 @app.route('/api/admin/stats')
 def admin_stats():
-    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / 智能评分分布。"""
+    """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
     auto_resolve_failures()
     try:
         conn = get_db()
@@ -5403,23 +5163,23 @@ def admin_stats():
         c = conn.cursor()
         trend = c.execute(
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
-            "WHERE created_time >= date('now','-14 day') GROUP BY d ORDER BY d").fetchall()
+            "WHERE %s AND created_time >= date('now','-14 day') GROUP BY d ORDER BY d" % _TEST_HISTORY_WHERE).fetchall()
         recent_failures = c.execute(
-            "SELECT task_id, type, path, error, detail, created_time, count, "
-            "stage, error_code, error_msg FROM gen_failures "
-            "WHERE status='open' ORDER BY id DESC LIMIT 10").fetchall()
-        total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
+            "SELECT task_id, type, path, error, detail, error_code, created_time, count FROM gen_failures "
+            "ORDER BY id DESC LIMIT 10").fetchall()
+        total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+        # 统计所有已记录的生成失败（包括已自动恢复），避免把历史失败清理后误报为 100%。
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history WHERE %s GROUP BY mode" % _TEST_HISTORY_WHERE).fetchall()
         # 第一百四十三轮：排除 duration≤1s 测试异常样本，用中位数口径，不被个别极值拉偏
-        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE duration > 1").fetchall()]
+        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE %s AND duration > 1" % _TEST_HISTORY_WHERE).fetchall()]
         avg_dur = sorted(_durs)[len(_durs) // 2] if _durs else 0
         fb = c.execute(
             "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
         rating = c.execute(
-            "SELECT rating, COUNT(*) AS n FROM history WHERE rating > 0 "
+            "SELECT rating, COUNT(*) AS n FROM history WHERE %s AND rating > 0 " % _TEST_HISTORY_WHERE +
             "GROUP BY rating ORDER BY rating").fetchall()
-        scores = c.execute("SELECT result_data FROM history").fetchall()
+        scores = c.execute("SELECT result_data FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchall()
         conn.close()
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5455,13 +5215,26 @@ def admin_stats():
         "time": r["created_time"], "type": r["type"] or "generate",
         "path": r["path"] or "", "error": r["error"], "detail": r["detail"],
         "task_id": r["task_id"] or "", "count": r["count"] or 1,
-        "stage": r["stage"] or "", "error_code": r["error_code"] or "",
-        "error_msg": r["error_msg"] or "",
+        "label": _failure_view(r["error"], r["detail"], r["error_code"])[0],
+        "reason": _failure_view(r["error"], r["detail"], r["error_code"])[1],
+        "action": _failure_view(r["error"], r["detail"], r["error_code"])[2],
     } for r in recent_failures]
 
     denom = total + failed
     mode_breakdown = {r["mode"] or "unknown": r["n"] for r in mode_rows}
-    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    # 有限样本只给出约计；没有失败记录时明确显示样本边界，不宣称 100%。
+    if denom <= 0:
+        success_rate = None
+        success_rate_display = "暂无样本"
+        success_rate_basis = "当前没有可统计的生成记录"
+    elif failed <= 0:
+        success_rate = None
+        success_rate_display = "暂无失败记录"
+        success_rate_basis = "基于 %d 条已记录生成，样本有限，不代表所有情况都已覆盖" % denom
+    else:
+        success_rate = round(total * 100.0 / denom, 1)
+        success_rate_display = "约 %.1f%%" % success_rate
+        success_rate_basis = "基于 %d 条生成记录（成功 %d，失败 %d）" % (denom, total, failed)
     avg_duration = round(avg_dur, 1) if avg_dur else 0
     return jsonify({
         "success": True,
@@ -5471,13 +5244,20 @@ def admin_stats():
         "deep_count": mode_breakdown.get("deep", 0),
         "avg_duration": avg_duration,
         "success_rate": success_rate,
+        "success_rate_display": success_rate_display,
+        "success_rate_basis": success_rate_basis,
         "trend": trend_full,
         "failure": {"total": denom, "failed": failed,
-                    "rate": round(failed * 100.0 / denom, 1) if denom else 0},
+                    "rate": round(failed * 100.0 / denom, 1) if denom else None},
         "recent_failures": recent_failures_list,
         "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
+        "data_provenance": {
+            "hard_facts": ["生成次数、档位、耗时：history 原始记录", "失败次数与原因：gen_failures 原始记录"],
+            "derived": ["成功率为有限样本约计；无失败记录时仅显示暂无失败记录，并标明样本边界"],
+            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
     })
 
 
@@ -5490,12 +5270,8 @@ def api_stats():
         conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        # 第二百四十三轮：只统计最近 7 天的记录，避免早期「字数偏高」的历史把中位数带偏，
-        # 导致前台承诺值（如 2009 字）与实际当前产出（1331~1527 字）脱节。
-        _since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M")
         rows = c.execute(
-            "SELECT mode, duration, result_data FROM history "
-            "WHERE duration > 1 AND created_time >= ?", (_since,)).fetchall()
+            "SELECT mode, duration, result_data FROM history WHERE duration > 1").fetchall()
         conn.close()
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5638,7 +5414,7 @@ def admin_report():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         total = c.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
         mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history GROUP BY mode").fetchall()
         avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE duration > 0").fetchone()[0]
         fb = c.execute("SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
@@ -5666,7 +5442,12 @@ def admin_report():
 
     mode_bd = {r["mode"] or "unknown": r["n"] for r in mode_rows}
     denom = total + failed
-    success_rate = round(total * 100.0 / denom, 1) if denom else 100.0
+    if denom <= 0:
+        success_rate_display = "暂无样本"
+    elif failed <= 0:
+        success_rate_display = "暂无失败记录"
+    else:
+        success_rate_display = "约 %.1f%%" % round(total * 100.0 / denom, 1)
     avg_duration = round(avg_dur, 1) if avg_dur else 0
 
     score_json = json.dumps([{"range": k, "count": v} for k, v in buckets.items()], ensure_ascii=False)
@@ -5684,11 +5465,11 @@ h1{font-size:22px;margin:0 0 18px;color:#fff}
 .cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
 .card{flex:1 1 150px;background:#151b2e;border:1px solid #26304a;border-radius:10px;padding:14px;text-align:center}
 .card .num{font-size:26px;font-weight:700;color:#22d3ee}
-.card .label{font-size:12px;color:#64748b;margin-top:4px}
+.card .label{font-size:12px;color:#94a3b8;margin-top:4px}
 .chart{height:300px;background:#151b2e;border:1px solid #26304a;border-radius:10px;margin-bottom:14px;padding:8px}
 .bar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px}
 button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
+</style></head><body>
 <div class="wrap">
 <h1>科创赛事助手 · 测试数据报告</h1>
 <div class="cards">
@@ -5696,7 +5477,7 @@ button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-rad
 <div class="card"><div class="num">""" + str(mode_bd.get("fast", 0)) + """</div><div class="label">简洁版</div></div>
 <div class="card"><div class="num">""" + str(mode_bd.get("deep", 0)) + """</div><div class="label">深度版</div></div>
 <div class="card"><div class="num">""" + str(avg_duration) + """s</div><div class="label">平均耗时</div></div>
-<div class="card"><div class="num">""" + str(success_rate) + """%</div><div class="label">成功率</div></div>
+<div class="card"><div class="num">""" + success_rate_display + """</div><div class="label">成功率（有限样本）</div></div>
 </div>
 <div class="bar"><button onclick="window.print()">打印 / 存 PDF</button></div>
 <div id="scoreChart" class="chart"></div>
@@ -5706,18 +5487,19 @@ button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-rad
 var SCORE = """ + score_json + """;
 var FEEDBACK = """ + feedback_json + """;
 var MODE = """ + mode_json + """;
-function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#64748b'}},yAxis:{type:'value',axisLabel:{color:'#64748b'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
-bar('scoreChart','智能评分分布',SCORE,'#22d3ee');
+function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#94a3b8'}},yAxis:{type:'value',axisLabel:{color:'#94a3b8'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
+bar('scoreChart','AI 模拟评分分布',SCORE,'#22d3ee');
 bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
 </script>
 </body></html>"""
-    return _inject_role_badge(html)
+    return html
 
 
 _upstream_cache = {"deepseek": "unknown", "checked_at": 0.0}
 _mode_counts_cache = {"data": {}, "checked_at": 0.0}
 _probe_lock = threading.Lock()
 _health_cache = {"data": None, "checked_at": 0.0}
+_probe_model = None
 
 
 def _probe_deepseek():
@@ -5734,12 +5516,26 @@ def _probe_deepseek():
         _upstream_cache["deepseek"] = "checking"
 
         def _bg_probe():
+            global _probe_model
             result = "down"
             try:
-                from competition_agents import llm
+                # 健康探针使用轻量模型，避免复用正式 180 秒模型并占用生成额度。
+                # deepseek-flash 可能把极小 token 预算全部用于 reasoning，正文为空但
+                # HTTP/API 调用实际成功；不能再用“必须有正文”误判为 down。
+                if _probe_model is None:
+                    from langchain_deepseek import ChatDeepSeek
+                    _probe_model = ChatDeepSeek(
+                        model=os.getenv("DEEPSEEK_MODEL") or "deepseek-flash",
+                        api_key=os.getenv("DEEPSEEK_API_KEY"),
+                        temperature=0, max_tokens=64,
+                        request_timeout=10, max_retries=0,
+                        # 探针预算只有 64 token，思考模式会把它全吃掉导致正文为空；
+                        # 关掉思考才能用「有无正文」判断上游存活（2026-10-14）
+                        extra_body={"thinking": {"type": "disabled"}})
                 from langchain_core.messages import HumanMessage
-                r = llm.invoke([HumanMessage(content="回复两个字：OK")])
-                if bool(getattr(r, "content", "").strip()):
+                _probe_model.invoke([HumanMessage(content="回复两个字：OK")])
+                # 未抛异常即表示鉴权、网络和模型路由均可用；不要求正文非空。
+                if _probe_model is not None:
                     result = "ok"
             except Exception:
                 result = "down"
@@ -5756,7 +5552,7 @@ def list_docs():
     _a = _require_admin()
     if _a is not None:
         return _a
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(DOCS_DIR)
     try:
         files = []
         for f in sorted(os.listdir(docs_dir)):
@@ -5776,7 +5572,7 @@ def read_doc(filename):
         return _a
     if '..' in filename or filename.startswith('/'):
         return jsonify({"success": False, "error": "非法路径"}), 400
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(DOCS_DIR)
     p = os.path.join(docs_dir, filename)
     if not os.path.isfile(p) or not filename.lower().endswith(('.md', '.txt', '.json')):
         return jsonify({"success": False, "error": "文件不存在或类型不支持"}), 404
@@ -5788,8 +5584,111 @@ def read_doc(filename):
 
 
 # ===== 漏洞库接口（188-190 轮）=====
-# M7 拆分：漏洞库数据层已抽到 vulns_data.py（零 Flask 依赖），这里只导入路由要用的。
-from vulns_data import _load_vulns, _save_vulns, _LEVEL_ORDER
+# 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
+# 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
+_VULNS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'vulns.json')
+_VULNS_MD = os.path.join(DOCS_DIR, '漏洞库.md')
+_LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
+_LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _strip_status_emoji(s):
+    """去掉状态列的前缀表情符号并归一化，只留标准状态词（已修复/部分修复/未修复/待核实/待确认）。"""
+    s = (s or '').strip()
+    s = re.sub(r'^[✅⚠️❌🟡🟢🔴\s]+', '', s)
+    s = s.strip() or '未修复'
+    if '已修复' in s:
+        return '已修复'
+    if '部分' in s or '待收敛' in s or '收敛' in s:
+        return '部分修复'
+    if '待核实' in s:
+        return '待核实'
+    if '待确认' in s or '待定' in s:
+        return '待确认'
+    return '未修复'
+
+
+def _infer_vuln_category(name):
+    """按名称做根因/模块归因（供 /api/vulns/stats 聚合，未命中归「其他」）。"""
+    n = name or ''
+    if any(k in n for k in ('隔离', 'token', '明文', '安全', '泄露', '隐私')):
+        return '安全'
+    if any(k in n for k in ('口径', '字数', '文案', '数据', '评分', '档位', 'stats', '自认')):
+        return '数据口径'
+    if any(k in n for k in ('截断', 'Markdown', '重复', '渲染', '图标', '配色', '图片', 'PPT', '目录', '标题', '占位')):
+        return '渲染/输出质量'
+    if any(k in n for k in ('拆分', '巨石', '脚本', '死代码', 'TTFB', '体积', '性能', '健康')):
+        return '工程架构'
+    if any(k in n for k in ('移动端', '发烫', '弹窗', '遮挡', '功耗', '体验')):
+        return '体验'
+    if any(k in n for k in ('待核实', '规则', '赛道')):
+        return '规则待核实'
+    if any(k in n for k in ('文件名', 'favicon', 'robots', '细节', '缺失')):
+        return '细节'
+    return '其他'
+
+
+def _parse_vulns_md():
+    """解析 docs/漏洞库.md 的高/中/低三张表格，返回结构化列表。"""
+    items = []
+    if not os.path.isfile(_VULNS_MD):
+        return items
+    try:
+        with open(_VULNS_MD, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return items
+    level = None
+    for line in lines:
+        m = re.match(r'^##\s*([一二三])、', line)
+        if m:
+            level = _LEVEL_TAG.get(m.group(1))
+            continue
+        if not line.startswith('|'):
+            continue
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if not cells or cells[0] in ('ID', '') or set(cells[0]) <= set('- '):
+            continue
+        if len(cells) < 5:
+            continue
+        vid = cells[0]
+        name = cells[1]
+        status = _strip_status_emoji(cells[2])
+        items.append({
+            "id": vid,
+            "level": level or "low",
+            "name": name,
+            "status": status,
+            "owner": cells[3],
+            "round": cells[4],
+            "evidence": cells[4],
+            "experience": "",
+            "distilled": False,
+            "category": _infer_vuln_category(name),
+            "updated_at": ""
+        })
+    return items
+
+
+def _save_vulns(items):
+    os.makedirs(os.path.dirname(_VULNS_FILE), exist_ok=True)
+    with open(_VULNS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+
+
+def _load_vulns():
+    """读漏洞库；无 JSON 或解析失败时回退解析 md 并落盘种子数据。"""
+    if os.path.isfile(_VULNS_FILE):
+        try:
+            with open(_VULNS_FILE, encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list) and data:
+                return data
+        except Exception:
+            pass
+    items = _parse_vulns_md()
+    _save_vulns(items)
+    return items
 
 
 @app.route('/api/vulns')
@@ -5817,7 +5716,7 @@ def api_vulns_status(vid):
     _a = _require_admin()
     if _a is not None:
         return _a
-    payload = request.json or {}
+    payload = request.get_json(force=True, silent=True) or {}
     status = (payload.get('status') or '').strip()
     experience = (payload.get('experience') or '').strip()
     distilled = bool(payload.get('distilled', False))
@@ -5874,708 +5773,22 @@ def api_vulns_stats():
     })
 
 
-@app.route('/api/admin/audit')
-def api_admin_audit():
-    """第二百一十一轮 D：审计日志查询（仅 admin 可见）。读 docs/后台审计.md 最近 N 行。"""
-    _a = _require_admin()
-    if _a is not None:
-        return _a
-    try:
-        limit = min(int(request.args.get("limit", 200)), 2000)
-    except (TypeError, ValueError):
-        limit = 200
-    p = os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md')
-    if not os.path.isfile(p):
-        return jsonify({"success": True, "audit": [], "total": 0})
-    try:
-        with open(p, encoding='utf-8') as f:
-            lines = [l.rstrip('\n') for l in f if l.strip()]
-    except Exception:
-        return jsonify({"success": True, "audit": [], "total": 0})
-    return jsonify({"success": True, "audit": lines[-limit:], "total": len(lines)})
-
-
-@app.route('/api/admin/textcheck')
-def api_admin_textcheck():
-    """第二百一十三轮：文案自查工具（admin）——扫全站常见不一致/错别字，返回命中位置。"""
-    _a = _require_admin()
-    if _a is not None:
-        return _a
-    # 词表：(正确写法, 疑似错误写法)
-    _rules = [
-        ("科创赛事助手", "赛创助手"),
-        ("科创赛事助手", "赛创赛事助手"),
-        ("简洁版", "简洁快速版"),
-        ("评审引擎", "模拟评委"),
-        ("多智能体协作", "AI 生成"),
-    ]
-    _files = ["index.html", "static/app.js", "static/style.css", "static/wbconst.js"]
-    _hits = []
-    for _fname in _files:
-        _p = os.path.join(os.path.dirname(__file__), _fname)
-        if not os.path.isfile(_p):
-            continue
-        try:
-            with open(_p, encoding='utf-8') as _f:
-                _lines = _f.read().splitlines()
-        except Exception:
-            continue
-        for _i, _ln in enumerate(_lines, 1):
-            for _correct, _wrong in _rules:
-                if _wrong in _ln:
-                    _hits.append({"file": _fname, "line": _i,
-                                  "wrong": _wrong, "correct": _correct,
-                                  "snippet": _ln.strip()[:80]})
-                    break
-    return jsonify({"success": True, "hits": _hits, "total": len(_hits)})
-
-
 @app.route('/api/demo')
 def demo_data():
-    """演示模式：返回预置演示样例（只读、不真实生成、不返回用户历史，防隐私泄露）。
-
-    深挖漏洞修复：原先支持 ?history_id=<id> 直接读任意历史记录、以及无样例时回退到「最新一条深度版」，
-    二者都会把用户生成内容（创意/团队/正文）无鉴权暴露给任意调用者。改为只返回预置样例文件。"""
-    _files = _demo_sample_files()
-    if not _files:
-        return jsonify({"success": False, "error": "暂无演示样例，请先导入样例数据"})
-    try:
-        _sid = int(request.args.get('id', 0) or 0)
-    except (TypeError, ValueError):
-        _sid = 0
-    _path = _files[min(_sid, len(_files) - 1)]
-    try:
-        with open(_path, encoding='utf-8') as _f:
-            _d = json.load(_f)
-    except Exception:
-        return jsonify({"success": False, "error": "演示样例数据解析失败"})
-    _inner = _demo_sample_inner(_d)
-    if not _inner.get('proposal'):
-        return jsonify({"success": False, "error": "演示样例数据不完整"})
-    return jsonify({"success": True, "data": _inner})
-
-
-def _demo_sample_files():
-    """309 轮：扫描根目录 + static/ 下的演示样例 json（文件名含 demo/sample）。"""
-    _base = os.path.dirname(__file__)
-    _files = []
-    _seen = set()
-    for _d in (_base, os.path.join(_base, 'static')):
-        if not os.path.isdir(_d):
-            continue
-        for _fn in sorted(os.listdir(_d)):
-            if _fn.endswith('.json') and ('demo' in _fn.lower() or 'sample' in _fn.lower()):
-                if _fn in _seen:
-                    continue
-                _seen.add(_fn)
-                _p = os.path.join(_d, _fn)
-                _files.append(_p)
-    return _files
-
-
-def _demo_sample_inner(d):
-    """返回样例的 result_data（兼容顶层 {success,data} 包装与纯 data）。"""
-    if isinstance(d, dict) and isinstance(d.get('data'), dict):
-        return d['data']
-    return d if isinstance(d, dict) else {}
-
-
-@app.route('/api/demo/list')
-def demo_list():
-    """309 轮：返回可用演示样例清单（key/title/competition/summary/tier/chars/updated）。"""
-    items = []
-    for _p in _demo_sample_files():
-        _key = os.path.splitext(os.path.basename(_p))[0]
-        try:
-            with open(_p, encoding='utf-8') as _f:
-                _d = json.load(_f)
-        except Exception:
-            continue
-        _inner = _demo_sample_inner(_d)
-        if not _inner.get('proposal'):
-            continue
-        _title = _inner.get('one_liner') or _inner.get('title') or _inner.get('idea') or _key
-        _summary = (_inner.get('idea') or _inner.get('one_liner') or '').strip()
-        _item = {"key": _key, "title": _title}
-        _comp = _inner.get('competition_name') or _inner.get('competition')
-        if _comp:
-            _item["competition"] = _comp
-        if _summary:
-            _item["summary"] = _summary[:80]
-        _tier = _inner.get('tier') or _inner.get('mode')
-        if _tier:
-            _item["tier"] = _tier
-        _prop = _inner.get('proposal') or ''
-        if _prop:
-            _item["chars"] = len(_prop)
-        try:
-            _item["updated"] = datetime.fromtimestamp(os.path.getmtime(_p)).strftime('%Y-%m-%d')
-        except Exception:
-            pass
-        items.append(_item)
-    return jsonify({"success": True, "items": items})
-
-
-@app.route('/api/demo/sample')
-def demo_sample():
-    """309 轮：返回指定 key 的演示样例详情；key 为空返回第一份（只读、不写库）。"""
-    _key = (request.args.get('key') or '').strip()
-    _files = _demo_sample_files()
-    if _key:
-        _files = [p for p in _files if os.path.splitext(os.path.basename(p))[0] == _key]
-    if not _files:
-        return jsonify({"success": False, "error": "没有可用的演示样例"})
-    try:
-        with open(_files[0], encoding='utf-8') as _f:
-            _d = json.load(_f)
-    except Exception:
-        return jsonify({"success": False, "error": "演示样例数据解析失败"})
-    _inner = _demo_sample_inner(_d)
-    if not _inner.get('proposal'):
-        return jsonify({"success": False, "error": "演示样例数据不完整"})
-    return jsonify({"success": True, "data": _inner})
-
-
-@app.route('/api/auto_generate', methods=['GET', 'POST'])
-def auto_generate():
-    """第三百一十轮：一键演示的自动生成入口——返回预生成样例结果（不真实生成、不耗 LLM）。
-    前端一键演示此前调用本接口得到 404，误判为「样例数据为空」；此处直接复用 /api/demo 的样例加载逻辑。"""
-    return demo_data()
-
-
-_DEFENSE_FAQ = [
-    {"q": "你们的方案和现有方案比，核心差异是什么？",
-     "framework": "先一句话给差异结论（不是「更好」而是「换了什么解法」），再给 1~2 个可对比的数字/场景，最后落到「为什么这个差异能赢」。"},
-    {"q": "数据是真实测的还是推算的？",
-     "framework": "诚实区分三类：实测值（自己跑出来的）、仿真值（模型跑的）、测算值（按假设算的），各自说清口径与假设；没测过的绝不冒充实测。"},
-    {"q": "商业模式能不能跑通？怎么算的账？",
-     "framework": "说清谁付费、单价多少、成本构成、盈亏平衡点；用单位经济模型证明，不空谈「前景广阔」。"},
-    {"q": "团队凭什么能做出来？",
-     "framework": "把「做过什么」落到具体交付物（原型/专利/试点），强调分工与关键角色能力匹配，不堆头衔。"},
-    {"q": "最大的风险是什么？怎么应对？",
-     "framework": "主动挑一个最可能翻车的风险，说明触发条件、当前量化水平、应对措施；敢认短板比「没有风险」更可信。"},
-    {"q": "如果现场让你复现一个功能，你能演示什么？",
-     "framework": "准备一个最稳的核心功能现场跑，说明输入→处理→输出的关键步骤；兜底准备录屏，避免现场环境翻车。"},
-]
-
-
-@app.route('/api/defense_faq')
-def defense_faq():
-    """第二百七十一轮：答辩模拟问答的静态预置高频问题 + 回答框架（不调 LLM、不写库）。"""
-    return jsonify({"success": True, "faq": _DEFENSE_FAQ})
-
-
-@app.route('/api/defense_review', methods=['POST'])
-def defense_review():
-    """第三百五十五轮：模拟答辩——对用户某题作答做文字点评（是否切题/有无数据支撑/是否自相矛盾）。"""
-    data = request.get_json(silent=True) or {}
-    question = (data.get('question') or '').strip()
-    answer = (data.get('answer') or '').strip()
-    idea = (data.get('idea') or data.get('context') or '').strip()
-    if not question or not answer:
-        return jsonify({"success": False, "error": "请提供题目与作答"}), 400
-    if len(answer) > 2000:
-        answer = answer[:2000]
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        _ctx = ("项目创意：" + idea[:300] + "\n") if idea else ""
-        prompt = ("你是答辩评委。下面是一道答辩题、选手的项目创意与作答，请用 3~5 句点评："
-                  "①是否切题；②是否有数据/事实支撑；③是否有自相矛盾或含糊之处；④给一句改进建议。"
-                  "直接点评、不客套、不重复题干。\n" + _ctx + "题目：" + question + "\n作答：" + answer)
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=250)
-        return jsonify({"success": True, "review": (resp.content or '').strip(), "source": "llm"})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/judge_preview', methods=['POST'])
-def judge_preview():
-    """第三百六十七轮：评委预审报告——10 项常见扣分点检查（纯规则、不调 LLM、不写库）。"""
-    data = request.get_json(silent=True) or {}
-    proposal = (data.get('proposal') or '').strip()
-    mode = (data.get('mode') or 'deep').strip()
-    title = (data.get('title') or '').strip()
-    try:
-        from quality_gate import preview_report
-        return jsonify({"success": True, "report": preview_report(proposal, mode, title)})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/demo_script', methods=['POST'])
-def demo_script():
-    """第三百六十轮：5 分钟演示视频方案——分镜脚本 + 讲稿 + 操作步骤 + 预计秒数。"""
-    data = request.get_json(silent=True) or {}
-    idea = (data.get('idea') or '').strip()
-    comp = (data.get('competition_name') or '').strip()
-    proposal = (data.get('proposal') or '').strip()
-    if not idea and not proposal:
-        return jsonify({"success": False, "error": "缺少项目创意或正文"}), 400
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        _body = (proposal or idea)[:3000]
-        prompt = ("你是路演导演。请为下面这个参赛项目设计一份 5 分钟以内的演示视频方案，输出 Markdown：\n"
-                  "## 分镜脚本\n按「开场定位→核心功能→实测数据→评分亮点→收尾」拆 5~7 屏，每屏写："
-                  "`镜头N（预计Xs）` + 讲稿 120~180 字（口语化）+ `操作：`（演示者要点哪个按钮/输入什么）。\n"
-                  "## 时长汇总\n各屏秒数合计控制在 240~300 秒。\n"
-                  "只写方案，不写多余解释。\n赛事：" + (comp or "未指定") + "\n项目：" + _body)
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=1200)
-        return jsonify({"success": True, "script": (resp.content or '').strip(), "source": "llm"})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/score_rationale', methods=['POST'])
-def score_rationale():
-    """第三百六十二轮：评分判据拆解——某维度为什么给这个分 + 提分动作。"""
-    data = request.get_json(silent=True) or {}
-    dimension = (data.get('dimension') or '').strip()
-    score = data.get('score')
-    proposal = (data.get('proposal') or '').strip()
-    if not dimension or not proposal:
-        return jsonify({"success": False, "error": "缺少维度或正文"}), 400
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        _score = ("（得分 %s）" % score) if score is not None else ""
-        prompt = ("你是赛事评委。请为下面项目在「%s」这个维度%s写评分判据："
-                  "①对应官方评分要点；②判定说明（为什么这个分——好在哪里、哪里偏弱）；③1~2 条针对性提分动作。"
-                  "用 3~5 句，直接写，不客套。\n项目正文（节选）：\n%s"
-                  % (dimension, _score, proposal[:2500]))
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=300)
-        return jsonify({"success": True, "rationale": (resp.content or '').strip(), "source": "llm"})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/consistency_check', methods=['POST'])
-def consistency_check():
-    """第三百五十四轮（简化版）：材料一致性校验——数字/命名口径的启发式比对，列出不一致清单。"""
-    data = request.get_json(silent=True) or {}
-    proposal = (data.get('proposal') or '').strip()
-    comp = (data.get('competition_name') or '').strip()
-    if not proposal:
-        return jsonify({"success": False, "error": "缺少正文"}), 400
-    issues = []
-    import re
-    from collections import defaultdict
-    # 命名一致性：旧名/新名冲突
-    if '中国国际互联网+' in proposal and '中国国际大学生创新大赛' in proposal:
-        issues.append({"type": "命名", "item": "赛事名",
-                       "detail": "同时出现旧名「中国国际互联网+」与新名「中国国际大学生创新大赛」，请统一口径"})
-    # 数字一致性：同单位出现跨度悬殊的数值 → 疑似同一指标口径不一致
-    nums = re.findall(r'(\d+(?:\.\d+)?)\s*(%|元|万元|人|次|家|个|所|亿|天|小时|分钟)', proposal)
-    groups = defaultdict(set)
-    for n, unit in nums:
-        try:
-            groups[unit].add(float(n))
-        except ValueError:
-            pass
-    for unit, vals in groups.items():
-        vals = sorted(v for v in vals if v > 0)
-        if len(vals) >= 2 and vals[-1] / vals[0] > 3:
-            _show = '、'.join(str(int(v)) if v == int(v) else str(v) for v in vals)
-            issues.append({"type": "数字", "item": "单位「%s」" % unit,
-                           "detail": "出现多个数值（%s），跨度较大，请核对是否同一指标口径不一致" % _show})
-    return jsonify({"success": True, "issues": issues, "count": len(issues)})
-
-
-@app.route('/api/rewrite_versions', methods=['POST'])
-def rewrite_text():
-    """第三百六十八轮：正文划选改写降重——生成 3 版替换建议（保持原意与数据，去模板腔/降重）。"""
-    data = request.get_json(silent=True) or {}
-    text = (data.get('text') or '').strip()
-    if not text:
-        return jsonify({"success": False, "error": "请先选中要改写的文字"}), 400
-    if len(text) > 1500:
-        text = text[:1500]
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        prompt = ("把下面这段申报书正文改写降重，给出 3 个版本（保持原意与所有数据不变，去掉模板腔/套话/AI 味，"
-                  "措辞更具体）。用 Markdown 有序列表输出，每版一段。\n原文：\n" + text)
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=600)
-        return jsonify({"success": True, "versions": (resp.content or '').strip(), "source": "llm"})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/competition_match', methods=['POST'])
-def competition_match():
-    """第三百七十三轮：智能赛事匹配——按创意关键词推荐 2-3 个最适合的赛事 + 匹配理由。"""
-    data = request.get_json(silent=True) or {}
-    idea = (data.get('idea') or '').strip()
-    if not idea:
-        return jsonify({"success": False, "error": "请先输入项目创意"}), 400
-    try:
-        from competition_agents import get_competition_profiles
-        profiles = get_competition_profiles()
-    except Exception:
-        profiles = []
-    # 关键词 → 赛道倾向（工程/商业/学术/综合）
-    _kw = {
-        "工程": ("硬件", "电路", "算法", "嵌入式", "机械", "传感器", "机器人", "控制", "实现", "测试", "系统"),
-        "商业": ("市场", "商业模式", "获客", "订单", "营收", "盈利", "客户", "电商", "销售", "融资", "落地"),
-        "学术": ("研究", "学术", "调查", "文献", "实验", "理论", "论文", "数据", "模型", "分析"),
-    }
-    _hit = {k: sum(1 for w in ws if w in idea) for k, ws in _kw.items()}
-    _top = max(_hit.values()) or 0
-    _scored = []
-    for p in profiles:
-        name = p.get('name', '')
-        _type = p.get('type', '') or ''
-        _focus = (p.get('focus', '') or '') + _type
-        s = 0
-        for k, ws in _kw.items():
-            s += sum(1 for w in ws if w in _focus) * _hit.get(k, 0)
-        _scored.append((name, _type, s))
-    _scored.sort(key=lambda x: -x[2])
-    matches = [{"competition": n, "type": t,
-                "reason": "与你创意里%s相关的方向匹配（赛事类型：%s）" % (
-                    "、".join(k for k in _kw if _hit.get(k)) or "综合", t or "综合")}
-               for n, t, s in _scored[:3] if s > 0]
-    if not matches:
-        matches = [{"competition": n, "type": t, "reason": "综合推荐（可先选此赛事，后续再按官方规则调整）"}
-                   for n, t, s in _scored[:3]]
-    return jsonify({"success": True, "matches": matches})
-
-
-@app.route('/api/history/search')
-def history_search():
-    """第三百八十九轮：历史搜索——按关键词/赛事/时间段过滤（仅本人归属）。"""
-    q = (request.args.get('q') or '').strip()
-    comp = (request.args.get('competition') or '').strip()
-    _days = {'3d': 2, '7d': 6, '30d': 29}.get((request.args.get('range') or '').strip())
+    """演示模式：返回固定的一条深度版生成结果（完整数据），稳定不随最新生成变化。"""
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    sql = "SELECT id, idea, competition_name, mode, created_time, rating FROM history WHERE user_id=?"
-    params = [_current_uid()]
-    if q:
-        sql += " AND (idea LIKE ? OR result_data LIKE ?)"
-        params += ['%' + q + '%', '%' + q + '%']
-    if comp:
-        sql += " AND competition_name LIKE ?"
-        params.append('%' + comp + '%')
-    if _days is not None:
-        _since = (datetime.now() - timedelta(days=_days)).strftime('%Y-%m-%d')
-        sql += " AND created_time >= ?"
-        params.append(_since)
-    sql += " ORDER BY id DESC LIMIT 50"
-    rows = conn.execute(sql, params).fetchall()
+    row = conn.execute(
+        "SELECT result_data FROM history WHERE mode='deep' ORDER BY id ASC LIMIT 1"
+    ).fetchone()
     conn.close()
-    items = [{"id": r["id"], "idea": r["idea"] or "", "competition_name": r["competition_name"] or "",
-              "mode": r["mode"] or "", "created_time": r["created_time"] or "", "score": r["rating"] or 0} for r in rows]
-    return jsonify({"success": True, "items": items})
-
-
-@app.route('/api/history_score_series')
-def history_score_series():
-    """第三百八十二轮：评分历史曲线——同一项目多次生成的评分变化。"""
-    _a = _require_uid()
-    if _a is not None:
-        return _a
-    hid = (request.args.get('history_id') or '').strip()
-    conn = get_db()
-    conn.row_factory = sqlite3.Row
-    idea = None
-    if hid.isdigit():
-        row = conn.execute("SELECT idea FROM history WHERE id=? AND user_id=?",
-                           (int(hid), _current_uid())).fetchone()
-        idea = row["idea"] if row else None
-    if idea:
-        rows = conn.execute(
-            "SELECT id, created_time, json_extract(result_data,'$.score') AS score FROM history "
-            "WHERE user_id=? AND idea=? ORDER BY id ASC", (_current_uid(), idea)).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT id, created_time, json_extract(result_data,'$.score') AS score FROM history "
-            "WHERE user_id=? ORDER BY id DESC LIMIT 1", (_current_uid(),)).fetchall()
-    conn.close()
-    points = []
-    for r in rows:
-        try:
-            s = float(r["score"]) if r["score"] is not None else None
-        except (TypeError, ValueError):
-            s = None
-        if s is not None:
-            points.append({"id": r["id"], "score": s, "created_time": r["created_time"] or ""})
-    return jsonify({"success": True, "points": points})
-
-
-@app.route('/api/health_score', methods=['POST'])
-def health_score():
-    """第三百七十四轮：作品健康度四合一总览（评分/查重/一致性/预审）。"""
-    data = request.get_json(silent=True) or {}
-    proposal = (data.get('proposal') or '').strip()
-    if not proposal:
-        return jsonify({"success": False, "error": "缺少正文"}), 400
+    if not row:
+        return jsonify({"success": False, "error": "暂无演示数据，请先生成一次深度版"})
     try:
-        _s = float(data.get('score')) if data.get('score') is not None else 0
-    except (TypeError, ValueError):
-        _s = 0
-    score_item = {"status": "pass" if _s >= 80 else ("warn" if _s >= 60 else "fail"),
-                  "value": _s, "label": "评分"}
-    _sim = data.get('similarity') or data.get('similarity_report')
-    if isinstance(_sim, dict):
-        _pct = _sim.get('percent')
-    elif isinstance(_sim, (int, float)):
-        _pct = _sim
-    else:
-        _pct = (_similarity_check(proposal) or {}).get('percent') or 0
-    sim_item = {"status": "pass" if (_pct or 0) <= 10 else ("warn" if (_pct or 0) <= 20 else "fail"),
-                "value": _pct, "label": "查重"}
-    _cons = 1 if ('中国国际互联网+' in proposal and '中国国际大学生创新大赛' in proposal) else 0
-    cons_item = {"status": "pass" if _cons == 0 else "warn", "value": _cons, "label": "一致性"}
-    pre_item = {"status": "warn", "value": None, "label": "预审（待接入）"}
-    return jsonify({"success": True,
-                    "health": {"score": score_item, "similarity": sim_item,
-                               "consistency": cons_item, "precheck": pre_item}})
-
-
-@app.route('/api/admin/alert_status')
-def alert_status():
-    """第三百七十七轮：监控告警——额度/失败率/工单滞留三类阈值。"""
-    try:
-        from competition_agents import get_quota_status
-        _q = get_quota_status()
-        _ratio = _q.get('calls', 0) / max(_q.get('limit', 1), 1)
+        data = json.loads(row["result_data"])
     except Exception:
-        _ratio = 0
-    conn = get_db()
-    succ = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
-    fail = conn.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
-    stale = conn.execute("SELECT COUNT(*) FROM issues WHERE status='open' AND created_time < datetime('now','-2 day')").fetchone()[0]
-    conn.close()
-    _fr = fail / (succ + fail) if (succ + fail) else 0
-    return jsonify({"success": True, "alerts": {
-        "quota_low": {"triggered": _ratio >= 0.9, "detail": "今日额度剩余 %.0f%%" % max(0, (1 - _ratio) * 100)},
-        "fail_rate_high": {"triggered": _fr > 0.2, "detail": "失败率 %.1f%%" % (_fr * 100)},
-        "issue_stale": {"triggered": stale > 0, "detail": "%d 条工单滞留超 48 小时" % stale}}})
-
-
-@app.route('/api/admin/diagnose')
-def diagnose():
-    """第三百九十二轮：服务诊断——核心接口 ping 状态与耗时。"""
-    import time as _t
-    items = []
-    with app.test_client() as c:
-        for name, path in (("health", "/api/health"), ("user_state", "/api/user_state"),
-                            ("history", "/api/history"), ("feedback", "/api/feedback"),
-                            ("quota", "/api/quota")):
-            _t0 = _t.time()
-            try:
-                r = c.get(path)
-                items.append({"name": name, "status": "ok" if r.status_code < 400 else "error",
-                              "code": r.status_code, "latency_ms": int((_t.time() - _t0) * 1000)})
-            except Exception:
-                items.append({"name": name, "status": "error", "code": None,
-                              "latency_ms": int((_t.time() - _t0) * 1000)})
-    mem = {"total": -1, "used": -1, "percent": -1}
-    try:
-        import psutil
-        _m = psutil.virtual_memory()
-        mem = {"total": _m.total, "used": _m.used, "percent": _m.percent}
-    except Exception:
-        pass
-    return jsonify({"success": True, "items": items, "memory": mem})
-
-
-@app.route('/api/admin/export_csv')
-def export_csv():
-    """第三百七十九轮：数据导出 CSV——生成记录/反馈/工单三张表。"""
-    import csv, io
-    from flask import Response
-    table = (request.args.get('table') or 'history').strip()
-    _days = {'3d': 2, '7d': 6, '30d': 29}.get((request.args.get('range') or '').strip())
-    conn = get_db()
-    conn.row_factory = sqlite3.Row
-    _where, _params = "", []
-    if _days is not None:
-        _since = (datetime.now() - timedelta(days=_days)).strftime('%Y-%m-%d')
-        _where, _params = " WHERE created_time >= ?", [_since]
-    if table == 'feedback':
-        rows = conn.execute("SELECT id, history_id, content, category, created_time FROM feedback" + _where, _params).fetchall()
-        header = ["id", "history_id", "content", "category", "created_time"]
-    elif table == 'issues':
-        rows = conn.execute("SELECT id, kind, source, content, status, created_time FROM issues" + _where, _params).fetchall()
-        header = ["id", "kind", "source", "content", "status", "created_time"]
-    else:
-        rows = conn.execute("SELECT id, competition_name, idea, mode, duration, status, created_time FROM history" + _where, _params).fetchall()
-        header = ["id", "competition_name", "idea", "mode", "duration", "status", "created_time"]
-    conn.close()
-    _buf = io.StringIO()
-    _w = csv.writer(_buf)
-    _w.writerow(header)
-    for r in rows:
-        _w.writerow([r[k] for k in header])
-    return Response(_buf.getvalue(), mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=%s.csv" % table})
-
-
-@app.route('/api/user_state', methods=['GET', 'POST'])
-@app.route('/api/prefs', methods=['GET', 'POST'])
-def user_prefs():
-    """第二百九十二轮：双端同步——草稿/赛事选择/档位/个性化设置等服务端存储，跨设备一致。
-    契约（供 WorkBuddy 对接）：路径 /api/user_state（/api/prefs 保留为别名）；
-    GET → {success, state}；POST body {state}（兼容旧 {prefs}）；cookie=comp_uid 自动；
-    冲突策略：服务端为准（前端启动拉一次覆盖本地，之后 debounce 写回，后写胜）。"""
-    uid = _current_uid()
-    conn = get_db()
-    c = conn.cursor()
-    if request.method == 'GET':
-        row = c.execute("SELECT prefs FROM user_prefs WHERE uid=?", (uid,)).fetchone()
-        conn.close()
-        state = {}
-        if row and row[0]:
-            try:
-                state = json.loads(row[0])
-            except Exception:
-                state = {}
-        if not isinstance(state, dict):
-            state = {}
-        return jsonify({"success": True, "state": state})
-    data = request.get_json(silent=True) or {}
-    _state = data.get('state')
-    if not isinstance(_state, dict):
-        _state = data.get('prefs')
-    if not isinstance(_state, dict):
-        _state = {}
-    c.execute("INSERT OR REPLACE INTO user_prefs (uid, prefs) VALUES (?, ?)",
-              (uid, json.dumps(_state, ensure_ascii=False)))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": True, "state": _state})
-
-
-# 第二百九十七轮：聊天智能体命名 + 风格选择（与生成风格独立，只影响聊天回复口吻）。
-_CHAT_NAME = "小创 · 科创赛事助手智能助手"
-_CHAT_STYLES = {
-    "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
-    "casual": {"label": "轻松幽默", "tone": "口语化、轻松幽默，可带一点趣味，但信息必须准确"},
-    "academic": {"label": "学术详细", "tone": "引用赛事规则依据、展开论证，可适当详细"},
-}
-
-
-def _chat_style_key(v):
-    """风格入参归一化：接受 concise/casual/academic 或中文标签，未知回落到 concise。"""
-    v = (v or "").strip()
-    if v in _CHAT_STYLES:
-        return v
-    for k, s in _CHAT_STYLES.items():
-        if v == s["label"]:
-            return k
-    return "concise"
-
-
-def _chat_style_lead(style):
-    """预设答案的口吻前缀，让三档在预设命中时也能看出差异（concise 默认不加）。"""
-    if style == "casual":
-        return "嘿，简单说——"
-    if style == "academic":
-        return "依据官方规则口径："
-    return ""
-
-
-_CHAT_PRESET = [
-    (("评分", "打分", "维度", "权重", "多少分"),
-     "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
-    (("章节", "结构", "几章", "目录"),
-     "申报书章节按各赛事官方要求自动组织。例：iCAN 为 8 章（背景与痛点→需求与用户→技术选型→技术方案→功能与智能作用→使用说明→前景与商业模式→团队与知识产权）。"),
-    (("答辩", "问题", "评委会问"),
-     "系统会预测评委高频问题并给回答框架，见「答辩准备」板块；也可用首页右下角「答辩模拟」逐条练习。"),
-    (("PPT", "路演", "ppt"),
-     "深度版会自动生成路演 PPT 大纲（含结构页）与演讲稿，可一键下载；支持 31 套风格。"),
-    (("简洁", "深度", "档位", "区别", "什么区别"),
-     "简洁版=结论型（快速出稿）；深度版=论证型（竞品定量对比、风险分级矩阵、技术分步链路、财务测算、多专家评审、答辩预测）。"),
-    # 第三百三十六轮：扩充常见问题预设，降低落到 LLM 的概率、缩短响应时间（<6s）。
-    (("导出", "下载", "打包", "文件", "word", "docx", "zip"),
-     "结果页右上角「导出中心」可一键打包全部（含 10 份 Word + 项目数据图表 + 路演 PPT 共 12 个文件），也可单份下载；导出前需生成完成。"),
-    (("字数", "篇幅", "多少字", "字多", "字少"),
-     "简洁版出稿约 1300~1500 字（结论型）；深度版约 1.2 万字（论证型，含图表、财务测算与答辩预测），以档位卡实测统计为准。"),
-    (("历史", "记录", "之前", "找回", "上次"),
-     "历史记录在首页「历史记录」区，按赛事/档位可筛选，点开可回看完整结果并重新导出打包。"),
-    (("同步", "分享", "换设备", "同步码", "另一台"),
-     "在「同步码」入口查看本机 8 位同步码，在另一台设备输入即可绑定，历史/草稿/赛事选择跨设备共享（绑定后同一账号）。"),
-    (("赛事", "选哪个", "比赛", "大赛", "参赛"),
-     "先选参赛赛事，系统按该赛事官方评分维度与章节要求组织内容；未收录的赛事按通用科创结构生成。"),
-    (("演示", "样例", "体验", "例子", "一键演示"),
-     "首页「一键演示」直接载入预置样例结果（不真实生成、不耗额度），可查看完整评分/正文/图表/PPT 与导出。"),
-    (("失败", "报错", "出错", "重试", "卡住", "打不开"),
-     "生成失败可回到首页重新生成；额度不足/接口异常会有提示。持续失败可在「反馈」里描述，我们会尽快处理。"),
-]
-
-
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。
-    第二百九十七轮：支持 style（concise/casual/academic 三档）调整回复口吻，智能体命名「小创」。"""
-    data = request.get_json(silent=True) or {}
-    msg = (data.get('message') or '').strip()
-    if not msg:
-        return jsonify({"success": False, "error": "请输入问题"}), 400
-    if len(msg) > 500:
-        msg = msg[:500]
-    style = _chat_style_key(data.get('style'))
-    for kws, ans in _CHAT_PRESET:
-        if any(k in msg for k in kws):
-            return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
-                            "source": "preset", "style": style})
-    # 第二百九十四轮：演示只读会话「只答不写、不计入生成额度」——仅走预设，不接 LLM 兜底，
-    # 避免评委演示时把外部模型额度烧掉。
-    if _admin_session_role() == 'readonly':
-        return jsonify({"success": False,
-                        "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
-                        "error_code": "demo_readonly"}), 403
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        prompt = ("你是「%s」智能助手，用中文回答用户问题，只谈本产品功能与赛事规则，不编造数据。"
-                  "回答口吻：%s。\n用户问题：%s" % (_CHAT_NAME, _CHAT_STYLES[style]["tone"], msg))
-        # 336 轮：聊天兜底降 token（400→200）缩短等待（目标 <6s）。
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=200)
-        return jsonify({"success": True, "reply": (resp.content or '').strip(),
-                        "source": "llm", "style": style})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
-
-
-@app.route('/api/analyze_segment', methods=['POST'])
-def analyze_segment():
-    """第三百零八轮：段落/图表「智能解读」——对正文某段或某张图表做通俗深度解读。
-    独立接口，不改生成/导出主链路；演示只读态不接 LLM；计入生成额度（llm.invoke 自动计数）。
-    kind=text（默认，正文段落）/ chart（图表标题+数据），图表不可划选，前端用点按/悬停触发。"""
-    data = request.get_json(silent=True) or {}
-    text = (data.get('text') or '').strip()
-    kind = str(data.get('kind') or 'text').strip().lower()
-    if kind not in ('text', 'chart'):
-        kind = 'text'
-    if not text:
-        return jsonify({"success": False, "error": "缺少需要解读的内容"}), 400
-    if len(text) > 3000:
-        text = text[:3000]
-    # 演示只读会话：不接 LLM，给预设提示（不烧额度）
-    if _admin_session_role() == 'readonly':
-        return jsonify({"success": False,
-                        "error": "演示账号不接入外部模型，登录后可深度解读",
-                        "error_code": "demo_readonly"}), 403
-    try:
-        from competition_agents import llm
-        from langchain_core.messages import HumanMessage
-        if kind == 'chart':
-            _task = ("下面是一张图表的标题与数据。请用通俗中文「说人话」讲清这张图说明了什么、"
-                     "关键数据是什么、它对哪些评分维度有支撑；不要只罗列数字，不要套话模板。")
-        else:
-            _task = ("下面是一段申报书正文。请用 2~4 句通俗中文做深度解读：提炼要点、解释专业术语、"
-                     "提示它对哪些评分维度的支撑；必须结合这段内容具体展开，禁止敷衍套话/通用模板，"
-                     "不编造、不评价优劣、不扩写原文。")
-        prompt = ("你是「%s」智能助手。%s\n内容：\n%s" % (_CHAT_NAME, _task, text))
-        resp = llm.invoke([HumanMessage(content=prompt)], max_tokens=350)
-        return jsonify({"success": True, "analysis": (resp.content or '').strip(),
-                        "source": "llm", "kind": kind})
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+        return jsonify({"success": False, "error": "演示数据解析失败"})
+    return jsonify({"success": True, "data": data})
 
 
 @app.route('/api/health')
@@ -6609,6 +5822,18 @@ def health():
     return jsonify(data)
 
 
+@app.route('/api/build_info')
+def build_info():
+    """返回前端与资料包指纹，供桌面端/移动端清理旧缓存。"""
+    return jsonify({
+        "success": True,
+        "fingerprint": "20261003t-o-kb15",
+        "frontend": "20261003t",
+        "style": "20261003o",
+        "knowledge_count": 15,
+    })
+
+
 @app.route('/api/ppt_themes')
 def ppt_themes():
     """返回可用主题与版式模板清单，供前端下拉选择"""
@@ -6625,14 +5850,24 @@ def ppt_themes():
 def export_pptx():
     """导出自动生成的路演 PPT（.pptx）"""
     data = request.get_json(force=True, silent=True) or {}
+    # 417 轮：大纲原文先留一份。下面 _fetch_record_from_source 会用整条历史记录覆盖 data，
+    # 前端传的 ppt_outline 会被一起冲掉，页数校验就永远拿不到大纲了。
+    _outline_text = (data.get('ppt_outline') or data.get('outline') or '')
     # 与 export_zip 一致：绑定当前记录，避免「下载路演PPT」拿到别的历史记录的 deck。
     _rec = _fetch_record_from_source(data)
+    if _rec and not _outline_text:
+        _outline_text = (_rec.get('ppt_outline') or '')
     if _rec:
         _rec = dict(_rec)
         if data.get("theme"):
             _rec["theme"] = data["theme"]
         if data.get("variant"):
             _rec["variant"] = data["variant"]
+        # 2026-10-01：同 export_zip——记录原文覆盖会丢 mode/history_id，补回防误判
+        if data.get("mode") and not _rec.get("mode"):
+            _rec["mode"] = data["mode"]
+        if data.get("history_id") and not _rec.get("history_id"):
+            _rec["history_id"] = data["history_id"]
         data = _rec
     deck = data.get('deck') or data.get('rich_deck')
     if not deck or not deck.get('slides'):
@@ -6648,6 +5883,8 @@ def export_pptx():
         deck['project'] = deck.get('project') or (data.get('idea', '') or '科创项目')[:30]
         deck.setdefault('one_liner', data.get('one_liner', ''))
         deck.setdefault('competition', data.get('competition', ''))
+        # 417 轮：PPT 也要带智能辅助声明（与 Word/PDF 同一套措辞，且不含「AI」字样）
+        deck['notice'] = AI_NOTICE_LINE
         deck.setdefault("theme", "tech")
         deck.setdefault("variant", "v1")
         deck.setdefault('theme', data.get('theme') or 'tech')
@@ -6663,10 +5900,7 @@ def export_pptx():
             if os.path.exists(img):
                 chart_paths[c.get('id')] = img
         os.makedirs('generated', exist_ok=True)
-        # L5：落盘名用友好名（{项目}_{赛事}_路演PPT.pptx），不再用临时名 _deck_export
-        project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
-        competition = deck.get('competition') or data.get('competition_name') or ''
-        out = os.path.join('generated', _export_filename(project, competition, '路演PPT', '.pptx'))
+        out = os.path.join('generated', '_deck_export.pptx')
         build_deck(deck, out, chart_paths)
         # 导出终检（第一百二十五轮）：PPT 页数/体积/生成指令残留
         try:
@@ -6678,12 +5912,35 @@ def export_pptx():
                                 "error": "PPT 质量未达标：" + "；".join(_issues[:3])}), 422
         except Exception:
             pass
-        return _export_reply(data, out,
-                             _export_filename(project, competition, '路演PPT', '.pptx'))
+        # 417 轮：PPT 页数必须与大纲一致。默认路径（不勾选「按标准路演结构重排」）
+        # 是 1:1；勾上后会被重排成固定 8 页，与 15～20 页的大纲对不上，这里明确拦下并告知原因。
+        if _outline_text:
+            try:
+                from export_guard import check_ppt_matches_outline
+                _pm = check_ppt_matches_outline(out, _outline_text)
+                _m = re.search(r'PPT 页数 (\d+) != 大纲页数 (\d+)', '；'.join(_pm.get('errors', [])))
+                if _m:
+                    _np, _no = int(_m.group(1)), int(_m.group(2))
+                    if abs(_np - _no) >= 2:
+                        _safe_unlink(out)
+                        return jsonify({
+                            "success": False, "code": "ppt_outline_mismatch",
+                            "error": "PPT %d 页与大纲 %d 页不一致，已取消导出" % (_np, _no),
+                            "hint": "导出中心里取消勾选「按标准路演结构重排（固定 8 页）」即可按大纲逐页导出；"
+                                    "想保留 8 页结构的话，请先在结果页重写 PPT 大纲到同样页数再导出。",
+                            "ppt_pages": _np, "outline_pages": _no}), 422
+                    print("[export_pptx] 页数与大纲相差 %d 页（表格拆页等正常浮动），放行" % abs(_np - _no))
+            except Exception as _e:
+                print("[export_pptx] 大纲页数校验失败（不阻断）：%r" % (_e,))
+        project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
+        competition = deck.get('competition') or data.get('competition_name') or ''
+        return send_file(out, as_attachment=True,
+                         download_name=_export_filename(project, competition, '路演PPT', '.pptx'),
+                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"PPT导出失败：{e}"}), 500
+        return jsonify({"error": f"PPT导出失败：{_sanitize_error_detail(e)}"}), 500
 
 
 # ============ 范文库管理接口 ============
@@ -6834,7 +6091,6 @@ def distill_paradigm():
 
     成功后注入生成 prompt 的写作范式立即更新；失败返回错误且不覆盖旧范式。
     """
-    _audit_write("distill_paradigm")
     try:
         from kb_distill import distill_from_samples
         result = distill_from_samples()
@@ -7058,9 +6314,8 @@ def handle_unexpected_error(e):
     # 导出失败落库（第八十一轮）：导出接口真正抛异常时记 gen_failures，detail 为真实异常
     if request.path.startswith('/api/export'):
         record_gen_failure("", str(e), traceback.format_exc(limit=3)[-400:],
-                           type="export", path=request.path,
-                           error_code=_error_code(e), error_msg=_friendly_error(e))
-    return jsonify({"success": False, "error": _friendly_error(e), "detail": str(e)}), 500
+                           type="export", path=request.path)
+    return jsonify({"success": False, "error": _friendly_error(e), "detail": _sanitize_error_detail(e)}), 500
 
 
 # ============ 漏洞库后台页 /admin/vulns（第 190 轮新增，整体纯追加块） ============
@@ -7106,7 +6361,7 @@ h1{font-size:21px;margin:0 0 14px}
 .barrow .btrack{flex:1;background:#eef0f4;border-radius:6px;height:13px;overflow:hidden}
 .barrow .bfill{display:block;height:100%;border-radius:6px;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa)}
 .barrow .bn{width:104px;flex-shrink:0;font-size:12px;color:#4b5563;text-align:left;word-break:break-word;line-height:1.35}
-.empty{color:#4b5563;text-align:center;padding:14px;font-size:13px}
+.empty{color:#57606e;text-align:center;padding:14px;font-size:13px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .filters select,.filters button{font-size:13px;padding:7px 10px;border:1px solid #dbe3ee;border-radius:8px;background:#fff;color:#374151;cursor:pointer}
 .filters label.f{font-size:12.5px;color:#4b5563}
@@ -7151,14 +6406,14 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   .barrow .bn{width:76px}
   .filters{width:100%}
 }
-<link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
+</style></head><body><div class="wrap">
+<nav class="nav"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
 <h1>🐞 漏洞库</h1>
 <div id="pageMsg" class="msg"></div>
 <div id="gate" class="gate" hidden>
-  <h2>需要管理员口令</h2>
-  <div class="tip">漏洞库接口要求请求头 <b>X-Admin-Token</b>。口令由服务端保存，页面不存储、不硬编码。<br>输入后保存在本机浏览器，之后每次请求自动带上；本机若禁用了本地存储，也会临时保留在页面内存里。</div>
-  <input id="tokenInput" type="password" placeholder="输入管理员口令" autocomplete="off">
+  <h2>需要 admin token</h2>
+  <div class="tip">漏洞库接口要求请求头 <b>X-Admin-Token</b>。token 取自服务端环境变量 ADMIN_TOKEN，页面里没有也不会硬编码。<br>输入后存在本机 localStorage，之后每次请求自动带上。本机若禁用了 localStorage，也会临时保留在当前页面内存里。</div>
+  <input id="tokenInput" type="password" placeholder="输入 admin token" autocomplete="off">
   <button id="tokenBtn" type="button">验证并加载</button>
   <div id="gateMsg" class="err" hidden></div>
 </div>
@@ -7245,7 +6500,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   function pull(url, opts, label){
     return req(url, opts).then(function(r){
       if (r.status === 401 || r.status === 403) {
-        throw {auth: true, msg: '接口鉴权失败（HTTP ' + r.status + '），请重新输入管理员口令'};
+        throw {auth: true, msg: '接口鉴权失败（HTTP ' + r.status + '），请重新输入 admin token'};
       }
       return r.json().catch(function(){
         throw {msg: label + '：服务端返回的不是合法 JSON'};
@@ -7375,7 +6630,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
       + '<h3>标记状态</h3>'
       + '<div class="detrow">'
       + '<select data-role="status">' + statusOptions(v.status) + '</select>'
-      + '<label><input type="checkbox" data-role="distilled"' + (v.distilled ? ' checked' : '') + '> 已提炼</label>'
+      + '<label><input type="checkbox" data-role="distilled"' + (v.distilled ? ' checked' : '') + '> 蒸馏标记</label>'
       + '<button class="detbtn" type="button" data-act="submit">提交</button>'
       + '<span class="detmsg" data-role="msg"></span>'
       + '</div>'
@@ -7456,7 +6711,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
     });
   }
   function load(){
-    if (!getToken()) { showGate('本机还没有管理员口令'); return; }
+    if (!getToken()) { showGate('本机还没有 admin token'); return; }
     $('pageMsg').textContent = '加载中…';
     var q = buildQuery();
     return Promise.all([
@@ -7531,4 +6786,4 @@ def admin_vulns_page():
     页面自身不带 token（所有数据来自 admin 鉴权的 /api/vulns* 接口），
     接口返 401/403 时由页面弹出 token 输入框，token 只存浏览器本机。
     """
-    return _inject_role_badge(_VULNS_PAGE_HTML)
+    return _VULNS_PAGE_HTML

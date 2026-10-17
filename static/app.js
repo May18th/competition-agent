@@ -1,5 +1,26 @@
 
 
+        /* ---------- 带超时的 fetch（2026-09-30 加） ----------
+           背景：上传 / 主题列表 / 赛事索引等请求原先没有超时，网络慢或隧道抖动时
+           按钮永久转圈、UI 卡在"加载中"，用户只能刷新。统一走 _wbFetch：
+           - 默认 30s 超时（大文件上传放宽到 120s）
+           - 超时后抛错走原有 catch 分支，提示"网络超时，请重试"
+           - AbortController 不存在时（极老浏览器）退化为普通 fetch，不影响功能 */
+        function _wbFetch(url, opt, timeoutMs) {
+            opt = opt || {};
+            var ms = timeoutMs || 30000;
+            if (typeof AbortController !== 'function') return fetch(url, opt);
+            var ctl = new AbortController();
+            var merged = {};
+            for (var k in opt) merged[k] = opt[k];
+            merged.signal = ctl.signal;
+            var timer = setTimeout(function () { ctl.abort(); }, ms);
+            return fetch(url, merged).then(
+                function (r) { clearTimeout(timer); return r; },
+                function (e) { clearTimeout(timer); throw e; }
+            );
+        }
+
         /* ---------- 本机存储降级（2026-09-28 移动端实测） ----------
            iOS Safari / 微信 / QQ 内核会拦掉本机存储，控制台报
            "Tracking Prevention blocked access to storage"，此时 localStorage 读写直接抛异常。
@@ -126,7 +147,9 @@
                     return;
                 }
                 box.value = (box.value ? box.value + '\n\n' : '') + txt;
-                wbToast('已粘贴 ' + txt.length + ' 字到草稿框');
+                wbToast('已粘贴 ' + txt.length + ' 字到草稿框，正在自动识别项目信息…');
+                // 统一材料框架：粘贴草稿同样自动填充全部输入框
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(txt, {});
             } catch (err) {
                 box.focus();
                 wbToast('浏览器不让读剪贴板，请在草稿框里长按选择「粘贴」', { type: 'error' });
@@ -144,7 +167,7 @@
             try {
                 const fd = new FormData();
                 fd.append('file', file);
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: fd }, 120000);
                 const d = await res.json();
                 if (!d || !d.success) {
                     if (info) info.textContent = '读取失败：' + ((d && d.error) || '未知错误');
@@ -206,7 +229,7 @@
                 const fd = new FormData();
                 fd.append('file', file);
                 fd.append('purpose', 'user_data');
-                const res = await fetch('/api/upload_file', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_file', { method: 'POST', body: fd }, 120000);
                 d = await res.json();
             } catch (err) {
                 if (info) info.textContent = '识别失败：连不上服务，请稍后重试';
@@ -313,7 +336,9 @@
                     dr.value = dr.value.trim() ? dr.value.trim() + '\n\n' + p.text : p.text;
                     dr.dispatchEvent(new Event('change'));
                 }
-                wbToast('已填入申报书草稿框（追加，不覆盖已有内容）', { type: 'ok' });
+                wbToast('已填入申报书草稿框（追加，不覆盖已有内容），正在自动识别项目信息…');
+                // 统一材料框架：路由到草稿后，其余字段（创意/团队/实测数据分格/关键词）自动填充
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(p.text, {});
             } else {
                 var ex = document.getElementById('udExtra');
                 if (ex) {
@@ -321,7 +346,13 @@
                     ex.value = ex.value.trim() ? ex.value.trim() + '\n\n' + add : add;
                     ex.dispatchEvent(new Event('change'));
                 }
-                wbToast('已合并进实测数据·其它佐证', { type: 'ok' });
+                wbToast('已合并进实测数据·其它佐证，正在自动识别试点/样本/指标/成本…');
+                // 统一材料框架：只填实测数据四个分格 + 基本信息，不覆盖刚合并进「其它佐证」的原文
+                if (window.wbDraftSmartFill) window.wbDraftSmartFill(p.text, {
+                    onlyFields: ['competition_name', 'idea', 'team',
+                                 'user_data_site', 'user_data_scale',
+                                 'user_data_metric', 'user_data_cost', 'keywords']
+                });
             }
             if (info) info.innerHTML = '已完成：《' + _esc(p.fname) + '》→ ' + (destLabel[key] || '实测数据') + '。可继续上传其它文件。';
             window._wbUdPending = null;
@@ -338,7 +369,7 @@
             try {
                 const fd = new FormData();
                 fd.append('file', file);
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: fd });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: fd }, 120000);
                 const d = await res.json();
                 if (!d || !d.success) {
                     if (tip) tip.innerText = '模板识别失败：' + ((d && d.error) || '未知错误');
@@ -395,12 +426,23 @@
             const formData = new FormData();
             formData.append('file', file);
             try {
-                const res = await fetch('/api/upload_pdf', { method: 'POST', body: formData });
+                const res = await _wbFetch('/api/upload_pdf', { method: 'POST', body: formData }, 120000);
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('proposal_draft').value = data.text;
                     // 注意用 innerHTML：innerText 会把 SVG 图标当纯文本显示出来
-                    document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框';
+                    document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 上传成功，已填入草稿框，正在自动识别项目信息…';
+                    // 统一材料框架：导入草稿 → 一次解析自动填充创意/团队/实测数据/关键词等全部输入框
+                    if (window.wbDraftSmartFill) {
+                        window.wbDraftSmartFill(data.text, {
+                            onDone: function () {
+                                document.getElementById('ideaFileName').innerHTML = '<svg class="wb-ico wb-ico-ok" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-check"/></svg> 导入完成：草稿已填入，项目信息已自动填充到各输入框，请核对';
+                            },
+                            onFail: function (m) {
+                                document.getElementById('ideaFileName').innerText = '草稿已填入；' + m + '，可点「从材料识别」重试';
+                            }
+                        });
+                    }
                 } else {
                     document.getElementById('ideaFileName').innerText = '上传失败：' + (data.error || '未知错误');
                     wbToast('上传失败：' + (data.error || '未知错误'), { type: 'error' });
@@ -412,10 +454,25 @@
         });
 
         // DOM id -> 生成结果里的字段名（隐藏 tab 的 innerText 会是空串，必须走原始数据）
-        var _DOM_TO_KEY = window._DOM_TO_KEY;
+        var _DOM_TO_KEY = {
+            parsedRules: 'parsed_rules', similarityReport: 'similarity_report',
+            proposalText: 'proposal', proposalAnalysis: 'proposal_analysis',
+            judgeFeedback: 'judge_feedback', competitorAnalysis: 'competitor_analysis',
+            businessModel: 'business_model', riskAnalysis: 'risk_analysis',
+            techSolution: 'tech_solution', defenseQuestions: 'defense_questions',
+            pptOutline: 'ppt_outline',
+            // 实施计划：zip 里早就有 12_实施计划.docx，但导出中心一直没有单文件入口
+            implementationPlan: 'implementation_plan'
+        };
         // ===== 封面信息 / 原格式导出（WorkBuddy）=====
         // 各导出项对应的文档档位：default=申报书 report=报告 analysis=分析 outline=大纲
-        var _DOC_TYPE = window._DOC_TYPE;
+        var _DOC_TYPE = {
+            parsedRules: 'report', similarityReport: 'report', proposalText: 'default',
+            proposalAnalysis: 'analysis', judgeFeedback: 'analysis',
+            competitorAnalysis: 'analysis', businessModel: 'analysis',
+            riskAnalysis: 'analysis', defenseQuestions: 'analysis', pptOutline: 'outline',
+            techSolution: 'analysis', implementationPlan: 'analysis'
+        };
         function wbMeta() {
             return {
                 school: (document.getElementById('wbSchool') || {}).value || '',
@@ -423,7 +480,7 @@
                 advisor: (document.getElementById('wbAdvisor') || {}).value || ''
             };
         }
-        // 学校 / 团队 / 指导老师同样属于敏感信息（匿名评审赛事尤其），只存 sessionStorage
+        // 学校 / 团队 / 指导老师同样属于敏感信息（双盲赛事尤其），只存 sessionStorage
         function wbSaveMeta() {
             try { _wbSessSet('wbDocMeta', JSON.stringify(wbMeta())); } catch (e) {}
             // 旧版本存在 localStorage 里的那份就地清掉
@@ -520,7 +577,6 @@
                 if (r) safe.mode = r.value;
                 // 中性字段照旧长期保存；敏感字段只写 sessionStorage，没有内容时连键一起删掉
                 _wbStoreSet(WB_FORM_KEY, JSON.stringify(safe));
-                try { wbStatePushSoon(safe); } catch (e) {}
                 if (sensHit) _wbSessSet(WB_FORM_S_KEY, JSON.stringify(sens));
                 else _wbSessDel(WB_FORM_S_KEY);
             } catch (e) {}
@@ -617,63 +673,6 @@
             } catch (e) {}
         }
 
-        /* ---------- 292 轮：双端同步（桌面生成 → 手机历史可见；手机草稿 → 桌面接续） ----------
-           接口：GET /api/user_state 拉、POST /api/user_state 写（Codex 295 回执定稿）。
-           原则：服务端为准（启动拉一次覆盖本地）；本地改动 debounce 2s 写回；后写胜。
-           隐私：只同步中性字段（赛事 / 档位 / 勾选项）。idea、proposal_draft、keywords 等
-           敏感内容仍在 WB_FORM_SENSITIVE 里，只写 sessionStorage，绝不上传服务端。
-           失败一律静默：同步是增强，不能因为它让本机不可用。 */
-        var _wbStatePushT = null;
-        function wbStatePushSoon(safe) {
-            if (_wbStatePushT) clearTimeout(_wbStatePushT);
-            _wbStatePushT = setTimeout(function () {
-                _wbStatePushT = null;
-                try {
-                    var cel = document.getElementById('competition');
-                    var r = document.querySelector('input[name=mode]:checked');
-                    fetch('/api/user_state', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            state: {
-                                draft: safe || {},
-                                competition: cel ? (cel.value || '') : '',
-                                mode: r ? (r.value || '') : ''
-                            }
-                        })
-                    }).catch(function () {});
-                } catch (e) {}
-            }, 2000);
-        }
-        window.wbStatePushSoon = wbStatePushSoon;
-
-        function wbStatePull() {
-            try {
-                fetch('/api/user_state', { method: 'GET' })
-                    .then(function (r) { return r.ok ? r.json() : null; })
-                    .then(function (j) {
-                        if (!j || j.success !== true || !j.state) return;
-                        var st = j.state || {};
-                        var d = st.draft;
-                        // 服务端为准：有草稿就覆盖本地，再回填表单（换设备/换浏览器也能接续）
-                        if (d && typeof d === 'object' && Object.keys(d).length) {
-                            try { _wbStoreSet(WB_FORM_KEY, JSON.stringify(d)); } catch (e) {}
-                            try { wbLoadForm(); } catch (e) {}
-                        }
-                        if (st.competition) {
-                            var cel = document.getElementById('competition');
-                            if (cel && !cel.value) { cel.value = st.competition; try { wbSaveForm(); } catch (e) {} }
-                        }
-                    }).catch(function () {});
-            } catch (e) {}
-        }
-        window.wbStatePull = wbStatePull;
-
-        // 启动 300ms 后拉一次：等本地恢复先跑完，服务端内容再覆盖（避免闪烁）
-        window.addEventListener('load', function () {
-            setTimeout(function () { try { wbStatePull(); } catch (e) {} }, 300);
-        });
-
         function wbLoadForm() {
             _wbPurgeLegacySensitive();
             var d = null, ds = null;
@@ -716,8 +715,10 @@
             if (box) {
                 var tx = document.getElementById('wbRestoreText');
                 // 提示里不再出现具体时间：那等于把「你什么时候在这台电脑上写过东西」也告诉了下一个人
-                // 324 轮：只保留对用户有用的那条约定，不再复述「恢复了什么」这种内部动作
-                var msg = '赛事与档位会记住；创意和草稿只保存在当前标签页，关闭即清除';
+                var msg = safeHit && sensHit
+                    ? '已恢复上次选择的赛事与档位，本页草稿也还在（关闭标签页后自动清除）'
+                    : (safeHit ? '已恢复上次选择的赛事与档位'
+                               : '已恢复本页上次填写的草稿（关闭标签页后自动清除）');
                 if (tx) tx.textContent = msg;
                 box.style.display = 'flex';
             }
@@ -811,7 +812,7 @@
             try { wbRoadLabel(); } catch (e) {}
         })();
 
-        // 当前赛事名：后端靠它做「按官方章节排序」和「iCAN 匿名评审隐去学校/导师」，
+        // 当前赛事名：后端靠它做「按官方章节排序」和「iCAN 双盲隐去学校/导师」，
         // 不传这两件事都不生效。取输入框优先，没有再退回本轮生成时记下的赛事名。
         function wbCompName() {
             var v = (document.getElementById('competition') || {}).value || '';
@@ -904,32 +905,13 @@
                 });
                 return;
             }
-            // 第二百三十四轮：导出终检（quality_gate.check_docx / check_pdf）打回也走这里，
-            // 后端返回 code=export_quality_fail 且 error 里已带具体原因（如「Heading 层级过少（2）」）。
-            // 只弹「导出失败」用户会以为网站坏了，这里照实转述原因 + 明确内容没丢。
-            if (j && j.code === 'export_quality_fail') {
-                wbToast(label + '暂未通过导出终检', {
-                    type: 'warn', ms: 9000,
-                    sub: (msg ? '原因：' + msg + '。' : '')
-                        + '正文内容还在页面上，补完整章节或重新生成后再导出即可，不用重头再来'
-                });
-                return;
-            }
-            // 290 轮：403 / 超时单独给原因——只弹「导出失败」用户分不清是权限、超时还是网站坏了
-            if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
-            if (bad && bad.res && bad.res.status === 403) {
-                var _ro = /演示模式为只读/.test(msg || '');
-                wbToast(_ro ? (label + '在演示模式下不可导出') : (label + '没有导出权限'), {
-                    type: 'warn', ms: 8000,
-                    sub: _ro ? '演示账号是只读的。想看完整效果请用「🎬 一键演示」，或登录完整账号后再导出'
-                             : '登录状态可能已过期，刷新页面重新登录后再试'
-                });
-                return;
-            }
-            if (bad && bad.err && /timeout|超时|abort|network|Failed to fetch/i.test(String((bad.err && bad.err.message) || bad.err))) {
-                wbToast(label + '导出超时', {
-                    type: 'warn', ms: 8000,
-                    sub: '文件较大或服务正在忙，页面内容和生成结果都还在，稍等一下再点一次即可'
+            // 417 轮：PDF 超页数/超大小被打回时，光说「未达标」用户不知道删哪。
+            // 后端在 suggestions 里给了带数字的删减条目，这里原样列出来。
+            if (j && j.code === 'export_quality_fail' && j.suggestions && j.suggestions.length) {
+                var _ips = j.suggestions.slice(0, 4).join('；');
+                wbToast(label + '超出该赛事提交要求，已取消导出', {
+                    type: 'warn', ms: 11000,
+                    sub: (msg ? msg + '。' : '') + '怎么改：' + _ips
                 });
                 return;
             }
@@ -940,31 +922,7 @@
             });
         }
 
-        // 第二百四十九轮：导出目标对账 —— 当前展示的记录 id 必须与导出要用的 id 一致。
-        // 两边不一致只可能是状态串了，此时继续导出等于把别的内容交到用户手里，
-        // 用户是拿去交作品的，下错了比下不出来严重得多。
-        function wbExportTargetOk() {
-            var shown = window._shownResultId, hid = window._lastHistoryId;
-            // 两者都为空：还没绑定记录，导出走本次提交的正文 —— 内容就是页面上这一版，安全
-            if (shown === undefined || (shown === null && hid === null)) return true;
-            if (shown === hid) return true;
-            wbToast('导出目标与当前结果不一致，已拦下', {
-                type: 'warn', ms: 9000,
-                sub: '检测到本次导出会绑定到另一条记录（' + (hid || '未知') + '），'
-                     + '为避免下载到别的内容，已取消这次导出。请刷新页面后重新生成再导出。'
-            });
-            return false;
-        }
-        window.wbExportTargetOk = wbExportTargetOk;
-
         async function exportOne(id, name) {
-            // 290 轮：导出耗时可到十几秒，不给进度条用户会以为按钮没反应而反复点。
-            // ms:0 = 不自动关闭，成功/失败时显式关掉。
-            window.__wbExportLoading = wbToast('正在生成「' + name + '」文件…', { type: 'info', ms: 0 });
-            // 第二百四十九轮 P0 防御：导出的目标记录必须与「当前展示的结果」是同一条。
-            // 只要两边对不上，就说明状态串了（并发生成 / 回看历史 / 接口晚到都可能造成），
-            // 此时继续导出会把别的内容交到用户手里——宁可拦下让用户重来，也不能静默给错文件。
-            if (_DOM_TO_KEY[id] === 'proposal' && !wbExportTargetOk()) return;
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
@@ -993,29 +951,19 @@
                         // 171 轮：把用户在「高级参数」里选的图表配色带过去，
                         // 后端接上后导出的图表 PNG 与前台同色（未接上也不影响，后端忽略未知字段）
                         chart_theme: wbChartThemeKey(),
-                        // 第二百三十五轮：后端打分门按档位评分，前端必须如实告知当前档位，
-                        // 否则后端默认「深度版」标准，简洁版一律被拦（导出 422）。
-                        mode: (document.querySelector('input[name="mode"]:checked') || {}).value || 'fast',
+                        // 2026-10-01：带上本次生成模式，后端质量门按 fast 标准评 fast 稿
+                        mode: (window._lastGenMode || 'deep'),
                         school: m.school, team: m.team, advisor: m.advisor};
                 var r = await wbExportFetch('/api/export_word', payload);
                 if (!r.ok) { await wbExportError('Word', r); return; }
                 const res = r.res;
                 const blob = await res.blob();
-                if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
                 wbSaveBlob(blob, name + ".docx");
                 wbToast('「' + name + '」已开始下载', { type: 'ok', ms: 2600 });
             } catch (e) {
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
-                // 249b：常驻 loading 必须在这里兜底关掉。
-                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
-                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
-                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
-                if (window.__wbExportLoading) {
-                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
-                    window.__wbExportLoading = null;
-                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1072,8 +1020,6 @@
         async function exportOnePDF(id, name) {
             /* iCAN 官方交的就是 PDF（≤20页），这里必须和 Word 一样先清洗，
                否则「待补充」「待替换数据清单」会原样进 PDF */
-            // 249 轮：PDF 同样要过目标对账，否则会导出到上一条记录
-            if (_DOM_TO_KEY[id] === 'proposal' && !wbExportTargetOk()) return;
             const text = wbStripTodo(_txt(_DOM_TO_KEY[id] || '', id));
             if (!text.trim()) { wbToast('「' + name + '」没有内容，请先生成', { type: 'warn' }); return; }
             var btn = (window.event && window.event.target) || null;
@@ -1112,14 +1058,6 @@
                 wbToast('导出失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
-                // 249b：常驻 loading 必须在这里兜底关掉。
-                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
-                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
-                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
-                if (window.__wbExportLoading) {
-                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
-                    window.__wbExportLoading = null;
-                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1133,8 +1071,6 @@
             return el.innerText || el.textContent || '';
         }
         async function exportAll() {
-            // 249 轮：一键打包同样要过目标对账（打包里含申报书，绑错记录后果一样严重）
-            if (!wbExportTargetOk()) return;
             var rd = window._lastData || {};
             var _m = wbMeta();
             var deck = rd.rich_deck || null;
@@ -1163,7 +1099,7 @@
                 rich_tables: rd.rich_tables || [],
                 rich_deck: deck,
                 idea: rd.idea || (document.getElementById('idea') || {}).value || '',
-                // 打包里的 Word 同样要按赛事章节排序 / 走 iCAN 匿名评审脱敏，漏了就退化成默认顺序
+                // 打包里的 Word 同样要按赛事章节排序 / 走 iCAN 双盲，漏了就退化成默认顺序
                 competition_name: wbCompName(),
                 // 页面上手动选过主题/模板时覆盖自动推断值，和「下载 PPT」保持一致
                 theme: tk || (deck && deck.theme) || null,
@@ -1173,7 +1109,6 @@
             };
             var btn = (window.event && window.event.target) || null;
             if (btn) { btn.disabled = true; btn.dataset.old = btn.innerHTML; btn.innerHTML = '打包中...'; }
-            window.__wbExportLoading = wbToast('正在打包全部文件…', { type: 'info', ms: 0 });
             try {
                 // 以前直接 res.blob() 存盘：后端 400 返回的是 JSON 错误体，会被原样存成 .zip，
                 // 用户拿到「内容是错误信息的坏压缩包」，页面还提示「已打包，去下载吧」——
@@ -1183,18 +1118,10 @@
                 const res = r.res;
                 const blob = await res.blob();
                 wbSaveBlob(blob, "科创赛事项目材料包.zip");
-                if (window.__wbExportLoading) { wbToastClose(window.__wbExportLoading); window.__wbExportLoading = null; }
                 wbToast('已打包，去下载吧', { type: 'ok', ms: 3000 });
             } catch (e) {
                 wbToast('打包失败：' + (e && e.message ? e.message : e), { type: 'error' });
             } finally {
-                // 249b：与 exportOne 同一个坑 —— 「打包」被质检打回时走的是
-                // if (!r.ok) { await wbExportError(...); return; }，
-                // 不会到成功分支那句关闭，常驻 loading 就永久挂起。
-                if (window.__wbExportLoading) {
-                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
-                    window.__wbExportLoading = null;
-                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -1237,6 +1164,15 @@
         function _esc(s) {
             return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         }
+        /* 2026-09-30 人眼审查：接口挂掉时把英文原始错误（Unexpected end of JSON input /
+           Failed to fetch）直接甩给用户，评委看到很减分。统一转成中文人话，未知错误仍原样透出 */
+        function _friendlyErr(e) {
+            var m = (e && e.message) || String(e || '');
+            if (/Unexpected end of JSON|invalid JSON|JSON/i.test(m)) return '服务暂时无响应，请稍后重试';
+            if (/Failed to fetch|NetworkError|Load failed|net::/i.test(m)) return '网络连接失败，请检查网络后重试';
+            if (/timeout|Timed out|aborted/i.test(m)) return '请求超时，请稍后重试';
+            return m;
+        }
         // ---- 全局提示 Toast（替代 alert，所有反馈统一走这里）----
         var _toastSeq = 0;
         function wbToast(title, opt) {
@@ -1273,8 +1209,45 @@
 
         /* ---------- 赛事要求卡：跟着赛事名自动换文档类型与章节结构 ---------- */
         // 数据与 data/event_requirements.json 同源（改那边记得同步这里）
-        var EVENT_REQ = window.EVENT_REQ;
-        var EV_DEFAULT = window.EV_DEFAULT;
+        var EVENT_REQ = {
+            "iCAN大学生创新创业大赛": {
+                label: "应用方案", doc_type: "应用方案（PDF，不超过 20 页 / 50MB）",
+                alias: ["ican", "ican大赛", "ican大学生", "创新创业", "AI应用创新挑战赛", "iCAN AI挑战赛"],
+                sections: ["一、项目背景与痛点", "二、需求分析与目标用户", "三、开发工具与技术选型",
+                           "四、技术方案与系统架构", "五、功能说明与 AI 核心作用",
+                           "六、使用说明", "七、应用前景与商业模式", "八、团队分工与知识产权"],
+                // 官方口径（与 data/competition_profiles.json 一致）：创新性30/商业性25/技术方案25/产品介绍20
+                scoring: [["创新性", 30], ["商业性", 25], ["技术方案", 25], ["产品介绍", 20]],
+                deduct: "扣分点：智能能力只做套壳点缀 / 无可运行 Demo / 技术细节空洞 / 缺少使用说明 / 硬件赛道交渲染图",
+                // 官方提交物（AI 应用创新挑战赛）：应用方案 PDF + 演示视频 + 可运行程序
+                submit: ["应用方案 PDF（≤20页、≤50MB）", "演示视频 MP4（≤5分钟）",
+                         "可运行程序链接或源码", "硬件赛道另交：硬件设计说明 + 实物原型照片"]
+            },
+            "挑战杯全国大学生课外学术科技作品竞赛": {
+                label: "申报书", doc_type: "申报书（学术论文 / 科技发明类）",
+                alias: ["挑战杯", "课外学术科技作品"],
+                sections: ["一、项目概述", "二、国内外研究现状", "三、研究内容与方法",
+                           "四、创新点与成果", "五、应用前景与社会价值", "六、团队与进度安排"],
+                scoring: [["创新性", 30], ["可行性", 30], ["科学性与先进性", 20], ["综合答辩与展示", 20]],
+                deduct: "扣分点：缺少文献综述 / 创新点不清晰 / 无数据或实验支撑"
+            },
+            "中国国际互联网+大学生创新创业大赛": {
+                label: "商业计划书", doc_type: "商业计划书",
+                alias: ["互联网+", "互联网+大赛", "中国国际大学生创新大赛"],
+                sections: ["一、项目概述", "二、市场分析", "三、产品与技术方案", "四、商业模式",
+                           "五、财务预测与融资计划", "六、团队与教育维度", "七、社会价值"],
+                scoring: [["教育维度", 25], ["创新维度", 30], ["团队维度", 20], ["商业与社会价值维度", 25]],
+                deduct: "扣分点：商业模式不成立 / 财务数据拍脑袋 / 缺少教育维度"
+            }
+        };
+        var EV_DEFAULT = {
+            label: "申报书", doc_type: "申报书（通用科创赛事结构）",
+            sections: ["一、项目概述", "二、项目背景与痛点分析", "三、解决方案与技术方案",
+                       "四、核心创新点", "五、应用场景与市场分析", "六、商业模式",
+                       "七、团队介绍与分工", "八、社会价值与应用前景"],
+            scoring: [["创新性", 30], ["实用性", 25], ["技术难度", 20], ["团队展示", 15], ["社会价值", 10]],
+            deduct: "通用结构：可在上方卡片里增删改章节，生成会按你改的来"
+        };
 
         // 当前文档名词（申报书 / 应用方案 / 商业计划书，按比赛官方提交物为准），全站文案跟着它走
         var WB_DOC_LABEL = '申报书';
@@ -1291,7 +1264,7 @@
                 var c = JSON.parse(_wbStoreGet(WB_COMP_IDX_KEY) || 'null');
                 if (c && c.items && c.items.length) WB_COMP_INDEX = c;
             } catch (e) {}
-            fetch('/static/competition_index.json', { cache: 'no-cache' })
+            _wbFetch('/static/competition_index.json', { cache: 'no-cache' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
                     if (!d || !d.items || !d.items.length) return;
@@ -1307,7 +1280,7 @@
         }
 
         /* ---------- 赛事结构化配置（后端 data/competition_profiles.json） ----------
-           15 个比赛的官方章节顺序 / 评分重点 / 赛事侧重 / 是否要求匿名评审都在这一份里。
+           15 个比赛的官方章节顺序 / 评分重点 / 赛事侧重 / 是否双盲都在这一份里。
            前端拉一次缓存起来，赛事卡与评分展示优先用它，避免后端改了 JSON 前端还写死旧口径。
            优先级：知识库资料索引（真实资料）> 本配置 > 前端内置 EVENT_REQ。 */
         var WB_COMP_PROFILES = null;
@@ -1318,16 +1291,13 @@
                 var c = JSON.parse(_wbStoreGet(WB_COMP_PROF_KEY) || 'null');
                 if (c && c.length) WB_COMP_PROFILES = c;
             } catch (e) {}
-            fetch('/api/competition_profiles', { cache: 'no-cache' })
+            _wbFetch('/api/competition_profiles', { cache: 'no-cache' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (d) {
                     if (!d || !d.success || !d.competitions || !d.competitions.length) return;
                     WB_COMP_PROFILES = d.competitions;
                     try { _wbStoreSet(WB_COMP_PROF_KEY, JSON.stringify(d.competitions)); } catch (e) {}
                     try { renderEventCard(); } catch (e) {}
-                    // M10：接口常常比结果晚到（结果先渲染、profiles 后到），这里补刷一次来源标注，
-                    // 否则「有官方来源」的赛事会一直停在「待核」
-                    try { wbRefreshRuleSrcNote(); } catch (e) {}
                 })
                 .catch(function () { /* 拉不到就用缓存 / 回落到内置规则 */ });
         }
@@ -1350,86 +1320,6 @@
             });
             return bs >= 80 ? best : null;
         }
-
-        /* ---------- M10：规则解析卡下方的「评分口径来源 + 核实日期」标注 ----------
-           来源只认后端 data/competition_profiles.json 里 track 的 source / checked_date。
-           实测：顶层 competition 根本没有这两个字段，且只有 iCAN / 互联网+ 等少数赛事的
-           track 带了 source，挑战杯、数学建模等多数赛事一条都没有 —— 一律诚实标「待核」。
-           红线：不编造来源。既不用「官网大概是 xxx.com」去猜，也不拿今天日期冒充核实日期，
-           编出来的来源比不标更坏：用户会拿着它去跟评委对口径。 */
-        function wbNormKey(s) {
-            return String(s == null ? '' : s).toLowerCase().replace(/[""'']/g, '').replace(/[\s()（）\[\]【】]+/g, '');
-        }
-        // 当前选中赛道（赛事卡里用户点的那个）；取不到就交给下面的默认赛道逻辑
-        function wbCurrentTrackLabel() {
-            try {
-                var c = evCurrent();
-                if (c && c._track) return c._track.name || c._track.key || '';
-            } catch (e) {}
-            return '';
-        }
-        // 在 profile.scoring_by_track.tracks 里挑一条：当前赛道 > is_default > 第一条
-        function wbPickProfileTrack(prof, want) {
-            var ts = (prof && prof.scoring_by_track && prof.scoring_by_track.tracks) || [];
-            if (!ts.length) return null;
-            var w = wbNormKey(want), i, t, a, b;
-            if (w) {
-                for (i = 0; i < ts.length; i++) {
-                    t = ts[i] || {};
-                    a = wbNormKey(t.name); b = wbNormKey(t.id);
-                    if (a && (a === w || w.indexOf(a) >= 0 || a.indexOf(w) >= 0)) return t;
-                    if (b && (b === w || w.indexOf(b) >= 0 || b.indexOf(w) >= 0)) return t;
-                }
-            }
-            for (i = 0; i < ts.length; i++) if (ts[i] && ts[i].is_default) return ts[i];
-            return ts[0] || null;
-        }
-        // 只认 http(s) 开头的真实地址；其余（含万一混进来的 javascript:）一律当「没有来源」
-        function wbSafeSrcUrl(u) {
-            var s = String(u == null ? '' : u).trim();
-            return /^https?:\/\//i.test(s) ? s : '';
-        }
-        function wbRuleSrcNoteHtml() {
-            // profiles 还没到（接口比结果晚到 / 本机缓存空）→ 先不显示，等 wbLoadProfiles 回来补一次，
-            // 不写「加载中…」这类会闪一下的占位文案
-            if (!WB_COMP_PROFILES || !WB_COMP_PROFILES.length) return '';
-            var name = String((document.getElementById('competition') || {}).value || '').trim();
-            var prof = wbMatchProfile(name);
-            var ico = function (n) {
-                return '<svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-' + n + '"/></svg> ';
-            };
-            var out = [];
-            if (!prof) {
-                out.push(ico('warn') + '评分口径来源：通用评审标准（本赛事官方口径待核）');
-                return out.join('<br>');
-            }
-            var tk = wbPickProfileTrack(prof, wbCurrentTrackLabel());
-            var url = wbSafeSrcUrl(tk && tk.source);
-            var ck = String((tk && tk.checked_date) || '').trim();
-            if (url) {
-                out.push(ico('globe') + '评分口径来源：官方规则（核实 ' + _esc(ck || '日期未标注') + '）' +
-                         ' · <a href="' + _esc(url) + '" target="_blank" rel="noopener" ' +
-                         'title="' + _esc(url) + '" ' +
-                         'style="color: var(--text-mute); text-decoration: underline;">' + _esc(url) + '</a>');
-            } else {
-                out.push(ico('warn') + '评分口径来源：内置评分库（官方来源待核）');
-            }
-            var note = String((tk && tk.note) || '');
-            if (/待核实|待官网核实|规则待核实/.test(note)) {
-                out.push(ico('warn') + '该赛道官方规则待核实，暂按通用标准评分');
-            }
-            return out.join('<br>');
-        }
-        function wbRefreshRuleSrcNote() {
-            var box = document.getElementById('ruleSrcNote');
-            if (!box) return;
-            var h = '';
-            try { h = wbRuleSrcNoteHtml(); } catch (e) { h = ''; }
-            if (!h) { box.innerHTML = ''; box.style.display = 'none'; return; }
-            box.innerHTML = h;
-            box.style.display = 'block';
-        }
-        window.wbRefreshRuleSrcNote = wbRefreshRuleSrcNote;
 
         // 从索引匹配赛事：keys 完全相等优先，其次互相包含；取最优命中，避免「挑战杯」串到小挑
         function wbMatchIndex(name) {
@@ -1545,12 +1435,6 @@
             // 默认选中第一个（iCAN 是创新赛道——它的禁忌是「别写学校/导师」，
             // 这条对任何赛道都无害，反而是不选才容易漏掉商业模式这类硬要求）
             var tracks = (base._idx && base._idx.tracks) || [];
-            // 247：赛道数据在两套源里 —— 资料索引 _idx.tracks，或 profiles 的
-            // scoring_by_track.tracks。iCAN 的赛道只写在 profiles 里（索引里 tracks=None），
-            // 只看 _idx 会永远拿不到赛道 -> 后端 track 恒为空 -> 永远走通用规则。
-            if (!tracks.length && base._prof && base._prof.scoring_by_track) {
-                tracks = base._prof.scoring_by_track.tracks || [];
-            }
             var tk = null;
             if (tracks.length) {
                 var tkey = (custom && custom.track) || '';
@@ -1638,7 +1522,7 @@
             renderEventCard();
         }
 
-        // 赛事卡默认只给重点（文档类型 / 章节前 6 / 评分权重 / 匿名评审），细节按需展开。
+        // 赛事卡默认只给重点（文档类型 / 章节前 6 / 评分权重 / 双盲），细节按需展开。
         // 一屏十几行的话用户根本不看，等于白做。
         var _evSecAll = false;
         function evToggleSections() {
@@ -1711,13 +1595,13 @@
                         }).join(' · ');
                 }
             }
-            // 赛事结构化配置带来的两条硬信息：匿名评审（iCAN 封面不能出现学校/导师）与官方侧重
+            // 赛事结构化配置带来的两条硬信息：双盲（iCAN 封面不能出现学校/导师）与官方侧重
             var pf = document.getElementById('evProfileTip');
             if (pf) {
                 var p = c._prof, h = '';
                 if (p && p.double_blind) {
                     h += '<div style="margin-top: 6px; color: var(--danger, #C0392B); font-weight: 600;">' +
-                         '⚠ 本赛事为匿名评审：导出时自动去掉封面上的学校 / 单位 / 指导老师，只保留团队信息</div>';
+                         '⚠ 本赛事双盲评审：导出封面自动隐去学校 / 单位 / 指导老师，只保留团队信息</div>';
                 }
                 if (p && p.focus) {
                     h += '<div style="margin-top: 4px; color: var(--text-dim);">赛事侧重：' + _esc(p.focus) + '</div>';
@@ -1855,22 +1739,16 @@
                 }
             }
 
-            // 一行摘要：卡片默认收起，标题后面直接说清「几章 / 几个评分维度 / 是否要求匿名评审」，
+            // 一行摘要：卡片默认收起，标题后面直接说清「几章 / 几个评分维度 / 是否双盲」，
             // 用户不展开也知道这份要求大概是什么，展开了才是全文
             var sm = document.getElementById('evSummary');
             if (sm) {
-                // 262 轮：_src==='default' 表示没匹配到任何赛事（走 EV_DEFAULT 通用兜底），
-                // 此时显示「8章 · 5个评分维度」会让用户误以为所有赛事都是 5 维，
-                // 与 iCAN 官方 4 维不符。未选中时只给引导文案，不报具体数字。
-                if (c._src === 'default') {
-                    sm.textContent = ' · 选择赛事后展示评审要点';
-                } else {
-                    var bits = [];
-                    bits.push((c.sections || []).length + ' 章');
-                    var _sc = (c.scoring || []).filter(function (x) { return _wbPctOf(x) !== null; });
-                    bits.push(_sc.length ? (_sc.length + ' 个评分维度') : '按官方规则评定');
-                    sm.textContent = ' · ' + bits.join(' · ');
-                }
+                var bits = [];
+                bits.push((c.sections || []).length + ' 章');
+                var _sc = (c.scoring || []).filter(function (x) { return _wbPctOf(x) !== null; });
+                bits.push(_sc.length ? (_sc.length + ' 个评分维度') : '按官方规则评定');
+                if (c._prof && c._prof.double_blind) bits.push('双盲');
+                sm.textContent = ' · ' + bits.join(' · ');
             }
 
             card.style.display = 'block';
@@ -1907,8 +1785,16 @@
         }
 
         /* ---------- 分步引导：箭头指向按钮 + 一句话，点一下就走 ---------- */
-        var COACH_STEPS = window.COACH_STEPS;
+        var COACH_STEPS = [
+            // 刻意用「先选 / 再填 / 最后」的顺序词，不用「第 N 步」：
+            // 表单的阿拉伯步骤号已随统一材料框架重排（第 1 步=导入材料、第 2 步=赛事、第 3 步=创意），
+            // 气泡里再写「第一步选赛事」会和表单第 1 步撞号，用户分不清说的是哪一步。
+            { id: 'competition', text: '先选参赛赛事：系统将按该赛事的官方评分标准与章节要求组织内容；未收录的赛事按通用标准生成。有现成申报书/材料的话，先回顶部第 1 步导入，会自动填好这里。' },
+            { id: 'idea', text: '再填项目创意：用一两句话说明目标用户、解决的核心问题与技术路径，描述越具体，产出越贴合评审视角。已经写过草稿的，用第 1 步导入即可，不用在这里手抄。' },
+            { id: 'startBtn', text: '最后选生成档位并开始：简洁版出稿快、字数精；深度版内容更全，含图表与路演 PPT。两档的实际字数与用时见档位卡上的实测统计。' }
+        ];
         var _coachIdx = 0;
+        var _coachEnded = false;
 
         function _coachClear() {
             var olds = document.querySelectorAll('.wb-coach-target');
@@ -1923,6 +1809,7 @@
 
         function coachStart() {
             _coachIdx = 0;
+            _coachEnded = false;
             try { document.addEventListener('keydown', _coachEsc); } catch (e) {}
             coachShow();
         }
@@ -1935,6 +1822,10 @@
             if (!el) { _coachIdx++; coachShow(); return; }
             try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
             setTimeout(function () {
+                // 竞态守卫：scrollIntoView 的延迟窗口内用户可能已打开使用说明/历史等弹窗
+                //（showIntro 里的 coachEnd 会清场），此时不能再重建遮罩——否则气泡压在弹窗上、
+                // 指向错位（2026-09-30 截图实测撞车）。
+                if (_coachEnded) return;
                 if (!document.getElementById('wbCoachVeil')) {
                     var veil = document.createElement('div');
                     veil.id = 'wbCoachVeil';
@@ -1964,13 +1855,13 @@
                 tip.id = 'coachTip';
                 tip.innerHTML =
                     '<div>' + step.text + '</div>' +
-                    '<div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">' +
-                        '<span style="font-size: 12px; color: var(--text-mute);">' +
+                    '<div style="margin-top: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">' +
+                        '<span style="font-size: 12.5px; color: #aab8de; flex: none;">' +
                             (_coachIdx + 1) + ' / ' + COACH_STEPS.length + '</span>' +
-                        '<button onclick="coachNext()" style="padding: 5px 12px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">知道了</button>' +
-                        '<span onclick="coachEnd()" style="font-size: 12px; color: var(--text-mute); cursor: pointer;">跳过</span>' +
-                    '</div>' +
-                    '<div style="margin-top: 6px; font-size: 11px; color: var(--text-mute);">点击暗处任意位置或按 Esc 即可退出引导</div>';
+                        '<button onclick="coachNext()" style="padding: 6px 14px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; flex: none;">知道了</button>' +
+                        '<span onclick="coachEnd()" style="font-size: 12.5px; color: #cdd6f2; cursor: pointer; flex: none;">跳过</span>' +
+                        '<span style="font-size: 12px; color: #aab8de; flex: 1 1 100%;">点暗处或按 Esc 也可退出</span>' +
+                    '</div>';
                 document.body.appendChild(tip);
                 coachRepos();
                 // 点被指向的元素也算「知道了」，符合「指一下就消失」
@@ -2004,6 +1895,7 @@
 
         function coachEnd() {
             _coachClear();
+            _coachEnded = true;
             try { document.removeEventListener('keydown', _coachEsc); } catch (e) {}
             try { _wbStoreSet('wbCoachDone', '1'); } catch (e) {}
             // cookie 兜底：微信/QQ 内置浏览器、隐私模式下 localStorage 可能不持久，
@@ -2271,7 +2163,22 @@
         /* ---------- 智能识别：从项目创意反推该报哪个赛事 ---------- */
         // 用户抱怨「要拉列表找半天」，最省事的做法是他写完创意我们就猜一个。
         // 关键词取长不取短：命中「数学建模」就不该被「建模」盖过去。
-        var WB_IDEA_COMP = window.WB_IDEA_COMP;
+        var WB_IDEA_COMP = [
+            {name: 'iCAN大学生创新创业大赛', kw: ['ican', '物联网', '智能硬件', '传感器', '可穿戴']},
+            {name: '中国国际互联网+大学生创新创业大赛', kw: ['互联网+', '互联网＋', '商业计划', '融资', '路演', '商业模式']},
+            {name: '全国大学生数学建模竞赛', kw: ['数学建模', '数模', '数学模', '优化模型', '预测模型', '评价体系']},
+            {name: '全国大学生电子设计竞赛', kw: ['电子设计', '电赛', '单片机', '电路设计', '嵌入式', '硬件设计']},
+            {name: '挑战杯全国大学生课外学术科技作品竞赛', kw: ['大挑', '课外学术科技', '学术作品', '调研报告', '社会调查']},
+            {name: '挑战杯中国大学生创业计划竞赛（小挑）', kw: ['小挑', '创业计划竞赛']},
+            {name: '国家级大学生创新创业训练计划', kw: ['国创', '大创', '创新创业训练']},
+            {name: '全国大学生广告艺术大赛', kw: ['大广赛', '广告艺术', '品牌策划', '视觉传达', '海报设计']},
+            {name: '中国大学生服务外包创新创业大赛', kw: ['服务外包']},
+            {name: '蓝桥杯全国软件和信息技术专业人才大赛', kw: ['蓝桥杯', '算法竞赛', '程序设计竞赛']},
+            {name: '全国大学生信息安全竞赛', kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞']},
+            {name: '中国大学生计算机设计大赛', kw: ['计算机设计', '软件作品', '应用系统']},
+            {name: 'RoboMaster全国大学生机器人大赛', kw: ['robomaster', '机器人', '机甲', '机械臂']},
+            {name: '西门子杯中国智能制造挑战赛', kw: ['西门子', '智能制造', '工业自动化', '产线']}
+        ];
         // 只在赛事框空着时自动填：用户已经选过就别自作主张改掉
         function wbAutoComp() {
             var el = document.getElementById('competition');
@@ -2407,7 +2314,23 @@
         // 用它当键会把「小挑（创业计划）」错配成大挑。
         // 原先这里是 emoji（第十七轮 #1 全站去 emoji）：老安卓/微信内置内核里
         // emoji 会显示成豆腐块，一眼看上去像页面没做完，改用文字简称更稳。
-        var WB_COMP_SHORT = window.WB_COMP_SHORT;
+        var WB_COMP_SHORT = [
+            ['ican', 'iCAN'],
+            ['互联网', '互联网+'],
+            ['课外学术科技作品', '大挑'],
+            ['创业计划', '小挑'],
+            ['创新创业训练计划', '国创'],
+            ['数学建模', '数模'],
+            ['电子设计', '电赛'],
+            ['西门子', '西门子杯'],
+            ['计算机设计', '计算机设计'],
+            ['蓝桥杯', '蓝桥杯'],
+            ['robomaster', 'RoboMaster'],
+            ['信息安全', '信安'],
+            ['服务外包', '服务外包'],
+            ['广告艺术', '大广赛'],
+            ['金砖', '金砖']
+        ];
         function wbCompShort(name) {
             var n = String(name || '').toLowerCase().replace(/[\s""'']/g, '');
             if (!n) return '';
@@ -2596,7 +2519,7 @@
         var _kbState = null;                    // 原始返回，避免重复请求
         async function loadKnowledgeStatus() {
             try {
-                const res = await fetch('/api/knowledge_status');
+                const res = await _wbFetch('/api/knowledge_status');
                 const d = await res.json();
                 if (d && d.success) _kbState = d;
             } catch (e) { _kbState = null; }
@@ -2642,7 +2565,7 @@
                     : '<span style="color:var(--info-text);">已收录，部分章节待补充：' + (f.missing || []).map(_esc).join('、') + '</span>';
                 cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → 命中《' + _esc(row.hit[0]) + '》' + tail;
             } else {
-                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，将按通用评审标准评审</span>';
+                cur.innerHTML = '本次赛事：<b style="color:var(--text);">' + _esc(me) + '</b> → <span style="color:var(--info-text);">未匹配内置知识库，将按通用标准评审</span>';
             }
             renderKbDetail();
         }
@@ -2794,7 +2717,7 @@
             h3.appendChild(sp);
         }
 
-        // ---- 多视角评审（AI）面板（深度版专属，简洁版为空自动隐藏）----
+        // ---- 多专家模拟评审面板（深度版专属，简洁版为空自动隐藏）----
         function _erColor(s) {
             s = Number(s) || 0;
             if (s >= 85) return 'var(--ok)';
@@ -2933,11 +2856,11 @@
             var ft = document.getElementById('ideaRadarFoot');
             if (ft) {
                 // 第二十三/二十四/三十一轮反复刺：这里原来还挂一个「创意结构分 66 / 100」，
-                // 和上方「智能自评参考 86」形成两个总分，评委不知道信哪个。
+                // 和上方「系统模拟自评 86」形成两个总分，评委不知道信哪个。
                 // 现在只做维度分解——五个维度的分都在图上，不再汇总出第二个总分。
                 ft.innerHTML = '创新性 30% · 可行性 25% · 市场价值 20% · 技术壁垒 15% · 社会价值 10%'
                     + '<div style="margin-top: 5px;">这五个维度看的是<b>创意本身</b>的强弱，仅作分解参考，'
-                    + '不另设总分；页面唯一评分是上方「智能自评参考（文档质量）」。</div>';
+                    + '不另设总分；页面唯一评分是上方「系统模拟自评（文档质量）」。</div>';
             }
             box.style.display = 'block';
         }
@@ -3062,7 +2985,7 @@
 
             // 底部免责声明：专家身份是虚构的，必须写明，否则学生可能以为真有这三位评委审过
             var dcl = d.disclaimer
-                || '本评审由智能系统参考多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
+                || '本评审由系统模拟多位专家视角生成，专家身份为虚构，仅供备赛参考，不代表真人评审意见。';
             h += '<div style="margin-top:14px; padding:10px 12px; border-radius:6px; ' +
                  'background:var(--surface-2); border:1px dashed var(--line); ' +
                  'font-size:12px; color:var(--text-mute); line-height:1.6;">' +
@@ -3206,13 +3129,77 @@
         // 为什么在前端做：deck 本来就是前端拿去 POST 给 /api/export_pptx 的，
         // 在下载前重排一次，"下载 PPT" 和"一键打包"两条路同时生效，后端不用改。
         // 基础 8 页。kicker 不写死，按最终页序动态编号 —— 赛事专项页插进来后序号要跟着变
-        var WB_ROAD_PAGES = window.WB_ROAD_PAGES;
+        var WB_ROAD_PAGES = [
+            {key: 'cover',    type: 'cover',   name: '封面',     kw: [], strong: []},
+            {key: 'pain',     type: 'bullets', name: '项目痛点',
+             kw: ['痛点', '问题', '现状', '背景', '需求', '挑战', '难点', '困难', '刚需', '为什么'],
+             strong: ['痛点', '难点', '难以', '无法', '不足', '缺失', '缺少', '成本高', '效率低', '信息不对称']},
+            {key: 'solution', type: 'bullets', name: '解决方案',
+             kw: ['解决方案', '方案', '技术', '原理', '思路', '路径', '方法', '路线', '架构', '创新点', '实现'],
+             strong: ['采用', '通过', '本方案', '本平台', '架构', '算法', '机制', '实现']},
+            {key: 'feature',  type: 'bullets', name: '核心功能',
+             kw: ['功能', '产品', '模块', '特性', '亮点', '优势', '服务', '场景', '形态'],
+             strong: ['功能', '模块', '支持', '提供', '一键', '自动', '可查', '可追溯']},
+            {key: 'data',     type: 'metrics', name: '落地数据',
+             kw: ['数据', '成果', '验证', '落地', '试点', '效果', '指标', '市场', '规模', '财务', '营收', '用户', '测试', '进展'],
+             strong: ['试点', '测试', '验证', '覆盖', '累计', '准确率', '提升', '降低', '增长']},
+            {key: 'compete',  type: 'table',   name: '竞品对比',
+             kw: ['竞品', '对比', '竞争', '差异化', '对手', '同类', '友商'],
+             strong: ['竞品', '对比', '相比', '同类', '友商', '优于', '差异', '领先']},
+            {key: 'team',     type: 'bullets', name: '团队介绍',
+             kw: ['团队', '成员', '分工', '指导', '师资', '负责人', '年级', '专业'],
+             strong: ['团队成员', '成员', '分工', '指导教师', '团队由', '专业年级']},
+            {key: 'thanks',   type: 'closing', name: '致谢',     kw: [], strong: []}
+        ];
         // 赛事专项页：插在 after 那一页之后。数学建模讲模型、广告艺术讲视觉，
         // 通用 8 页里没有这两块，硬塞进"解决方案"会又长又乱，所以单独成页。
-        var WB_EXTRA_PAGES = window.WB_EXTRA_PAGES;
+        var WB_EXTRA_PAGES = {
+            math: [
+                {key: 'assume',  type: 'bullets', name: '模型假设', after: 'solution',
+                 kw: ['假设', '前提', '符号', '变量', '约定', '符号说明', '假定'],
+                 strong: ['假设', '假定', '不妨设', '符号说明', '记为', '忽略', '不考虑']},
+                {key: 'formula', type: 'bullets', name: '公式推导', after: 'assume',
+                 kw: ['公式', '推导', '求解', '目标函数', '约束', '模型建立', '算法', '求解过程', '灵敏度', '检验'],
+                 strong: ['公式', '推导', '由', '可得', '代入', '目标函数', '约束条件', '求解', '迭代']}
+            ],
+            art: [
+                {key: 'sketch', type: 'bullets', name: '创意草图', after: 'feature',
+                 kw: ['创意', '草图', '构思', '概念', '灵感', '脚本', '分镜', '文案', '主题'],
+                 strong: ['创意', '构思', '草图', '脚本', '分镜', '创意点', '概念来源', '灵感']},
+                // 不放泛化的"效果"：落地数据页的关键词里也有它，两边都认就会串页
+                {key: 'visual', type: 'bullets', name: '视觉效果', after: 'sketch',
+                 kw: ['视觉', '画面', '呈现', '配色', '版式', '海报', '物料', 'KV'],
+                 strong: ['视觉', '配色', '版式', '画面', '海报', '呈现', '物料', '字体', '构图']}
+            ]
+        };
         // 赛事类型 → 推荐主题（主题 key 用 15 套精品里的，不再指向旧模板）。
         // 顺序即优先级：iCAN 最先命中，数学建模 / 广告艺术 比泛化的"科技"更具体，排前面。
-        var WB_COMP_TYPES = window.WB_COMP_TYPES;
+        var WB_COMP_TYPES = [
+            {type: 'ican',  name: 'iCAN 大赛', theme: 'star',
+             kw: ['iCAN', 'ican', 'Ican']},
+            {type: 'math',  name: '数学建模类', theme: 'math',
+             rename: {feature: '模型应用', compete: '方法对比'},
+             kw: ['数学建模', '数模', '建模', '运筹', '统计建模']},
+            {type: 'art',   name: '艺术设计类', theme: 'morandi',
+             // 不放泛化的"设计大赛"：中国大学生计算机设计大赛是软件类赛事，
+             // 被它命中就会推成设计风，反而错
+             kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视', '文创']},
+            {type: 'eng',   name: '工程硬件类', theme: 'star',
+             kw: ['电子设计', '电赛', '蓝桥杯', '机器人', '智能制造', '西门子', '机械', '嵌入式',
+                  '单片机', '硬件', '电路', '自动化', 'RoboMaster', '工程训练', '智能车']},
+            // 国创/大创计划名称里带"创业"两字（创新创业训练计划），但它是科研训练类，
+            // 排在经管类前面先命中，不然会被推成商务灰
+            {type: 'acad',  name: '学术科研类', theme: 'paper',
+             kw: ['创新创业训练', '国创计划', '大创']},
+            {type: 'biz',   name: '经管商业类', theme: 'flat',
+             kw: ['互联网+', '互联网＋', '创业', '小挑', '服务外包', '商业', '经管', '金融',
+                  '供应链', '市场', '营销', '电商', '财务']},
+            {type: 'it',    name: '软件信息类', theme: 'star',
+             kw: ['信息安全', '计算机设计', '软件', '程序', '算法', '网络', '大数据', '人工智能',
+                  '信息技术', '金砖', '技能']},
+            {type: 'acad',  name: '学术科研类', theme: 'academic',
+             kw: ['挑战杯', '课外学术', '国创', '创新创业训练', '科研', '论文', '学术']}
+        ];
         // 赛事 → 模板：15 个赛事逐个钉死一套，用户不用自己挑风格。
         // 顺序即优先级（先命中的赢），两个坑：
         //   ① "创业计划/小挑" 必须排在 "挑战杯" 前面，否则小挑会被大挑的红金吃掉；
@@ -3222,7 +3209,30 @@
         // 简洁学术 paper/math/academic、莫兰迪 morandi/clay、红金 redgold/blackgold、
         // 清新文艺 verdant/literary、中国风 ink。
         // 传统文化必须排在"文创"前面：非遗项目名字里也带"文创"，被文创吃掉就成了清新绿。
-        var WB_COMP_THEME = window.WB_COMP_THEME;
+        var WB_COMP_THEME = [
+            {kw: ['ican'], theme: 'star'},
+            {kw: ['传统文化', '非遗', '非物质文化', '国学', '汉服', '书法', '中医药',
+                  '国风', '文物', '戏曲', '古籍', '民俗', '汉字', '中医药'], theme: 'ink'},
+            {kw: ['绘本', '书籍', '出版', '展览', '书店', '文艺'], theme: 'literary'},
+            {kw: ['文创', '文旅', '手作', '博物馆', '文化创', '乡村振兴'], theme: 'verdant'},
+            {kw: ['互联网+', '互联网＋'], theme: 'flat'},
+            {kw: ['服务外包'], theme: 'biz'},
+            {kw: ['创业计划', '小挑'], theme: 'blackgold'},
+            {kw: ['课外学术科技作品', '大挑'], theme: 'redgold'},
+            {kw: ['挑战杯'], theme: 'redgold'},
+            {kw: ['创新创业训练', '国创计划', '大创'], theme: 'paper'},
+            {kw: ['数学建模', '数模', '建模'], theme: 'math'},
+            {kw: ['电子设计', '电赛', '嵌入式', '单片机', '电路'], theme: 'star'},
+            {kw: ['西门子', '智能制造', '机械', '自动化', '工程训练', '智能车'], theme: 'star'},
+            {kw: ['蓝桥杯', '计算机设计', '软件', '程序', '算法'], theme: 'star'},
+            {kw: ['广告艺术', '大广赛', '视觉传达', '艺术设计', '数字媒体', '动画', '影视'], theme: 'morandi'},
+            {kw: ['包装', '平面', '品牌', '海报', '展陈', '文创产品'], theme: 'clay'},
+            {kw: ['信息安全', '网安', '网络安全', '攻防', '漏洞'], theme: 'cyber'},
+            {kw: ['机器人', 'robomaster', '人工智能', '深度学习', '机器学习', '神经网络'], theme: 'cyber'},
+            {kw: ['金砖', '技能发展', '青年创客'], theme: 'capital'},
+            {kw: ['创业', '商业', '融资', '创投', '经管', '金融', '供应链', '市场', '营销', '电商', '财务'], theme: 'biz'},
+            {kw: ['论文', '科研', '结题', '开题', '学术'], theme: 'academic'}
+        ];
         // 赛事名来源：输入框 + 已生成结果里的赛事名（历史回看时输入框可能已被清空）
         function wbCompText() {
             var el = document.getElementById('competition');
@@ -3630,7 +3640,7 @@
             var el = document.getElementById('deckRoadPlan');
             if (!el) return;
             if (!wbRoadshowOn()) {
-                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按原始结构导出（页数与顺序不固定）。</div>';
+                el.innerHTML = '<div style="font-size:12px; color:var(--text-mute);">已关闭：按系统原始结构导出（页数与顺序不固定）。</div>';
                 return;
             }
             if (!deck || !deck.slides) { el.innerHTML = ''; return; }
@@ -3661,7 +3671,29 @@
 
         // ---- PPT 主题 / 模板选择 ----
         // 缩略图配色表：只作兜底，正常走后端 list_themes 回传的 colors（新增主题自动生效）
-        var WB_THEME_COLORS = window.WB_THEME_COLORS;
+        var WB_THEME_COLORS = {
+            tech:     { deep: '#0F1535', deep2: '#3B2170', primary: '#4A55B8', accent: '#22B8CF', deco: ['#22B8CF', '#F59E0B', '#DB3F72'] },
+            ink:      { deep: '#1B1B1B', deep2: '#4A4A4A', primary: '#8B2E2E', accent: '#B98A3C', deco: ['#8B2E2E', '#B98A3C', '#4A5D4E'] },
+            medical:  { deep: '#09332F', deep2: '#0E6B60', primary: '#0E9E8C', accent: '#34D3B5', deco: ['#34D3B5', '#F5C86B', '#2E86C1'] },
+            edu:      { deep: '#4A2410', deep2: '#8A4B1F', primary: '#E2803A', accent: '#F0B429', deco: ['#F0B429', '#E2803A', '#D45B5B'] },
+            agri:     { deep: '#1E3D1A', deep2: '#3E6B2A', primary: '#4E8C3A', accent: '#C9A227', deco: ['#C9A227', '#7BA05B', '#E08A3C'] },
+            finance:  { deep: '#0C1A33', deep2: '#1F3864', primary: '#1F3864', accent: '#B8860B', deco: ['#B8860B', '#C99700', '#40607A'] },
+            craft:    { deep: '#1F2A30', deep2: '#3D4C55', primary: '#5C6B73', accent: '#E08A38', deco: ['#E08A38', '#A63A2F', '#7A8B5A'] },
+            social:   { deep: '#4A2320', deep2: '#8A3F33', primary: '#D46A5C', accent: '#E4A03C', deco: ['#E4A03C', '#D46A5C', '#5E8C7E'] },
+            academic: { deep: '#00254D', deep2: '#003F88', primary: '#002FA7', accent: '#2E75B6', deco: ['#2E75B6', '#5B8C5A', '#8B6914'] },
+            cyber:    { deep: '#160826', deep2: '#3B2170', primary: '#7C3AED', accent: '#22D3EE', deco: ['#22D3EE', '#A855F7', '#F472B6'] },
+            ican:     { deep: '#072C55', deep2: '#0F5C9E', primary: '#0E5EA8', accent: '#2AA9E0', deco: ['#2AA9E0', '#7FC4EE', '#0E5EA8'] },
+            biz:      { deep: '#1E242C', deep2: '#3A4654', primary: '#374151', accent: '#6B7280', deco: ['#9AA5B1', '#6B7280', '#C0C8D2'] },
+            studio:   { deep: '#111318', deep2: '#2C303C', primary: '#C2185B', accent: '#00ACC1', deco: ['#FF4D6D', '#00E5C0', '#FFC94D'] },
+            // 15 套精品（后端会回传 colors，这里是接口拿不到时的兜底）
+            star:     { deep: '#06152F', deep2: '#123A6B', primary: '#1F6FB2', accent: '#3FBFEA', deco: ['#3FBFEA', '#7CC4F5', '#1F6FB2'] },
+            flat:     { deep: '#0F4C9E', deep2: '#2E7BD6', primary: '#1B6AC9', accent: '#FFB020', deco: ['#FFB020', '#2E9E6B', '#E4572E'] },
+            morandi:  { deep: '#3E4C55', deep2: '#6B7A83', primary: '#7C95A6', accent: '#B08C7A', deco: ['#9DAE9E', '#B08C7A', '#A8998C'] },
+            clay:     { deep: '#5A4A46', deep2: '#8A736A', primary: '#B08C7A', accent: '#9C8AA5', deco: ['#9C8AA5', '#7D8F69', '#C0A090'] },
+            verdant:  { deep: '#EDF4EE', deep2: '#D6E7DA', primary: '#4C9A8A', accent: '#E0A46B', deco: ['#4C9A8A', '#7BA05B', '#E0A46B'] },
+            literary: { deep: '#F6EFE2', deep2: '#E8DCC8', primary: '#3E5C6B', accent: '#C87F4A', deco: ['#3E5C6B', '#C87F4A', '#8C7BA6'] },
+            ink:      { deep: '#F7F3E8', deep2: '#E8DFC9', primary: '#9E2B25', accent: '#B08D57', deco: ['#9E2B25', '#2F4858', '#B08D57'] }
+        };
         function wbHex(c) { c = String(c || ''); return c && c.charAt(0) !== '#' ? '#' + c : c; }
         function wbThemeColors(t) {
             var c = t && t.colors;
@@ -3837,7 +3869,7 @@
         async function loadThemeLib() {
             if (_themeLib) return _themeLib;
             try {
-                const res = await fetch('/api/ppt_themes');
+                const res = await _wbFetch('/api/ppt_themes');
                 const d = await res.json();
                 if (d && d.success) _themeLib = d.themes || [];
             } catch (e) { _themeLib = []; }
@@ -3930,7 +3962,10 @@
                 _qcTimer = setTimeout(function () { if (btn) btn.innerHTML = '生成文件…'; }, 1500);
             }
             try {
+                // 417 轮：把大纲原文一起发给后端，后端据此校验「PPT 页数 == 大纲页数」。
+                // 之前后端只拿到重排后的 deck，无从判断页数对不对，等于校验形同虚设。
                 var r = await wbExportFetch('/api/export_pptx', {deck: deck, charts: rd.rich_charts || [], tables: rd.rich_tables || [], idea: rd.idea || '', one_liner: rd.one_liner || '',
+                                          ppt_outline: rd.ppt_outline || '',
                                           theme: deck.theme, variant: deck.variant, chart_theme: wbChartThemeKey()});
                 if (!r.ok) { await wbExportError('路演 PPT', r); return; }
                 const res = r.res;
@@ -3938,17 +3973,9 @@
                 wbSaveBlob(blob, '路演PPT.pptx');
                 wbToast('路演 PPT 已开始下载', { type: 'ok', ms: 3000 });
             } catch (e) {
-                wbToast('PPT 导出失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('PPT 导出失败：' + _friendlyErr(e), { type: 'error' });
             } finally {
                 if (_qcTimer) clearTimeout(_qcTimer);
-                // 249b：常驻 loading 必须在这里兜底关掉。
-                // 上面三条提前 return（目标串号 / 无内容 / 质检拦截 !r.ok）
-                // 都不会走到成功分支的显式关闭，漏关就是「正在生成…」永久挂起，
-                // 用户会以为整块导出卡死。失败路径统一由 finally 收尾。
-                if (window.__wbExportLoading) {
-                    try { wbToastClose(window.__wbExportLoading); } catch (e) {}
-                    window.__wbExportLoading = null;
-                }
                 if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.old; }
             }
         }
@@ -3988,44 +4015,15 @@
         // 统一保存入口：内置浏览器里点了下载只会"没反应"，这里弹提示而不是静默失败；
         // 正常手机浏览器把 a 挂到 DOM 上再点（部分内核不触发游离元素的 click），
         // iOS 对 blob 下载的兼容也一般，补一句兜底提示。
-        // 415 轮：夸克 / UC 内核（UCBrowser、UCWEB、Quark）对 blob URL + a[download] 的支持很差，
-        // 表现为「该网页请求打开外部应用」→ 点了没反应、文件管理和通知栏都找不到文件。
-        function wbIsUcKernel() {
-            return /UCBrowser|UCWEB|Quark|quark/i.test(navigator.userAgent || '');
-        }
-
-        // 415 轮 ①·补强（2026-09-30）：夸克 / UC 内核对 blob URL + a[download] 是**静默失败**
-        // （弹「该网页请求打开外部应用」后不落文件，也不报错），光加提示等于没修。
-        // 解法：把已生成的文件回传后端落盘，换一个真实的 http URL，再交给浏览器原生下载器。
-        // 真实 URL 是 UC 内核唯一能稳定落盘的形式；这一步失败才回落到原来的 blob 方案。
-        async function wbUcDownload(blob, name) {
-            try {
-                var fd = new FormData();
-                fd.append('file', blob, name);
-                fd.append('name', name);
-                var r = await fetch('/api/blob_to_url', {method: 'POST', body: fd});
-                var j = await r.json();
-                if (!j || !j.url) throw new Error((j && j.error) || '服务端未返回下载地址');
-                var a = document.createElement('a');
-                a.href = j.url; a.download = name; a.style.display = 'none';
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(function () { try { document.body.removeChild(a); } catch (e) {} }, 5000);
-                wbToast('文件已生成，正在下载（看通知栏 / 文件管理）', {type: 'ok', ms: 4000});
-                return true;
-            } catch (e) {
-                console.warn('[wbUcDownload] 真实URL下载失败，回落 blob：', e);
-                return false;
+        function wbSaveBlob(blob, name) {
+            if (wbInApp()) {
+                wbUaCheck();
+                wbToast('微信 / QQ 里下载不了文件，请点右上角 ··· 用浏览器打开', {type: 'warn', ms: 4200});
+                return;
             }
-        }
-
-        // 原 blob 直下方案，保留给 Chrome / Safari / 系统浏览器，以及 UC 新方案失败时的回落
-        function wbSaveBlobFallback(blob, name) {
             var url = URL.createObjectURL(blob);
             var a = document.createElement('a');
             a.href = url; a.download = name; a.style.display = 'none';
-            // UC 系用新窗口打开再交给浏览器自己的下载器接管，比原地 click 更容易真正落盘
-            if (wbIsUcKernel()) { a.target = '_blank'; a.rel = 'noopener'; }
             document.body.appendChild(a);
             a.click();
             setTimeout(function () { URL.revokeObjectURL(url); try { document.body.removeChild(a); } catch (e) {} }, 4000);
@@ -4034,105 +4032,7 @@
                     wbToast('没弹出下载的话：长按文件 → 选「存储到文件」', {type: 'info', ms: 5000});
                 }, 1200);
             }
-            // UC 系落盘失败是静默的（不报错、也不出文件），必须给一条可操作的出路，
-            // 不能让用户以为「点了没反应」是网站坏了。
-            if (wbIsUcKernel()) {
-                setTimeout(function () {
-                    wbToast('若没看到下载：点右上角 ··· 选「用系统浏览器打开」再下载（夸克内置内核不支持直接存文件）', {type: 'warn', ms: 5600});
-                }, 1500);
-            }
         }
-
-        function wbSaveBlob(blob, name) {
-            if (wbInApp()) {
-                wbUaCheck();
-                wbToast('微信 / QQ 里下载不了文件，请点右上角 ··· 用浏览器打开', {type: 'warn', ms: 4200});
-                return;
-            }
-            if (wbIsUcKernel()) {
-                // 多一次上传往返（通常 1-3 秒），必须给用户可见的等待，否则又是「点了没反应」
-                var _t = wbToast('正在准备文件…', {type: 'info', ms: 0});
-                wbUcDownload(blob, name).then(function (ok) {
-                    if (_t) { try { wbToastClose(_t); } catch (e) {} }
-                    if (!ok) wbSaveBlobFallback(blob, name);
-                });
-                return;
-            }
-            wbSaveBlobFallback(blob, name);
-        }
-
-        /* ---------- 415 轮：全局异常兜底（防白屏 / 防缩放后整页清空） ----------
-           夸克(UC) 双指缩放会触发 resize 与重排，未捕获的 JS 异常直接把视图状态打空，
-           表现为「页面退出、什么都没有」。这里挂最后一道防线：捕获全局 error 与
-           未处理 Promise 拒绝，只在页面真的被清空时才补一块可恢复的提示 UI，
-           内容还在就不打扰用户。 */
-        function wbCrashGuard(msg) {
-            try {
-                var b = document.body;
-                if (!b) return;
-                if (b.offsetHeight > 200) return;              // 内容还在，不是白屏
-                if (document.getElementById('__wbCrashBox')) return;
-                var box = document.createElement('div');
-                box.id = '__wbCrashBox';
-                box.setAttribute('style',
-                    'position:fixed;left:0;right:0;top:0;z-index:2147483000;padding:16px 18px;' +
-                    'background:#fff;color:#1f2937;font-size:14px;line-height:1.7;' +
-                    'box-shadow:0 6px 20px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif');
-                box.innerHTML =
-                    '<div style="font-weight:600;margin-bottom:6px">页面出了点问题，内容没能显示出来</div>' +
-                    '<div style="color:#6b7280;font-size:12.5px;margin-bottom:10px">' +
-                    (_esc(String(msg || '').slice(0, 120)) || '刷新即可恢复') + '</div>' +
-                    '<button onclick="location.reload()" style="padding:8px 16px;border:0;border-radius:8px;' +
-                    'background:#1250c4;color:#fff;font-size:14px;font-weight:600;cursor:pointer">刷新重试</button>';
-                b.appendChild(box);
-            } catch (e) {}
-        }
-        window.addEventListener('error', function (ev) {
-            wbCrashGuard((ev && (ev.message || (ev.error && ev.error.message))) || '');
-        });
-        window.addEventListener('unhandledrejection', function (ev) {
-            wbCrashGuard((ev && ev.reason && (ev.reason.message || ev.reason)) || '');
-        });
-
-        /* ---------- 417 轮 P0：生成产物底部加「智能辅助」声明 ----------
-           要求措辞温和、且禁用「AI」字样（418 轮已全站清理，官方术语除外）。
-           这里不逐个改渲染函数（改不完也容易漏），改用 MutationObserver 兜底：
-           不管内容是流式渲染、历史回看还是切 Tab 出来的，只要有文档块就补一行。
-           三重防重复：① 块内已有 .wb-assist-decl 就跳过；② 内容太短（空壳）不加；
-           ③ observer 只注册一次。 */
-        var WB_ASSIST_DECL = '本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交。';
-        function wbAppendAssistDecl() {
-            try {
-                var blocks = document.querySelectorAll('.content-block');
-                for (var i = 0; i < blocks.length; i++) {
-                    var b = blocks[i];
-                    if (!b) continue;
-                    if (!b.textContent || b.textContent.replace(/\s/g, '').length < 30) continue;
-                    if (b.querySelector('.wb-assist-decl')) continue;
-                    var d = document.createElement('div');
-                    d.className = 'wb-assist-decl';
-                    d.setAttribute('style',
-                        'margin-top:16px;padding-top:10px;border-top:1px dashed rgba(128,128,128,.35);' +
-                        'font-size:12px;line-height:1.75;color:var(--text-mute,#6b7280)');
-                    d.textContent = WB_ASSIST_DECL;
-                    b.appendChild(d);
-                }
-            } catch (e) {}
-        }
-        (function () {
-            if (window.__wbAssistDeclBound) return;
-            window.__wbAssistDeclBound = true;
-            var _t = null;
-            var _run = function () { wbAppendAssistDecl(); };
-            try {
-                var _mo = new MutationObserver(function () {
-                    if (_t) clearTimeout(_t);
-                    _t = setTimeout(_run, 600);   // debounce：流式渲染时不跟着抖
-                });
-                _mo.observe(document.body, { childList: true, subtree: true });
-            } catch (e) {}
-            setTimeout(_run, 900);                // 首屏兜底
-        })();
 
         function exportSection(id, name) {
             var text = document.getElementById(id).innerText;
@@ -4144,7 +4044,25 @@
         // ================= 分块流式渲染 =================
         // 后端每跑完一个 LangGraph 节点就把产出的字段塞进 partial，
         // /api/status 一起返回，这里把已有内容先渲染出来，用户不再干等进度条。
-        var _STREAM_MAP = window._STREAM_MAP;
+        var _STREAM_MAP = [
+            ['parsed_rules',        'parsedRules',        'analysis'],
+            ['similarity_report',   'similarityReport',   'analysis'],
+            ['idea_feedback',       'ideaFeedback',       'analysis'],
+            ['competitor_analysis', 'competitorAnalysis', 'deep'],
+            ['business_model',      'businessModel',      'deep'],
+            ['risk_analysis',       'riskAnalysis',       'deep'],
+            ['tech_solution',       'techSolution',       'deep'],
+            ['implementation_plan', 'implementationPlan', 'deep'],
+            ['social_value',        'socialValue',        'deep'],
+            ['project_summary',     'projectSummary',     'analysis'],
+            ['proposal_outline',    'proposalOutline',    'proposal'],
+            ['proposal',            'proposalText',       'proposal'],
+            ['judge_feedback',      'judgeFeedback',      'proposal'],
+            ['proposal_analysis',   'proposalAnalysis',   'proposal'],
+            ['defense_questions',   'defenseQuestions',   'defense'],
+            ['ppt_outline',         'pptOutline',         'defense'],
+            ['speech_script',       'speechScript',       'defense']
+        ];
         // 必须挂到 window：打字机 twSet 在 index.html 的另一个 script 块里，
         // 它靠 _STREAM_MAP 找字段对应的 DOM id。不挂全局的话 fieldMeta() 永远拿到 undefined，
         // twSet 每次直接 return —— 流式草稿从来没真正渲染过（生成中看不到内容，结束才整页蹦出来）。
@@ -4182,7 +4100,7 @@
             });
             _STREAM_MAP.forEach(function (p) {
                 var el = document.getElementById(p[1]);
-                if (el) el.innerHTML = '<div class="stream-wait">正在生成，内容将实时流出…</div>';
+                if (el) el.innerHTML = '<div class="stream-wait">内容正在生成，将实时流出…</div>';
             });
             var ol = document.getElementById('oneLiner');
             if (ol) ol.innerHTML = '<span style="color:var(--text-mute);font-size:13px;">正在提炼一句话定位…</span>';
@@ -4353,7 +4271,7 @@
                 })
                 .catch(function () {});
         }
-        /* ---- 智能自评参考：面板内二级标签 ---- */
+        /* ---- 系统模拟自评：面板内二级标签 ---- */
         var WB_SUB_TABS = [['score', 'wbSubTabScore'], ['judge', 'wbSubTabJudge'], ['check', 'wbSubTabCheck']];
         function switchScoreTab(ev, name) {
             WB_SUB_TABS.forEach(function (t) {
@@ -4411,16 +4329,28 @@
         }
 
         /* ---------- 从材料识别：POST /api/parse_material → 自动填充 ----------
-           后端返回 profile 五个字段（competition_name / idea / team / user_data / keywords），
-           字段名为后端定死，前端只做映射。识别是一次 LLM 调用（约 1-3 秒），必须给 loading 态。
+           统一材料框架（2026-10-01）：后端 profile 扩展为 12 字段——
+           material_type（材料类型）/ competition_name / idea / team /
+           实测数据四个分格（site/scale/metric/cost）+ extra（其它佐证）/
+           keywords / sections（官方模板章节）。
            填充原则是「建议不是覆盖」：目标框已有内容就先问一句，不偷偷改用户写过的东西。 */
         var WB_MAT_MAP = [
             ['competition_name', 'competition', '赛事'],
             ['idea', 'idea', '创意'],
             ['team', 'udTeam', '团队成员'],
-            ['user_data', 'udExtra', '实测数据/佐证'],
+            ['user_data_site', 'udSite', '试点单位'],
+            ['user_data_scale', 'udScale', '样本量'],
+            ['user_data_metric', 'udMetric', '实测指标'],
+            ['user_data_cost', 'udCost', '成本'],
+            ['user_data_extra', 'udExtra', '其它佐证'],
             ['keywords', 'keywords', '关键词']
         ];
+        // 折叠区与输入框的对应关系：填了哪个框，就把它的折叠区展开，否则填了也看不见
+        var WB_MAT_FOLD = {
+            udTeam: 'teamBody', udSite: 'userDataBody', udScale: 'userDataBody',
+            udMetric: 'userDataBody', udCost: 'userDataBody', udExtra: 'userDataBody',
+            keywords: 'advParamBody'
+        };
         function wbMatOpen() {
             var m = document.getElementById('wbMatMask'), p = document.getElementById('wbMatPanel');
             // CSS 里初始是 display:none，这里必须显式写具体值（写 '' 会回落到 none，永远不显示）
@@ -4443,16 +4373,17 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> 识别中…';
             var req;
+            var _do = (typeof _wbFetch === 'function') ? _wbFetch : fetch;
             if (file) {
                 var fd = new FormData();
                 fd.append('file', file);
-                req = fetch('/api/parse_material', { method: 'POST', body: fd });
+                req = _do('/api/parse_material', { method: 'POST', body: fd }, 120000);
             } else {
-                req = fetch('/api/parse_material', {
+                req = _do('/api/parse_material', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: text })
-                });
+                }, 60000);
             }
             req.then(function (r) { return r.json(); })
                 .then(function (d) {
@@ -4468,39 +4399,110 @@
                     wbToast('识别失败：' + (e && e.message ? e.message : '网络异常'), { type: 'warn', ms: 3200 });
                 });
         }
-        function wbMatApply(p) {
-            var empty = [], conflict = [], missed = [];
+        function wbMatApply(p, opts) {
+            opts = opts || {};
+            var only = opts.onlyFields || null;
+            p = p || {};
+            // 旧版 user_data 兜底：四个分格都没识别出来、但汇总 user_data 有值 → 填进「其它佐证」
+            var _splitEmpty = ['user_data_site', 'user_data_scale', 'user_data_metric',
+                'user_data_cost', 'user_data_extra'].every(function (k) {
+                    return !String(p[k] || '').trim();
+                });
+            if (_splitEmpty && String(p.user_data || '').trim() && (!only || only.indexOf('user_data_extra') >= 0)) {
+                p.user_data_extra = p.user_data;
+            }
+            var empty = [], conflict = [], missed = [], filledIds = [];
             WB_MAT_MAP.forEach(function (m) {
-                var v = String((p && p[m[0]]) || '').trim();
+                if (only && only.indexOf(m[0]) < 0) return;
+                var v = String(p[m[0]] || '').trim();
                 if (!v) { missed.push(m[2]); return; }
                 var el = document.getElementById(m[1]);
                 if (!el) return;
                 if (String(el.value || '').trim()) conflict.push([m, v]); else empty.push([m, v]);
             });
             var hit = empty.length + conflict.length;
-            if (!hit) { wbToast('材料里没找到可填的字段，请手动填写', { type: 'warn', ms: 3000 }); return; }
+            // 官方模板章节：识别出 sections 就写进赛事要求卡（生成时按模板结构写）。
+            // 必须放在 hit 早退之前——纯模板材料（只有章节、没别的字段）也要入库，不能被「没找到可填的字段」挡掉
+            var secsMsg = '';
+            if (!only && String(p.sections || '').trim() && typeof evCurrent === 'function') {
+                try {
+                    var secs = String(p.sections).split('|').map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s && s.length <= 46; });
+                    if (secs.length >= 2) {
+                        var c0 = evCurrent();
+                        c0.sections = secs.slice(0, 20);
+                        _wbStoreSet(c0.key, JSON.stringify({ sections: c0.sections }));
+                        renderEventCard();
+                        secsMsg = '、模板章节 ' + c0.sections.length + ' 个';
+                    }
+                } catch (e) {}
+            }
+            if (!hit && !secsMsg) { wbToast('材料里没找到可填的字段，请手动填写', { type: 'warn', ms: 3000 }); return; }
             var doConflict = true;
             if (conflict.length) {
                 var names = conflict.map(function (c) { return c[0][2]; }).join('、');
                 doConflict = window.confirm('这些框已经有你写过的内容：' + names + '。\n\n点「确定」用识别结果覆盖它们，点「取消」只填还空着的框。');
             }
-            empty.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
-            if (doConflict) conflict.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; });
+            empty.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; filledIds.push(c[0][1]); });
+            if (doConflict) conflict.forEach(function (c) { document.getElementById(c[0][1]).value = c[1]; filledIds.push(c[0][1]); });
             try { onCompetitionChange(); } catch (e) {}
+            // 填了哪个框，就展开它所在的折叠区（填了看不见等于没填）
+            Object.keys(WB_MAT_FOLD).forEach(function (id) {
+                if (filledIds.indexOf(id) < 0) return;
+                var fold = document.getElementById(WB_MAT_FOLD[id]);
+                if (fold && fold.style.display === 'none') {
+                    try { wbAdvToggle(WB_MAT_FOLD[id]); } catch (e) { fold.style.display = ''; }
+                }
+            });
             wbSaveForm();
             wbMatClose();
-            var msg = '已填充 ' + (empty.length + (doConflict ? conflict.length : 0)) + ' 项：识别自材料，请核对';
+            var msg = filledIds.length
+                ? ('已填充 ' + filledIds.length + ' 项：识别自材料，请核对' + secsMsg)
+                : ('已从材料识别' + secsMsg.replace('、', '') + '，请核对');
             if (missed.length) msg += '（未识别：' + missed.join('、') + '）';
             wbToast(msg, { type: 'ok', ms: 4200 });
+        }
+
+        /* ---------- 统一材料框架入口：任何导入（上传草稿 / 粘贴文本 / 佐证文件路由）→
+           /api/parse_material 一次解析 → wbMatApply 自动填充所有对应输入框。
+           识别失败不打断主流程（草稿原文已经填进框里），只提示可重试。
+           opts.onlyFields: 只填充指定 profile 字段（如佐证文件路由只填实测数据分格）。 */
+        function wbDraftSmartFill(text, opts) {
+            opts = opts || {};
+            var t = String(text || '').trim();
+            if (t.length < 20) {
+                if (opts.onFail) opts.onFail('文本太短，没有可识别的信息');
+                return;
+            }
+            var _do = (typeof _wbFetch === 'function') ? _wbFetch : fetch;
+            _do('/api/parse_material', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: t.slice(0, 20000) })
+            }, 60000).then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.success && d.profile) {
+                        try { wbMatApply(d.profile, opts); } catch (e) {}
+                        if (opts.onDone) opts.onDone(d.profile);
+                    } else {
+                        if (opts.onFail) opts.onFail('自动识别没返回结果');
+                        else wbToast('自动识别没返回结果，可点「从材料识别」重试', { type: 'warn', ms: 3600 });
+                    }
+                })
+                .catch(function () {
+                    if (opts.onFail) opts.onFail('自动识别失败');
+                    else wbToast('自动识别失败（不影响已填入的内容），可点「从材料识别」重试', { type: 'warn', ms: 3600 });
+                });
         }
         // 第六十九轮【高】的死按钮根因：wbMatOpen / wbMatClose / wbMatGo 都定义在本 IIFE 内，
         // 而「从材料识别」按钮和弹层里的按钮走的是内联 onclick（外层作用域）→ ReferenceError，
         // 点了完全没反应。这是本项目第 N 次踩同一个坑，所以这一簇必须显式挂出去。
         // 校验方式：全仓库 grep 'window.wbMat' 必须命中 3 处，否则按钮必死。
         window.wbMatOpen = wbMatOpen;
-window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClose=wbUaClose;window.wbUaCopy=wbUaCopy;
         window.wbMatClose = wbMatClose;
         window.wbMatGo = wbMatGo;
+        // wbDraftSmartFill 要被前一个 IIFE 里的 ideaFile / wbPasteDraft / wbUdApplyRoute 调用，同样必须挂出去
+        window.wbDraftSmartFill = wbDraftSmartFill;
 
         /* ===== 等待期趣味增强（Codex P3）=====
            只动「生成等待期」的文案，正文 / 表单 / 导出 / 评分权重一律不碰。
@@ -4508,12 +4510,30 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
            这里只额外补一句有温度的话，不覆盖、不替换，避免两边中文打架。 */
         // 全部改成纯文字（第十七轮 #1「全站去 emoji」）：等待期文案挂在进度条下面，
         // emoji 在部分安卓/老 Chromium 上会显示成豆腐块，反而显得页面没做完
-        var WB_STAGE_WORD = window.WB_STAGE_WORD;
+        var WB_STAGE_WORD = {
+            start:          '开工，先把手头的材料理一理…',
+            parsing_rules:  '正在读你们赛事的评分标准…',
+            similarity:     '看看有没有人写过一模一样的…',
+            idea_scoring:   '给你的创意找一句能记住的定位…',
+            analysis:       '把赛题和你的方案对上对…',
+            rich_assets:    '先把图表和 PPT 的素材备好…',
+            writing:        '正在把创意变成能交的稿子…',
+            judging:        '先让系统自己当一次评委…',
+            expert_review:  '换几位专家轮流挑毛病…',
+            diagnosis:      '找出最容易扣分的地方…',
+            revision:       '按挑出来的毛病改一遍…',
+            defense:        '猜评委待会儿会问你什么…',
+            ppt:            '正在排路演 PPT 的骨架…',
+            speech:         '写一份能照着念的路演稿…',
+            queued:         '正在给你安排生成引擎…',
+            done:           '收个尾，马上就好…',
+            error:          '这一步卡住了，正在收尾…'
+        };
         // 等待文案轮换：原来是一句永远不变的「正在生成内容…」，等 4 分钟看久了像卡死。
         // 按已耗时轮换（跟着轮询走，不额外起定时器），4 句循环，不刷屏。
         var WB_WAIT_LINE = [
             '正在生成，可以先去做别的事',
-            '评委正在挑刺，智能评审替你先挨一轮批',
+            '评委正在挑刺，系统替你先挨一轮批',
             '图表和 PPT 在排队，快了',
             '快了，再等半分钟就好'
         ];
@@ -4523,7 +4543,14 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         // 阶段短标签：进度按钮上那行「正在生成 2% · xxx」挂的是后端 stage code，
         // queued/running 这类英文直出很出戏。这里给一份短中文，按钮上放得下。
         // 后端偶尔会传回中文 stage_label（比如下面的'等待中'），那种原样返回即可。
-        var WB_STAGE_SHORT = window.WB_STAGE_SHORT;
+        var WB_STAGE_SHORT = {
+            start: '准备中', parsing_rules: '读评分标准', similarity: '查重比对',
+            idea_scoring: '定位创意', analysis: '赛题分析', rich_assets: '备图表素材',
+            writing: '写正文', judging: '自评打分', expert_review: '专家评审',
+            diagnosis: '找扣分点', revision: '改写润色', defense: '答辩预测',
+            ppt: '排 PPT', speech: '写演讲稿', queued: '排队中', running: '生成中',
+            pending: '准备中', done: '收尾', finished: '收尾', error: '收尾中', failed: '收尾中'
+        };
         function wbStageShort(s) {
             var k = String(s || '').trim();
             if (!k) return '';
@@ -4546,7 +4573,27 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         // 团队分工智能建议：按赛事性质给一套「能直接改」的分工骨架。
         // 只是起点，不做任何真实性承诺——学生必须换成自己队友的真名真事，
         // 否则就是给评委送一个「团队是编的」的把柄。
-        var WB_TEAM_TPL = window.WB_TEAM_TPL;
+        var WB_TEAM_TPL = {
+            '工程创新类': '队长（计算机 / 自动化学院）：统筹进度 + 核心算法\n' +
+                          '硬件 / 结构：样机设计与加工、可靠性测试\n' +
+                          '软件 / 算法：模型训练与接口开发\n' +
+                          '调研 / 文档：用户调研、数据采集与材料撰写',
+            '创新创业类': '负责人：整体统筹 + 对外对接\n' +
+                          '技术：产品原型与技术实现\n' +
+                          '市场：用户调研、渠道与定价\n' +
+                          '运营 / 财务：成本测算、收支与落地推进',
+            '学术类': '第一作者：研究设计与论文主笔\n' +
+                      '实验：数据采集与实验验证\n' +
+                      '分析：数据处理与结果分析\n' +
+                      '文献：文献综述与格式校对',
+            '建模类': '建模：模型假设与建立\n' +
+                      '求解：算法实现与编程\n' +
+                      '写作：论文撰写与排版',
+            'default': '队长：统筹进度 + 核心模块\n' +
+                       '技术：原型开发与测试\n' +
+                       '调研：用户调研与数据\n' +
+                       '文档：材料撰写与排版'
+        };
         function wbTeamSuggest() {
             var ta = document.getElementById('udTeam');
             if (!ta) return;
@@ -4568,13 +4615,56 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         }
         window.wbTeamSuggest = wbTeamSuggest;
 
+        /* 双通路选择弹窗（2026-10-01）：创意框和草稿框都有内容时弹出，
+           用户点选本次走哪条通路，避免草稿静默劫持创意输入。
+           一次性选择：选完重新走 startWork，_wbPathChoice 用后即清。 */
+        function wbPathDialog() {
+            var old = document.getElementById('wbPathDlg');
+            if (old) old.remove();
+            var veil = document.createElement('div');
+            veil.id = 'wbPathDlg';
+            veil.style.cssText = 'position:fixed;inset:0;z-index:1900;background:rgba(8,12,30,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+            veil.innerHTML =
+                '<div style="max-width:420px;width:100%;background:var(--card,#fff);border:1px solid var(--line,#e3e8f5);border-radius:14px;padding:22px 20px;box-shadow:0 18px 48px rgba(0,0,0,.28);">' +
+                    '<div style="font-size:16px;font-weight:700;color:var(--text,#1a2340);margin-bottom:6px;">本次按哪条通路生成？</div>' +
+                    '<div style="font-size:13px;color:var(--text-mute,#4a5575);line-height:1.7;margin-bottom:16px;">检测到「项目创意」和「申报书草稿」都填了内容，两者不会同时使用，请指定本次的输入来源（另一个不受影响）。</div>' +
+                    '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+                        '<button id="wbPathIdea" style="flex:1;min-width:150px;padding:10px 14px;border:none;border-radius:9px;cursor:pointer;background:var(--c-a,#3b82f6);color:#fff;font-size:14px;">从创意生成</button>' +
+                        '<button id="wbPathDraft" style="flex:1;min-width:150px;padding:10px 14px;border:1px solid var(--line,#e3e8f5);border-radius:9px;cursor:pointer;background:transparent;color:var(--text,#1a2340);font-size:14px;">优化我的草稿</button>' +
+                    '</div>' +
+                    '<div style="margin-top:12px;text-align:right;"><span id="wbPathCancel" style="font-size:12.5px;color:var(--text-mute,#4a5575);cursor:pointer;">取消</span></div>' +
+                '</div>';
+            document.body.appendChild(veil);
+            var close = function () { veil.remove(); };
+            veil.addEventListener('click', function (e) { if (e.target === veil) close(); });
+            document.getElementById('wbPathCancel').onclick = close;
+            document.getElementById('wbPathIdea').onclick = function () {
+                window._wbPathChoice = 'idea'; close(); try { startWork(); } catch (e) {}
+            };
+            document.getElementById('wbPathDraft').onclick = function () {
+                window._wbPathChoice = 'draft'; close(); try { startWork(); } catch (e) {}
+            };
+        }
+        window.wbPathDialog = wbPathDialog;
+
         function startWork() {
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
             const competition = document.getElementById('competition').value;
             const mode = document.querySelector('input[name="mode"]:checked').value;
 
+            // 双通路显式选择（2026-10-01）：创意和草稿都填了时，让用户指定本次走哪条通路。
+            // 之前 proposal_draft 有字就静默切「优化」模式、创意被忽略——两条通路不是并行是草稿劫持。
+            if (idea && proposal_draft && !window._wbPathChoice) { wbPathDialog(); return; }
+            var _useDraft = (window._wbPathChoice === 'draft') ? true
+                          : (window._wbPathChoice === 'idea') ? false
+                          : proposal_draft.length > 0;
+            window._wbPathChoice = null;   // 一次性选择，下次再弹
+            const isOptimize = _useDraft;
+            var draftOut = _useDraft ? proposal_draft : '';   // 创意通路：草稿留在框里但本次不参与
+
             window._wbGenerating = true;   // 下载条/吸附 dock 以此为准：done 前一律不出
+            window._lastGenMode = mode;    // 导出质量门按真实模式评分（fast 不按 deep 标准误杀）
             // 赛事是必填项：后端会返回 400「请先选择赛事」，但等到那时候用户已经点了按钮、
             // 看到进度条再弹回，体验上是「网站故障」。这里当场拦下并把赛事框标出来
             var _ceEl = document.getElementById('competition');
@@ -4607,9 +4697,8 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             }
 
             const btn = document.getElementById('startBtn');
-            const isOptimize = proposal_draft.length > 0;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> 正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
+            btn.innerHTML = '<span class="spinner"></span> 系统正在' + (isOptimize ? '优化' : '生成') + '，请耐心等待...';
             document.getElementById('progressSteps').style.display = 'block';
             document.getElementById('cancelWrap').style.display = 'block';
             try { wbHideRetry(); } catch (e) {}
@@ -4619,11 +4708,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             document.getElementById('resultArea').style.display = 'none';
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
             _currentTaskId = null;
-            // 第二百四十九轮 P0：开始新一轮时必须先把「上一次结果的历史 id」清掉。
-            // 原来只在生成完成后赋值，且赋值还会回落到旧值（见下方），于是新一轮刚开头、
-            // 新 id 还没拿到的窗口里，导出按钮读到的仍是上一条记录的 id —— 用户点了导出，
-            // 后端按旧 id 回源，下载到的是上一条的内容（实测 id=217 生成完却下载到 216）。
-            window._lastHistoryId = null;
             streamPrepare(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
@@ -4668,24 +4752,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                 }
             };
             _setBar(2, '正在提交任务…');
-            // 322 轮 P0：「已用 X 秒」原先只挂在 _setBar 里更新，而 _setBar 只在轮询回调里调。
-            // 轮询一旦没跑（页面被判后台 / 请求挂住），时间就永远停在「已用 0 秒」，
-            // 用户分不清是「还在等」还是「已经死了」。这里起独立心跳，只管把时间走起来。
-            window._wbGenT0 = Date.now();
-            (function () {
-                try { clearInterval(window.__wbElapsedTimer); } catch (e) {}
-                window.__wbElapsedTimer = setInterval(function () {
-                    try {
-                        var _eb = document.getElementById('elapsedBadge');
-                        if (!_eb || !window._wbGenT0) return;
-                        var _es = Math.round((Date.now() - window._wbGenT0) / 1000);
-                        _eb.style.display = 'inline-block';
-                        _eb.innerText = _es >= 60
-                            ? ('已用 ' + Math.floor(_es / 60) + ' 分 ' + (_es % 60) + ' 秒')
-                            : ('已用 ' + _es + ' 秒');
-                    } catch (e) {}
-                }, 1000);
-            })();
             // 生成一开始就把进度区带进视野：移动端实测进度条在 y≈1500px，不滚过去等于没有。
             setTimeout(function () {
                 var _ps = document.getElementById('progressSteps');
@@ -4718,7 +4784,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                 body: JSON.stringify({
                     competition_name: competition,
                     idea: idea,
-                    proposal_draft: proposal_draft,
+                    proposal_draft: draftOut,
                     mode: mode,
                     // 文风：standard=标准 / strong=去 AI 味。
                     // 与 Codex 约定：只在深度版生效，简洁版一律按 standard 传，避免和「短而准」冲突
@@ -4785,38 +4851,19 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                 // queued 再统一放宽到 15 分钟。
                 const WATCHDOG_MS = (mode === 'deep' ? 12 : 5) * 60 * 1000;
                 let _queuedSeen = false;
-                // 322 轮 P0：看门狗抽成独立函数。原来它写在 `if (document.hidden) return;` 之后——
-                // 移动端页面被判后台时（微信/夸克内核从后台切回常不触发 visibilitychange），
-                // 轮询每轮都在这里静默 return：已用时间永远 0 秒、看门狗永不响、既不 resolve
-                // 也不 reject，用户看到的就是「卡死且无任何提示」，点「重新生成」也一样。
-                // 现在：不可见时仍然不发请求（保留省电初衷），但看门狗照常推进。
-                var _wallT0 = Date.now();   // 墙钟：不做「不可见顺延」，超时必定报错
-                var _wdFired = false;
-                var _wdCheck = function () {
-                    if (_wdFired) return true;
-                    var _wdMs = (_queuedSeen ? 15 : (mode === 'deep' ? 12 : 5)) * 60 * 1000;
-                    // t0 会被 visibilitychange 按「不可见时长」顺延；页面若长期被判后台，
-                    // t0 会被无限顺延、看门狗永远不响。墙钟 +3 分钟兜底，保证一定会报错。
-                    var _over = (Date.now() - t0 > _wdMs) || (Date.now() - _wallT0 > _wdMs + 3 * 60 * 1000);
-                    if (_over) {
-                        _wdFired = true;
-                        try { clearInterval(tick); } catch (e) {}
-                        reject(new Error('等待超时（' + (_wdMs / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
-                        return true;
-                    }
-                    return false;
-                };
                 return new Promise((resolve, reject) => {
                     // 167 轮：原来是每 800ms 打一次 /api/status（还外加 speech_stream），
                     // 手机上连续几分钟的高频请求 + 重渲染是发烫主因之一。改为：
                     //   ① 前台 2s 一次（流式预览仍然连贯）；② 页面切到后台完全不请求；
                     //   ③ 回到前台立刻补拉一次，不用等下一个 tick。
                     const _poll = () => {
-                        // 切后台/锁屏时不发请求：省电、省流量，也不给后端添无意义负载。
-                        // 322 轮 P0：但不能「静默 return」——看门狗必须照常推进，否则移动端
-                        // 一旦被判后台就永久停在「已用 0 秒」且没有任何报错。
-                        if (document.hidden) { try { _wdCheck(); } catch (e) {} return; }
-                        if (_wdCheck()) return;
+                        // 切后台/锁屏时彻底停手：省电、省流量，也不给后端添无意义负载
+                        if (document.hidden) return;
+                        if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
+                            clearInterval(tick);
+                            reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
+                            return;
+                        }
                         fetch('/api/status/' + start.task_id + '?cursor=' + encodeURIComponent(JSON.stringify(_streamLen)))
                             .then(r => r.json())
                             .then(res2 => {
@@ -4857,7 +4904,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                                     // 里程碑 1/2：正文写完、评委接手。其余阶段不弹，避免刷屏
                                     if (res2.stage === 'judging' || res2.stage === 'expert_review' ||
                                         res2.stage === 'diagnosis' || res2.stage === 'revision') {
-                                        wbMileOnce('body', '正文完成，智能评审开始挑刺…');
+                                        wbMileOnce('body', '正文完成，模拟评委开始挑刺…');
                                     }
                                     var _eta = parseInt(res2.eta_seconds || 0, 10);
                                     // 剩余时间单独挂徽章，混在长句里没人看得见
@@ -4933,18 +4980,11 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     document.addEventListener('visibilitychange', function () {
                         if (!document.hidden) { try { _poll(); } catch (e) {} }
                     });
-                    // 322 轮：移动端（微信 / 夸克 / iOS Safari）从后台或 bfcache 回来时，
-                    // visibilitychange 常常不触发，页面一直被当成 hidden、轮询一直空转。
-                    // 补 pageshow 与 focus 两路：只要用户真的在看页面，就立刻把轮询拉起来。
-                    window.addEventListener('pageshow', function () { try { _poll(); } catch (e) {} });
-                    window.addEventListener('focus', function () { try { _poll(); } catch (e) {} });
                 });
             })
             .then(data => {
                 streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
-                // 322 轮：生成结束就撤掉「已用时间」心跳，别让它一直跑
-                try { clearInterval(window.__wbElapsedTimer); window.__wbElapsedTimer = 0; } catch (e) {}
                 window._wbGenerating = false;
                 // 整轮跑完才亮出下载条；生成中的局部提示撤掉
                 try {
@@ -5001,10 +5041,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                             }
                         });
                         // ---- 1：当前 tab（默认「前期分析」）里的板块先画 ----
-                        _P(1, function () {
-                            document.getElementById('parsedRules').innerHTML = wbRenderMD(data.data.parsed_rules);
-                            try { wbRefreshRuleSrcNote(); } catch (e) {}
-                        });
+                        _P(1, function () { document.getElementById('parsedRules').innerHTML = wbRenderMD(data.data.parsed_rules); });
                         _P(1, function () { document.getElementById('similarityReport').innerHTML = wbRenderMD(data.data.similarity_report); });
                         // ---- 2~5：核心内容 ----
                         if (data.data.proposal_outline) _P(2, function () { document.getElementById('proposalOutline').innerHTML = wbRenderMD(data.data.proposal_outline); });
@@ -5061,12 +5098,9 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                             document.getElementById('defenseTab').style.display = 'block';
                             // 简化版升级钩子：关键模块底部提示深度版能多给什么（产品分层：够用 → 想升级）
                             if (!isDeep) {
-                                // 333 轮：字数与章节数不再写死——前者运行时取 /api/stats，
-                                // 后者因赛事而异（每个赛事的官方章节数不同），写死必然对不上。
-                                var _deepFact = _wbTierFact('deep');
                                 const UPSELL = [
-                                    ['proposalText', '升级深度版：申报书篇幅更完整' + (_deepFact ? '（' + _deepFact + '）' : '') + '，自动配数据图表'],
-                                    ['judgeFeedback', '升级深度版：<b>3 位专家视角评审</b>，逐条批注 + 优先改进清单'],
+                                    ['proposalText', '升级深度版：申报书扩写至 <b>12000 字级 / 12 章</b>（实测字数见档位卡统计），自动配数据图表'],
+                                    ['judgeFeedback', '升级深度版：<b>3 位专家模拟评审</b>，逐条批注 + 优先改进清单'],
                                     ['defenseQuestions', '升级深度版：<b>智能路演 PPT</b>，按大纲自动排版，可下载 .pptx'],
                                     ['competitorAnalysis', '升级深度版：<b>竞品对比表 + 竞争力四象限图</b>']
                                 ];
@@ -5094,8 +5128,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                              ['proposalText', data.data.proposal],
                              ['judgeFeedback', data.data.judge_feedback],
                              ['proposalAnalysis', data.data.proposal_analysis]].forEach(p => tagWordCount(p[0], p[1]));
-                            // M10：结果并重渲染时同步刷新「评分口径来源」标注
-                            try { wbRefreshRuleSrcNote(); } catch (e) {}
                             // 占位符 / 赛道禁忌扫描：扫的是渲染后的正文，必须等画完再扫，
                             // 否则扫到半截内容会漏报
                             wbRefreshPhBar();
@@ -5110,14 +5142,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
 
                         // 不依赖渲染结果的：同步执行
                         // 分享需要知道这条结果对应哪条历史记录
-                        // 第二百四十九轮 P0：这里原来是 `(新id) || window._lastHistoryId || null`，
-                        // 新 id 还没落库时会**回落到上一条记录的 id**，导出就绑错记录。
-                        // 正确做法：拿不到就是 null（后端会退回用本次提交的正文，内容仍然是当前这一版），
-                        // 绝不允许继承上一条的 id。
-                        window._lastHistoryId = (data.data && data.data.history_id) || null;
-                        // 记下「当前展示的结果是哪条」：导出前拿它跟 _lastHistoryId 对账，
-                        // 两边不一致说明状态串了，宁可拦下也不能把错记录交给用户。
-                        window._shownResultId = window._lastHistoryId;
+                        window._lastHistoryId = (data.data && data.data.history_id) || window._lastHistoryId || null;
                         // 生成完就存一份在本机：后端历史按 uid 隔离，手机端 uid 存不住时
                         // 只剩这份能保证「刷新后还能打开刚才那版」
                         try {
@@ -5271,8 +5296,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             })
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
-                // 322 轮：「已用时间」心跳必须在这里撤掉，否则失败后它还在后台一直跑
-                try { clearInterval(window.__wbElapsedTimer); window.__wbElapsedTimer = 0; } catch (e) {}
                 streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
                 try { wbAgentFinish(false); } catch (e) {}
                 document.getElementById('skeletonArea').style.display = 'none';
@@ -5304,17 +5327,9 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     });
                 } else if (err && err.isCreateFail) {
                     // 任务根本没建立起来：不是生成质量问题，别让人去改创意
-                    // 311 轮：① 后端文案有时自带句号，直接拼「，请重试」会出现「。，」连排，
-                    // 先清掉尾部标点；② 技术状态码（HTTP 403/500）不出现在界面上，
-                    // 只在控制台留痕，方便排查又不吓唬用户。
-                    var _raw = String((err && err.message) || '未知原因');
-                    var _clean = _raw.replace(/[\u3002\uff0c,\u3001\uff1b;\s]+$/, '');
-                    if (err && err.httpStatus) {
-                        try { console.warn('[生成失败] HTTP ' + err.httpStatus + ' ' + _raw); } catch (e) {}
-                    }
-                    wbToast('生成服务暂不可用：' + _clean + '，请重试', {
+                    wbToast('生成服务暂不可用：' + (err.message || '未知原因') + '，请重试', {
                         type: 'error',
-                        sub: '已填内容都还在，改好后点「开始生成」即可'
+                        sub: (err.httpStatus ? ('HTTP ' + err.httpStatus + ' · ') : '') + '已填内容都还在，改好后点「开始生成」即可'
                     });
                 } else {
                     var _net = String((err && err.message) || err || '');
@@ -5419,7 +5434,24 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         /* ---------- 板块快速定位（结果区锚点条） ----------
            结果区动辄上万字，看完一块要翻很久才到下一块。锚点条只列「当前真的有内容」
            的板块，点一下自动切栏目 + 平滑滚过去。 */
-        var WB_ANCHORS = window.WB_ANCHORS;
+        var WB_ANCHORS = [
+            {n: '规则解析', t: 'analysis', id: 'parsedRules'},
+            {n: '查重',     t: 'analysis', id: 'similarityReport'},
+            {n: '项目简介', t: 'proposal', id: 'projectSummary'},
+            {n: '申报书',   t: 'proposal', id: 'proposalText'},
+            {n: '诊断',     t: 'proposal', id: 'proposalAnalysis'},
+            {n: '评审意见', t: 'proposal', id: 'judgeFeedback'},
+            {n: '竞品',     t: 'deep',     id: 'competitorAnalysis'},
+            {n: '商业',     t: 'deep',     id: 'businessModel'},
+            {n: '风险',     t: 'deep',     id: 'riskAnalysis'},
+            {n: '技术方案', t: 'deep',     id: 'techSolution'},
+            {n: '实施计划', t: 'deep',     id: 'implementationPlan'},
+            {n: '社会价值', t: 'deep',     id: 'socialValue'},
+            {n: '图表',     t: 'charts',   id: 'tab-charts'},
+            {n: '答辩',     t: 'defense',  id: 'defenseQuestions'},
+            {n: 'PPT大纲',  t: 'defense',  id: 'pptOutline'},
+            {n: '导出',     t: 'export',   id: 'tab-export'}
+        ];
 
         function wbRenderAnchorBar() {
             var bar = document.getElementById('wbAnchorBar');
@@ -5494,28 +5526,14 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             return !!(byUa || byPad || byWidth);
         })();
 
-        /* 333 轮前端口径：任何字数 / 时长文案都从这里运行时取 /api/stats，绝不写死。
-           样本不足或拿不到数据就返回空串，调用方退回定性描述 —— 不补一个好看的数字。 */
-        function _wbTierFact(mode) {
-            var s = (window.WB_STATS && window.WB_STATS[mode]) || null;
-            var n = s ? (parseInt(s.sample_count, 10) || 0) : 0;
-            var med = s ? (parseInt(s.chars_median, 10) || 0) : 0;
-            var sec = s ? (parseFloat(s.duration_median_sec) || 0) : 0;
-            if (!s || n < 20 || !med || sec <= 0) return '';
-            var mn = sec / 60;
-            var dur = sec < 60 ? (Math.round(sec) + ' 秒')
-                               : ((mn < 10 ? (Math.round(mn * 10) / 10) : Math.round(mn)) + ' 分钟');
-            return '实测 ' + n + ' 次的用时中位约 ' + dur + '、正文中位约 ' + (Math.round(med / 100) * 100) + ' 字';
-        }
-
         function _introSteps() {
             return [
                 ['① 填创意', WB_IS_MOBILE
                     ? '一句话说清「解决什么问题 + 怎么做」，越具体生成越好'
                     : '一句话说清「解决什么问题 + 怎么做」；有草稿可上传 Word / PDF / TXT'],
                 ['② 选档位', WB_IS_MOBILE
-                    ? '简洁版出稿快、篇幅精；深度版内容更全，多出竞品 / 商业 / 风险分析 + 图表 + PPT（字数与用时见档位卡）'
-                    : '简洁版出稿快、篇幅精；深度版内容更全，多出竞品 / 商业 / 风险分析 + 图表 + PPT + 答辩预测（字数与用时见档位卡）'],
+                    ? '简洁版约 1~2 分钟出 2000~4000 字；深度版约 3~5 分钟，多出竞品/商业/风险分析 + 图表 + PPT'
+                    : '简洁版出稿快、字数精；深度版约 4 分钟出 12 章 + 图表 + PPT + 多专家模拟评审（实测字数与用时见档位卡）'],
                 ['③ 点生成', '内容实时流出，不用盯着空白页等；生成完直接导出'],
             ];
         }
@@ -5555,7 +5573,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             if (!m) {
                 h += '<div style="font-weight: 600; margin: 0 0 10px; color: var(--text);">还能干什么</div>';
                 h += '<div style="color: var(--text-dim); font-size: 13px; line-height: 1.9; margin-bottom: 18px;">' +
-                     '· <b>范文库</b>：加智能示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
+                     '· <b>范文库</b>：加示范范文片段，生成时自动参考同类写法（关键词检索，不是微调）<br>' +
                      '· <b>导出中心</b>：Word / PDF / PPT / 一键打包，申报书按标准格式排版<br>' +
                      '· <b>原格式导出</b>：上传学校模板 .docx，优化后保留你原来的版式<br>' +
                      '· <b>历史记录</b>：之前生成的随时打开回看，可继续导出' +
@@ -5566,9 +5584,9 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             h += '<div style="font-weight: 600; margin: 0 0 8px; color: var(--text);">上传入口，别传错</div>';
             h += '<div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.8; margin-bottom: 16px;">' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，智能识别并填到对应位置</div>' +
+                 '· <b>上传数据文件</b>（实测数据区）：测试报告/调研数据，系统自动识别并填到对应位置</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
-                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，在原文上智能优化</div>' +
+                 '· <b>上传草稿</b>（创意框下方）：你已经写好的内容，在原文上优化</div>' +
                  '<div style="padding: 6px 0; border-bottom: 1px dashed var(--line);">' +
                  '· <b>导入模板</b>（草稿区）：学校/官方模板，自动识别章节按它写</div>' +
                  '<div style="padding: 6px 0;">' +
@@ -5620,7 +5638,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         function showIntro(force) {
             // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             var modal = document.getElementById('introModal');
             var box = document.getElementById('introBox');
@@ -5713,7 +5731,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                         '</div>';
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc((e && e.message) || e) + '</div>';
+                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc(_friendlyErr(e)) + '</div>';
             }
         }
 
@@ -5730,7 +5748,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     _fallbackCopy(d.report, okFn, badFn);
                 }
             } catch (e) {
-                wbToast('获取报告失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('获取报告失败：' + _friendlyErr(e), { type: 'error' });
             }
         }
 
@@ -5758,7 +5776,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                         '</div>';
                 }).join('');
             } catch (e) {
-                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc((e && e.message) || e) + '</div>';
+                box.innerHTML = '<div style="color: var(--err-text);">加载失败：' + _esc(_friendlyErr(e)) + '</div>';
             }
         }
 
@@ -5810,7 +5828,20 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         }
 
         // 内容关键词 -> 建议标签（队友不一定熟悉标签体系，靠内容自动推荐降低打错标签的概率）
-        var KB_TAG_RULES = window.KB_TAG_RULES;
+        var KB_TAG_RULES = [
+            ['文化文旅', ['文旅', '苏轼', '景区', '文化旅游', '游客', '博物馆', '传统文化']],
+            ['非遗', ['非遗', '传承人', '刺绣', '苏绣', '绣娘', '手艺', '非物质文化']],
+            ['人工智能', ['AI', '人工智能', '识别', '模型', '算法', '深度学习', '视觉', '机器学习']],
+            ['web网站', ['网站', '网页', 'web', '小程序', '平台', '线上', 'APP', 'APP']],
+            ['校园服务', ['校园', '学生', '高校', '大学', '宿舍', '食堂', '图书馆', '同学']],
+            ['乡村振兴', ['乡村', '农业', '农户', '种植', '农村', '振兴', '县域', '农产品']],
+            ['项目简介', ['项目简介', '项目概述', '本项目', '我们做', '项目是']],
+            ['社会价值', ['社会价值', '社会意义', '公益', '带动', '文化自信']],
+            ['商业模式', ['商业模式', '收入', '盈利', '收费', '付费', '成本', '变现', '定价', '订阅']],
+            ['风险分析', ['风险', '局限', '不足', '挑战', '困难', '尚未', '误报']],
+            ['创新点', ['创新', '与众不同', '首次', '独特', '突破']],
+            ['实践过程', ['实践', '阶段', '进度', '实施', '落地', '试点', '下一步', '计划']]
+        ];
 
         function kbContentHint() {
             var el = document.getElementById('kbContent');
@@ -5959,13 +5990,12 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                         var scoreTxt = '';
                         if (sc !== null && !isNaN(sc)) {
                             scoreTxt = '<span style="color:var(--text-mute);font-size:11px;">' +
-                                '智能评分 ' + sc + ' 分</span>';
+                                '质检 ' + sc + ' 分</span>';
                         }
-                        // 摘要优先，没有则回退正文前 120 字（原来 60 字太短，两行就看不出是什么材料）。
-                        // 这是「摘要降级」不是无声截断：下面渲染时固定带「…」明示还有后续内容。
+                        // 摘要优先，没有则回退正文前 60 字
                         var brief = (it.summary && String(it.summary).trim())
                             ? String(it.summary)
-                            : (it.content || '').slice(0, 120);
+                            : (it.content || '').slice(0, 60);
                         html += '<div style="padding:12px;background:var(--surface-solid);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;">' +
                             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
                             '<div style="flex:1;min-width:0;">' +
@@ -6201,8 +6231,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         d.style.display = 'flex';
         /* _esc 在主 script 里，这里兜个底，拿不到就自己转义 */
         var safeUrl = (typeof _esc === 'function') ? _esc(url) : url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-        /* 205 轮·组件语言统一：弹窗半径/阴影跟 .modal 对齐（原 14px 且无阴影，与 intro/历史/图表弹窗不同档） */
-        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; width: 92%; max-width: 460px; box-shadow: 0 26px 70px rgba(0,0,0,.6);">' +
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">分享链接已生成</div>' +
             '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">链接有效期至 ' +
             (expires ? _esc(String(expires)) : '7 天后') + '，对方打开只能看，不能改。</div>' +
@@ -6261,11 +6290,10 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         d.id = 'wbFeedbackModal';
         d.className = 'modal-overlay';
         d.style.display = 'flex';
-        /* 205 轮·组件语言统一：弹窗半径/阴影跟 .modal 对齐（原 14px 且无阴影，与 intro/历史/图表弹窗不同档） */
-        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; width: 92%; max-width: 460px; box-shadow: 0 26px 70px rgba(0,0,0,.6);">' +
+        d.innerHTML = '<div style="background: var(--surface-solid); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 92%; max-width: 460px;">' +
             '<div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">反馈 / 建议</div>' +
-            '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">吐槽、夸夸、许愿都行——每一条都在帮我们做得更好</div>' +
-            '<textarea id="wbFeedbackTxt" placeholder="说说遇到的问题、想法或想要的赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
+            '<div style="font-size: 12.5px; color: var(--text-mute); margin-bottom: 12px;">遇到问题或有好想法都可以说，会直接进后台、用于改进工具。</div>' +
+            '<textarea id="wbFeedbackTxt" placeholder="例如：XX 按钮点了没反应 / 希望支持 XX 赛事…" style="width: 100%; min-height: 96px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-size: 13px; box-sizing: border-box; resize: vertical;"></textarea>' +
             '<div style="display: flex; gap: 8px; margin-top: 12px;">' +
             '<button onclick="wbFeedbackSubmit()" style="flex: 1; padding: 11px; background: linear-gradient(135deg, var(--c-a) 0%, var(--c-b) 100%); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;">提交</button>' +
             '<button onclick="document.getElementById(\'wbFeedbackModal\').remove()" style="padding: 11px 18px; background: var(--btn-ghost); color: var(--text); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 14px;">关闭</button>' +
@@ -6285,17 +6313,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: txt })
-        }).then(function (r) {
-            // 297 轮：403 / 其它错误码也必须读 body。原来 r.ok 为 false 时直接返回 null，
-            // 会一路走到下面「感谢你的反馈」——用户以为提交成功，实际一条都没进后台（假成功，
-            // 比生硬报错更糟）。演示只读会话提交反馈正是 403（Codex 已给友好文案）。
-            if (r.ok) return r.json();
-            return r.json().catch(function () { return null; }).then(function (j) {
-                if (j && j.error) throw new Error(j.error);
-                if (r.status === 403) throw new Error('当前会话没有提交权限（演示账号为只读，登录完整账号后可提交）');
-                throw new Error('提交失败（HTTP ' + r.status + '）');
-            });
-          })
+        }).then(function (r) { return r.ok ? r.json() : null; })
           .then(function (j) {
               if (j && j.success === false) throw new Error(j.error || '提交失败');
               var m = document.getElementById('wbFeedbackModal');
@@ -6389,7 +6407,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         function showHistory() {
             // 同「背景」按钮：引导遮罩还在时先把引导收掉，别让用户点了没反应
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             document.getElementById('historyModal').style.display = 'flex';
             loadHistory(0);
@@ -6536,7 +6554,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     renderHistoryList(d);
                 })
                 .catch(function (e) {
-                    list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc((e && e.message) || e) + '</p>';
+                    list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc(_friendlyErr(e)) + '</p>';
                 });
         }
         function renderHistoryList(d) {
@@ -6554,10 +6572,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                             return '<div class="history-item" style="cursor: pointer;" onclick="openHistory(' + h.id + ')">' +
                                 '<div class="history-info">' +
                                     '<div class="history-title">' + _esc(h.competition_name || '') + '</div>' +
-                                    // 原来 slice(0,60) 会把长创意砍掉只剩半句，用户认不出自己写过什么。
-                                    // .history-idea 已改成换行不截断（style.css:288），父容器 #historyList
-                                    // 自带 max-height + 纵向滚动，整条放进去也不会撑爆列表。
-                                    '<div class="history-idea">' + _esc(h.idea || '') + '</div>' +
+                                    '<div class="history-idea">' + _esc((h.idea || '').slice(0, 60)) + '</div>' +
                                     '<div class="history-meta">' + _esc(h.time || '') + ' · 得分 ' +
                                         _esc(h.score == null ? '-' : h.score) +
                                         ' · <span style="color: var(--c-a);">本机记录</span></div>' +
@@ -6601,58 +6616,16 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             html += '<button onclick="loadHistory(' + (offset + limit) + ')"' + (page >= totalPages - 1 ? ' disabled' : '') + '>下一页</button>';
             pager.innerHTML = html;
         }
-        // 270 轮：一键演示 —— 预置样例直接渲染结果页。
-        // 不调 LLM、不耗额度、不走 /api/generate，因此不受 demo 只读 403 影响；
-        // 渲染完全复用 openHistory（只是数据源换成静态 JSON），不碰生成/评分/导出主链路。
-        async function wbOpenDemo() {
-            var btn = document.getElementById('wbDemoBtn');
-            try {
-                if (btn) { btn.disabled = true; btn.textContent = '演示加载中…'; }
-                var res = await fetch('/static/demo_sample.json', { cache: 'no-cache' });
-                if (!res.ok) throw new Error('样例文件 ' + res.status);
-                var d = await res.json();
-                // 310 轮修复：样例文件顶层是 {success, data, rating, rich_deck, ...}，
-                // proposal 在 data 这一层里。原来直接判 d.proposal（顶层没有这个字段）
-                // 必然抛「演示样例数据为空」；同时 openHistory 的演示分支会再包一层
-                // {success:true, data: __wbDemoData}，所以这里必须存 data 层，
-                // 两边才对得上，否则正文渲染出来是空的。
-                var payload = (d && d.data && typeof d.data === 'object') ? d.data : d;
-                if (!payload || !payload.proposal) throw new Error('演示样例数据为空');
-                window.__wbDemoData = payload;
-                try {
-                    await openHistory((d && d.id) || (payload && payload.id) || 0);
-                } finally {
-                    // 渲染完立刻清掉，避免之后真实回看历史误用演示数据
-                    window.__wbDemoData = null;
-                }
-                try {
-                    wbToast('已载入演示样例（预置内容，非实时生成）', { type: 'info' });
-                } catch (e) {}
-            } catch (e) {
-                window.__wbDemoData = null;
-                try { wbToast('演示加载失败：' + ((e && e.message) || e), { type: 'error' }); } catch (e2) {}
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '🎬 一键演示'; }
-            }
-        }
-        window.wbOpenDemo = wbOpenDemo;
-
         // 打开一条历史记录：把服务器上存的结果回填到各 Tab
         // （之前列表只有「删除」按钮，点不开内容，历史记录等于没法用）
         async function openHistory(id) {
             var modal = document.getElementById('historyModal');
             try {
                 var d = null;
-                // 270 轮演示模式：预置样例已注入 window.__wbDemoData 时直接渲染，
-                // 不走 /api/history —— 演示不依赖后端记录，也不受 demo 只读 / uid 隔离影响。
-                if (window.__wbDemoData) {
-                    d = { success: true, data: window.__wbDemoData };
-                } else {
-                    try {
-                        var res = await fetch('/api/history/' + id);
-                        d = await res.json();
-                    } catch (e) { d = null; }
-                }
+                try {
+                    var res = await fetch('/api/history/' + id);
+                    d = await res.json();
+                } catch (e) { d = null; }
                 if (!d || !d.success || !d.data) {
                     // 后端按 uid 隔离，手机端 uid 存不住时这条会「记录不存在」。
                     // 用生成时存在本机的那份兜底，历史不至于点了打不开。
@@ -6668,8 +6641,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                 // 打开历史必须同步记下 history_id，否则 wbShare 和导出回源都会拿不到 id，
                 // 表现成「分享提示还没存进历史」「导出不回源当前记录」。
                 window._lastHistoryId = id;
-                // 249 轮：回看历史同样要记「当前展示的是哪条」，供导出前对账
-                window._shownResultId = id;
                 // 174 轮：回看历史必须重算「沉淀」入口。原来只在生成完成那次同步过，
                 // 于是回看一条旧记录时，按钮上写的还是上一条的分数、点下去沉淀的却是当前这条
                 // ——「显示的分数」和「实际入库的记录」不是同一条，属于静默错沉淀。
@@ -6693,8 +6664,6 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     if (el) el.innerHTML = txt ? md(txt) : '';
                 };
                 set('parsedRules', data.parsed_rules);
-                // M10：回看历史同样要标口径来源（按当前表单选中的赛事名匹配 profile）
-                try { wbRefreshRuleSrcNote(); } catch (e) {}
                 set('similarityReport', data.similarity_report);
                 try {
                     var si = document.getElementById('simInfo');
@@ -6754,7 +6723,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                 if (modal) modal.style.display = 'none';
                 wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
             } catch (e) {
-                wbToast('打开失败：' + ((e && e.message) || e), { type: 'error' });
+                wbToast('打开失败：' + _friendlyErr(e), { type: 'error' });
             }
         }
 
@@ -6771,7 +6740,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     }
                 })
                 .catch(function (e) {
-                    wbToast('删除失败：' + ((e && e.message) || e), { type: 'error' });
+                    wbToast('删除失败：' + _friendlyErr(e), { type: 'error' });
                 });
         }
 
@@ -6836,7 +6805,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         // 赛事官方资料索引：拉一次缓存起来，之后选赛事纯本地匹配，不用等网络
         wbLoadCompIndex();
         wbCompReorderChips();   // 老用户回来：常用赛事标签按本机使用频次排好（第一百零二轮）
-        // 赛事结构化配置（章节顺序 / 评分口径 / 匿名评审），同样是拉一次缓存
+        // 赛事结构化配置（章节顺序 / 评分口径 / 双盲），同样是拉一次缓存
         wbLoadProfiles();
         // 三个上传入口统一兜底：内置浏览器拦一下、旧版 .doc 提前说清
         ['ruleFile', 'tplFile', 'ideaFile', 'udFile'].forEach(wbUploadGuard);
@@ -7018,15 +6987,9 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
                     : '（样本积累中，暂不公布实测数据）';
             }
             if (wantHead) {
-                // 没有实测用时就不报时长：宁可少说，也不编一个好看的数
-                if (!dur) {
-                    return mode === 'fast'
-                        ? ('实测 ' + n + ' 次：正文中位约 ' + med + ' 字')
-                        : ('实测 ' + n + ' 次：正文中位约 ' + med + ' 字，含图表与路演稿');
-                }
                 return mode === 'fast'
-                    ? ('约 ' + dur + '出 ' + Math.round(med / 100) * 100 + ' 字级申报书')
-                    : ('约 ' + dur + '出 ' + Math.round(med / 1000) * 1000 + ' 字级完整方案书');
+                    ? ('约 ' + (dur || '1 分钟') + '出 ' + Math.round(med / 100) * 100 + ' 字级申报书')
+                    : ('约 ' + (dur || '4 分钟') + '出 ' + Math.round(med / 1000) * 1000 + ' 字级完整方案书');
             }
             return '（' + n + ' 次实测中位 ' + med + ' 字' + (dur ? ' / ' + dur : '') + '）';
         }
@@ -7063,7 +7026,54 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
            选它时导出 PNG 与前台完全一致；其它主题的导出一致性要靠后端接 chart_theme 参数
            （前端已把该字段放进导出 payload，后端接线即可生效）。 */
         var WB_CHART_THEME_KEY = 'wbChartThemeV1';
-        var WB_CHART_THEMES = window.WB_CHART_THEMES;
+        var WB_CHART_THEMES = {
+            soft: {
+                label: '柔和默认',
+                series: ['#6B9BC3', '#7BB6A6', '#9C8BC4', '#D9A05B', '#8CBF86', '#C98C94', '#A8C47A'],
+                bar: ['#8FB8D9', '#5E87B0'], line: '#6B9BC3', area: 'rgba(107,155,195,.18)',
+                text: '#5B6B82', axis: 'rgba(91,107,130,.35)', split: 'rgba(91,107,130,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(91,107,130,.22)', '#1F2A3A'],
+                bgL: ['rgba(255,255,255,.55)', 'rgba(244,247,252,.72)'],
+                bgD: ['rgba(28,34,52,.45)', 'rgba(18,22,38,.58)']
+            },
+            tech: {
+                label: '科技蓝紫',
+                // 与后端 chart_renderer_pro 的 tech 主题一致，改这里要同步后端
+                series: ['#818CF8', '#22B8CF', '#C084FC', '#F59E0B', '#34D399', '#FB7185', '#A3E635'],
+                bar: ['#67e8f9', '#4f46e5'], line: '#c084fc', area: 'rgba(192,132,252,.22)',
+                text: '#93a0c4', axis: 'rgba(148,163,255,.35)', split: 'rgba(148,163,255,.12)',
+                tip: ['rgba(10,15,43,.92)', 'rgba(148,163,255,.3)', '#e9eefc'],
+                bgL: ['rgba(22,28,62,.62)', 'rgba(8,12,32,.78)'],
+                bgD: ['rgba(22,28,62,.62)', 'rgba(8,12,32,.78)']
+            },
+            green: {
+                label: '环保绿',
+                series: ['#4F9D7C', '#6FAE86', '#8FBF95', '#B0C97F', '#7FB49E', '#9BCE8E', '#C3D59B'],
+                bar: ['#7FBBA0', '#3F8C6E'], line: '#4F9D7C', area: 'rgba(79,157,124,.18)',
+                text: '#4A6559', axis: 'rgba(74,101,89,.35)', split: 'rgba(74,101,89,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(74,101,89,.22)', '#1E2F28'],
+                bgL: ['rgba(247,252,249,.6)', 'rgba(237,245,240,.74)'],
+                bgD: ['rgba(22,40,33,.45)', 'rgba(14,26,22,.58)']
+            },
+            warm: {
+                label: '温暖橙',
+                series: ['#C2854E', '#D3A15E', '#BF7F63', '#E0B473', '#A9774F', '#CBA97E', '#D98F5B'],
+                bar: ['#E0B473', '#C2854E'], line: '#C2854E', area: 'rgba(194,133,78,.18)',
+                text: '#6B563F', axis: 'rgba(107,86,63,.35)', split: 'rgba(107,86,63,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(107,86,63,.22)', '#31251A'],
+                bgL: ['rgba(255,251,245,.6)', 'rgba(250,242,232,.74)'],
+                bgD: ['rgba(42,32,22,.45)', 'rgba(26,20,14,.58)']
+            },
+            biz: {
+                label: '经典商务',
+                series: ['#3F6A94', '#5C7E96', '#7A8FA0', '#94776B', '#5E7B6B', '#836C86', '#6C7A8C'],
+                bar: ['#5C7E96', '#33526F'], line: '#3F6A94', area: 'rgba(63,106,148,.18)',
+                text: '#42505F', axis: 'rgba(66,80,95,.35)', split: 'rgba(66,80,95,.12)',
+                tip: ['rgba(255,255,255,.96)', 'rgba(66,80,95,.22)', '#1C2530'],
+                bgL: ['rgba(248,250,252,.6)', 'rgba(240,243,247,.74)'],
+                bgD: ['rgba(24,30,42,.45)', 'rgba(16,20,30,.58)']
+            }
+        };
         function wbChartThemeKey() {
             var v = '';
             try { v = _wbStoreGet(WB_CHART_THEME_KEY) || ''; } catch (e) {}
@@ -7096,7 +7106,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             var t = WB_CHART_THEMES[v] || WB_CHART_THEMES.soft;
             el.textContent = v === 'tech'
                 ? '科技蓝紫：深色玻璃底，与导出的图表 PNG 完全同色。'
-                : ('已选「' + t.label + '」：白底低饱和，打印和投屏都友好。');
+                : ('已选「' + t.label + '」：白底低饱和，打印/投屏都不刺眼。');
         };
         // 按创意推荐：纯词表匹配，开销可忽略（167 轮正在压耗时，这里不能再加 LLM 调用）
         window.wbChartThemeGuess = function () {
@@ -7131,9 +7141,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         checkHealth();
         // 167 轮：心跳原来是无脑 30s 一次，切后台也在打，白耗移动端电量。
         // 改为「仅页面可见才请求」+ 失败退避（30s→60s→120s，上限 5 分钟），回到前台立刻补一次。
-        // 266 轮(P0)：_hbLast 原先漏声明，首次执行到 6779 行即 ReferenceError，
-        // 把心跳之后的所有代码（含历史弹窗渲染）一并中断，表现为「历史弹窗永远加载中」。
-        var _hbBase = 30000, _hbMul = 1, _hbLast = 0;
+        var _hbBase = 30000, _hbMul = 1;
         setInterval(function () {
             if (document.hidden) return;
             if (!window._wbHealthOk && _hbMul < 10) _hbMul *= 2;   // 连续失败就拉长间隔
@@ -7313,7 +7321,18 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
         /* img 只放 gradient（background-image）、color 单独放（background-color）。
            别再把两者拼成一条塞进 background-image：末尾那个纯色会让整条声明非法，
            浏览器直接丢弃 → 背景层 backgroundImage 变 none，点了跟没点一样。 */
-        var WB_BG_PRESETS = window.WB_BG_PRESETS;
+        var WB_BG_PRESETS = [
+            /* 极光的青+紫和默认底色的光晕撞色，所以绿色那团加重并上移到首屏可见处，
+               否则切了看不出区别（实测顶部带色差只有 3.5，跟噪声基线差不多） */
+            { id: 'aurora', name: '极光', color: '#070b18', img: 'radial-gradient(1200px 700px at 12% 26%, rgba(56,189,248,.46), transparent 60%), radial-gradient(900px 620px at 82% 16%, rgba(168,85,247,.38), transparent 62%), radial-gradient(1000px 760px at 58% 72%, rgba(52,211,153,.36), transparent 66%)' },
+            { id: 'nebula', name: '星云', color: '', img: 'radial-gradient(900px 620px at 78% 22%, rgba(244,114,182,.34), transparent 62%), radial-gradient(1100px 700px at 20% 78%, rgba(59,130,246,.34), transparent 64%), linear-gradient(160deg, #0a0f22, #120b24)' },
+            { id: 'ocean', name: '深海', color: '', img: 'radial-gradient(1000px 700px at 50% 0%, rgba(20,184,166,.34), transparent 62%), radial-gradient(900px 700px at 10% 90%, rgba(37,99,235,.30), transparent 66%), linear-gradient(180deg, #04121f, #061a2c)' },
+            { id: 'ember', name: '熔岩', color: '', img: 'radial-gradient(900px 620px at 20% 20%, rgba(249,115,22,.32), transparent 60%), radial-gradient(1000px 700px at 80% 80%, rgba(190,24,93,.30), transparent 64%), linear-gradient(160deg, #150a10, #1c0f0a)' },
+            { id: 'ink', name: '水墨', color: '', img: 'radial-gradient(1000px 700px at 30% 30%, rgba(148,163,184,.26), transparent 62%), radial-gradient(800px 600px at 75% 70%, rgba(71,85,105,.30), transparent 64%), linear-gradient(180deg, #0b0e14, #10141c)' },
+            { id: 'cyber', name: '赛博', color: '', img: 'radial-gradient(900px 600px at 15% 80%, rgba(34,211,238,.34), transparent 60%), radial-gradient(900px 600px at 85% 20%, rgba(217,70,239,.30), transparent 62%), linear-gradient(150deg, #0a0716, #131024)' },
+            { id: 'forest', name: '林雾', color: '', img: 'radial-gradient(1000px 700px at 60% 20%, rgba(74,222,128,.26), transparent 62%), radial-gradient(900px 700px at 20% 85%, rgba(21,94,117,.30), transparent 66%), linear-gradient(180deg, #07130f, #0a1712)' },
+            { id: 'plain', name: '纯净', color: '', img: 'linear-gradient(180deg, #080b14, #0d1220)' }
+        ];
         var WB_BG_KEY = 'wb_bg_cfg_v1';
         var wbBgLayer = null, wbBgUserUrl = null;
         function wbBgLayerEl() {
@@ -7465,7 +7484,7 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             // 首次访问的引导遮罩（#wbCoachVeil，z-index 1500）还在时，点开的面板会躺在遮罩下面，
             // 用户看到的就是「点了背景没反应」。既然用户已经在主动用页面了，引导就该让位。
             try {
-                if (document.getElementById('wbCoachVeil') && typeof coachEnd === 'function') coachEnd();
+                if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             var p = document.getElementById('wbBgPanel');
             if (!p) return;
@@ -7666,37 +7685,19 @@ window.wbUaOpenBrowser=wbUaOpenBrowser;window.wbUaPaste=wbUaPaste;window.wbUaClo
             return kill.length ? box.innerHTML : html;
         }
         // 全站 Markdown 渲染统一入口（原来散落 16 处 marked.parse，现已全部收编到这里）
-        // 287 轮：段落内单换行折叠为空格，连续空行才分段；表格/列表/标题/引用/代码块原样保留。
-        // 不这么做时，正文里被单独放在一行的关键词（如「创新性30%权重」）会渲染成孤立一行，
-        // 与上下文视觉断裂。注意不能用正则 lookbehind（老 Safari 会抛错，会掉进
-        // 下面的 catch 兜底把全文变成 <br>，反而更糟），所以走逐行扫描。
-        function wbNormText(s) {
-            s = String(s == null ? '' : s).replace(/\r\n/g, '\n');
-            var lines = s.split('\n');
-            var out = [];        // 元素 = 一个已合并好的段落，或一行结构（表格/列表/标题/代码）
-            var buf = '';        // 当前段落缓冲
-            var inFence = false;
-            function flush() { if (buf) { out.push(buf); buf = ''; } }
-            for (var i = 0; i < lines.length; i++) {
-                var cur = lines[i];
-                if (/^\s*(```|~~~)/.test(cur)) { flush(); inFence = !inFence; out.push(cur); continue; }
-                if (inFence) { out.push(cur); continue; }        // 代码块里一个字都不能动
-                var t = cur.trim();
-                // 结构行：表格行、列表项、标题、引用——它的换行是 markdown 语法，合并了就废了
-                var isStruct = t ? (/^(\||[-*+]\s|\d+[.)]\s|#{1,6}\s|>\s)/.test(t)) : false;
-                if (!t) { flush(); out.push(''); continue; }     // 空行 = 分段
-                if (isStruct) { flush(); out.push(cur); continue; }
-                // 段落内续行：用空格拼接（不是加空格再换行——那样换行还在，等于没合并）
-                buf = buf ? (buf + ' ' + t) : t;
-            }
-            flush();
-            return out.join('\n');
-        }
+        // 417 轮：所有生成文档（说明书/各分析报告/PPT 大纲/答辩问题）底部统一一行声明。
+        // 措辞与后端导出件完全同一套（app.py 的 AI_NOTICE_LINE），网页与导出件不许两套口径。
+        // 禁用「AI」字样，也不写「本内容由AI生成」这类生硬句子。
+        var WB_ASSIST_NOTE = '本材料由智能助手辅助起草，已按官方要求排版，请以团队真实情况核对补充后提交';
         function wbRenderMD(s) {
             var html;
-            try { html = marked.parse(wbNormText(s)); }
-            catch (e) { html = wbNormText(s == null ? '' : s).replace(/\n/g, '<br>'); }
-            return wbDedupeHtml(html);
+            try { html = marked.parse(s == null ? '' : String(s)); }
+            catch (e) { html = String(s == null ? '' : s).replace(/\n/g, '<br>'); }
+            html = wbDedupeHtml(html);
+            if (html && String(html).trim()) {
+                html += '<p class="wb-assist-note">' + WB_ASSIST_NOTE + '</p>';
+            }
+            return html;
         }
         window.wbRenderMD = wbRenderMD;
 

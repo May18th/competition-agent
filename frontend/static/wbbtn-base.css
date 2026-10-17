@@ -1,0 +1,159 @@
+/* ============================================================
+ * 283 轮：全站按钮统一规范 —— 基础族（主/次/危险 + 演示亮点入口）
+ * ------------------------------------------------------------
+ * 为什么单独一个文件：283 轮要求「全站按钮有特色、精致、美观」，
+ * 改动面横跨首页/结果页/后台，拆成 base/result/admin 三个独立文件由三条线并行落，
+ * 避免多人同时改 style.css 互相覆盖。本文件在 style.css 之后加载。
+ *
+ * 为什么到处是 !important：目标按钮大多把样式写在 HTML 的 inline style 里
+ * （例：<button onclick="evAddSection()" style="padding:4px 10px;font-size:12px;...">），
+ * 内联样式优先级高于任何外部选择器，不用 !important 根本盖不动。
+ * 这是 !important 的正当使用场景，不是偷懒。
+ *
+ * 已知坑（本文件的由来）：style.css 里只有 CSS 变量 --btn-ghost（颜色），
+ * 从来没定义过 .btn-ghost 类 → 270 轮给演示按钮挂的 class="btn-ghost" 是空类，
+ * 按钮落成裸文本（24px 高、直角）。这里补上真正的类定义。
+ * ============================================================ */
+
+/* ---------- 1. 次操作按钮族（描边 + 浅填充 + 圆角 + 微动效） ---------- */
+.btn-ghost,
+.wb-textbtn,
+#wbDemoBtn {
+    min-height: 36px !important;
+    padding: 8px 14px !important;
+    font-size: 13px !important;
+    font-weight: 500;
+    line-height: 1.2;
+    border-radius: 12px !important;
+    border: 1px solid var(--line) !important;
+    background: var(--btn-ghost) !important;
+    color: var(--text) !important;
+    cursor: pointer;
+    /* 微动效：底色/描边/位移一起过渡，按压下沉 */
+    transition: background .18s ease, border-color .18s ease,
+                color .18s ease, transform .12s ease, box-shadow .18s ease;
+}
+
+.btn-ghost:hover,
+.wb-textbtn:hover,
+#wbDemoBtn:hover {
+    background: rgba(var(--c-a-rgb, 14, 116, 144), .10) !important;
+    border-color: rgba(var(--c-a-rgb, 14, 116, 144), .45) !important;
+    color: var(--c-a, #0e7490) !important;
+}
+
+.btn-ghost:active,
+.wb-textbtn:active,
+#wbDemoBtn:active {
+    transform: translateY(1px);
+}
+
+/* 键盘可达性：聚焦时有清晰焦点环（不改功能，只补视觉） */
+.btn-ghost:focus-visible,
+.wb-textbtn:focus-visible,
+#wbDemoBtn:focus-visible {
+    outline: 2px solid rgba(var(--c-a-rgb, 14, 116, 144), .55);
+    outline-offset: 2px;
+}
+
+/* ---------- 2. 演示按钮：做成带渐变描边 + 微光感的「亮点入口」 ----------
+ * 用户要求：演示按钮是评委演示的核心入口，要有质感（渐变描边 + hover 上浮流光），
+ * 但不能比「开始生成」更抢眼（它只是次操作）。 */
+#wbDemoBtn {
+    /* 渐变描边：padding-box 填实心底，border-box 走品牌渐变，border 透明 */
+    border: 1.5px solid transparent !important;
+    background:
+        linear-gradient(var(--surface-solid, #fff), var(--surface-solid, #fff)) padding-box,
+        linear-gradient(135deg,
+            rgba(var(--c-a-rgb, 14, 116, 144), .85),
+            rgba(var(--c-b-rgb, 15, 118, 110), .85)) border-box !important;
+    color: var(--c-a, #0e7490) !important;
+    font-weight: 600;
+    letter-spacing: .2px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .06);
+}
+
+#wbDemoBtn:hover {
+    background:
+        linear-gradient(var(--surface-solid, #fff), var(--surface-solid, #fff)) padding-box,
+        linear-gradient(135deg,
+            rgba(var(--c-a-rgb, 14, 116, 144), 1),
+            rgba(var(--c-b-rgb, 15, 118, 110), 1)) border-box !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(var(--c-a-rgb, 14, 116, 144), .22);
+}
+
+#wbDemoBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(var(--c-a-rgb, 14, 116, 144), .18);
+}
+
+/* ---------- 3. 章节区小按钮（原 27px / 直角 6px）：+ 加一章、恢复默认、背景恢复默认
+ * 这三个按钮没有 id 也没有 class，只有内联 style，用属性选择器命中（函数名稳定）。 */
+button[onclick="evAddSection()"],
+button[onclick="evReset()"],
+button[onclick="wbBgReset()"] {
+    min-height: 36px !important;
+    padding: 8px 14px !important;
+    font-size: 13px !important;
+    font-weight: 500;
+    line-height: 1.2;
+    border-radius: 10px !important;
+    border: 1px solid var(--line) !important;
+    background: var(--btn-ghost) !important;
+    color: var(--text) !important;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease,
+                color .18s ease, transform .12s ease;
+}
+
+button[onclick="evAddSection()"]:hover,
+button[onclick="evReset()"]:hover,
+button[onclick="wbBgReset()"]:hover {
+    background: rgba(var(--c-a-rgb, 14, 116, 144), .10) !important;
+    border-color: rgba(var(--c-a-rgb, 14, 116, 144), .45) !important;
+    color: var(--c-a, #0e7490) !important;
+}
+
+button[onclick="evAddSection()"]:active,
+button[onclick="evReset()"]:active,
+button[onclick="wbBgReset()"]:active {
+    transform: translateY(1px);
+}
+
+/* ---------- 4. 危险操作（清空重写）：描边弱化，悬停才显红，视觉降权 ---------- */
+#wbClearBtn.wb-textbtn {
+    color: var(--text-dim) !important;
+    border-color: var(--line) !important;
+}
+
+#wbClearBtn.wb-textbtn:hover {
+    color: var(--danger, #C0392B) !important;
+    border-color: rgba(192, 57, 43, .5) !important;
+    background: rgba(192, 57, 43, .08) !important;
+}
+
+/* ---------- 5. 移动端：可点区域 ≥44px（283 轮硬要求） ---------- */
+@media (max-width: 768px) {
+    .btn-ghost,
+    .wb-textbtn,
+    #wbDemoBtn,
+    button[onclick="evAddSection()"],
+    button[onclick="evReset()"],
+    button[onclick="wbBgReset()"] {
+        min-height: 40px !important;
+        padding: 10px 15px !important;
+        font-size: 13.5px !important;
+    }
+
+    /* 触摸反馈：移动端 :hover 不可靠，用 :active 给瞬时反馈 */
+    .btn-ghost:active,
+    .wb-textbtn:active,
+    #wbDemoBtn:active,
+    button[onclick="evAddSection()"]:active,
+    button[onclick="evReset()"]:active,
+    button[onclick="wbBgReset()"]:active {
+        background: rgba(var(--c-a-rgb, 14, 116, 144), .16) !important;
+        transform: translateY(1px);
+    }
+}

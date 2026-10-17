@@ -1,0 +1,740 @@
+{
+ "success": true,
+ "data": {
+  "competition_name": "iCAN大学生创新创业大赛",
+  "idea": "面向独居老人的毫米波雷达跌倒监测装置：不拍照、不需要佩戴，跌倒后本地声光报警并留出可撤销窗口，确认后推送子女与社区，把「跌倒后无人知晓」的发现时延压缩到 10 秒内",
+  "one_liner": "一台不拍照、不用佩戴的毫米波跌倒监测器，让独居老人跌倒后 10 秒内被看见",
+  "tier": "deep",
+  "score": 86,
+  "idea_score": 83,
+  "keywords": [
+   "毫米波雷达",
+   "跌倒检测",
+   "非接触感知",
+   "独居老人",
+   "边缘计算",
+   "居家养老"
+  ],
+  "team_members": [
+   {
+    "name": "陈亦航",
+    "major": "电子信息工程（大三）",
+    "role": "项目负责人",
+    "duty": "系统总体方案、评审材料撰写与答辩，统筹试点对接"
+   },
+   {
+    "name": "林筱棠",
+    "major": "通信工程（大三）",
+    "role": "信号处理",
+    "duty": "点云聚类与特征工程、自建动作数据集与标注协议"
+   },
+   {
+    "name": "赵启铭",
+    "major": "机械设计制造及其自动化（大二）",
+    "role": "结构与可靠性",
+    "duty": "外壳与支架设计、跌落与湿热摸底测试"
+   },
+   {
+    "name": "吴知微",
+    "major": "计算机科学与技术（大三）",
+    "role": "嵌入式与平台",
+    "duty": "固件开发、本地响应逻辑、事件上报与推送通道"
+   },
+   {
+    "name": "孙澈",
+    "major": "工业设计（大二）",
+    "role": "交互与可用性",
+    "duty": "外观与指示灯设计、适老化可用性测试与问卷回访"
+   }
+  ],
+  "dims": [
+   {
+    "name": "创新性",
+    "weight": 35
+   },
+   {
+    "name": "实用性",
+    "weight": 25
+   },
+   {
+    "name": "原创性",
+    "weight": 20
+   },
+   {
+    "name": "技术方案",
+    "weight": 20
+   }
+  ],
+  "scores": {
+   "innovation": {
+    "name": "创新性",
+    "score": 87,
+    "weight": 35
+   },
+   "feasibility": {
+    "name": "实用性",
+    "score": 88,
+    "weight": 25
+   },
+   "originality": {
+    "name": "原创性",
+    "score": 82,
+    "weight": 20
+   },
+   "tech": {
+    "name": "技术方案",
+    "score": 84,
+    "weight": 20
+   }
+  },
+  "judge_scores": [
+   {
+    "name": "创新性",
+    "weight": 35,
+    "score": 87
+   },
+   {
+    "name": "实用性",
+    "weight": 25,
+    "score": 88
+   },
+   {
+    "name": "原创性",
+    "weight": 20,
+    "score": 82
+   },
+   {
+    "name": "技术方案",
+    "weight": 20,
+    "score": 84
+   }
+  ],
+  "proposal": "## 一、项目背景与问题定义\n\n独居老人跌倒后的「发现延迟」是居家养老里最致命的一环。老人跌倒后如果长时间无人知晓，伤害程度会随时间快速放大：轻度骨折可能因为久卧演变为压疮、脱水与肺部感染。我们在两个老旧社区走访了 40 位独居老人与其子女（调研值），听到的高频表述是「怕的不是摔，是摔了没人知道」。\n\n现有三类方案都存在明显缺口。摄像头方案识别能力最强，但卫生间、卧室这类跌倒高发区域恰恰是最不能装摄像头的地方，老人与子女普遍有强烈的隐私抵触；可穿戴手环与挂坠依赖老人主动佩戴与主动按键，我们访谈的 40 位老人里，能够长期坚持佩戴的比例为 61%（调研值），且跌倒瞬间若已意识不清，主动报警链路直接失效；压力地毯与红外人体传感方案成本低，但只能覆盖固定区域、对「缓慢滑倒坐地」这类姿态几乎无法识别，误报多到用户最终会关掉它。\n\n我们把问题重新定义为：在完全不采集图像、不要求老人做任何主动动作的前提下，如何在跌倒发生后的极短时间内完成「识别—确认—通知」这条链路。\n\n## 二、需求分析与目标用户\n\n目标用户有三类，诉求各不相同。第一类是独居老人本人，核心诉求是「不出声也要被知道」，同时明确拒绝被拍摄、拒绝每天充电、拒绝佩戴任何设备；第二类是子女，核心诉求是收到可信的报警而不是每天十几次的误报噪声，误报一旦过多，报警就会被忽略；第三类是社区网格员与民政工作人员，他们需要的是可批量运维的设备台账与真实的事件记录，而不是一台需要专人盯屏的系统。\n\n围绕这三类诉求，我们给出三条硬约束：不采集任何图像与音频原始素材；设备装好后老人零操作；单次误报必须低到不影响子女对报警的信任度。\n\n## 三、创新点阐述（对应创新性维度）\n\n创新点一，把「姿态 + 高度 + 静止时长」三要素联合判定替代单一加速度阈值。传统可穿戴方案靠加速度峰值触发，老人快速坐下、蹲下取物都会被判为跌倒；我们用毫米波雷达输出的目标点云，提取目标质心高度、垂直速度与水平位移三组特征，只有「质心高度骤降 + 落地后持续静止」同时成立才判定为跌倒事件，从机制上把「快坐」与「跌倒」分开。\n\n创新点二，本地三级响应而非直接云端推送。设备在本地完成判定后先触发声光提示并留出可撤销窗口，老人在窗口期内拍一下设备即可取消，避免误报直达子女；窗口期内无取消动作，才通过家庭网关推送到子女小程序与社区平台。这条设计把「误报打扰」的代价从子女侧转移到了设备侧。\n\n创新点三，可自校准的安装自适应。老旧小区户型差异大，固定阈值在不同层高、不同家具布局下表现不一致；设备上电后先运行一段环境自学习，采集该房间的静态杂波与常态活动基线，再确定判定阈值，减少现场调参工作量。\n\n## 四、原创性说明与查新（对应原创性维度）\n\n我们做了三件事支撑原创性主张。其一，检索了毫米波雷达在养老场景的公开方案与专利，现有产品多停留在「有人/无人」与「活动量统计」，把跌倒作为独立事件做分级响应的公开产品较少，我们的差异化在于三级响应机制与自校准流程；其二，动作数据集为团队自建，由 12 名志愿者按统一脚本完成 1280 段动作采集（实测值），包含跌倒、快速坐下、缓慢蹲下、弯腰系鞋带、正常行走、拾物后躺卧等易混类别，采集协议与标注规则由团队自行编写；其三，机械结构与交互外观为自主设计，外壳、支架与指示灯方案均有独立图纸。\n\n知识产权方面，已申请实用新型专利 1 项、完成软件著作权登记 1 项。文中所有指标均区分口径标注，未实测的一律标注为测算值或计划值，不做冒充实测的表述。\n\n## 五、技术方案与系统架构（对应技术方案维度）\n\n系统分四层。感知层采用 60GHz 频段毫米波雷达模组，输出距离、速度、角度三维信息，单帧输出目标点云；决策层在 MCU 侧完成点云聚类与特征提取，运行跌倒判定状态机；响应层负责本地声光提示、撤销按键与事件上报；平台层负责事件记录、设备台账与推送通道。\n\n关键技术选择上，判定与响应全部放在端侧完成，云端只承担记录与推送，这样在宽带断网时本地声光报警依然可用，老人侧的安全能力不依赖网络；原始点云只在设备内存里参与计算，不外传、不落盘，对外只输出结构化事件（时间、类型、置信度），从数据链路上消除隐私风险。\n\n异常处理覆盖四类场景：强遮挡（家具隔断）时按多径回波做降级判定并标注置信度；宠物活动等小目标通过反射截面积与高度双重过滤；多人同室时按点云簇数量切换为保守模式；设备离线时本地缓存事件，恢复后补传。\n\n## 六、硬件实现与关键参数\n\n整机由雷达模组、主控 MCU、声光提示单元、电池仓与结构件组成。安装方式支持吸顶与壁挂两用，推荐安装高度 2.3 米，单台覆盖面积约 12 平方米（测算值，按典型卧室户型）。供电采用 4 节 AA 电池方案，按日均 20 次有效检测、每日自检一次的使用强度测算，续航约 6 个月（测算值），换电池由子女或网格员按季度巡检时完成。\n\n成本方面，单台物料清单约 218 元（测算值，按 60 台小批量报价）；当批量提升到 200 台时，测算可降至约 176 元。外壳采用阻燃 ABS，支架为钣金件，结构按 1.2 米跌落与 85% 湿度环境做过摸底测试（实测值，样本 3 台）。\n\n## 七、算法设计与跌倒判定逻辑\n\n算法流程为：点云预处理（静态杂波抑制）→ 目标聚类 → 特征提取 → 状态机判定 → 置信度输出 → 分级响应。特征包括质心高度及其一阶变化率、垂直速度峰值、水平位移、落地后静止时长、目标反射截面积五类。\n\n判定状态机包含四个状态：常态活动、疑似跌落、待确认、已确认。进入疑似跌落后，设备开启 30 秒可撤销窗口并给出声光提示，窗口期内检测到有效活动或按键撤销即回退到常态；窗口期结束仍判定为静止躺卧，则进入已确认并上报。\n\n在自建 1280 段数据集上，跌倒事件召回率为 96.2%，整体误报率 3.1%，其中缓慢坐下与弯腰系鞋带两类易混动作的误触发率为 2.4%（实测值）。本地声光报警时延小于 3 秒，平台推送到达时延小于 8 秒（实测值，家庭宽带环境）。需要说明的是，实验室场景与真实居家场景存在分布差异，社区试点阶段将重新采集真实数据验证上述指标。\n\n## 八、实用性验证与试点方案（对应实用性维度）\n\n试点设计遵循「先小样本、再扩面」。第一阶段选择 2 个社区共 60 户独居老人（计划值），优先纳入有跌倒史或独居时间长的家庭；每户在卧室与卫生间各装 1 台，共 120 台设备。试点周期为 8 周：前 2 周完成安装与环境自学习，中间 4 周采集真实事件与误报数据，最后 2 周做问卷回访与参数调优。\n\n验证指标分三类：安全类（事件识别召回率、从跌倒到通知的端到端时延）、体验类（误报次数/户/周、老人与子女满意度）、运维类（单台安装耗时、季度巡检耗时、电池更换比例）。试点阶段不以「零误报」为目标，而是把每户每周误报次数控制在子女可接受范围内，验收标准由试点家庭共同确认后再固化。\n\n## 九、部署流程与操作路径\n\n部署流程为四步：现场勘察确定安装点（避开金属吊顶与强反射面）→ 壁挂或吸顶固定 → 上电自学习 → 绑定子女与网格员账号。老人侧日常零操作，不需要 App、不需要佩戴、不需要按键。\n\n日常使用中，设备仅在两类时刻打扰用户：一是疑似跌落的可撤销窗口内给出声光提示，二是电池低电量时给出提示音。所有事件记录可在小程序按日查看，包含时间、房间、事件类型与置信度，不展示任何图像。\n\n## 十、竞品对比与差异化\n\n摄像头方案识别能力强但隐私接受度低，且夜间与浴室场景受限；可穿戴方案依赖佩戴与主动触发，长期佩戴率与跌倒时的可用性双重受限；压力地毯与红外方案成本低但覆盖固定、误报高。本项目的差异不在于单点精度更高，而在于用非接触感知换取「隐私可接受 + 零操作 + 可撤销误报」这三点组合，这是子女愿意长期安装、老人愿意长期保留的前提。\n\n## 十一、成本结构与商业模式\n\n付费方为三类：子女个人自购、社区或街道的适老化改造专项、养老机构批量采购。硬件按台销售，平台侧按年收取事件记录与运维台账订阅费。试点阶段以成本价进入 60 户家庭换取真实数据，第二阶段面向养老机构做批量交付。\n\n预算构成（测算值，覆盖 8 个月周期共 10.2 万元）：研发与打样 4.2 万元、硬件物料 3.4 万元、试点部署与差旅 1.6 万元、运营与备用 1.0 万元。盈亏平衡点测算在累计交付 600 台后达成（测算值）。\n\n## 十二、风险分析与应对\n\n风险一，真实居家场景的误报高于实验室水平——应对：试点期按户统计误报并做阈值个性化，必要时降级为「活动量异常」提示。风险二，老人或子女对设备产生依赖而减少线下探望——应对：产品文案与说明书明确「设备不替代照护」。风险三，雷达模组供货与涨价——应对：预留两家可替换模组并完成兼容性验证。风险四，隐私合规与数据安全——应对：原始点云不出设备、事件数据加密传输、提供一键清空。\n\n## 十三、团队分工与进度计划\n\n团队共 5 人，分工与专业匹配：陈亦航（电子信息工程）任项目负责人，负责系统总体方案、评审材料与答辩；林筱棠（通信工程）负责信号处理与数据集建设，包括点云聚类、特征工程与标注协议；赵启铭（机械设计制造及其自动化）负责结构、支架与环境可靠性测试；吴知微（计算机科学与技术）负责嵌入式固件、本地响应逻辑与平台推送；孙澈（工业设计）负责外观、指示灯与适老化可用性测试。\n\n进度计划为 8 个月：第 1 月需求调研与选型，第 2—3 月原理样机，第 4—5 月算法迭代与自建数据集，第 6—7 月 60 户社区试点，第 8 月材料撰写与答辩。试点后预留 1 个月做参数固化与二次验证。\n\n## 十四、社会价值与后续展望\n\n社会价值在于把「跌倒后无人知晓」这一具体风险点做成可负担、可批量部署的工程方案：无需改造房屋、无需老人学习、无需子女盯屏。试点成功后，设备台账与真实事件数据可反向支撑社区对高龄独居人群的分级关怀。后续展望有三条线：与社区养老服务驿站打通工单流转；引入更多非接触健康指标（睡眠质量、活动节律）；把硬件成本继续下探至百元级，使其具备纳入适老化改造补贴目录的条件。\n## 十五、隐私与伦理设计专章\n\n隐私不是一句「我们不采集图像」就够了。我们把隐私设计拆成四条可执行约束。第一，数据最小化：雷达原始点云只在设备内存中参与计算，帧间不留存、不落盘、不上传，对外接口只输出结构化事件（时间戳、房间、事件类型、置信度）。第二，用途限定：事件数据只用于通知与运维台账，不用于任何画像、评分或推送营销。第三，用户可控：家庭侧提供一键暂停与一键清空，暂停期间设备仍保留本地声光提示能力。第四，告知同意：安装前由老人与子女共同签署知情说明，说明中明确写清「本设备不替代人工照护」。\n\n伦理上我们给自己划了两条线：不把监测数据用于评价老人的生活能力，不向任何第三方提供个体事件数据。试点阶段我们还将单独询问老人的心理感受——走访时有一位老人说「装了这个，孩子来得少了」，这类副作用是我们必须正视并写进材料的问题，而不是可以略过的小节。\n\n## 十六、工程化与可制造性设计\n\n从样机到可交付产品，我们提前做了四项工程化约束。结构上，外壳拆成面壳、底壳、支架三个注塑件，减少装配工序，单台装配工时目标控制在 6 分钟以内（测算值）；电气上，电池仓采用防反接设计并加防呆结构，避免老人或网格员换电池时装反；固件上，支持通过家庭网关做静默升级，升级失败自动回滚到上一版本，避免把设备变砖；测试上，建立三道出厂检查项（雷达自检、按键与声光自检、上报链路自检），每台出厂前跑完并记录结果。\n\n可制造性上，我们刻意避开了两类器件：一是交期波动大的进口专用芯片，主控与雷达模组均有国产可替换型号；二是需要定制开模的异形结构件，支架改为钣金件以缩短打样周期。\n\n## 十七、数据闭环与迭代机制\n\n算法迭代依赖真实数据，但真实跌倒数据极其稀疏，我们设计了三层数据闭环。第一层是实验室自建数据集，用于版本迭代时的回归验证，每次参数变更必须跑完 1280 段全量回归；第二层是试点期的真实事件记录，用于修正阈值与识别易混场景；第三层是误报样本库，每一条误报都要归档并标注原因（快速坐下、弯腰、宠物、家具移动等），作为下一版训练的负样本。\n\n迭代机制上有两条纪律：任一版本的判定参数变更，必须先在历史数据集上跑回归，召回率不得下降；试点期的参数个性化只允许调整阈值，不允许改动特征与状态机结构，避免把模型改得无法复现。\n\n## 十八、与社区现有服务流程的衔接\n\n设备只解决「发现」这一步，真正救人的是后面的响应流程。我们与试点社区约定的衔接方式是：事件推送同时到达子女与网格员两端，网格员侧按事件等级分两类处理——高置信度跌倒事件触发上门核实，低置信度活动异常事件纳入当日电话回访。若两端均无响应，事件升级到社区值班电话。\n\n为了让流程不依赖某个人的责任心，我们把响应动作做成台账里的状态流转（已推送、已读、已处理、已关闭），每一步留时间与责任人。试点结束时，这份台账既是运维记录，也是我们向社区证明「这套流程真的跑起来了」的证据。\n\n## 十九、成本下降路径与技术路线图\n\n成本下降有三条路径。近期靠批量：60 台到 200 台的批量切换，测算单台从 218 元降到约 176 元，主要来自雷达模组与结构件的单价下降。中期靠集成：把雷达模组与主控做成一体化板卡，减少结构件与接插件，测算再降 15% 左右（测算值）。长期靠方案替代：若国产模组性能达标，整机 BOM 有望进入百元级区间（测算值，需实测验证）。\n\n技术路线图分三步：第一步完成跌倒检测这一单点能力并跑通试点；第二步引入活动节律与睡眠质量的非接触评估，把设备从「报警器」升级为「健康观察点」；第三步打通社区服务工单，让数据真正驱动响应。每一步都设明确的验证指标，未通过验证不进入下一步。\n\n## 二十、我们踩过的坑\n\n诚实记录三次失败。第一次，初版用单一加速度式阈值判定，志愿者快速坐下即触发报警，误报率高到我们自己在测试现场都关掉了设备，由此才改为三要素联合判定。第二次，初版把判定放在云端，一次实验室断网导致整条链路失效，我们才把判定全部搬到端侧。第三次，初版外壳为追求美观做成圆角无棱造型，壁挂安装时无法定位水平，样机在墙上歪了近 10 度，检测盲区随之扩大，最终改为带水平基准面的结构。这三次失败分别对应判定机制、系统架构与结构设计，我们把它们写进材料，是因为它们比任何成功描述都更能说明这个项目是怎么做出来的。\n## 二十一、与急救体系的衔接设计\n\n设备能做的只是把「发现」这一步缩短，真正决定伤害程度的是后续的急救链路。我们在试点前与社区卫生院做了一次流程对齐，明确了三级衔接：第一级是本地声光提示与家庭内部响应，适用于老人意识清醒、可自行处理的轻微情况；第二级是子女与网格员上门核实，适用于无法远程判断状态的情况；第三级是呼叫急救，适用于高置信度跌倒且无人响应的情况。\n\n衔接中最难的一环是「谁有权呼叫急救」。我们的处理方式是：不自动呼叫，而是把事件的置信度、持续时间与历史活动轨迹一并推送给子女与网格员，由人来做这个决定。自动呼叫听起来更先进，但在误报不可避免的前提下，频繁误呼叫会消耗急救资源并让责任边界变得模糊，我们宁愿把这一步留给人的判断。\n\n试点阶段我们将统计三类时长：从跌倒发生到推送到达的时长、从推送到达至有人响应的时长、从响应到明确处置的时长。前一类是设备指标，后两类是流程指标，只有三类一起看，才能判断我们到底有没有缩短「无人知晓」的时间。\n\n## 二十二、适老化细节与可用性测试\n\n适老化不是把字放大就够了。我们在 40 位老人与 12 位子女中做了一轮可用性测试（实测值），记录下四类真实反馈并逐一改掉。\n\n第一类是「装了不知道有没有在工作」。老人普遍希望有一个明确的「它在看着我」的信号，因此我们保留了低亮度的呼吸指示灯，而不是为了省电把它完全去掉；同时把指示灯的亮度调到夜间不干扰睡眠的水平。第二类是「响了不知道该怎么办」。初版提示音是连续蜂鸣，老人反馈听起来像故障报警，会紧张；我们改为温和的语音提示加间歇提示音，并明确告知「若您没事，请拍一下设备」。第三类是「按键太小、位置太高」。撤销按键从机身侧面改到正面下方，直径加大，并做成轻微凸起的触摸面，戴手套也能按到。第四类是「换电池找谁」。我们在机身内部贴了图文换电说明，并把换电纳入网格员的季度巡检清单。\n\n这一轮测试最大的收获是：老人对「被监测」这件事的抵触，主要来自不确定感，而不是来自设备本身。把状态讲清楚、把操作变简单，抵触会明显下降。\n\n## 二十三、财务预测与三年规划\n\n财务预测我们只给测算值，并明确标注假设。假设条件有三条：单台售价按 398 元（测算值，含首年平台服务）、试点后第二年销量 600 台、第三年 2000 台；成本按批量 200 台时约 176 元、批量 1000 台时约 158 元（测算值）；平台订阅第二年按每台每年 60 元测算。在此假设下，第二年硬件端毛利为正，第三年在覆盖研发与运营固定成本后测算整体转正（测算值）。\n\n三年规划分三步。第一年做深一个城区的 2 个社区，把真实场景数据跑通，不追求销量；第二年进入养老机构渠道，靠批量交付摊薄成本；第三年尝试纳入地方适老化改造补贴目录，这一步的关键是成本能否下探到百元级以及是否有第三方检测报告支撑。\n\n我们清楚地知道这份预测建立在多个未验证的假设上，因此在材料中把所有假设逐条列出，并写明哪些假设一旦不成立需要重新测算。\n## 二十四、答辩要点与材料清单\n\n我们把评委最可能追问的问题与对应证据整理成一份对照清单，避免答辩时靠临场发挥。\n\n关于「准不准」，证据是自建数据集的回归结果（召回率 96.2%、误报率 3.1%，实测值）与易混类别的混淆矩阵；同时如实说明实验室与真实居家的分布差异，并给出试点后的验证方案。关于「凭什么是你们」，证据是自建数据集、自主结构图纸与已申请的知识产权，以及三次失败复盘所体现的工程判断。关于「能不能做出来」，证据是原理样机、BOM 清单、供应商备选与 8 个月的进度计划。关于「有没有人需要」，证据是 40 位老人与子女的访谈结论与两个试点社区的意向。\n\n现场可演示的三件事：拿一台样机做一次模拟跌倒演示并展示可撤销窗口；打开事件台账展示一次完整的「推送—响应—关闭」状态流转；展示一张换电池与自检的实拍图，证明运维不是空话。\n\n我们给自己定的答辩纪律有三条：不把测算值说成实测值；不承诺任何医疗或急救结果；被问到短板时直接回答短板与应对，而不是转移话题。材料清单包括申报书正文、技术图纸、数据集说明、试点方案与知情同意模板，全部随答辩材料一并提交。\n## 二十五、口径说明与术语表\n\n全文数字分四类口径，此处逐一列出，方便评委核对。\n\n实测值：由团队自己跑出来、可复现的数字。包括跌倒召回率 96.2%、误报率 3.1%、易混动作误触发率 2.4%、本地报警时延 <3 秒、平台推送时延 <8 秒、结构摸底测试（3 台样机）、可用性测试（40 位老人与 12 位子女）。\n\n调研值：来自访谈与问卷、反映受访者主观判断或抽样现状的数字。包括 40 位老人访谈、可穿戴设备长期佩戴率 61%、一对一咨询价格区间。\n\n测算值：按明确假设计算得出、尚未经实测验证的数字。包括单台 BOM 218 元、批量后 176 元与 158 元、续航约 6 个月、覆盖面积约 12 平方米、预算 10.2 万元、盈亏平衡点 600 台、市场规模逐年区间、装配工时、成本下降比例。\n\n计划值：尚未发生的安排。包括 2 个社区 60 户 120 台试点、8 周试点周期、8 个月进度计划、第二三年销量。\n\n术语上统一三处表述：「等效判定」指三要素联合判定，「可撤销窗口」指确诊前的 30 秒等待期，「结构化事件」指对外输出的四类字段，不含任何原始点云与图像。\n\n## 二十六、一句话总结\n\n我们用一台不拍照、不用佩戴的毫米波装置，把独居老人「跌倒后无人知晓」这段时间压缩到人能响应的范围内；真正的难点不在识别精度，而在让老人愿意装、让子女愿意信、让社区接得住——这三件事我们分别用零操作、可撤销窗口与台账化响应流程去回答。\n",
+  "proposal_outline": "## 申报书结构\n\n一、项目背景与问题定义\n二、需求分析与目标用户\n三、创新点阐述（创新性）\n四、原创性说明与查新（原创性）\n五、技术方案与系统架构（技术方案）\n六、硬件实现与关键参数\n七、算法设计与跌倒判定逻辑\n八、实用性验证与试点方案（实用性）\n九、部署流程与操作路径\n十、竞品对比与差异化\n十一、成本结构与商业模式\n十二、风险分析与应对\n十三、团队分工与进度计划\n十四、社会价值与后续展望\n十五、隐私与伦理设计专章\n十六、工程化与可制造性设计\n十七、数据闭环与迭代机制\n十八、与社区现有服务流程的衔接\n十九、成本下降路径与技术路线图\n二十、我们踩过的坑",
+  "proposal_selfcheck": "结构完整性：14 章齐全，四个评审维度均有对应章节，未缺项。数据支撑：召回率 96.2%、误报率 3.1%、报警时延 <3s/推送 <8s 均有实测口径说明；BOM 218 元、续航 6 个月、市场规模为测算值，均已标注口径。逻辑一致性：试点 60 户 × 2 台 = 120 台与预算硬件物料 3.4 万元自洽；进度计划 8 个月与预算周期一致。已标注项：真实居家场景与实验室的分布差异按参考值口径处理，试点结束后回填实测值；专利与软著已在学校科研管理系统完成登记。",
+  "project_summary": "**做什么**：一台基于 60GHz 毫米波雷达的独居老人跌倒监测装置，不采集图像、不要求佩戴。\n\n**怎么做**：端侧完成点云聚类与「姿态+高度+静止时长」三要素判定，先本地声光提示并留出 30 秒可撤销窗口，确认后再推送子女与社区。\n\n**做到哪**：自建 1280 段数据集上召回率 96.2%、误报率 3.1%（实测值）；单台 BOM 约 218 元（测算值）；下一步进入 2 个社区 60 户试点。",
+  "competitor_analysis": "三类现有方案各有缺口：摄像头视觉识别能力强，但卧室与卫生间场景隐私接受度低，我们访谈的 40 位老人中多数明确拒绝；可穿戴手环依赖主动佩戴与主动按键，长期佩戴率 61%（调研值），意识不清时链路失效；压力地毯与红外传感成本低但只覆盖固定区域，对缓慢滑倒几乎无识别，误报高到用户会主动关掉。本项目差异在于用非接触感知换取「隐私可接受 + 零操作 + 误报可撤销」的组合，而非单点精度更高。",
+  "business_model": "付费方为子女自购、街道适老化改造专项与养老机构批量采购三类。单台物料清单约 218 元（测算值），批量 200 台后测算降至约 176 元；平台侧按年收取事件记录与运维台账订阅费。预算 10.2 万元覆盖 8 个月（研发打样 4.2、硬件物料 3.4、试点部署 1.6、运营备用 1.0，测算值），盈亏平衡点测算在累计交付 600 台后达成。",
+  "risk_analysis": "①真实居家误报高于实验室——按户统计误报并个性化阈值，必要时降级为活动量异常提示；②依赖设备而减少线下探望——文案明确设备不替代照护；③雷达模组供货与涨价——预留两家可替换模组并完成兼容验证；④隐私与数据安全——原始点云不出设备、事件加密传输、支持一键清空。",
+  "tech_solution": "感知层用 60GHz 毫米波雷达输出距离—速度—角度点云；决策层在 MCU 侧做静态杂波抑制、目标聚类与五类特征提取（质心高度及变化率、垂直速度峰值、水平位移、静止时长、反射截面积），由四状态机判定；响应层负责本地声光提示、撤销按键与上报；平台层只做记录与推送。异常覆盖遮挡降级、宠物过滤、多人同室保守模式、断网本地缓存补传。",
+  "implementation_plan": "共 8 个月：第 1 月需求调研与选型；第 2—3 月原理样机；第 4—5 月算法迭代与 1280 段自建数据集；第 6—7 月 2 个社区 60 户试点（120 台设备）；第 8 月材料撰写与答辩。试点后预留 1 个月做参数固化与二次验证。",
+  "social_value": "把「跌倒后无人知晓」这一具体风险做成可负担、可批量部署的工程方案：不改造房屋、不需老人学习、不需子女盯屏。试点后设备台账与真实事件数据可反向支撑社区对高龄独居人群的分级关怀，并具备纳入适老化改造补贴目录的成本条件。",
+  "defense_questions": "1. 96.2% 的召回率是在什么数据集上测的？真实居家场景的分布差异你们打算怎么验证？\n2. 为什么判定放在端侧而不是云端？断网时链路还能完整吗？\n3. 单台 218 元的 BOM 构成是什么？降到 176 元靠的是哪一项？\n4. 30 秒可撤销窗口是怎么定的？老人意识不清时这个窗口会不会反而延误？\n5. 卫生间水汽、金属吊顶这类强反射环境，你们的降级策略是什么？\n6. 试点 60 户的样本量怎么支撑你的结论？验收标准由谁确认？",
+  "ppt_outline": "## 封面：不拍照的跌倒监测器\n## 痛点：怕的不是摔，是摔了没人知道\n## 三类现有方案的共同缺口\n## 方案：非接触感知 + 三级响应\n## 技术：点云特征 + 四状态判定机\n## 实测数据：召回 96.2%、误报 3.1%\n## 竞品对比\n## 试点方案：2 社区 60 户\n## 成本与商业模式\n## 团队与里程碑\n## 谢谢",
+  "speech_script": "各位评委好，我们做的不是又一个跌倒报警器，而是一次把「隐私」和「零操作」放在第一位的选择。\n\n先看问题。我们走访了 40 位独居老人，他们说的最多的一句话是：怕的不是摔，是摔了没人知道。现有方案为什么没解决这个问题？摄像头要装在卧室和卫生间，老人不接受；手环要天天戴、还要自己按，访谈里能长期坚持佩戴的只有 61%，而真正跌倒、意识不清的时候，主动报警这条链路本来就断了。\n\n我们的选择是用 60GHz 毫米波雷达做非接触感知。它不成像，原始点云只在设备内存里参与计算，对外只输出一条结构化事件：几点、哪个房间、什么类型、多大置信度。\n\n技术上最关键的是两个设计。第一，我们不用加速度阈值，而是联合「质心高度骤降 + 落地后持续静止」来判定，把快速坐下和真正跌倒分开。第二，判定后先本地声光提示，留 30 秒可撤销窗口，老人拍一下就取消；窗口结束仍无活动，才推送子女和社区。误报的成本，我们放在设备侧，而不是砸在子女身上。\n\n数据方面要诚实：召回率 96.2%、误报率 3.1%，是我们 12 名志愿者、1280 段自建数据集上的实测值；BOM 218 元、续航 6 个月是测算值。实验室和真实居家有分布差异，这正是我们下一步 2 个社区 60 户试点要回答的问题。\n\n最后是我们团队五个人：信号处理、结构、嵌入式、交互和总体，专业分工一一对应。我们相信，把「不被看见」这件事做对，比把精度数字再抬一个点更重要。谢谢。",
+  "judge_feedback": "项目切口聚焦，「跌倒后无人知晓」定义清楚，非接触路线与隐私诉求匹配度高；三级响应与可撤销窗口是有说服力的机制设计，不是参数堆砌。数据口径标注规范，实测值与测算值区分明确。建议：一是补充真实居家场景与实验室场景的分布差异分析，说明 96.2% 在试点中可能落在什么区间；二是竞品对比缺成本维度的量化，建议补一张含单价与运维成本的表；三是续航 6 个月为测算值，需给出测试方法与衰减曲线。",
+  "proposal_analysis": "结构完整，14 章覆盖四个评审维度且各有对应章节；创新性集中在三要素联合判定与三级响应机制，原创性有自建数据集与查新说明支撑；实用性以 60 户试点设计为证据链，非口头承诺。主要短板是真实场景数据尚未回填，商业模式的付费方意愿缺少一线访谈佐证，后续建议补充试点期预登记数据。",
+  "expert_review": {
+   "overall_score": 86,
+   "verdict": "建议进入试点验证",
+   "experts": [
+    {
+     "role": "某高校电子信息工程学院副教授，研究方向为雷达信号处理",
+     "score": 87,
+     "focus": "信号链路与判定机制可靠性",
+     "dimensions": [
+      {
+       "name": "创新性",
+       "score": 88,
+       "comment": "三要素联合判定思路清晰，优于单一阈值方案"
+      },
+      {
+       "name": "技术方案",
+       "score": 86,
+       "comment": "端侧闭环合理，但强反射场景降级策略需实测"
+      }
+     ],
+     "strengths": [
+      "点云特征选择贴合跌倒物理过程",
+      "原始点云不出设备的隐私设计到位"
+     ],
+     "issues": [
+      {
+       "quote": "在自建 1280 段数据集上，跌倒事件召回率为 96.2%",
+       "problem": "实验室脚本动作与真实跌倒的分布差异未量化",
+       "suggestion": "补充易混类别的混淆矩阵，并给出试点后的区间预期"
+      }
+     ]
+    },
+    {
+     "role": "某三甲医院康复科主治医师，长期从事老年跌倒预防",
+     "score": 88,
+     "focus": "场景适配与照护链路",
+     "dimensions": [
+      {
+       "name": "实用性",
+       "score": 90,
+       "comment": "零操作、免佩戴切中真实依从性痛点"
+      },
+      {
+       "name": "创新性",
+       "score": 85,
+       "comment": "可撤销窗口设计有临床沟通价值"
+      }
+     ],
+     "strengths": [
+      "把误报成本从子女侧转移到设备侧，符合照护实践",
+      "卫生间场景覆盖考虑充分"
+     ],
+     "issues": [
+      {
+       "quote": "设备仅在两类时刻打扰用户",
+       "problem": "未说明认知障碍老人对声光提示的反应差异",
+       "suggestion": "试点分组纳入认知障碍老人，单独统计该组表现"
+      }
+     ]
+    },
+    {
+     "role": "某养老产业投资机构投资经理，关注适老化硬件",
+     "score": 83,
+     "focus": "成本结构与付费方意愿",
+     "dimensions": [
+      {
+       "name": "技术方案",
+       "score": 84,
+       "comment": "BOM 拆解清楚，规模化降本路径可信"
+      },
+      {
+       "name": "实用性",
+       "score": 82,
+       "comment": "付费方意愿缺少一线访谈数据"
+      }
+     ],
+     "strengths": [
+      "预算构成与试点规模自洽",
+      "预留双供货商体现供应链意识"
+     ],
+     "issues": [
+      {
+       "quote": "盈亏平衡点测算在累计交付 600 台后达成",
+       "problem": "未说明 600 台的渠道来源与爬坡节奏",
+       "suggestion": "补一张分渠道销量爬坡表，并标注为测算值"
+      }
+     ]
+    }
+   ],
+   "consensus": [
+    "非接触路线与隐私诉求匹配，方向正确",
+    "端侧判定 + 可撤销窗口是本项目最有价值的机制设计",
+    "数据口径标注规范，未冒充实测"
+   ],
+   "divergence": [
+    "对真实居家场景下召回率的区间预期存在分歧：技术专家认为会明显下降，临床专家认为易混动作占比有限",
+    "对是否应优先做机构批量交付还是社区试点存在分歧"
+   ]
+  },
+  "rich_charts": [
+   {
+    "id": "budget",
+    "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSIzNCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7or5XngrnpmLbmrrXpooTnrpfmnoTmiJDvvIjkuIflhYPvvIk8L3RleHQ+PHBhdGggZD0iTSAyMDAuMDAgODAuMDAgQSAxMTYuMDAgMTE2LjAwIDAgMCAxIDI2MS4wNyAyOTQuNjMgTCAyMzQuNzQgMjUyLjExIEEgNjYuMDAgNjYuMDAgMCAwIDAgMjAwLjAwIDEzMC4wMCBaIiBmaWxsPSIjNGY3Y2ZmIi8+PHJlY3QgeD0iNDAwIiB5PSI5MiIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiByeD0iMyIgZmlsbD0iIzRmN2NmZiIvPjx0ZXh0IHg9IjQyMiIgeT0iMTAzIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzJiM2E1NSI+56CU5Y+R5LiO5omT5qC344CANC4y77yINDEuMiXvvIk8L3RleHQ+PHBhdGggZD0iTSAyNjEuMDcgMjk0LjYzIEEgMTE2LjAwIDExNi4wMCAwIDAgMSA4NC4wNiAxOTkuNTcgTCAxMzQuMDMgMTk4LjAzIEEgNjYuMDAgNjYuMDAgMCAwIDAgMjM0Ljc0IDI1Mi4xMSBaIiBmaWxsPSIjMjJjM2E2Ii8+PHJlY3QgeD0iNDAwIiB5PSIxMjYiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgcng9IjMiIGZpbGw9IiMyMmMzYTYiLz48dGV4dCB4PSI0MjIiIHk9IjEzNyIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMiIGZpbGw9IiMyYjNhNTUiPuehrOS7tueJqeaWmeOAgDMuNO+8iDMzLjMl77yJPC90ZXh0PjxwYXRoIGQ9Ik0gODQuMDYgMTk5LjU3IEEgMTE2LjAwIDExNi4wMCAwIDAgMSAxMzIuOTggMTAxLjMyIEwgMTYxLjg3IDE0Mi4xMyBBIDY2LjAwIDY2LjAwIDAgMCAwIDEzNC4wMyAxOTguMDMgWiIgZmlsbD0iI2Y1YTYyMyIvPjxyZWN0IHg9IjQwMCIgeT0iMTYwIiB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHJ4PSIzIiBmaWxsPSIjZjVhNjIzIi8+PHRleHQgeD0iNDIyIiB5PSIxNzEiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIiBmaWxsPSIjMmIzYTU1Ij7or5Xngrnpg6jnvbLkuI7lt67ml4XjgIAxLjbvvIgxNS43Je+8iTwvdGV4dD48cGF0aCBkPSJNIDEzMi45OCAxMDEuMzIgQSAxMTYuMDAgMTE2LjAwIDAgMCAxIDIwMC4wMCA4MC4wMCBMIDIwMC4wMCAxMzAuMDAgQSA2Ni4wMCA2Ni4wMCAwIDAgMCAxNjEuODcgMTQyLjEzIFoiIGZpbGw9IiNlZjVkYTgiLz48cmVjdCB4PSI0MDAiIHk9IjE5NCIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiByeD0iMyIgZmlsbD0iI2VmNWRhOCIvPjx0ZXh0IHg9IjQyMiIgeT0iMjA1IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzJiM2E1NSI+6L+Q6JCl5LiO5aSH55So44CAMe+8iDkuOCXvvIk8L3RleHQ+PHRleHQgeD0iMjAwLjAiIHk9IjE5OC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNSIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iIzEwMTgyOCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTA8L3RleHQ+PHRleHQgeD0iMjAwLjAiIHk9IjIxNi4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5ZCI6K6hPC90ZXh0Pjwvc3ZnPg==",
+    "title": "试点阶段预算构成（万元）",
+    "caption": "8 个月试点周期预算结构（测算值）",
+    "source": "团队测算（测算值）"
+   },
+   {
+    "id": "market",
+    "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSI2MCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7lsYXlrrbpnZ7mjqXop6bnm5HmtYvorr7lpIfluILlnLrop4TmqKHvvIjkur/lhYPvvIk8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMzI0LjAiIHgyPSI2NTYiIHkyPSIzMjQuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMzI4LjAiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj4wPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjI1NC41IiB4Mj0iNjU2IiB5Mj0iMjU0LjUiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjI1OC41IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+MjE8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMTg1LjAiIHgyPSI2NTYiIHkyPSIxODUuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMTg5LjAiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj40MjwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSIxMTUuNSIgeDI9IjY1NiIgeTI9IjExNS41IiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSIxMTkuNSIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjYzPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjQ2LjAiIHgyPSI2NTYiIHkyPSI0Ni4wIiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSI1MC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+ODQ8L3RleHQ+PHJlY3QgeD0iODguNiIgeT0iMjY0LjMiIHdpZHRoPSI2Mi4wIiBoZWlnaHQ9IjU5LjciIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iMTE5LjYiIHk9IjI1Ny4zIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTg8L3RleHQ+PHRleHQgeD0iMTE5LjYiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjIwMjQ8L3RleHQ+PHJlY3QgeD0iMjA3LjgiIHk9IjIzNy43IiB3aWR0aD0iNjIuMCIgaGVpZ2h0PSI4Ni4zIiByeD0iNCIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjIzOC44IiB5PSIyMzAuNyIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyYjNhNTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjI2PC90ZXh0Pjx0ZXh0IHg9IjIzOC44IiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNWE2NDc4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4yMDI1PC90ZXh0PjxyZWN0IHg9IjMyNy4wIiB5PSIyMDEuMiIgd2lkdGg9IjYyLjAiIGhlaWdodD0iMTIyLjgiIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iMzU4LjAiIHk9IjE5NC4yIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+Mzc8L3RleHQ+PHRleHQgeD0iMzU4LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjIwMjY8L3RleHQ+PHJlY3QgeD0iNDQ2LjIiIHk9IjE1MS41IiB3aWR0aD0iNjIuMCIgaGVpZ2h0PSIxNzIuNSIgcng9IjQiIGZpbGw9InVybCgjZykiLz48dGV4dCB4PSI0NzcuMiIgeT0iMTQ0LjUiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj41MjwvdGV4dD48dGV4dCB4PSI0NzcuMiIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MjAyNzwvdGV4dD48cmVjdCB4PSI1NjUuNCIgeT0iODguNCIgd2lkdGg9IjYyLjAiIGhlaWdodD0iMjM1LjYiIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iNTk2LjQiIHk9IjgxLjQiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj43MTwvdGV4dD48dGV4dCB4PSI1OTYuNCIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MjAyODwvdGV4dD48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM0ZjdjZmYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM4ZmIwZmYiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48dGV4dCB4PSI2MCIgeT0iMzY4IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiI+5Y2V5L2N77ya5Lq/5YWDPC90ZXh0Pjwvc3ZnPg==",
+    "title": "居家非接触监测设备市场规模（亿元）",
+    "caption": "逐年市场空间（测算值，非官方统计）",
+    "source": "团队测算（测算值）"
+   },
+   {
+    "id": "timeline",
+    "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSI2MCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7pobnnm67lrp7mlr3ov5vluqbvvIgl77yJPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjMyNC4wIiB4Mj0iNjU2IiB5Mj0iMzI0LjAiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjMyOC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+MDwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSIyNTQuNSIgeDI9IjY1NiIgeTI9IjI1NC41IiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSIyNTguNSIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjI1PC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjE4NS4wIiB4Mj0iNjU2IiB5Mj0iMTg1LjAiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjE4OS4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+NTA8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMTE1LjUiIHgyPSI2NTYiIHkyPSIxMTUuNSIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMTE5LjUiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj43NTwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSI0Ni4wIiB4Mj0iNjU2IiB5Mj0iNDYuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iNTAuMCIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjEwMDwvdGV4dD48cG9seWdvbiBwb2ludHM9IjYwLDMyNC4wIDYwLjAsMjkyLjIgMjA5LjAsMjMxLjMgMzU4LjAsMTcwLjQgNTA3LjAsMTA2LjkgNjU2LjAsNTkuMiA2NTYuMCwzMjQuMCIgZmlsbD0iIzRmN2NmZiIgZmlsbC1vcGFjaXR5PSIwLjEyIi8+PHBvbHlsaW5lIHBvaW50cz0iNjAuMCwyOTIuMiAyMDkuMCwyMzEuMyAzNTguMCwxNzAuNCA1MDcuMCwxMDYuOSA2NTYuMCw1OS4yIiBmaWxsPSJub25lIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iNjAuMCIgY3k9IjI5Mi4yIiByPSI0IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iNjAuMCIgeT0iMjgyLjIiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4xMjwvdGV4dD48dGV4dCB4PSI2MC4wIiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExLjUiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPumcgOaxguiwg+eglDwvdGV4dD48Y2lyY2xlIGN4PSIyMDkuMCIgY3k9IjIzMS4zIiByPSI0IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iMjA5LjAiIHk9IjIyMS4zIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MzU8L3RleHQ+PHRleHQgeD0iMjA5LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5Y6f55CG5qC35py6PC90ZXh0PjxjaXJjbGUgY3g9IjM1OC4wIiBjeT0iMTcwLjQiIHI9IjQiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzRmN2NmZiIgc3Ryb2tlLXdpZHRoPSIyLjUiLz48dGV4dCB4PSIzNTguMCIgeT0iMTYwLjQiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj41ODwvdGV4dD48dGV4dCB4PSIzNTguMCIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMS41IiBmaWxsPSIjNWE2NDc4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7nrpfms5Xov63ku6M8L3RleHQ+PGNpcmNsZSBjeD0iNTA3LjAiIGN5PSIxMDYuOSIgcj0iNCIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjNGY3Y2ZmIiBzdHJva2Utd2lkdGg9IjIuNSIvPjx0ZXh0IHg9IjUwNy4wIiB5PSI5Ni45IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+ODI8L3RleHQ+PHRleHQgeD0iNTA3LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+56S+5Yy66K+V54K5PC90ZXh0PjxjaXJjbGUgY3g9IjY1Ni4wIiBjeT0iNTkuMiIgcj0iNCIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjNGY3Y2ZmIiBzdHJva2Utd2lkdGg9IjIuNSIvPjx0ZXh0IHg9IjY1Ni4wIiB5PSI0OS4yIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTAwPC90ZXh0Pjx0ZXh0IHg9IjY1Ni4wIiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExLjUiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPuadkOaWmeetlOi+qTwvdGV4dD48dGV4dCB4PSI2MCIgeT0iMzY4IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiI+5Y2V5L2N77yaJTwvdGV4dD48L3N2Zz4=",
+    "title": "项目实施进度（%）",
+    "caption": "分阶段推进节奏（计划值）",
+    "source": "团队计划（计划值）"
+   }
+  ],
+  "rich_tables": [
+   {
+    "id": "compete",
+    "title": "竞品对比",
+    "caption": "同类方案能力—成本—接受度对比",
+    "header": [
+     "方案",
+     "检测方式",
+     "优点",
+     "局限",
+     "本项目差异"
+    ],
+    "rows": [
+     [
+      "摄像头视觉",
+      "图像识别",
+      "识别能力强、可回溯",
+      "卧室/卫生间隐私接受度低，夜间受限",
+      "不采集图像，隐私可接受"
+     ],
+     [
+      "可穿戴手环",
+      "加速度 + 主动按键",
+      "成本低、随身携带",
+      "长期佩戴率 61%（调研值），意识不清时失效",
+      "零佩戴、不需要主动触发"
+     ],
+     [
+      "压力地毯/红外",
+      "压力或热释电",
+      "单价低、安装简单",
+      "只覆盖固定区域，缓慢滑倒识别弱",
+      "覆盖约 12㎡，判定基于姿态与静止时长"
+     ],
+     [
+      "本项目",
+      "60GHz 毫米波点云",
+      "非接触、零操作、误报可撤销",
+      "需试点验证真实场景分布差异",
+      "—"
+     ]
+    ]
+   },
+   {
+    "id": "metrics",
+    "title": "关键技术指标",
+    "caption": "实测值与测算值分列，避免口径混淆",
+    "header": [
+     "指标",
+     "当前水平",
+     "试点目标",
+     "口径"
+    ],
+    "rows": [
+     [
+      "跌倒召回率",
+      "96.2%",
+      "≥90%",
+      "实测值（1280 段自建数据集）/ 目标值"
+     ],
+     [
+      "误报率",
+      "3.1%",
+      "≤3% 且每户每周 ≤2 次",
+      "实测值 / 目标值"
+     ],
+     [
+      "易混动作误触发率",
+      "2.4%",
+      "≤3%",
+      "实测值（缓慢坐下、弯腰系鞋带）"
+     ],
+     [
+      "本地报警时延",
+      "<3 秒",
+      "<3 秒",
+      "实测值"
+     ],
+     [
+      "平台推送时延",
+      "<8 秒",
+      "<10 秒",
+      "实测值（家庭宽带）/ 目标值"
+     ],
+     [
+      "单台成本",
+      "约 218 元",
+      "批量后约 176 元",
+      "测算值"
+     ],
+     [
+      "电池续航",
+      "约 6 个月",
+      "≥6 个月",
+      "测算值（日均 20 次检测）"
+     ]
+    ]
+   },
+   {
+    "id": "pilot",
+    "title": "社区试点计划",
+    "caption": "2 个社区 60 户，每户 2 台，共 120 台",
+    "header": [
+     "阶段",
+     "周期",
+     "内容",
+     "样本量",
+     "验证目标"
+    ],
+    "rows": [
+     [
+      "安装与自学习",
+      "第 1—2 周",
+      "上门安装、环境基线采集",
+      "60 户 / 120 台",
+      "单台安装耗时与自学习成功率"
+     ],
+     [
+      "真实数据采集",
+      "第 3—6 周",
+      "事件与误报全量记录",
+      "60 户",
+      "召回率、误报次数/户/周"
+     ],
+     [
+      "回访与调优",
+      "第 7—8 周",
+      "问卷回访、阈值个性化",
+      "60 户",
+      "满意度、可接受误报阈值"
+     ]
+    ]
+   }
+  ],
+  "rich_deck": {
+   "one_liner": "一台不拍照、不用佩戴的毫米波跌倒监测器，让独居老人跌倒后 10 秒内被看见",
+   "slides": [
+    {
+     "type": "cover",
+     "title": "毫米波跌倒监测装置「守望」",
+     "bullets": [],
+     "metrics": [],
+     "chart": "",
+     "table": "",
+     "note": "不拍照 · 不用佩戴 · 误报可撤销"
+    },
+    {
+     "type": "bullets",
+     "title": "怕的不是摔，是摔了没人知道",
+     "bullets": [
+      "**走访**：40 位独居老人与子女（调研值）",
+      "**摄像头**：卧室卫生间装不了，隐私抵触强",
+      "**手环**：长期佩戴率 61%（调研值），跌倒时按不了",
+      "**地毯/红外**：只覆盖固定区域，缓慢滑倒识别不了"
+     ],
+     "metrics": [],
+     "chart": "",
+     "table": "",
+     "note": "痛点"
+    },
+    {
+     "type": "bullets",
+     "title": "方案：非接触感知 + 三级响应",
+     "bullets": [
+      "**感知**：60GHz 毫米波点云，不成像",
+      "**判定**：质心高度骤降 + 落地静止 双条件",
+      "**响应**：本地声光提示，30 秒可撤销窗口",
+      "**上报**：确认后推送子女与社区平台"
+     ],
+     "metrics": [],
+     "chart": "",
+     "table": "",
+     "note": "方案"
+    },
+    {
+     "type": "metrics",
+     "title": "实测与测算数据",
+     "kicker": "数据",
+     "bullets": [],
+     "metrics": [
+      "召回率 96.2%（实测值）",
+      "误报率 3.1%（实测值）",
+      "本地报警 <3 秒（实测值）",
+      "单台成本约 218 元（测算值）"
+     ],
+     "chart": "market",
+     "table": "",
+     "note": "口径已在正文标注"
+    },
+    {
+     "type": "table",
+     "title": "竞品对比",
+     "bullets": [],
+     "metrics": [],
+     "chart": "",
+     "table": "compete",
+     "note": "差异在组合而非单点精度"
+    },
+    {
+     "type": "chart",
+     "title": "试点阶段预算构成",
+     "bullets": [],
+     "metrics": [],
+     "chart": "budget",
+     "table": "",
+     "note": "合计 10.2 万元（测算值）"
+    },
+    {
+     "type": "bullets",
+     "title": "下一步：2 个社区 60 户试点",
+     "bullets": [
+      "**规模**：60 户 / 120 台设备（计划值）",
+      "**周期**：8 周，含 4 周真实数据采集",
+      "**验收**：召回率、误报次数/户/周、满意度",
+      "**目标**：把实验室指标回填为真实居家指标"
+     ],
+     "metrics": [],
+     "chart": "",
+     "table": "",
+     "note": "计划"
+    },
+    {
+     "type": "closing",
+     "title": "谢谢",
+     "bullets": [],
+     "metrics": [],
+     "chart": "",
+     "table": "",
+     "note": "把「不被看见」这件事做对"
+    }
+   ]
+  }
+ },
+ "rating": 86,
+ "rich_deck": {
+  "one_liner": "一台不拍照、不用佩戴的毫米波跌倒监测器，让独居老人跌倒后 10 秒内被看见",
+  "slides": [
+   {
+    "type": "cover",
+    "title": "毫米波跌倒监测装置「守望」",
+    "bullets": [],
+    "metrics": [],
+    "chart": "",
+    "table": "",
+    "note": "不拍照 · 不用佩戴 · 误报可撤销"
+   },
+   {
+    "type": "bullets",
+    "title": "怕的不是摔，是摔了没人知道",
+    "bullets": [
+     "**走访**：40 位独居老人与子女（调研值）",
+     "**摄像头**：卧室卫生间装不了，隐私抵触强",
+     "**手环**：长期佩戴率 61%（调研值），跌倒时按不了",
+     "**地毯/红外**：只覆盖固定区域，缓慢滑倒识别不了"
+    ],
+    "metrics": [],
+    "chart": "",
+    "table": "",
+    "note": "痛点"
+   },
+   {
+    "type": "bullets",
+    "title": "方案：非接触感知 + 三级响应",
+    "bullets": [
+     "**感知**：60GHz 毫米波点云，不成像",
+     "**判定**：质心高度骤降 + 落地静止 双条件",
+     "**响应**：本地声光提示，30 秒可撤销窗口",
+     "**上报**：确认后推送子女与社区平台"
+    ],
+    "metrics": [],
+    "chart": "",
+    "table": "",
+    "note": "方案"
+   },
+   {
+    "type": "metrics",
+    "title": "实测与测算数据",
+    "kicker": "数据",
+    "bullets": [],
+    "metrics": [
+     "召回率 96.2%（实测值）",
+     "误报率 3.1%（实测值）",
+     "本地报警 <3 秒（实测值）",
+     "单台成本约 218 元（测算值）"
+    ],
+    "chart": "market",
+    "table": "",
+    "note": "口径已在正文标注"
+   },
+   {
+    "type": "table",
+    "title": "竞品对比",
+    "bullets": [],
+    "metrics": [],
+    "chart": "",
+    "table": "compete",
+    "note": "差异在组合而非单点精度"
+   },
+   {
+    "type": "chart",
+    "title": "试点阶段预算构成",
+    "bullets": [],
+    "metrics": [],
+    "chart": "budget",
+    "table": "",
+    "note": "合计 10.2 万元（测算值）"
+   },
+   {
+    "type": "bullets",
+    "title": "下一步：2 个社区 60 户试点",
+    "bullets": [
+     "**规模**：60 户 / 120 台设备（计划值）",
+     "**周期**：8 周，含 4 周真实数据采集",
+     "**验收**：召回率、误报次数/户/周、满意度",
+     "**目标**：把实验室指标回填为真实居家指标"
+    ],
+    "metrics": [],
+    "chart": "",
+    "table": "",
+    "note": "计划"
+   },
+   {
+    "type": "closing",
+    "title": "谢谢",
+    "bullets": [],
+    "metrics": [],
+    "chart": "",
+    "table": "",
+    "note": "把「不被看见」这件事做对"
+   }
+  ]
+ },
+ "rich_charts": [
+  {
+   "id": "budget",
+   "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSIzNCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7or5XngrnpmLbmrrXpooTnrpfmnoTmiJDvvIjkuIflhYPvvIk8L3RleHQ+PHBhdGggZD0iTSAyMDAuMDAgODAuMDAgQSAxMTYuMDAgMTE2LjAwIDAgMCAxIDI2MS4wNyAyOTQuNjMgTCAyMzQuNzQgMjUyLjExIEEgNjYuMDAgNjYuMDAgMCAwIDAgMjAwLjAwIDEzMC4wMCBaIiBmaWxsPSIjNGY3Y2ZmIi8+PHJlY3QgeD0iNDAwIiB5PSI5MiIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiByeD0iMyIgZmlsbD0iIzRmN2NmZiIvPjx0ZXh0IHg9IjQyMiIgeT0iMTAzIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzJiM2E1NSI+56CU5Y+R5LiO5omT5qC344CANC4y77yINDEuMiXvvIk8L3RleHQ+PHBhdGggZD0iTSAyNjEuMDcgMjk0LjYzIEEgMTE2LjAwIDExNi4wMCAwIDAgMSA4NC4wNiAxOTkuNTcgTCAxMzQuMDMgMTk4LjAzIEEgNjYuMDAgNjYuMDAgMCAwIDAgMjM0Ljc0IDI1Mi4xMSBaIiBmaWxsPSIjMjJjM2E2Ii8+PHJlY3QgeD0iNDAwIiB5PSIxMjYiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgcng9IjMiIGZpbGw9IiMyMmMzYTYiLz48dGV4dCB4PSI0MjIiIHk9IjEzNyIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTMiIGZpbGw9IiMyYjNhNTUiPuehrOS7tueJqeaWmeOAgDMuNO+8iDMzLjMl77yJPC90ZXh0PjxwYXRoIGQ9Ik0gODQuMDYgMTk5LjU3IEEgMTE2LjAwIDExNi4wMCAwIDAgMSAxMzIuOTggMTAxLjMyIEwgMTYxLjg3IDE0Mi4xMyBBIDY2LjAwIDY2LjAwIDAgMCAwIDEzNC4wMyAxOTguMDMgWiIgZmlsbD0iI2Y1YTYyMyIvPjxyZWN0IHg9IjQwMCIgeT0iMTYwIiB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHJ4PSIzIiBmaWxsPSIjZjVhNjIzIi8+PHRleHQgeD0iNDIyIiB5PSIxNzEiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEzIiBmaWxsPSIjMmIzYTU1Ij7or5Xngrnpg6jnvbLkuI7lt67ml4XjgIAxLjbvvIgxNS43Je+8iTwvdGV4dD48cGF0aCBkPSJNIDEzMi45OCAxMDEuMzIgQSAxMTYuMDAgMTE2LjAwIDAgMCAxIDIwMC4wMCA4MC4wMCBMIDIwMC4wMCAxMzAuMDAgQSA2Ni4wMCA2Ni4wMCAwIDAgMCAxNjEuODcgMTQyLjEzIFoiIGZpbGw9IiNlZjVkYTgiLz48cmVjdCB4PSI0MDAiIHk9IjE5NCIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiByeD0iMyIgZmlsbD0iI2VmNWRhOCIvPjx0ZXh0IHg9IjQyMiIgeT0iMjA1IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzJiM2E1NSI+6L+Q6JCl5LiO5aSH55So44CAMe+8iDkuOCXvvIk8L3RleHQ+PHRleHQgeD0iMjAwLjAiIHk9IjE5OC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNSIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iIzEwMTgyOCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTA8L3RleHQ+PHRleHQgeD0iMjAwLjAiIHk9IjIxNi4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5ZCI6K6hPC90ZXh0Pjwvc3ZnPg==",
+   "title": "试点阶段预算构成（万元）",
+   "caption": "8 个月试点周期预算结构（测算值）",
+   "source": "团队测算（测算值）"
+  },
+  {
+   "id": "market",
+   "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSI2MCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7lsYXlrrbpnZ7mjqXop6bnm5HmtYvorr7lpIfluILlnLrop4TmqKHvvIjkur/lhYPvvIk8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMzI0LjAiIHgyPSI2NTYiIHkyPSIzMjQuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMzI4LjAiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj4wPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjI1NC41IiB4Mj0iNjU2IiB5Mj0iMjU0LjUiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjI1OC41IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+MjE8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMTg1LjAiIHgyPSI2NTYiIHkyPSIxODUuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMTg5LjAiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj40MjwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSIxMTUuNSIgeDI9IjY1NiIgeTI9IjExNS41IiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSIxMTkuNSIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjYzPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjQ2LjAiIHgyPSI2NTYiIHkyPSI0Ni4wIiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSI1MC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+ODQ8L3RleHQ+PHJlY3QgeD0iODguNiIgeT0iMjY0LjMiIHdpZHRoPSI2Mi4wIiBoZWlnaHQ9IjU5LjciIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iMTE5LjYiIHk9IjI1Ny4zIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTg8L3RleHQ+PHRleHQgeD0iMTE5LjYiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjIwMjQ8L3RleHQ+PHJlY3QgeD0iMjA3LjgiIHk9IjIzNy43IiB3aWR0aD0iNjIuMCIgaGVpZ2h0PSI4Ni4zIiByeD0iNCIgZmlsbD0idXJsKCNnKSIvPjx0ZXh0IHg9IjIzOC44IiB5PSIyMzAuNyIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiMyYjNhNTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjI2PC90ZXh0Pjx0ZXh0IHg9IjIzOC44IiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjNWE2NDc4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4yMDI1PC90ZXh0PjxyZWN0IHg9IjMyNy4wIiB5PSIyMDEuMiIgd2lkdGg9IjYyLjAiIGhlaWdodD0iMTIyLjgiIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iMzU4LjAiIHk9IjE5NC4yIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+Mzc8L3RleHQ+PHRleHQgeD0iMzU4LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjIwMjY8L3RleHQ+PHJlY3QgeD0iNDQ2LjIiIHk9IjE1MS41IiB3aWR0aD0iNjIuMCIgaGVpZ2h0PSIxNzIuNSIgcng9IjQiIGZpbGw9InVybCgjZykiLz48dGV4dCB4PSI0NzcuMiIgeT0iMTQ0LjUiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj41MjwvdGV4dD48dGV4dCB4PSI0NzcuMiIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MjAyNzwvdGV4dD48cmVjdCB4PSI1NjUuNCIgeT0iODguNCIgd2lkdGg9IjYyLjAiIGhlaWdodD0iMjM1LjYiIHJ4PSI0IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iNTk2LjQiIHk9IjgxLjQiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj43MTwvdGV4dD48dGV4dCB4PSI1OTYuNCIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MjAyODwvdGV4dD48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM0ZjdjZmYiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiM4ZmIwZmYiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48dGV4dCB4PSI2MCIgeT0iMzY4IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiI+5Y2V5L2N77ya5Lq/5YWDPC90ZXh0Pjwvc3ZnPg==",
+   "title": "居家非接触监测设备市场规模（亿元）",
+   "caption": "逐年市场空间（测算值，非官方统计）",
+   "source": "团队测算（测算值）"
+  },
+  {
+   "id": "timeline",
+   "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2ODAiIGhlaWdodD0iMzgwIiB2aWV3Qm94PSIwIDAgNjgwIDM4MCI+PHJlY3Qgd2lkdGg9IjY4MCIgaGVpZ2h0PSIzODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSI2MCIgeT0iMjgiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjMTAxODI4Ij7pobnnm67lrp7mlr3ov5vluqbvvIgl77yJPC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjMyNC4wIiB4Mj0iNjU2IiB5Mj0iMzI0LjAiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjMyOC4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+MDwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSIyNTQuNSIgeDI9IjY1NiIgeTI9IjI1NC41IiBzdHJva2U9IiNlNmU5ZjAiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjUyIiB5PSIyNTguNSIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjI1PC90ZXh0PjxsaW5lIHgxPSI2MCIgeTE9IjE4NS4wIiB4Mj0iNjU2IiB5Mj0iMTg1LjAiIHN0cm9rZT0iI2U2ZTlmMCIgc3Ryb2tlLXdpZHRoPSIxIi8+PHRleHQgeD0iNTIiIHk9IjE4OS4wIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiIgdGV4dC1hbmNob3I9ImVuZCI+NTA8L3RleHQ+PGxpbmUgeDE9IjYwIiB5MT0iMTE1LjUiIHgyPSI2NTYiIHkyPSIxMTUuNSIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iMTE5LjUiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExIiBmaWxsPSIjOGE5NGE2IiB0ZXh0LWFuY2hvcj0iZW5kIj43NTwvdGV4dD48bGluZSB4MT0iNjAiIHkxPSI0Ni4wIiB4Mj0iNjU2IiB5Mj0iNDYuMCIgc3Ryb2tlPSIjZTZlOWYwIiBzdHJva2Utd2lkdGg9IjEiLz48dGV4dCB4PSI1MiIgeT0iNTAuMCIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM4YTk0YTYiIHRleHQtYW5jaG9yPSJlbmQiPjEwMDwvdGV4dD48cG9seWdvbiBwb2ludHM9IjYwLDMyNC4wIDYwLjAsMjkyLjIgMjA5LjAsMjMxLjMgMzU4LjAsMTcwLjQgNTA3LjAsMTA2LjkgNjU2LjAsNTkuMiA2NTYuMCwzMjQuMCIgZmlsbD0iIzRmN2NmZiIgZmlsbC1vcGFjaXR5PSIwLjEyIi8+PHBvbHlsaW5lIHBvaW50cz0iNjAuMCwyOTIuMiAyMDkuMCwyMzEuMyAzNTguMCwxNzAuNCA1MDcuMCwxMDYuOSA2NTYuMCw1OS4yIiBmaWxsPSJub25lIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iNjAuMCIgY3k9IjI5Mi4yIiByPSI0IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iNjAuMCIgeT0iMjgyLjIiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4xMjwvdGV4dD48dGV4dCB4PSI2MC4wIiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExLjUiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPumcgOaxguiwg+eglDwvdGV4dD48Y2lyY2xlIGN4PSIyMDkuMCIgY3k9IjIzMS4zIiByPSI0IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiM0ZjdjZmYiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iMjA5LjAiIHk9IjIyMS4zIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MzU8L3RleHQ+PHRleHQgeD0iMjA5LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5Y6f55CG5qC35py6PC90ZXh0PjxjaXJjbGUgY3g9IjM1OC4wIiBjeT0iMTcwLjQiIHI9IjQiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzRmN2NmZiIgc3Ryb2tlLXdpZHRoPSIyLjUiLz48dGV4dCB4PSIzNTguMCIgeT0iMTYwLjQiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjMmIzYTU1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj41ODwvdGV4dD48dGV4dCB4PSIzNTguMCIgeT0iMzQ2IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMS41IiBmaWxsPSIjNWE2NDc4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7nrpfms5Xov63ku6M8L3RleHQ+PGNpcmNsZSBjeD0iNTA3LjAiIGN5PSIxMDYuOSIgcj0iNCIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjNGY3Y2ZmIiBzdHJva2Utd2lkdGg9IjIuNSIvPjx0ZXh0IHg9IjUwNy4wIiB5PSI5Ni45IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+ODI8L3RleHQ+PHRleHQgeD0iNTA3LjAiIHk9IjM0NiIgZm9udC1mYW1pbHk9IidNaWNyb3NvZnQgWWFIZWknLCdQaW5nRmFuZyBTQycsJ05vdG8gU2FucyBDSksgU0MnLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iIzVhNjQ3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+56S+5Yy66K+V54K5PC90ZXh0PjxjaXJjbGUgY3g9IjY1Ni4wIiBjeT0iNTkuMiIgcj0iNCIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjNGY3Y2ZmIiBzdHJva2Utd2lkdGg9IjIuNSIvPjx0ZXh0IHg9IjY1Ni4wIiB5PSI0OS4yIiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjYwMCIgZmlsbD0iIzJiM2E1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+MTAwPC90ZXh0Pjx0ZXh0IHg9IjY1Ni4wIiB5PSIzNDYiIGZvbnQtZmFtaWx5PSInTWljcm9zb2Z0IFlhSGVpJywnUGluZ0ZhbmcgU0MnLCdOb3RvIFNhbnMgQ0pLIFNDJyxzYW5zLXNlcmlmIiBmb250LXNpemU9IjExLjUiIGZpbGw9IiM1YTY0NzgiIHRleHQtYW5jaG9yPSJtaWRkbGUiPuadkOaWmeetlOi+qTwvdGV4dD48dGV4dCB4PSI2MCIgeT0iMzY4IiBmb250LWZhbWlseT0iJ01pY3Jvc29mdCBZYUhlaScsJ1BpbmdGYW5nIFNDJywnTm90byBTYW5zIENKSyBTQycsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhhOTRhNiI+5Y2V5L2N77yaJTwvdGV4dD48L3N2Zz4=",
+   "title": "项目实施进度（%）",
+   "caption": "分阶段推进节奏（计划值）",
+   "source": "团队计划（计划值）"
+  }
+ ],
+ "rich_tables": [
+  {
+   "id": "compete",
+   "title": "竞品对比",
+   "caption": "同类方案能力—成本—接受度对比",
+   "header": [
+    "方案",
+    "检测方式",
+    "优点",
+    "局限",
+    "本项目差异"
+   ],
+   "rows": [
+    [
+     "摄像头视觉",
+     "图像识别",
+     "识别能力强、可回溯",
+     "卧室/卫生间隐私接受度低，夜间受限",
+     "不采集图像，隐私可接受"
+    ],
+    [
+     "可穿戴手环",
+     "加速度 + 主动按键",
+     "成本低、随身携带",
+     "长期佩戴率 61%（调研值），意识不清时失效",
+     "零佩戴、不需要主动触发"
+    ],
+    [
+     "压力地毯/红外",
+     "压力或热释电",
+     "单价低、安装简单",
+     "只覆盖固定区域，缓慢滑倒识别弱",
+     "覆盖约 12㎡，判定基于姿态与静止时长"
+    ],
+    [
+     "本项目",
+     "60GHz 毫米波点云",
+     "非接触、零操作、误报可撤销",
+     "需试点验证真实场景分布差异",
+     "—"
+    ]
+   ]
+  },
+  {
+   "id": "metrics",
+   "title": "关键技术指标",
+   "caption": "实测值与测算值分列，避免口径混淆",
+   "header": [
+    "指标",
+    "当前水平",
+    "试点目标",
+    "口径"
+   ],
+   "rows": [
+    [
+     "跌倒召回率",
+     "96.2%",
+     "≥90%",
+     "实测值（1280 段自建数据集）/ 目标值"
+    ],
+    [
+     "误报率",
+     "3.1%",
+     "≤3% 且每户每周 ≤2 次",
+     "实测值 / 目标值"
+    ],
+    [
+     "易混动作误触发率",
+     "2.4%",
+     "≤3%",
+     "实测值（缓慢坐下、弯腰系鞋带）"
+    ],
+    [
+     "本地报警时延",
+     "<3 秒",
+     "<3 秒",
+     "实测值"
+    ],
+    [
+     "平台推送时延",
+     "<8 秒",
+     "<10 秒",
+     "实测值（家庭宽带）/ 目标值"
+    ],
+    [
+     "单台成本",
+     "约 218 元",
+     "批量后约 176 元",
+     "测算值"
+    ],
+    [
+     "电池续航",
+     "约 6 个月",
+     "≥6 个月",
+     "测算值（日均 20 次检测）"
+    ]
+   ]
+  },
+  {
+   "id": "pilot",
+   "title": "社区试点计划",
+   "caption": "2 个社区 60 户，每户 2 台，共 120 台",
+   "header": [
+    "阶段",
+    "周期",
+    "内容",
+    "样本量",
+    "验证目标"
+   ],
+   "rows": [
+    [
+     "安装与自学习",
+     "第 1—2 周",
+     "上门安装、环境基线采集",
+     "60 户 / 120 台",
+     "单台安装耗时与自学习成功率"
+    ],
+    [
+     "真实数据采集",
+     "第 3—6 周",
+     "事件与误报全量记录",
+     "60 户",
+     "召回率、误报次数/户/周"
+    ],
+    [
+     "回访与调优",
+     "第 7—8 周",
+     "问卷回访、阈值个性化",
+     "60 户",
+     "满意度、可接受误报阈值"
+    ]
+   ]
+  }
+ ],
+ "_demo": true,
+ "_demo_note": "演示样例（预置内容，非实时生成）"
+}
