@@ -1644,15 +1644,18 @@ _WB_OUTLINE_PAT = re.compile(
 
 
 def _wb_strip_md(t):
-    """清掉单条文本里的 Markdown 残留标记。只动标记符，不动中文/数字/百分号。"""
+    """Remove Markdown markers from slide text while keeping its readable content."""
     if not isinstance(t, str) or not t:
         return t
-    s = t.replace('**', '').replace('`', '')          # 加粗 / 行内代码（先去，露出裸星号）
-    s = re.sub(r'^[ \t]*#{1,6}[ \t]*', '', s)         # 行首标题符「## 」
-    s = re.sub(r'^[ \t]*[-*+][ \t]+', '', s)          # 行首列表符「* 」「- 」
-    s = re.sub(r'^[ \t]*\*+[ \t]*', '', s)            # 行首残留星号（「*标题：」）
-    s = re.sub(r'[ \t]*\*+[ \t]*$', '', s)            # 行尾孤立星号
-    return s.strip()
+    value = t.replace("**", "").replace("`", "")
+    value = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", value)
+    value = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1（\2）", value)
+    value = re.sub(r"~~([^~]+)~~", r"\1", value)
+    value = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", value)
+    value = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"\1", value)
+    value = re.sub(r"^[ \t]*#{1,6}[ \t]*", "", value)
+    value = re.sub(r"^[ \t]*[-*+][ \t]+", "", value)
+    return value.strip()
 
 
 def _wb_clean_slide(node):
