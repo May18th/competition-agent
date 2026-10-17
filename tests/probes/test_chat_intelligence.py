@@ -141,13 +141,43 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("可创无限团队创造", response.get_json()["reply"])
         self.assertEqual(self.client.get("/api/chat_history").get_json()["messages"], [])
 
-    def test_chat_ui_has_no_unsolicited_greeting_or_ican_default(self):
+    def test_name_origin_questions_use_team_identity_preset(self):
+        for question in ("谁给你取的名字？", "小创的名字是谁起的？"):
+            response = self.client.post("/api/chat", json={"message": question}, buffered=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, "text/event-stream")
+            reply = response.get_data(as_text=True)
+            self.assertIn("可创无限团队", reply)
+            self.assertIn("团队", reply)
+            self.assertNotIn("成员", reply)
+            self.assertNotIn("iCAN", reply)
+
+    def test_open_questions_do_not_hit_generic_keyword_presets(self):
+        for question in (
+            "我有个问题想咨询",
+            "PPT里面的结构怎么设计",
+            "深度方案里的比赛安排怎么调整",
+            "我的项目评分维度该怎么设计",
+            "额度问题为什么会影响项目",
+        ):
+            self.assertIsNone(app_module._chat_find_preset(question), question)
+
+    def test_system_prompt_does_not_assume_ican_or_append_generic_sales_pitch(self):
+        prompt = app_module._system_prompt("concise", "", {})
+        self.assertIn("不得默认 iCAN", prompt)
+        self.assertIn("不要在每次回答末尾重复推销平台能力", prompt)
+
+    def test_chat_greeting_is_general_and_only_shown_after_opening_chat(self):
         with open(os.path.join(ROOT, "static", "wbchat.js"), encoding="utf-8") as stream:
             chat_js = stream.read()
         with open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8") as stream:
             app_js = stream.read()
-        self.assertNotIn("function greetText()", chat_js)
-        self.assertNotIn("pushMsg('bot', greetText()", chat_js)
+        self.assertIn("function greetText()", chat_js)
+        greeting = chat_js.split("function greetText()", 1)[1].split("function clearHistory", 1)[0]
+        self.assertIn("你正在准备哪项比赛", greeting)
+        self.assertNotIn("iCAN", greeting)
+        self.assertIn("pushMsg('bot', greetText())", chat_js)
+        self.assertIn("if (opened)", chat_js)
         self.assertNotIn("el.value = 'iCAN大学生创新创业大赛'", app_js)
         self.assertIn("WB_COMP_CHOICE_KEY", app_js)
 
