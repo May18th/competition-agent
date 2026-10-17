@@ -6903,6 +6903,9 @@ _CHAT_STYLES = {
     "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
     "casual": {"label": "轻松幽默", "tone": "口语化、轻松幽默，可带一点趣味，但信息必须准确"},
     "academic": {"label": "学术详细", "tone": "引用赛事规则依据、展开论证，可适当详细"},
+    "judge": {"label": "评委视角", "tone": "站在评委审阅角度，优先指出证据、风险、评分关注点和可追问处"},
+    "brainstorm": {"label": "创意发散", "tone": "先发散再收敛，给出多个有差异的方向，并说明验证思路，避免替用户拍板"},
+    "coach": {"label": "陪练教练", "tone": "像项目教练一样循序追问、及时鼓励，给出下一步可执行动作"},
 }
 
 
@@ -6918,10 +6921,12 @@ def _chat_style_key(v):
 
 
 def _chat_style_lead(style):
-    if style == "casual":
+    if style in ("casual", "coach"):
         return "嘿，简单说——"
-    if style == "academic":
+    if style in ("academic", "judge"):
         return "依据官方规则口径："
+    if style == "brainstorm":
+        return "先发散一下——"
     return ""
 
 
@@ -7253,7 +7258,7 @@ def _chat_recommendation_reply(comp_name, style):
             "3. **智能技术应用**：把已有技术特长放进一个明确场景，先确认用户和实际需求。\n\n"
             "回复一个编号，再补充你的专业、兴趣或可用资源；我会据此帮你收敛方向，赛事和赛道等你确认后再进入生成。"
         )
-    if style == "casual":
+    if style in ("casual", "coach"):
         body = body.replace(
             "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
             "当然可以，先别急着开工。我给你几个方向参考，但不会把它们直接当成你的项目。"
@@ -7267,7 +7272,7 @@ def _chat_recommendation_reply(comp_name, style):
             "回复一个编号，并告诉我你熟悉的领域、手头资源或想服务的人群，我再帮你收敛成可落地的项目题目。",
             "回复一个编号，再说说你熟悉什么、手里有什么资源，或者最想帮哪类人，我陪你把它收敛成真正能做的题目。"
         )
-    elif style == "academic":
+    elif style in ("academic", "judge"):
         body = body.replace(
             "可以。我先不把推荐内容当成你的项目，也不会直接启动生成。",
             "可以。在启动生成前，建议先完成方向筛选；以下仅作候选，不作为已确认的项目事实。"
@@ -7287,14 +7292,35 @@ def _chat_recommendation_reply(comp_name, style):
 def _chat_missing_requirements_reply(style, details):
     """生成前的固定追问也必须遵循当前聊天风格。"""
     detail_text = "；".join(details)
-    if style == "casual":
+    if style in ("casual", "coach"):
         return ("可以，先别急着生成，免得方向写偏。我还差这几项：%s。\n"
                 "你可以分几条慢慢补，也可以直接填首页对应信息；资料齐了我再开工。" % detail_text)
-    if style == "academic":
+    if style in ("academic", "judge"):
         return ("在启动生成前，需要先核实以下输入：%s。\n"
                 "这些信息用于确定评审口径、内容边界与验证重点；请补充后再进入生成。" % detail_text)
     return ("可以帮你做。开始前我需要先了解：%s。"
             "你可以分几条消息补充，也可以填写首页对应信息；资料齐全后我再启动生成。" % detail_text)
+
+
+def _chat_smalltalk_answer(msg, style):
+    """允许低成本、无业务副作用的轻量闲聊，避免轻松风格变成机械拒答。"""
+    text = str(msg or "").strip()
+    if not _re.search(r"(讲个笑话|讲笑话|说个笑话|讲个段子|逗我笑|来个笑话)", text):
+        return None
+    if style == "brainstorm":
+        return ("可以，先来个科创版：评委问“项目最大的风险是什么？”团队答“截止日期。”\n"
+                "评委又问“怎么解决？”团队答“先把这一页 PPT 做完。”")
+    if style in ("academic", "judge"):
+        return ("可以，给你一个与项目答辩有关的轻松版：\n"
+                "评委：项目最大的风险是什么？\n团队：截止日期。\n"
+                "评委：如何应对？\n团队：先完成这一页 PPT，再做风险矩阵。")
+    if style in ("casual", "coach"):
+        return ("当然可以，来个科创版：\n"
+                "评委问：“项目最大的风险是什么？”\n"
+                "团队答：“截止日期。”\n"
+                "评委又问：“怎么解决？”\n团队答：“先把这一页 PPT 做完。”")
+    return ("可以：评委问项目最大的风险，团队答：截止日期。\n"
+            "评委问怎么解决，团队答：先把这一页 PPT 做完。")
 
 
 def _chat_explicit_competition(msg):
@@ -7844,6 +7870,10 @@ def chat():
             return jsonify({"success": True,
                             "reply": _chat_style_lead(style) + identity_answer,
                             "source": "preset", "style": style})
+        smalltalk_answer = _chat_smalltalk_answer(msg, style)
+        if smalltalk_answer:
+            return jsonify({"success": True, "reply": smalltalk_answer,
+                            "source": "preset", "style": style})
         for kws, ans in _CHAT_PRESET:
             if any(k in msg for k in kws):
                 return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
@@ -7858,6 +7888,12 @@ def chat():
         _chat_persist(uid, 'user', msg, style)
         _chat_persist(uid, 'bot', reply, style)
         return _sse_text_reply(reply)
+
+    smalltalk_answer = _chat_smalltalk_answer(msg, style)
+    if smalltalk_answer:
+        _chat_persist(uid, 'user', msg, style)
+        _chat_persist(uid, 'bot', smalltalk_answer, style)
+        return _sse_text_reply(smalltalk_answer)
 
     page_context = _chat_page_context(data)
     profile = _chat_profile_load(uid)

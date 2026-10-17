@@ -344,6 +344,20 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("评审口径、内容边界与验证重点", app_module._chat_missing_requirements_reply(
             "academic", ["赛事名称", "项目需求"]
         ))
+        self.assertEqual(app_module._chat_style_key("评委视角"), "judge")
+        self.assertEqual(app_module._chat_style_key("创意发散"), "brainstorm")
+        self.assertEqual(app_module._chat_style_key("陪练教练"), "coach")
+        self.assertIn("截止日期", app_module._chat_smalltalk_answer("可以给我讲个笑话吗", "casual"))
+        self.assertIn("风险矩阵", app_module._chat_smalltalk_answer("讲个笑话", "academic"))
+
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            response = self.client.post("/api/chat", json={
+                "message": "可以给我讲个笑话吗", "style": "casual", "stream": True
+            }, buffered=True)
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("截止日期", body)
+        self.assertNotIn('"event":"generation"', body)
 
     def test_track_only_followup_does_not_count_as_project_requirements(self):
         chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation", json.dumps({
