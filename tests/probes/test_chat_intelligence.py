@@ -171,7 +171,7 @@ class ChatIntelligenceTests(unittest.TestCase):
         with patch.object(app_module, "_current_uid", return_value="alice"), \
              patch.object(app_module, "_admin_session_role", return_value=None), \
              patch.object(app_module, "_chat_reserve_quota", return_value=True), \
-             patch.object(app_module, "_chat_proofread", side_effect=lambda text: checked.append(text) or "[]"):
+             patch.object(app_module, "_chat_proofread", side_effect=lambda text: checked.append(text) or ("[]", [])):
             response = self.client.post(
                 "/api/chat", json={"message": "校对：申报书内容有点生硬"}, buffered=True
             )
@@ -188,7 +188,9 @@ class ChatIntelligenceTests(unittest.TestCase):
             result = app_module._chat_proofread(malicious_text)
         self.assertIn("不可信资料", captured[0][0].content)
         self.assertIn(malicious_text, captured[0][1].content)
-        self.assertEqual(result, "✅ 没发现明显错别字、语法或标点问题，文本较通顺。")
+        # _chat_proofread now returns (markdown_text, issues_list) tuple
+        self.assertEqual(result[0], "✅ 没发现明显错别字、语法或标点问题，文本较通顺。")
+        self.assertEqual(result[1], [])
 
     def test_nonstream_model_call_is_quota_gated(self):
         fake_llm = SimpleNamespace(invoke=lambda _messages: self.fail("model must not be called"))
