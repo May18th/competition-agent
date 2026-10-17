@@ -6791,6 +6791,8 @@ def admin_vulns_page():
 
 from flask import Response, stream_with_context
 
+from flask import Response, stream_with_context
+
 _CHAT_NAME = "小创 · 科创赛事助手智能助手"
 _CHAT_STYLES = {
     "concise": {"label": "简洁严谨", "tone": "精炼、直给要点，2~4 句，不废话"},
@@ -6819,6 +6821,7 @@ def _chat_style_lead(style):
     return ""
 
 
+# ---- 产品常见问题预设（不耗 LLM，快速准确；仅在未识别到赛事名时命中）----
 _CHAT_PRESET = [
     (("评分", "打分", "维度", "权重", "多少分"),
      "系统按各赛事官方评分维度自动打分。例：iCAN 创新赛道 = 创新性35 / 实用性25 / 原创性20 / 技术方案20；总分=巡展20%+答辩80%。"),
@@ -6830,7 +6833,6 @@ _CHAT_PRESET = [
      "深度版会自动生成路演 PPT 大纲（含结构页）与演讲稿，可一键下载；支持 31 套风格。"),
     (("简洁", "深度", "档位", "区别", "什么区别"),
      "简洁版=结论型（快速出稿）；深度版=论证型（竞品定量对比、风险分级矩阵、技术分步链路、财务测算、多专家评审、答辩预测）。"),
-    # 第三百三十六轮：扩充常见问题预设，降低落到 LLM 的概率、缩短响应时间（<6s）。
     (("导出", "下载", "打包", "文件", "word", "docx", "zip"),
      "结果页右上角「导出中心」可一键打包全部（含 10 份 Word + 项目数据图表 + 路演 PPT 共 12 个文件），也可单份下载；导出前需生成完成。"),
     (("字数", "篇幅", "多少字", "字多", "字少"),
@@ -6849,6 +6851,27 @@ _CHAT_PRESET = [
 
 
 _CHAT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+
+
+# ---- 聊天专用模型：deepseek-chat（比生成用的 flash 更聪明，支持工具调用）----
+import os as _os
+try:
+    from langchain_deepseek import ChatDeepSeek
+    _CHAT_MODEL = _os.getenv("DEEPSEEK_CHAT_MODEL") or "deepseek-chat"
+    chat_llm = ChatDeepSeek(
+        model=_CHAT_MODEL,
+        api_key=_os.getenv("DEEPSEEK_API_KEY"),
+        extra_body={"thinking": {"type": "disabled"}},
+        temperature=0.5,
+        max_tokens=1500,
+        request_timeout=120,
+        max_retries=2,
+        frequency_penalty=0.3,
+        presence_penalty=0.2,
+    )
+except Exception as _e:
+    print("[chat] chat_llm init failed: %s" % _e)
+    chat_llm = None
 
 
 def _chat_persist(uid, role, content, style):
@@ -6904,96 +6927,160 @@ def _chat_chunk_text(chunk):
     return str(content or "")
 
 
+def _detect_competition(text):
+    """从文本中识别赛事名（复用 competition_agents 的打分匹配）。返回 (name, score)。"""
+    try:
+        from competition_agents import get_competition_profiles, _match_score
+    except Exception:
+        return None, 0
+    best = None
+    best_score = 0
+    try:
+        for p in get_competition_profiles():
+            for n in ([p.get("name", "")] + (p.get("aliases") or [])):
+                s = _match_score(n, text)
+                if s > best_score:
+                    best_score = s
+                    best = p
+    except Exception:
+        return None, 0
+    return (best.get("name") if best else None), best_score
+
+
+def _build_knowledge(text):
+    """返回 (知识上下文文本, 赛事名)。无命中返回 ('', None)。"""
+    name, score = _detect_competition(text)
+    if not name or score < 40:
+        return "", None
+    try:
+        from competition_agents import get_competition_knowledge_structured, retrieve_knowledge
+        sk = get_competition_knowledge_structured(name)
+        rag = retrieve_knowledge(name, text, top_k=4, max_chars=3000)
+    except Exception as _e:
+        print("[chat] knowledge build failed: %s" % _e)
+        return "", name
+    parts = []
+    if sk.get("matched"):
+        for f in ("intro", "scoring", "sections", "requirements", "preference", "penalty"):
+            v = sk.get(f)
+            if v and v.strip():
+                parts.append("【%s】\n%s" % (f, v.strip()))
+    if rag and rag.strip():
+        parts.append("【相关片段】\n" + rag.strip())
+    return "\n\n".join(parts), name
+
+
+_SYSTEM_BASE = (
+    "你是「小创」——资深科创赛事教练与模拟评委，服务于科创竞赛项目团队。\n"
+    "你的目标：帮用户把项目讲清楚、写扎实、答得稳。\n"
+    "知识原则（最重要）：\n"
+    "1. 必须基于下方【赛事知识库】与官方规则作答，引用具体评分维度、章节要求、立项要点。\n"
+    "2. 只回答与科创赛事、项目申报、商业计划、答辩路演、文档写作相关的问题；无关问题礼貌婉拒。\n"
+    "3. 严禁编造数据、虚构政策或引用不存在的文件；资料未收录时明确说「暂无该赛事收录资料，以官方最新章程为准」。\n"
+    "4. 回答要可操作：给步骤、给结构、给要点清单，避免空话套话。\n"
+    "5. 口吻：{tone}。可结合对话历史理解追问。\n"
+)
+
+
+def _system_prompt(style, knowledge):
+    tone = _CHAT_STYLES.get(style, _CHAT_STYLES["concise"])["tone"]
+    p = _SYSTEM_BASE.format(tone=tone)
+    if knowledge:
+        p += "\n===== 赛事知识库（仅作回答依据）=====\n" + knowledge + "\n===== 知识库结束 =====\n"
+    return p
+
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """智能体聊天——赛事知识库问答优先走预设（不耗 LLM），未命中再走 LLM（计入 quota）。
-    第二百九十七轮：支持 style（concise/casual/academic 三档）调整回复口吻，智能体命名「小创」。"""
+    """智能体聊天——赛事识别后走知识增强 LLM；未识别赛事走产品 FAQ 预设；演示只读仅预设。
+    升级：deepseek-chat 模型 + 知识库/RAG 注入 + 资深教练人设系统提示。"""
     data = request.get_json(silent=True) or {}
     msg = (data.get('message') or '').strip()
     if not msg:
         return jsonify({"success": False, "error": "请输入问题"}), 400
-    if len(msg) > 500:
-        msg = msg[:500]
+    if len(msg) > 1000:
+        msg = msg[:1000]
     style = _chat_style_key(data.get('style'))
-    for kws, ans in _CHAT_PRESET:
-        if any(k in msg for k in kws):
-            reply = _chat_style_lead(style) + ans
-            _chat_persist(_current_uid(), 'user', msg, style)
-            _chat_persist(_current_uid(), 'bot', reply, style)
-            return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
-                            "source": "preset", "style": style})
-    # 第二百九十四轮：演示只读会话「只答不写、不计入生成额度」——仅走预设，不接 LLM 兜底，
-    # 避免评委演示时把外部模型额度烧掉。
-    if _admin_session_role() == 'readonly':
-        return jsonify({"success": False,
-                        "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
-                        "error_code": "demo_readonly"}), 403
     uid = _current_uid()
-    try:
-        from competition_agents import llm, get_quota_status
-        if not bool(data.get('stream', True)):
-            from langchain_core.messages import SystemMessage, HumanMessage
-            messages = [SystemMessage(content=(
-                "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
-                % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
-            ))]
-            messages.extend(_chat_context(uid))
-            messages.append(HumanMessage(content=msg))
-            resp = llm.invoke(messages, max_tokens=600)
-            reply = (resp.content or '').strip()
-            _chat_persist(uid, 'user', msg, style)
-            _chat_persist(uid, 'bot', reply, style)
-            return jsonify({"success": True, "reply": reply, "source": "llm", "style": style})
-        if not _chat_reserve_quota():
-            return jsonify({"success": False, "error_code": "quota_exhausted",
-                            "quota": get_quota_status()}), 429
+    # 演示只读：仅走产品预设，不接外部模型
+    if _admin_session_role() == 'readonly':
+        for kws, ans in _CHAT_PRESET:
+            if any(k in msg for k in kws):
+                return jsonify({"success": True, "reply": _chat_style_lead(style) + ans,
+                                "source": "preset", "style": style})
+        return jsonify({"success": False,
+                        "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位 / 导出等预设问题",
+                        "error_code": "demo_readonly"}), 403
+    # 先识别赛事：识别到则走知识增强路径（不再被产品预设抢答）
+    comp_name, comp_score = _detect_competition(msg)
+    if not comp_name:
+        for kws, ans in _CHAT_PRESET:
+            if any(k in msg for k in kws):
+                reply = _chat_style_lead(style) + ans
+                _chat_persist(uid, 'user', msg, style)
+                _chat_persist(uid, 'bot', reply, style)
+                return jsonify({"success": True, "reply": reply, "source": "preset", "style": style})
+    knowledge, kname = _build_knowledge(msg)
+    sys_prompt = _system_prompt(style, knowledge)
+    if not chat_llm:
+        return jsonify({"success": False, "error_code": "model_unavailable",
+                        "error": "聊天模型未就绪，请联系管理员"}), 503
+    if not bool(data.get('stream', True)):
         from langchain_core.messages import SystemMessage, HumanMessage
-        messages = [SystemMessage(content=(
-            "你是「%s」智能助手，用中文回答，只谈本产品功能与赛事规则，不编造数据。回答口吻：%s。"
-            "请结合对话历史回答追问；不确定时明确说明。"
-            % (_CHAT_NAME, _CHAT_STYLES[style]["tone"])
-        ))]
+        messages = [SystemMessage(content=sys_prompt)]
         messages.extend(_chat_context(uid))
         messages.append(HumanMessage(content=msg))
+        try:
+            resp = chat_llm.invoke(messages)
+            reply = (resp.content or '').strip()
+        except Exception as exc:
+            print("[chat] invoke failed: %s" % exc)
+            return jsonify({"success": False, "error_code": "upstream_error",
+                            "error": "模型调用失败，请稍后重试"}), 502
+        _chat_persist(uid, 'user', msg, style)
+        _chat_persist(uid, 'bot', reply, style)
+        return jsonify({"success": True, "reply": reply, "source": "llm", "style": style, "competition": kname})
+    if not _chat_reserve_quota():
+        from competition_agents import get_quota_status
+        return jsonify({"success": False, "error_code": "quota_exhausted",
+                        "quota": get_quota_status()}), 429
+    from langchain_core.messages import SystemMessage, HumanMessage
+    messages = [SystemMessage(content=sys_prompt)]
+    messages.extend(_chat_context(uid))
+    messages.append(HumanMessage(content=msg))
 
-        @stream_with_context
-        def generate():
-            parts = []
-            try:
-                for chunk in llm.stream(messages, max_tokens=600):
-                    token = _chat_chunk_text(chunk)
-                    if not token:
-                        continue
-                    parts.append(token)
-                    yield _chat_sse({"token": token})
-                reply = "".join(parts).strip()
-                if reply:
-                    _chat_persist(uid, 'user', msg, style)
-                    _chat_persist(uid, 'bot', reply, style)
-                yield "data: [DONE]\n\n"
-            except GeneratorExit:
-                raise
-            except Exception as exc:
-                print("[chat] streaming failed: %s" % exc)
-                yield _chat_sse({"error_code": "upstream_error"})
-                yield "data: [DONE]\n\n"
+    @stream_with_context
+    def generate():
+        parts = []
+        try:
+            for chunk in chat_llm.stream(messages):
+                token = _chat_chunk_text(chunk)
+                if not token:
+                    continue
+                parts.append(token)
+                yield _chat_sse({"token": token})
+            reply = "".join(parts).strip()
+            if reply:
+                _chat_persist(uid, 'user', msg, style)
+                _chat_persist(uid, 'bot', reply, style)
+            yield "data: [DONE]\n\n"
+        except GeneratorExit:
+            raise
+        except Exception as exc:
+            print("[chat] streaming failed: %s" % exc)
+            yield _chat_sse({"error_code": "upstream_error"})
+            yield "data: [DONE]\n\n"
 
-        response = Response(generate(), mimetype='text/event-stream')
-        response.headers['Cache-Control'] = 'no-cache, no-transform'
-        response.headers['X-Accel-Buffering'] = 'no'
-        response.headers['Connection'] = 'keep-alive'
-        return response
-    except Exception as e:
-        return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+    return generate()
 
 
 @app.route('/api/chat_history', methods=['GET'])
 def chat_history():
-    if _admin_session_role() == 'readonly':
-        return jsonify({"success": True, "messages": []})
+    uid = _current_uid()
     try:
         from chat_store import list_recent
-        return jsonify({"success": True, "messages": list_recent(_CHAT_DB_PATH, _current_uid(), 50)})
+        rows = list_recent(_CHAT_DB_PATH, uid, 200)
+        return jsonify({"success": True, "messages": rows})
     except Exception as exc:
         print("[chat] history read failed: %s" % exc)
         return jsonify({"success": True, "messages": []})
@@ -7010,4 +7097,3 @@ def chat_clear():
     except Exception as exc:
         print("[chat] history clear failed: %s" % exc)
         return jsonify({"success": False}), 503
-
