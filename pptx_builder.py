@@ -1661,10 +1661,40 @@ def _slide_closing(prs, s, meta, page_no):
 
 
 # ============ 主入口 ============
+def _wb_strip_md(text):
+    """Remove Markdown markers from slide text while keeping its readable content."""
+    if not isinstance(text, str) or not text:
+        return text
+    value = text.replace("**", "").replace("`", "")
+    value = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", value)
+    value = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1（\2）", value)
+    value = re.sub(r"~~([^~]+)~~", r"\1", value)
+    value = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", value)
+    value = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"\1", value)
+    value = re.sub(r"^[ \t]*#{1,6}[ \t]*", "", value)
+    value = re.sub(r"^[ \t]*[-*+][ \t]+", "", value)
+    return value.strip()
+
+
+def _wb_clean_slide(node):
+    if isinstance(node, str):
+        return _wb_strip_md(node)
+    if isinstance(node, list):
+        return [_wb_clean_slide(item) for item in node]
+    if isinstance(node, dict):
+        return {key: _wb_clean_slide(value) for key, value in node.items()}
+    return node
+
+
 def build_deck(deck, out_path, chart_paths=None):
     """chart_paths: {chart_id: png路径}
     deck 可选 theme（主题 key）与 variant（模板 key v1-v4），不传则用默认。"""
     chart_paths = chart_paths or {}
+    deck = dict(deck or {})
+    deck["slides"] = [_wb_clean_slide(slide) for slide in deck.get("slides", [])]
+    for key in ("project", "one_liner", "competition"):
+        if key in deck:
+            deck[key] = _wb_strip_md(deck[key])
     # 关键：把主题真正应用到本次渲染（不接这行，传了 theme 也不会生效）
     _apply_theme(deck.get("theme"))
     # 15 套精品各自定好了封面/正文/页眉/卡片，这里不再接受外部 variant 覆盖：

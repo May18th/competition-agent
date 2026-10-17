@@ -217,6 +217,16 @@ def _flow(text):
         if not line.strip():
             i += 1
             continue
+        if line.strip().startswith("```"):
+            code_lines = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                if lines[i].strip():
+                    code_lines.append(_clean(lines[i].strip()))
+                i += 1
+            flow.extend(Paragraph(code_line, _BODY) for code_line in code_lines)
+            i += 1
+            continue
         if line.startswith("### "):
             h = Paragraph(_clean(line[4:]), _H2)
             nxt = _next_nonempty(lines, i + 1)
