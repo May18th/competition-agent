@@ -7863,11 +7863,18 @@ def chat():
         if message_comp and pending.get("competition") and message_comp != pending.get("competition"):
             pending["track"] = ""
             pending["track_options"] = []
+        track_options = page_context.get("track_options") or pending.get("track_options") or []
         idea = page_context.get("idea") or _chat_extract_generation_idea(msg)
         if not idea and is_generation_followup:
             candidate_idea = _chat_extract_generation_idea(msg)
             if not candidate_idea:
                 candidate_idea = _chat_strip_competition_mentions(msg)
+                for option in track_options:
+                    for label in (option.get("name", ""), option.get("key", "")):
+                        if label:
+                            candidate_idea = _re.sub(_re.escape(label), "", candidate_idea, flags=_re.IGNORECASE)
+                candidate_idea = _re.sub(r"深度版|简洁版|申报书|申报材料|项目主题|项目创意|主题", "", candidate_idea)
+                candidate_idea = candidate_idea.strip(" \t\r\n，,。；;：:")
             is_question = bool(_re.search(r"[?？]|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
             is_filler = bool(_re.fullmatch(r"(好|好的|嗯|是的|继续|可以|没问题)[呀啊！!。.]?", msg.strip()))
             if len(candidate_idea) >= 4 and not is_question and not is_filler:
@@ -7875,7 +7882,6 @@ def chat():
         idea = idea or pending.get("idea", "")
         mode = ("deep" if "深度版" in msg else
                 "fast" if "简洁版" in msg else page_context.get("mode") or pending.get("mode") or "fast")
-        track_options = page_context.get("track_options") or pending.get("track_options") or []
         selected_track = page_context.get("track") or pending.get("track", "")
         if not selected_track and track_options:
             folded = msg.casefold()

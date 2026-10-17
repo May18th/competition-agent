@@ -310,6 +310,26 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertTrue(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"])
         start.assert_not_called()
 
+    def test_track_only_followup_does_not_count_as_project_requirements(self):
+        chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation", json.dumps({
+            "competition": "iCAN大学生创新创业大赛", "idea": "", "mode": "deep", "track": "",
+            "track_options": [
+                {"key": "innovation", "name": "创新赛道"},
+                {"key": "entrepreneurship", "name": "创业赛道"},
+            ],
+        }, ensure_ascii=False))
+        with patch.object(app_module, "_current_uid", return_value="alice"), \
+             patch.object(app_module, "_start_generation") as start:
+            response = self.client.post("/api/chat", json={
+                "message": "创新赛道",
+                "context": {"competition": "iCAN大学生创新创业大赛", "competition_selected": True,
+                            "idea": "", "mode": "deep", "track": "", "track_options": []},
+            }, buffered=True)
+        body = response.get_data(as_text=True)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertIn("项目要解决什么问题", body)
+        start.assert_not_called()
+
     def test_generic_innovation_phrase_does_not_identify_ican(self):
         self.assertEqual(app_module._chat_explicit_competition("我做的是面向社区的创新创业服务项目"), "")
         self.assertEqual(app_module._chat_explicit_competition("我准备参加挑战杯"), "挑战杯全国大学生课外学术科技作品竞赛")
