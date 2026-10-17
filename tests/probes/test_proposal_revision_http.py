@@ -15,11 +15,15 @@ class ProposalRevisionHttpTests(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory(prefix="competition-http-e2e-")
         cls.old_cwd = os.getcwd()
         cls.old_env = {key: os.environ.get(key) for key in (
-            "COMPETITION_DB_PATH", "COMPETITION_UID_SECRET_PATH", "COMPETITION_SKIP_KB_SEED")
+            "COMPETITION_DB_PATH", "COMPETITION_UID_SECRET_PATH", "COMPETITION_CHAT_DB_PATH",
+            "COMPETITION_QUOTA_PATH", "COMPETITION_LLM_USAGE_PATH", "COMPETITION_SKIP_KB_SEED")
         }
         cls.db_path = os.path.join(cls.temp_dir.name, "isolated.sqlite")
         os.environ["COMPETITION_DB_PATH"] = cls.db_path
         os.environ["COMPETITION_UID_SECRET_PATH"] = os.path.join(cls.temp_dir.name, "uid.secret")
+        os.environ["COMPETITION_CHAT_DB_PATH"] = os.path.join(cls.temp_dir.name, "chat_history.sqlite")
+        os.environ["COMPETITION_QUOTA_PATH"] = os.path.join(cls.temp_dir.name, "quota.json")
+        os.environ["COMPETITION_LLM_USAGE_PATH"] = os.path.join(cls.temp_dir.name, "llm_usage.sqlite")
         os.environ["COMPETITION_SKIP_KB_SEED"] = "1"
         os.chdir(cls.temp_dir.name)
         try:
@@ -30,6 +34,15 @@ class ProposalRevisionHttpTests(unittest.TestCase):
             from werkzeug.serving import make_server
 
             cls.app = app_module
+            import competition_agents
+            cls.old_app_db_path = cls.app.DB_PATH
+            cls.old_chat_db_path = cls.app._CHAT_DB_PATH
+            cls.old_quota_path = competition_agents._QUOTA_FILE
+            cls.old_usage_path = competition_agents._LLM_USAGE_DB_PATH
+            cls.app.DB_PATH = cls.db_path
+            cls.app._CHAT_DB_PATH = os.environ["COMPETITION_CHAT_DB_PATH"]
+            competition_agents._QUOTA_FILE = os.environ["COMPETITION_QUOTA_PATH"]
+            competition_agents._LLM_USAGE_DB_PATH = os.environ["COMPETITION_LLM_USAGE_PATH"]
             cls.app.app.config.update(TESTING=True)
             cls.app.init_db()
             cls.server = make_server("127.0.0.1", 0, cls.app.app, threaded=True)
@@ -50,11 +63,23 @@ class ProposalRevisionHttpTests(unittest.TestCase):
             Image.new("RGB", (640, 360), (42, 150, 132)).save(cls.chart_path, format="PNG")
         except Exception:
             os.chdir(cls.old_cwd)
+            if hasattr(cls, "old_app_db_path"):
+                cls.app.DB_PATH = cls.old_app_db_path
+                cls.app._CHAT_DB_PATH = cls.old_chat_db_path
+                import competition_agents
+                competition_agents._QUOTA_FILE = cls.old_quota_path
+                competition_agents._LLM_USAGE_DB_PATH = cls.old_usage_path
             for key, old in cls.old_env.items():
                 if old is None:
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = old
+            if hasattr(cls, "old_app_db_path"):
+                cls.app.DB_PATH = cls.old_app_db_path
+                cls.app._CHAT_DB_PATH = cls.old_chat_db_path
+                import competition_agents
+                competition_agents._QUOTA_FILE = cls.old_quota_path
+                competition_agents._LLM_USAGE_DB_PATH = cls.old_usage_path
             cls.temp_dir.cleanup()
             raise
 
@@ -99,9 +124,10 @@ class ProposalRevisionHttpTests(unittest.TestCase):
             "data": {"proposal": self.long_text},
         })
         revised = "## 项目概述\n" + ("修改后面向评委清楚说明问题、证据、方案和可验证成效。\n" * 18)
+        end_marker = self.app._REVISION_END_MARKER
         class FakeLLM:
             def invoke(self, *_args, **_kwargs):
-                return SimpleNamespace(content=revised)
+                return SimpleNamespace(content=revised + end_marker)
 
         with patch.object(competition_agents, "llm", FakeLLM()):
             status, _headers, body = self._request("/api/revise_chapter", {
@@ -144,6 +170,96 @@ class ProposalRevisionHttpTests(unittest.TestCase):
         status, _headers, _body = self._request("/api/proposal_revision/%d" % foreign_id,
                                                  {"action": "apply", "proposal": revised})
         self.assertEqual(status, 404)
+
+    def test_long_revision_preserves_unselected_sections_and_rejects_truncation(self):
+        import competition_agents
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        tail = "## 数据附录\n" + ("原始测算数据和指标口径必须保留。\n" * 500)
+        proposal = "## 项目概述\n旧方案基于调研完成原型验证。\n\n" + tail
+        history_id = self.app.save_history_item({
+            "competition_name": "测试赛事", "mode": "fast", "user_id": self.uid,
+            "data": {"proposal": proposal},
+        })
+        complete = SimpleNamespace(content=(
+            "## 项目概述\n新版方案补充可复核的原型验证结果。" + self.app._REVISION_END_MARKER))
+        with patch.object(competition_agents, "llm", SimpleNamespace(invoke=lambda *_a, **_k: complete)):
+            status, _headers, body = self._request("/api/revise_chapter", {
+                "history_id": history_id, "instruction": "突出可复核证据", "chapter": "项目概述",
+            })
+        self.assertEqual(status, 200, body.decode("utf-8", errors="replace"))
+        self.assertTrue(json.loads(body)["proposal"].endswith(tail))
+
+        incomplete = SimpleNamespace(content="## 项目概述\n截断的结果")
+        with patch.object(competition_agents, "llm", SimpleNamespace(invoke=lambda *_a, **_k: incomplete)):
+            status, _headers, body = self._request("/api/revise_chapter", {
+                "history_id": history_id, "instruction": "优化项目概述", "chapter": "项目概述",
+            })
+        self.assertEqual(status, 502)
+        self.assertEqual(json.loads(body)["error_code"], "incomplete_revision")
+        self.assertEqual(self._history_proposal(history_id), proposal)
+
+    def test_revision_can_target_third_level_heading(self):
+        import competition_agents
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        untouched = "### 数据分析\n原有分析步骤和口径保持不变。\n"
+        proposal = "## 实施方案\n### 数据采集\n原有采集方案。\n" + untouched
+        history_id = self.app.save_history_item({
+            "competition_name": "测试赛事", "mode": "fast", "user_id": self.uid,
+            "data": {"proposal": proposal},
+        })
+        result = SimpleNamespace(content=(
+            "### 数据采集\n更新后的采集方案。" + self.app._REVISION_END_MARKER))
+        with patch.object(competition_agents, "llm", SimpleNamespace(invoke=lambda *_a, **_k: result)):
+            status, _headers, body = self._request("/api/revise_chapter", {
+                "history_id": history_id, "instruction": "完善采集方案", "chapter": "数据采集",
+            })
+        self.assertEqual(status, 200, body.decode("utf-8", errors="replace"))
+        revised = json.loads(body)["proposal"]
+        self.assertIn("更新后的采集方案", revised)
+        self.assertTrue(revised.endswith(untouched))
+
+    def test_apply_rejects_missing_sections_and_double_blind_identity(self):
+        from unittest.mock import patch
+
+        history_id = self.app.save_history_item({
+            "competition_name": "测试赛事", "mode": "fast", "user_id": self.uid,
+            "data": {"proposal": "## 项目概述\n原始方案。\n## 市场分析\n原始分析。"},
+        })
+        status, _headers, body = self._request("/api/proposal_revision/%d" % history_id, {
+            "action": "apply", "proposal": "## 项目概述\n只剩一个章节。",
+        })
+        self.assertEqual(status, 422)
+        self.assertIn("缺少原有章节", json.loads(body)["error"])
+
+        with patch.object(self.app, "_is_double_blind", return_value=True):
+            status, _headers, body = self._request("/api/proposal_revision/%d" % history_id, {
+                "action": "apply",
+                "proposal": "## 项目概述\n方案仍包含指导老师：张三。\n## 市场分析\n依据公开资料。",
+            })
+        self.assertEqual(status, 422)
+        self.assertIn("安全校验", json.loads(body)["error"])
+        self.assertEqual(self._history_proposal(history_id), "## 项目概述\n原始方案。\n## 市场分析\n原始分析。")
+
+    def test_admin_llm_usage_endpoint_requires_admin_and_aggregates(self):
+        import competition_agents
+        from llm_usage_store import record_usage
+        from unittest.mock import patch
+
+        record_usage(competition_agents._LLM_USAGE_DB_PATH, user_id=self.uid,
+                     stage="/api/revise_chapter", section="市场分析", mode="deep",
+                     model="test-model", prompt_tokens=20, completion_tokens=8)
+        status, _headers, _body = self._request("/api/admin/llm-usage")
+        self.assertEqual(status, 401)
+        with patch.object(self.app, "_require_admin", return_value=None):
+            status, _headers, body = self._request("/api/admin/llm-usage?days=1")
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual(result["totals"]["total_tokens"], 28)
+        self.assertEqual(result["sections"][0]["section"], "市场分析")
 
     def test_word_pdf_http_exports_cleanup_markdown_embed_chart_and_warn_soft_quality(self):
         from docx import Document
