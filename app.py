@@ -7162,7 +7162,11 @@ def chat():
                      "也可在那里一键导出 Word / PDF / PPT。\n任务ID：`%s`") % (comp_name, idea or msg, task_id)
             _chat_persist(uid, 'user', msg, style)
             _chat_persist(uid, 'bot', reply, style)
-            return _sse_text_reply(reply)
+            def _gen_stream():
+                yield _chat_sse({"event": "generation", "task_id": task_id, "comp_name": comp_name, "idea": idea or msg})
+                yield _chat_sse({"token": reply})
+                yield "data: [DONE]\n\n"
+            return Response(_gen_stream(), mimetype="text/event-stream")
         return _sse_text_reply("好的，我可以帮你生成申报书。请先告诉我**参加哪个赛事**（如「挑战杯」「互联网+」），以及你的**项目创意**——一句话说清做什么、解决什么问题。")
 
     # ---- 产品 FAQ 预设（未识别赛事时）----
