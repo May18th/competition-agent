@@ -7048,16 +7048,16 @@ def _chat_proofread(text):
                 issues = []
     except Exception as exc:
         print("[chat] proofread failed: %s" % exc)
-        return None
+        return (None, [])
     if not isinstance(issues, list) or not issues:
-        return "✅ 没发现明显错别字、语法或标点问题，文本较通顺。"
+        return ("✅ 没发现明显错别字、语法或标点问题，文本较通顺。", [])
     lines = ["我帮你校对出 **%d 处**可优化点：\n" % len(issues)]
     for i, it in enumerate(issues, 1):
         if not isinstance(it, dict):
             continue
         lines.append("%d. **%s** — 原文「%s」：%s" % (
             i, it.get("type", ""), it.get("original", ""), it.get("suggestion", "")))
-    return "\n".join(lines)
+    return ("\n".join(lines), issues)
 
 
 def _chat_page_context(data):
@@ -7142,6 +7142,43 @@ def _sse_text_reply(text):
         yield _chat_sse({"token": text})
         yield "data: [DONE]\n\n"
     return _chat_sse_response(gen())
+
+
+def _sse_text_with_event(text, event, event_data):
+    """先发一个结构化 event，再发整体文本 token，最后 [DONE]。用于校对卡等交互增强。"""
+    def gen():
+        payload = {"event": event}
+        if isinstance(event_data, dict):
+            payload.update(event_data)
+        yield _chat_sse(payload)
+        yield _chat_sse({"token": text})
+        yield "data: [DONE]\n\n"
+    return _chat_sse_response(gen())
+
+
+def _chat_defense(uid, hid, round_no, answer, style):
+    """模拟答辩：round_no<=0 出 3 个高频问题；>0 基于历史点评用户回答并追问。
+    复用核心申报书正文（_chat_load_owned_record + _chat_proposal_text），不另造。"""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    _rec = _chat_load_owned_record(uid, hid)
+    _proposal = _chat_proposal_text(_rec)
+    if not str(_proposal).strip():
+        return None
+    if round_no <= 0:
+        sys = ("你是资深科创赛事模拟评委。基于下面的申报书正文，预测评委最可能追问的 3 个高频问题；"
+               "对每个问题给出：①评委想考察什么；②回答要点（2-3 条）；③常见失分点。"
+               "用中文清晰分点列出，不要编造正文未出现的内容。"
+               "请用「Q1.」「Q2.」「Q3.」开头标注三个问题，方便用户逐一回答。")
+        msgs = [SystemMessage(content=sys), HumanMessage(content="【申报书正文】\n" + str(_proposal)[:6000])]
+        return _chat_stream_llm(msgs, uid, style, "模拟答辩", success_profile_field="done_defense")
+    else:
+        ctx = _chat_context(uid)
+        sys = ("你是资深科创赛事模拟评委。下面是申报书正文、你此前提的问题、用户的回答。"
+               "请：1) 点评用户刚才的回答（先说优点，再指出不足与改进建议）；"
+               "2) 就同一话题追问一个更深入的问题（开头用「追问：」）。不要编造正文未出现的内容。")
+        user = "【申报书正文】\n" + str(_proposal)[:6000] + "\n\n【第 %d 轮用户回答】%s" % (round_no, answer)
+        msgs = [SystemMessage(content=sys)] + ctx + [HumanMessage(content=user)]
+        return _chat_stream_llm(msgs, uid, style, "答辩第%d轮" % round_no, success_profile_field=None)
 
 
 def _parse_memory(msg):
@@ -7256,29 +7293,26 @@ def chat():
             from competition_agents import get_quota_status
             return jsonify({"success": False, "error_code": "quota_exhausted",
                             "quota": get_quota_status()}), 429
-        result = _chat_proofread(text)
-        if result is None:
+        md, issues = _chat_proofread(text)
+        if md is None:
             return jsonify({"success": False, "error_code": "upstream_error", "error": "校对服务暂不可用"}), 502
         _chat_persist(uid, 'user', msg, style)
-        _chat_persist(uid, 'bot', result, style)
+        _chat_persist(uid, 'bot', md, style)
         _chat_profile_save(uid, 'done_proofread', '1')
-        return _sse_text_reply(result)
+        return _sse_text_with_event(md, "proofread", {"issues": issues})
 
-    # ---- 答辩模拟意图（复用核心申报书正文，不另造）----
+    # ---- 答辩模拟意图（复用核心申报书正文，不另造，支持多轮）----
     defense_kw = ("答辩模拟", "模拟答辩", "评委提问", "练习答辩", "模拟评委", "答辩练习", "评委问")
-    if any(w in msg for w in defense_kw):
-        from langchain_core.messages import SystemMessage, HumanMessage
+    if any(w in msg for w in defense_kw) or data.get('defense'):
         _hid = data.get('history_id') or _chat_get_last_gen(uid)
         if not _hid:
             return _sse_text_reply("想练答辩？先生成一份申报书，或把要模拟的作品 history_id 告诉我。生成完成后小创会自动记住你的作品，直接说「模拟答辩」即可。")
-        _rec = _chat_load_owned_record(uid, _hid)
-        _proposal = _chat_proposal_text(_rec)
-        if not str(_proposal).strip():
+        _round = int(data.get('defense_round') or 0)
+        _ans = (data.get('defense_answer') or '').strip()
+        _def_resp = _chat_defense(uid, _hid, _round, _ans, style)
+        if _def_resp is None:
             return _sse_text_reply("没找到这份属于当前账号的申报书正文。请从自己的历史记录打开作品后再试。")
-        _dmsg = [SystemMessage(content=("你是资深科创赛事模拟评委。基于下面的申报书正文，预测评委最可能追问的 3 个高频问题；"
-                  "对每个问题给出：①评委想考察什么；②回答要点（2-3 条）；③常见失分点。用中文清晰分点列出，"
-                  "不要编造正文未出现的内容。")), HumanMessage(content="【申报书正文】\n" + str(_proposal)[:6000])]
-        return _chat_stream_llm(_dmsg, uid, style, msg, success_profile_field="done_defense")
+        return _def_resp
 
     # ---- Phase 2：生成意图 ----
     gen_verb = any(w in msg for w in ("生成", "写一份", "写一版", "起草", "出一份", "帮我写", "帮我做", "帮我生成", "来一份", "做一份"))

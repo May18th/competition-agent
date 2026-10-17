@@ -159,12 +159,23 @@
         });
         html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
                    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        var _tables = [];
+        html = html.replace(/(?:^|\n)((?:(?:\|[^|\n]*)\|[^|\n]*[\r\n]+){2,})(?=\n|$)/g, function (m) {
+            var key = '@@WBTABLE' + _tables.length + '@@';
+            _tables.push(renderTable(m.replace(/^\n/, '').trim()));
+            return '\n' + key + '\n';
+        });
         var lines = html.split(/\r?\n/), out = [], list = '';
         function closeList() {
             if (list) { out.push('</' + list + '>'); list = ''; }
         }
         for (var i = 0; i < lines.length; i++) {
-            var line = lines[i], ul = /^\s*[-*]\s+(.+)$/.exec(line), ol = /^\s*\d+\.\s+(.+)$/.exec(line);
+            var line = lines[i];
+            var _tb = /^\s*@@WBTABLE(\d+)@@\s*$/.exec(line);
+            if (_tb) { closeList(); out.push(_tables[+_tb[1]]); continue; }
+            var _h = /^(#{1,3})\s+(.+)$/.exec(line);
+            if (_h) { closeList(); var _lv = _h[1].length; out.push('<h' + (_lv + 2) + ' style="margin:6px 0;font-size:' + (18 - _lv * 2) + 'px;font-weight:600;">' + _h[2] + '</h' + (_lv + 2) + '>'); continue; }
+            var ul = /^\s*[-*]\s+(.+)$/.exec(line), ol = /^\s*\d+\.\s+(.+)$/.exec(line);
             if (ul || ol) {
                 var kind = ul ? 'ul' : 'ol';
                 if (list !== kind) { closeList(); out.push('<' + kind + '>'); list = kind; }
@@ -177,7 +188,31 @@
         closeList();
         html = out.join('');
         for (var c = 0; c < code.length; c++) html = html.replace('@@WBCODE' + c + '@@', code[c]);
+        for (var _t = 0; _t < _tables.length; _t++) html = html.replace('@@WBTABLE' + _t + '@@', _tables[_t]);
         return html;
+    }
+
+    function renderTable(md) {
+        if (!md) return '';
+        var rows = md.split(/\r?\n/).filter(function (r) { return r.trim(); });
+        if (rows.length < 2) return '';
+        var splitRow = function (r) {
+            return r.split('|').slice(1, -1).map(function (s) { return s.trim(); });
+        };
+        var hdr = splitRow(rows[0]);
+        if (!hdr.length) return '';
+        var body = rows.slice(2).map(splitRow);
+        var h = '<div style="overflow-x:auto;margin:6px 0;">'
+              + '<table style="border-collapse:collapse;font-size:12px;width:100%;">';
+        h += '<thead><tr>' + hdr.map(function (c) {
+            return '<th style="border:1px solid var(--line,rgba(148,163,184,.4));padding:4px 8px;background:var(--surface-2);text-align:left;white-space:nowrap;">' + c + '</th>';
+        }).join('') + '</tr></thead><tbody>';
+        h += body.map(function (r) {
+            return '<tr>' + r.map(function (c) {
+                return '<td style="border:1px solid var(--line,rgba(148,163,184,.4));padding:4px 8px;vertical-align:top;">' + c + '</td>';
+            }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+        return h;
     }
 
     function isMobile() { return window.innerWidth <= 768; }
@@ -470,6 +505,9 @@
           + '<button id="wbChatMemory" title="查看/编辑小创记忆" style="flex:0 0 auto; min-width:48px; min-height:40px;'
           + ' border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost);'
           + ' color:var(--text-dim); cursor:pointer; font-size:12px;">记忆</button>'
+          + '<button id="wbChatAbility" title="小创能帮你做什么" style="flex:0 0 auto; min-width:48px; min-height:40px;'
+          + ' border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost);'
+          + ' color:var(--text-dim); cursor:pointer; font-size:12px;">能力</button>'
           + '<button id="wbChatClose" aria-label="收起" style="margin-left:auto; width:44px; height:44px;'
           + ' border-radius:11px; border:1px solid var(--line); background:var(--btn-ghost);'
           + ' color:var(--text-dim,#6b7280); cursor:pointer; line-height:1;">×</button></div>'
@@ -501,6 +539,11 @@
         if (memBtn) memBtn.addEventListener('click', function (e) {
             try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
             openMemoryPanel();
+        });
+        var abBtn = document.getElementById('wbChatAbility');
+        if (abBtn) abBtn.addEventListener('click', function (e) {
+            try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
+            openAbilityPanel();
         });
         var sb = document.getElementById('wbChatStyleBtn');
         styleBtn = sb;
@@ -881,13 +924,104 @@
         try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
     }
 
+    /* ---------- 能力菜单：列出小创能做什么，点击插入对应指令 ---------- */
+    function openAbilityPanel() {
+        try { setOpen(true); } catch (e) {}
+        var ov = document.getElementById('wbChatAbOverlay');
+        if (ov) { try { ov.parentNode.removeChild(ov); } catch (e) {} }
+        ov = document.createElement('div');
+        ov.id = 'wbChatAbOverlay';
+        ov.style.cssText = 'position:fixed; z-index:2900; left:0; top:0; right:0; bottom:0; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center;';
+        var items = [
+            ['🚀 生成申报书', '帮我生成一份申报书（在首页填好创意后说这句话）'],
+            ['🔍 智能校对', '把你的文字或最近生成的申报书交给我校对'],
+            ['🎤 模拟答辩', '基于你刚生成的申报书，模拟评委提问并点评'],
+            ['🧠 记忆', '查看/编辑小创记住的你的背景'],
+            ['📤 导出', '生成完成后在结果页一键导出 Word/PDF/PPT'],
+            ['💡 评分维度', '问我某赛事的评分维度、奖项比例、章节结构']
+        ];
+        var card = document.createElement('div');
+        card.style.cssText = 'max-width:340px;width:88%;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.3);';
+        var html = '<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;">小创能帮你做什么</div>'
+                 + '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">点击任意一项，自动填入提问框。</div>';
+        items.forEach(function (it) {
+            html += '<button class="wbchat-ab-item" data-q="' + esc(it[1]) + '" style="display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);cursor:pointer;font-size:13px;">'
+                  + '<div style="font-weight:600;">' + it[0] + '</div><div style="font-size:11.5px;color:var(--text-dim);margin-top:2px;">' + esc(it[1]) + '</div></button>';
+        });
+        html += '<button id="wbChatAbClose" style="margin-top:10px;width:100%;min-height:38px;border-radius:10px;border:1px solid var(--line);background:var(--btn-ghost);color:var(--text-dim);cursor:pointer;font-size:13px;">关闭</button>';
+        card.innerHTML = html;
+        ov.appendChild(card);
+        document.body.appendChild(ov);
+        ov.addEventListener('click', function (e) { if (e.target === ov) try { ov.parentNode.removeChild(ov); } catch (e2) {} });
+        card.querySelectorAll('.wbchat-ab-item').forEach(function (b) {
+            b.addEventListener('click', function () {
+                try { if (inputEl) { inputEl.value = b.getAttribute('data-q'); inputEl.focus(); } } catch (e) {}
+                try { ov.parentNode.removeChild(ov); } catch (e2) {}
+            });
+        });
+        var cl = document.getElementById('wbChatAbClose');
+        if (cl) cl.addEventListener('click', function () { try { ov.parentNode.removeChild(ov); } catch (e) {} });
+    }
+
+    var defenseState = null;
     /* ---------- 答辩模拟：把 done 卡片里的 history_id 带进聊天请求 ---------- */
     function askDefense(hid) {
         if (!inputEl) return;
-        defenseHistoryId = hid || '';
+        defenseState = { hid: hid || '', round: 0 };
         inputEl.value = '模拟答辩';
-        ask();
-        defenseHistoryId = '';
+        ask(true, { defense: true, history_id: hid });
+    }
+    function startDefenseAnswer(roundNo) {
+        if (!inputEl) return;
+        if (!defenseState) defenseState = { hid: '', round: 0 };
+        defenseState.round = roundNo;
+        inputEl.placeholder = '请输入你对第 ' + roundNo + ' 个问题的回答，小创会点评并追问…';
+        try { inputEl.focus(); } catch (e) {}
+    }
+    function attachDefenseAnswers(node) {
+        if (!node) return;
+        var box = node.querySelector('.wbchat-bot-content');
+        if (!box) return;
+        var txt = box.textContent || '';
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;';
+        if (txt.indexOf('追问：') >= 0) {
+            var b = document.createElement('button');
+            b.textContent = '✍️ 继续回答追问';
+            b.style.cssText = 'min-height:32px;padding:4px 12px;border-radius:8px;border:1px solid var(--c-a,#0e7490);background:transparent;color:var(--c-a,#0e7490);cursor:pointer;font-size:12px;';
+            b.addEventListener('click', function () { try { startDefenseAnswer((defenseState ? defenseState.round : 0) + 1); } catch (e) {} });
+            wrap.appendChild(b);
+        } else if (txt.indexOf('Q1.') >= 0) {
+            ['Q1', 'Q2', 'Q3'].forEach(function (qn, idx) {
+                if (txt.indexOf(qn + '.') >= 0) {
+                    var b = document.createElement('button');
+                    b.textContent = '✍️ 回答 ' + qn;
+                    b.style.cssText = 'min-height:32px;padding:4px 12px;border-radius:8px;border:1px solid var(--c-a,#0e7490);background:transparent;color:var(--c-a,#0e7490);cursor:pointer;font-size:12px;';
+                    b.addEventListener('click', function () { try { startDefenseAnswer(idx + 1); } catch (e) {} });
+                    wrap.appendChild(b);
+                }
+            });
+        }
+        if (wrap.children.length) box.appendChild(wrap);
+    }
+    function renderProofreadCard(node, issues, text) {
+        var box = node.querySelector('.wbchat-bot-content') || node;
+        if (!issues || !issues.length) {
+            box.innerHTML = '<div style="padding:8px 10px;border-radius:8px;background:rgba(16,185,129,.12);color:#059669;font-size:13px;">✅ 文本校对通过，未发现明显问题。</div>';
+            return;
+        }
+        var h = '<div class="wbchat-proof-card">';
+        h += '<div style="margin-bottom:6px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,.08);color:#dc2626;font-weight:600;font-size:12.5px;">🔍 校对出 ' + issues.length + ' 处可优化点</div>';
+        for (var i = 0; i < issues.length; i++) {
+            var it = issues[i];
+            h += '<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #f59e0b;border-radius:4px;background:var(--surface-2);">'
+               + '<div style="font-size:12px;color:var(--text-dim);">[' + esc(it.type || '') + '] 原文：<span style="background:#fde68a;padding:0 2px;">' + esc(it.original || '') + '</span></div>'
+               + '<div style="font-size:12.5px;margin-top:2px;">建议：' + esc(it.suggestion || '') + '</div>'
+               + '</div>';
+        }
+        if (text) h += '<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">' + renderMarkdown(text) + '</div>';
+        h += '</div>';
+        box.innerHTML = h;
     }
 
     /* ---------- 记忆管理面板 ---------- */
@@ -953,17 +1087,24 @@
         });
     }
 
-    function ask(force) {
+    function ask(force, extra) {
         if (!inputEl) return;
         var q = String(inputEl.value || '').trim();
         if (!q) return;
+        if (q.charAt(0) === '/') {
+            var _p = q.slice(1).split(/\s+/), _cmd = _p[0], _rest = _p.slice(1).join(' ');
+            if (_cmd === '生成') { q = '帮我生成' + (_rest ? '一份' + _rest : '一份申报书'); }
+            else if (_cmd === '校对') { q = '智能校对' + (_rest ? '：' + _rest : ''); }
+            else if (_cmd === '答辩' || _cmd === '模拟答辩') { q = '模拟答辩'; }
+            else if (_cmd === '记忆') { try { openMemoryPanel(); } catch (e) {} inputEl.value = ''; return; }
+        }
         if (busy && force !== true) { pushMsg('bot', '上一条我还在想，稍等一下就好。'); return; }
         inputEl.value = '';
         pushMsg('me', q);
         busy = true;
         pushThinking();
 
-        var replied = false, answerNode = null, answerText = '', timer = null, ctl = null;
+        var replied = false, answerNode = null, answerText = '', timer = null, ctl = null, proofNode = null, proofIssues = [];
         function finish(text, opts) {
             if (replied) return;
             if (timer) { clearTimeout(timer); timer = null; }
@@ -986,7 +1127,10 @@
             if (!payload) return false;
             if (payload === '[DONE]') {
                 if (!answerNode && !replied) fallback();
-                else if (answerNode && !replied) { replied = true; busy = false; removeThinking(); }
+                else if (answerNode && !replied) {
+                    replied = true; busy = false; removeThinking();
+                    try { attachDefenseAnswers(answerNode); } catch (e) {}
+                }
                 return true;
             }
             var item = null;
@@ -998,20 +1142,42 @@
                 startGenerationCard(item.task_id, item.comp_name, item.idea);
                 return false;
             }
+            if (item && item.event === 'proofread') {
+                if (timer) { clearTimeout(timer); timer = null; }
+                removeThinking();
+                proofNode = pushMsg('bot', '');
+                proofIssues = item.issues || [];
+                renderProofreadCard(proofNode, proofIssues, '');
+                replied = true;
+                return false;
+            }
             if (item.error_code) { fallback(); return true; }
             if (item.token) {
                 if (timer) { clearTimeout(timer); timer = null; }
-                if (!answerNode) { removeThinking(); answerNode = pushMsg('bot', ''); }
-                answerText += item.token;
-                updateBotMsg(answerNode, answerText);
+                if (proofNode) {
+                    answerText += item.token;
+                    renderProofreadCard(proofNode, proofIssues, answerText);
+                } else if (!answerNode) {
+                    removeThinking(); answerNode = pushMsg('bot', '');
+                    answerText += item.token; updateBotMsg(answerNode, answerText);
+                } else {
+                    answerText += item.token; updateBotMsg(answerNode, answerText);
+                }
             }
             return false;
         }
         try {
+            var _body = { message: q, style: style, stream: true,
+                    history_id: defenseHistoryId, context: currentPageContext() };
+            if (extra) { for (var _k in extra) _body[_k] = extra[_k]; }
+            if (defenseState && defenseState.round > 0) {
+                _body.defense_round = defenseState.round;
+                _body.defense_answer = q;
+                _body.history_id = defenseState.hid || _body.history_id;
+            }
             var opt = {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style, stream: true,
-                    history_id: defenseHistoryId, context: currentPageContext() })
+                body: JSON.stringify(_body)
             };
             if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {
