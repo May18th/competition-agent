@@ -41,6 +41,7 @@
     var genPollers = {};
     var styleMenu = null, styleBadge = null, styleBtn = null;
     var busy = false;
+    var defenseHistoryId = '';
     var historyLoaded = false, historyLoading = false;
 
     /* 336：等待阈值。后端 /api/chat 命中预设约 3ms，落到 LLM 兜底时可能数秒，
@@ -450,6 +451,9 @@
           + '<button id="wbChatClear" title="清空对话历史" style="flex:0 0 auto; min-width:48px; min-height:40px;'
           + ' border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost);'
           + ' color:var(--text-dim); cursor:pointer; font-size:12px;">清空</button>'
+          + '<button id="wbChatMemory" title="查看/编辑小创记忆" style="flex:0 0 auto; min-width:48px; min-height:40px;'
+          + ' border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost);'
+          + ' color:var(--text-dim); cursor:pointer; font-size:12px;">记忆</button>'
           + '<button id="wbChatClose" aria-label="收起" style="margin-left:auto; width:44px; height:44px;'
           + ' border-radius:11px; border:1px solid var(--line); background:var(--btn-ghost);'
           + ' color:var(--text-dim,#6b7280); cursor:pointer; line-height:1;">×</button></div>'
@@ -476,6 +480,11 @@
         if (clearBtn) clearBtn.addEventListener('click', function (e) {
             try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
             clearHistory(clearBtn);
+        });
+        var memBtn = document.getElementById('wbChatMemory');
+        if (memBtn) memBtn.addEventListener('click', function (e) {
+            try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
+            openMemoryPanel();
         });
         var sb = document.getElementById('wbChatStyleBtn');
         styleBtn = sb;
@@ -694,6 +703,7 @@
                 + '<button class="wbchat-gen-exp" data-ext="word" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出Word</button>'
                 + '<button class="wbchat-gen-exp" data-ext="pdf" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PDF</button>'
                 + '<button class="wbchat-gen-exp" data-ext="ppt" style="display:inline-block; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PPT</button>'
+                + '<button class="wbchat-gen-defense" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--c-a,#0e7490); background:transparent; color:var(--c-a,#0e7490); cursor:pointer;">🎤 模拟答辩</button>'
                 + '</div>';
             var _pc = (j.partial_content || '').trim();
             if (_pc) {
@@ -721,6 +731,9 @@
                     });
                 })(exps[ei]);
             }
+            var dfb = resultEl.querySelector('.wbchat-gen-defense');
+            if (dfb) dfb.addEventListener('click', function () { try { askDefense(hid); } catch (e) {} });
+            try { var _fd = new XMLHttpRequest(); _fd.open('POST', '/api/chat_last_gen', true); _fd.setRequestHeader('Content-Type', 'application/json'); _fd.send(JSON.stringify({ history_id: hid })); } catch (e2) {}
             var prebtn = resultEl.querySelector('.wbchat-gen-preexp');
             var prebox = resultEl.querySelector('.wbchat-gen-previewbox');
             if (prebtn && prebox) {
@@ -827,6 +840,103 @@
         genPollers[taskId] = { interval: iv };
     }
 
+    /* ---------- 主动建议：打开聊天时拉一次，顶部横幅提示下一步 ---------- */
+    var lastSuggestionText = '';
+    function loadSuggestion() {
+        try {
+            fetch('/api/chat_suggest', { method: 'GET', credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (j) { if (j && j.success && j.suggestion) showSuggestion(j.suggestion); })
+                .catch(function () {});
+        } catch (e) {}
+    }
+    function showSuggestion(text) {
+        if (!listEl || !text) return;
+        if (text === lastSuggestionText) return;
+        lastSuggestionText = text;
+        var d = document.createElement('div');
+        d.className = 'wbchat-suggest';
+        d.style.cssText = 'margin:0 0 10px; padding:8px 12px; border-radius:10px; background:rgba(var(--c-a-rgb,14,116,144),.10); border:1px solid rgba(var(--c-a-rgb,14,116,144),.3); font-size:12.5px; color:var(--text); display:flex; align-items:center; gap:8px;';
+        d.innerHTML = '<span style="flex:1 1 auto;">' + esc(text) + '</span>'
+            + '<button style="flex:0 0 auto; min-width:28px; min-height:28px; border:none; background:transparent; color:var(--text-dim); cursor:pointer; font-size:14px;">×</button>';
+        var x = d.querySelector('button');
+        if (x) x.addEventListener('click', function () { try { if (d.parentNode) d.parentNode.removeChild(d); } catch (e) {} });
+        if (listEl.firstChild) listEl.insertBefore(d, listEl.firstChild); else listEl.appendChild(d);
+        try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+    }
+
+    /* ---------- 答辩模拟：把 done 卡片里的 history_id 带进聊天请求 ---------- */
+    function askDefense(hid) {
+        if (!inputEl) return;
+        defenseHistoryId = hid || '';
+        inputEl.value = '模拟答辩';
+        ask();
+        defenseHistoryId = '';
+    }
+
+    /* ---------- 记忆管理面板 ---------- */
+    function openMemoryPanel() {
+        try { setOpen(true); } catch (e) {}
+        var ov = document.getElementById('wbChatMemOverlay');
+        if (ov) { try { ov.parentNode.removeChild(ov); } catch (e) {} }
+        ov = document.createElement('div');
+        ov.id = 'wbChatMemOverlay';
+        ov.style.cssText = 'position:fixed; z-index:2900; left:0; top:0; right:0; bottom:0; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center;';
+        var fields = [
+            { k: 'competition', label: '参赛赛事' },
+            { k: 'project', label: '项目名' },
+            { k: 'stage', label: '当前阶段' },
+            { k: 'role', label: '身份/角色' },
+            { k: 'goal', label: '目标' }
+        ];
+        var rows = '';
+        for (var i = 0; i < fields.length; i++) {
+            rows += '<label style="display:block; margin:8px 0 4px; font-size:12.5px; color:var(--text);">' + fields[i].label + '</label>'
+                + '<input data-k="' + fields[i].k + '" style="width:100%; min-height:40px; padding:8px 10px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); color:var(--text); font-size:13px; box-sizing:border-box;">';
+        }
+        ov.innerHTML = '<div style="width:min(420px,92vw); max-height:86vh; overflow:auto; background:var(--surface-solid,#fff); border:1px solid var(--line); border-radius:14px; padding:18px 20px; box-shadow:0 18px 50px rgba(15,23,42,.3);">'
+            + '<div style="display:flex; align-items:center; margin-bottom:6px;"><b style="font-size:15px; color:var(--text);">小创记住的关于你的信息</b>'
+            + '<button id="wbChatMemClose" style="margin-left:auto; width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost); color:var(--text-dim); cursor:pointer; font-size:16px;">×</button></div>'
+            + '<div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">小创会用这些信息让你的回答更贴合。随时可改、可清空。</div>'
+            + rows
+            + '<div style="display:flex; gap:10px; margin-top:16px;">'
+            + '<button id="wbChatMemSave" style="flex:1 1 auto; min-height:44px; border-radius:10px; border:none; cursor:pointer; font-weight:600; color:#fff; font-size:13.5px; background:linear-gradient(135deg, rgba(var(--c-a-rgb,14,116,144),.95), rgba(var(--c-b-rgb,15,118,110),.95));">保存</button>'
+            + '<button id="wbChatMemClear" style="flex:0 0 auto; min-height:44px; padding:0 16px; border-radius:10px; border:1px solid var(--line); background:var(--btn-ghost); color:var(--text-dim); cursor:pointer; font-size:13px;">清空记忆</button>'
+            + '</div></div>';
+        document.body.appendChild(ov);
+        var close = function () { try { if (ov.parentNode) ov.parentNode.removeChild(ov); } catch (e) {} };
+        var cBtn = ov.querySelector('#wbChatMemClose');
+        if (cBtn) cBtn.addEventListener('click', close);
+        ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+        var inputs = ov.querySelectorAll('input[data-k]');
+        fetch('/api/chat_profile', { method: 'GET', credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+                if (!j || !j.profile) return;
+                for (var i = 0; i < inputs.length; i++) {
+                    var k = inputs[i].getAttribute('data-k');
+                    if (j.profile[k]) inputs[i].value = j.profile[k];
+                }
+            }).catch(function () {});
+        var save = ov.querySelector('#wbChatMemSave');
+        if (save) save.addEventListener('click', function () {
+            var f = {};
+            for (var i = 0; i < inputs.length; i++) { f[inputs[i].getAttribute('data-k')] = inputs[i].value.trim(); }
+            fetch('/api/chat_profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ fields: f }) })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (j) { if (j && j.success) { save.textContent = '已保存 ✓'; setTimeout(close, 600); } })
+                .catch(function () {});
+        });
+        var clr = ov.querySelector('#wbChatMemClear');
+        if (clr) clr.addEventListener('click', function () {
+            var f = {};
+            for (var i = 0; i < inputs.length; i++) { f[inputs[i].getAttribute('data-k')] = ''; }
+            fetch('/api/chat_profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ fields: f }) })
+                .then(function () { for (var i = 0; i < inputs.length; i++) inputs[i].value = ''; })
+                .catch(function () {});
+        });
+    }
+
     function ask(force) {
         if (!inputEl) return;
         var q = String(inputEl.value || '').trim();
@@ -884,7 +994,7 @@
         try {
             var opt = {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style, stream: true })
+                body: JSON.stringify({ message: q, style: style, stream: true, history_id: defenseHistoryId })
             };
             if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {
@@ -946,6 +1056,7 @@
             else refreshGreet();
             renderStyleBadge();
             restoreGenCard();
+            loadSuggestion();
             if (inputEl) { try { inputEl.focus(); } catch (e) {} }
         }
     }

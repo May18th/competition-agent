@@ -6950,7 +6950,7 @@ def _chat_sse(payload):
 def _chat_context(uid):
     from chat_store import list_recent
     from langchain_core.messages import AIMessage, HumanMessage
-    history = list_recent(_CHAT_DB_PATH, uid, 24)
+    history = list_recent(_CHAT_DB_PATH, uid, 30)
     messages = []
     for item in history:
         text = item.get("content") or ""
@@ -7157,7 +7157,28 @@ def chat():
             return jsonify({"success": False, "error_code": "upstream_error", "error": "校对服务暂不可用"}), 502
         _chat_persist(uid, 'user', msg, style)
         _chat_persist(uid, 'bot', result, style)
+        _chat_profile_save(uid, 'done_proofread', '1')
         return _sse_text_reply(result)
+
+    # ---- 答辩模拟意图（复用核心申报书正文，不另造）----
+    defense_kw = ("答辩模拟", "模拟答辩", "评委提问", "练习答辩", "模拟评委", "答辩练习", "评委问")
+    if any(w in msg for w in defense_kw):
+        from langchain_core.messages import SystemMessage, HumanMessage
+        _hid = data.get('history_id') or _chat_get_last_gen(uid)
+        if not _hid:
+            return _sse_text_reply("想练答辩？先生成一份申报书，或把要模拟的作品 history_id 告诉我。生成完成后小创会自动记住你的作品，直接说「模拟答辩」即可。")
+        _rec = _fetch_record_from_source({'history_id': _hid})
+        _proposal = (_rec or {}).get('proposal') or ''
+        if isinstance(_proposal, dict):
+            _proposal = '\n'.join(str(v) for v in _proposal.values() if isinstance(v, str))
+        if not str(_proposal).strip():
+            return _sse_text_reply("没找到这份申报书的正文（history_id=%s）。请确认是否已生成完成，或重新生成后再试。" % _hid)
+        _dmsg = [SystemMessage(content=("你是资深科创赛事模拟评委。基于下面的申报书正文，预测评委最可能追问的 3 个高频问题；"
+                  "对每个问题给出：①评委想考察什么；②回答要点（2-3 条）；③常见失分点。用中文清晰分点列出，"
+                  "不要编造正文未出现的内容。")), HumanMessage(content="【申报书正文】\n" + str(_proposal)[:6000])]
+        _chat_profile_save(uid, 'done_defense', '1')
+        _chat_persist(uid, 'user', msg, style)
+        return _chat_stream_llm(_dmsg, uid, style, msg)
 
     # ---- Phase 2：生成意图 ----
     gen_verb = any(w in msg for w in ("生成", "写一份", "写一版", "起草", "出一份", "帮我写", "帮我做", "帮我生成", "来一份", "做一份"))
@@ -7173,6 +7194,8 @@ def chat():
             reply = ("✅ 已为你启动「**%s**」申报书生成（主题：%s）。\n\n"
                      "生成约需 1~2 分钟，完成后在首页「历史记录」查看完整申报书，"
                      "也可在那里一键导出 Word / PDF / PPT。\n任务ID：`%s`") % (comp_name, idea or msg, task_id)
+            reply += "\n\n💡 小创建议：生成完成后，可让我帮你「智能校对」检查文字，或「模拟答辩」提前演练评委提问。"
+            _chat_profile_save(uid, 'done_generation', '1')
             _chat_persist(uid, 'user', msg, style)
             _chat_persist(uid, 'bot', reply, style)
             def _gen_stream():
@@ -7283,3 +7306,79 @@ def chat_clear():
     except Exception as exc:
         print("[chat] history clear failed: %s" % exc)
         return jsonify({"success": False}), 503
+
+
+def _chat_get_last_gen(uid):
+    try:
+        from chat_store import get_profile
+        return (get_profile(_CHAT_DB_PATH, uid) or {}).get('last_history_id') or ''
+    except Exception:
+        return ''
+
+
+def _chat_set_last_gen(uid, hid):
+    try:
+        from chat_store import set_profile
+        set_profile(_CHAT_DB_PATH, uid, 'last_history_id', hid)
+    except Exception as exc:
+        print("[chat] last_gen save failed: %s" % exc)
+
+
+def _compute_suggestion(profile):
+    if not profile:
+        return None
+    if not profile.get('done_generation'):
+        return "💡 建议先生成一份申报书：把参赛赛事和项目创意告诉小创即可。"
+    if not profile.get('done_proofread'):
+        return "💡 初稿已生成，建议做一次「智能校对」检查错别字和语病。"
+    if not profile.get('done_defense'):
+        return "💡 文字已校对，建议试试「模拟答辩」用评委视角预测高频问题、提前演练。"
+    return None
+
+
+def _chat_stream_llm(messages, uid, style, user_text):
+    if not chat_llm:
+        return jsonify({"success": False, "error_code": "model_unavailable",
+                        "error": "聊天模型未就绪，请联系管理员"}), 503
+    if not _chat_reserve_quota():
+        from competition_agents import get_quota_status
+        return jsonify({"success": False, "error_code": "quota_exhausted",
+                        "quota": get_quota_status()}), 429
+    @stream_with_context
+    def generate():
+        parts = []
+        try:
+            for chunk in chat_llm.stream(messages):
+                token = _chat_chunk_text(chunk)
+                if not token:
+                    continue
+                parts.append(token)
+                yield _chat_sse({"token": token})
+            reply = "".join(parts).strip()
+            if reply:
+                _chat_persist(uid, 'user', user_text, style)
+                _chat_persist(uid, 'bot', reply, style)
+            yield "data: [DONE]\n\n"
+        except GeneratorExit:
+            raise
+        except Exception as exc:
+            print("[chat] streaming failed: %s" % exc)
+            yield _chat_sse({"error_code": "upstream_error"})
+            yield "data: [DONE]\n\n"
+    return generate()
+
+
+@app.route('/api/chat_last_gen', methods=['GET', 'POST'])
+def chat_last_gen():
+    uid = _current_uid()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        _chat_set_last_gen(uid, d.get('history_id') or '')
+        return jsonify({"success": True})
+    return jsonify({"success": True, "history_id": _chat_get_last_gen(uid)})
+
+
+@app.route('/api/chat_suggest', methods=['GET'])
+def chat_suggest():
+    return jsonify({"success": True, "suggestion": _compute_suggestion(_chat_profile_load(_current_uid()))})
+
