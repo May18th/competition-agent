@@ -12,7 +12,7 @@
  *
  * 第三百三十六轮（移动端实测三处修复）：
  *   1. 开场白去「功能清单式自我介绍」，结合当前所选赛事，短句引导式
- *   2. 提问后立即出「正在思考」动效；6s 超时用 AbortController 真正中断请求并降级，
+ *   2. 提问后立即出「正在思考」动效；20s 超时用 AbortController 真正中断请求并降级，
  *      降级文案友好且仍给可用答案（本地知识库），没命中时给「再问一次」按钮
  *   3. 风格切换：点标题栏或右上角都能弹三档菜单——原实现被 document 上的
  *      关闭监听在同一个 click 冒泡里立刻关掉（按钮没 stopPropagation），已修
@@ -44,7 +44,7 @@
 
     /* 336：等待阈值。后端 /api/chat 命中预设约 3ms，落到 LLM 兜底时可能数秒，
        超过这个时间就中断并降级，绝不让用户干等。 */
-    var ASK_TIMEOUT = 6000;
+    var ASK_TIMEOUT = 20000;
     var thinkNode = null, thinkTimer = null;
 
     /* ---------- 本地预设问答（接口不可用时兜底，绝不显示红字报错） ----------
@@ -58,9 +58,9 @@
         },
         {
             k: ['评分', '维度', '权重', '怎么打分', '评分标准'],
-            b: '评分维度以所选赛事的官方口径为准，选中赛事后首页会显示该赛事的真实维度。例如 iCAN 创新赛道：创新性 35 / 实用性 25 / 原创性 20 / 技术方案 20（四项、双盲）。',
-            f: '这个得看你报哪个赛事——官方口径说了算😉 选好赛事，首页就会把真实维度列出来。比如 iCAN 创新赛道是四门：创新性 35、实用性 25、原创性 20、技术方案 20，还是双盲评审。',
-            a: '评分维度的权威来源是各赛事官方评审细则（data/competition_profiles.json）。以 iCAN 大学生创新创业大赛创新赛道为例，官方口径为四项：创新性 35 分、实用性 25 分、原创性 20 分、技术方案 20 分，合计 100 分，评审采用双盲方式。不同赛事、乃至同一赛事的不同赛道（如 iCAN 创新/创业/挑战赛道）口径可能不同，选中赛事后以页面显示的维度为准。'
+            b: '评分维度和权重要看具体赛事及赛道的官方细则，不能把某个赛事的分值套到其他比赛。请先选择赛事，或告诉我赛事名称；我会按对应规则回答。',
+            f: '这个得看具体报哪个比赛、哪个赛道，不能拿一家的分数套另一家。告诉我赛事名，我再按对应规则说。',
+            a: '评分维度与权重由具体赛事及赛道的官方评审细则确定。未提供赛事名称时，我无法核实适用口径，不会引用其他赛事的分值代替。请提供赛事全称及赛道，以便按对应规则作答。'
         },
         {
             k: ['档位', '简洁', '深度', '有什么区别', '选哪个'],
@@ -129,14 +129,14 @@
        hit=true 时这句话作为「小字附注」挂在答案下面，不喧宾夺主。 */
     function degradeNote(q) {
         if (style === 'casual') return '这会儿有点卡，上面是我先知道的，不让你白等～';
-        if (style === 'academic') return '在线问答本轮响应偏慢（已超 6 秒并中断），以上依据本地知识库先行作答。';
+        if (style === 'academic') return '在线问答本轮响应偏慢（已超 20 秒并中断），以上依据本地知识库先行作答。';
         return '这会儿有点慢，先按本地知识库答你，没让你干等。';
     }
 
     /* 没命中本地预设、又超时——这条就没内容可给了，说清楚并给「再问一次」 */
     function degradeMiss(q) {
         if (style === 'casual') return '这会儿有点卡，这条我没能马上想出来。稍等一下再问一次，或者换个问法我很快就能答。';
-        if (style === 'academic') return '在线问答本轮响应偏慢（已超 6 秒并中断），且该问题未命中本地知识条目，暂无法作答。可稍后重试，或改问评分维度、档位差异、导出格式、字数口径、赛事选择、演示模式。';
+        if (style === 'academic') return '在线问答本轮响应偏慢（已超 20 秒并中断），且该问题未命中本地知识条目，暂无法作答。可稍后重试，或改问评分维度、档位差异、导出格式、字数口径、赛事选择、演示模式。';
         return '这会儿有点慢，这条我还没想好。稍等一下再问一次会更准；问评分、档位、导出、字数这些我马上能答。';
     }
 
@@ -700,9 +700,20 @@
 
     /* 336：
        - 提问后立刻渲染「小创正在思考…」动效（此前 14 秒全靠空白，用户以为没点上）
-       - 6s 到点用 AbortController 真正中断请求（此前只 setTimeout，fetch 还挂着，
+       - 20s 到点用 AbortController 真正中断请求（此前只 setTimeout，fetch 还挂着，
          连接一直占着，且用户看到的是「等完再一次性出字」）
        - 降级文案走 degradeNote/degradeMiss，命中本地预设就照样给答案，没命中给「再问一次」 */
+    function pageContext() {
+        var competition = '', idea = '', mode = '';
+        try { competition = String((document.getElementById('competition') || {}).value || '').trim(); } catch (e) {}
+        try { idea = String((document.getElementById('idea') || {}).value || '').trim(); } catch (e) {}
+        try {
+            var selectedMode = document.querySelector('input[name="mode"]:checked');
+            mode = (selectedMode && selectedMode.value) || window._lastGenMode || '';
+        } catch (e) {}
+        return { competition: competition.slice(0, 120), idea: idea.slice(0, 1200), mode: mode };
+    }
+
     function ask(force) {
         if (!inputEl) return;
         var q = String(inputEl.value || '').trim();
@@ -753,7 +764,7 @@
         try {
             var opt = {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style, stream: true })
+                body: JSON.stringify({ message: q, style: style, stream: true, context: pageContext() })
             };
             if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {

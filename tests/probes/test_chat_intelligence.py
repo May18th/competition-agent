@@ -93,6 +93,21 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIsNone(app_module._chat_find_preset("PPT项目如何突出评委关心的创新点"))
         self.assertIsNotNone(app_module._chat_find_preset("一键演示会扣额度吗"))
 
+    def test_generic_scoring_faq_does_not_assume_ican(self):
+        answer = app_module._chat_find_preset("评分标准是什么")
+        self.assertIsNotNone(answer)
+        self.assertIn("具体赛事及赛道", answer)
+        self.assertNotIn("iCAN", answer)
+        self.assertNotIn("巡展20%", answer)
+
+    def test_chat_ui_sends_current_page_context(self):
+        with open(os.path.join(ROOT, "static", "wbchat.js"), encoding="utf-8") as stream:
+            chat_js = stream.read()
+        self.assertIn("function pageContext()", chat_js)
+        self.assertIn("input[name=\"mode\"]:checked", chat_js)
+        self.assertIn("context: pageContext()", chat_js)
+        self.assertIn("var ASK_TIMEOUT = 20000", chat_js)
+
     def test_identity_question_bypasses_selected_competition_and_llm(self):
         with patch.object(app_module, "_current_uid", return_value="alice"), \
              patch.object(app_module, "_detect_competition", side_effect=AssertionError("must not inspect event")), \
