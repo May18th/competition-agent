@@ -341,12 +341,16 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("资料齐全后我再启动生成", app_module._chat_missing_requirements_reply(
             "concise", ["项目需求"]
         ))
-        self.assertIn("评审口径、内容边界与验证重点", app_module._chat_missing_requirements_reply(
+        self.assertIn("【用途】这些信息用于确定评审口径", app_module._chat_missing_requirements_reply(
             "academic", ["赛事名称", "项目需求"]
         ))
         self.assertIn("结论先行", app_module._system_prompt("concise", "", {}))
-        self.assertIn("类比", app_module._system_prompt("casual", "", {}))
-        self.assertIn("事实、假设和待核实项", app_module._system_prompt("academic", "", {}))
+        self.assertIn("轻巧梗", app_module._system_prompt("casual", "", {}))
+        self.assertIn("事实、推断与待核实项", app_module._system_prompt("academic", "", {}))
+        self.assertIn("【待核实信息】", app_module._chat_missing_requirements_reply(
+            "academic", ["赛事名称", "项目需求"]
+        ))
+        self.assertIn("许愿池", app_module._chat_missing_requirements_reply("casual", ["项目需求"]))
         self.assertIn("截止日期", app_module._chat_smalltalk_answer("可以给我讲个笑话吗", "casual"))
         self.assertIn("风险矩阵", app_module._chat_smalltalk_answer("讲个笑话", "academic"))
 
