@@ -482,6 +482,39 @@
         // 336：标题栏整条也可点（除关闭按钮），右上角按钮同理——两处入口都 stopPropagation
         var head = document.getElementById('wbChatHead');
         if (head) head.addEventListener('click', function (e) { toggleStyleMenu(e, sb || head); });
+        if (head && !isMobile()) {
+            var _drag = null, _justDrag = false;
+            head.style.cursor = 'move';
+            head.addEventListener('mousedown', function (e) {
+                if (e.target && e.target.closest && e.target.closest('button')) return;
+                if (e.button !== 0) return;
+                var pr = p.getBoundingClientRect();
+                if (p.style.left === '' || p.style.top === '') {
+                    p.style.left = pr.left + 'px';
+                    p.style.top = pr.top + 'px';
+                    p.style.right = 'auto';
+                    p.style.bottom = 'auto';
+                }
+                _drag = { x: e.clientX, y: e.clientY, l: pr.left, t: pr.top };
+                _justDrag = false;
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', function (e) {
+                if (!_drag) return;
+                var dx = e.clientX - _drag.x, dy = e.clientY - _drag.y;
+                if (Math.abs(dx) + Math.abs(dy) > 4) _justDrag = true;
+                var nl = _drag.l + dx, nt = _drag.t + dy;
+                var w = p.offsetWidth, h = p.offsetHeight;
+                nl = Math.max(4, Math.min(window.innerWidth - w - 4, nl));
+                nt = Math.max(4, Math.min(window.innerHeight - h - 4, nt));
+                p.style.left = nl + 'px';
+                p.style.top = nt + 'px';
+            });
+            document.addEventListener('mouseup', function () { _drag = null; });
+            head.addEventListener('click', function (e) {
+                if (_justDrag) { e.stopPropagation(); e.preventDefault(); _justDrag = false; }
+            }, true);
+        }
         if (sb) {
             sb.addEventListener('click', function (e) { toggleStyleMenu(e, sb); });
             // 399：hover / active 反馈——一眼看出这玩意儿能点（不新增 css 文件，只写内联）
@@ -662,6 +695,14 @@
                 + '<button class="wbchat-gen-exp" data-ext="pdf" style="display:inline-block; margin:0 8px 6px 0; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PDF</button>'
                 + '<button class="wbchat-gen-exp" data-ext="ppt" style="display:inline-block; min-height:40px; padding:8px 14px; border-radius:10px; border:1px solid var(--text-dim); background:transparent; color:var(--text); cursor:pointer;">导出PPT</button>'
                 + '</div>';
+            var _pc = (j.partial_content || '').trim();
+            if (_pc) {
+                html += '<div style="margin-top:10px; padding-top:8px; border-top:1px dashed var(--line,rgba(148,163,184,.4));">'
+                    + '<div style="font-size:12px; color:var(--text); margin-bottom:6px;">📄 内容预览（小创窗内速览，完整版点上方「查看完整申报书」）</div>'
+                    + '<div class="wbchat-gen-previewbox" data-open="0" style="font-size:11.5px; color:var(--text-dim); white-space:pre-wrap; word-break:break-word; line-height:1.6; max-height:120px; overflow:hidden;">' + esc(_pc) + '</div>'
+                    + '<button class="wbchat-gen-preexp" style="display:inline-block; margin-top:6px; min-height:32px; padding:4px 12px; border-radius:8px; border:1px solid var(--line,rgba(148,163,184,.55)); background:var(--btn-ghost); color:var(--c-a,#0e7490); cursor:pointer; font-size:12px;">展开全文 ▾</button>'
+                    + '</div>';
+            }
         }
         if (resultEl) resultEl.innerHTML = html;
         if (hid) {
@@ -679,6 +720,17 @@
                         window.open(url + '?history_id=' + encodeURIComponent(hid), '_blank');
                     });
                 })(exps[ei]);
+            }
+            var prebtn = resultEl.querySelector('.wbchat-gen-preexp');
+            var prebox = resultEl.querySelector('.wbchat-gen-previewbox');
+            if (prebtn && prebox) {
+                prebtn.addEventListener('click', function () {
+                    var open = prebox.getAttribute('data-open') === '1';
+                    prebox.setAttribute('data-open', open ? '0' : '1');
+                    prebox.style.maxHeight = open ? '120px' : '320px';
+                    prebox.style.overflow = open ? 'hidden' : 'auto';
+                    prebtn.textContent = open ? '展开全文 ▾' : '收起 ▴';
+                });
             }
         }
     }
