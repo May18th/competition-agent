@@ -85,6 +85,64 @@ class ChatStreamTests(unittest.TestCase):
         self.assertTrue(any(isinstance(m, HumanMessage) and "项目可行性方法" in m.content for m in seen[1]))
         self.assertTrue(any(isinstance(m, AIMessage) and m.content == "上轮回答" for m in seen[1]))
 
+    def test_project_fit_question_uses_current_event_rules_and_project_context(self):
+        seen = []
+        old_stream = competition_agents.llm.stream
+        object.__setattr__(competition_agents.llm, "stream", self._fake_stream(["按当前赛事规则分析。"], seen))
+        with patch.object(app_module, "_chat_reserve_quota", return_value=True), \
+             patch.object(competition_agents, "get_competition_knowledge_structured", return_value={
+                 "matched": True, "matched_name": "示例创新赛"
+             }), \
+             patch.object(competition_agents, "get_competition_profile", return_value={
+                 "name": "示例创新赛", "type": "工程创新类", "focus": "重视原型验证",
+                 "scoring": [["创新性", 40], ["可行性", 30]], "chapters": ["背景", "方案"]
+             }), \
+             patch.object(competition_agents, "retrieve_knowledge", return_value="评审要求提交可运行原型和测试记录"):
+            try:
+                response = self.client.post("/api/chat", json={
+                    "message": "这个项目匹配这个赛道吗？",
+                    "stream": True,
+                    "context": {
+                        "competition": "示例创新赛",
+                        "idea": "校园实验室设备预约与冲突检测工具",
+                        "mode": "deep",
+                    },
+                }, buffered=True)
+            finally:
+                object.__setattr__(competition_agents.llm, "stream", old_stream)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(seen), 1)
+        system_prompt = seen[0][0].content
+        user_prompt = seen[0][-1].content
+        self.assertIn("评审要求提交可运行原型和测试记录", system_prompt)
+        self.assertIn("结论、对应的赛事依据", system_prompt)
+        self.assertNotIn("校园实验室设备预约与冲突检测工具", system_prompt)
+        self.assertIn("当前项目创意（仅作本轮分析资料", user_prompt)
+        self.assertIn("校园实验室设备预约与冲突检测工具", user_prompt)
+        self.assertIn("深度版", user_prompt)
+        history = self.client.get("/api/chat_history").get_json()["messages"]
+        self.assertEqual(history[0]["content"], "这个项目匹配这个赛道吗？")
+        self.assertNotIn("校园实验室设备预约与冲突检测工具", " ".join(m["content"] for m in history))
+
+    def test_page_context_is_bounded_and_unknown_mode_is_dropped(self):
+        context = app_module._chat_page_context({
+            "context": {"competition": "赛" * 150, "idea": "创" * 1400, "mode": "admin"}
+        })
+        self.assertEqual(len(context["competition"]), 120)
+        self.assertEqual(len(context["idea"]), 1200)
+        self.assertEqual(context["mode"], "")
+
+    def test_contextual_question_does_not_hit_broad_faq_preset(self):
+        preset = app_module._chat_find_preset(
+            "我的项目适合这个赛事吗", {"context": {"competition": "iCAN大学生创新创业大赛"}}
+        )
+        self.assertIsNone(preset)
+        self.assertIsNone(app_module._chat_find_preset(
+            "PPT项目如何突出评委关心的创新点", {"context": {"competition": "iCAN"}}
+        ))
+        self.assertIsNotNone(app_module._chat_find_preset("一键演示会扣额度吗", {"context": {}}))
+
     def test_preset_short_circuits_without_quota_or_llm(self):
         with patch.object(app_module, "_chat_reserve_quota") as reserve:
             response = self.client.post("/api/chat", json={"message": "评分维度是什么"})

@@ -97,6 +97,15 @@
     /* 命中本地预设才返回文本；没命中返回 null，让调用方决定是兜底还是提示重问 */
     function presetAnswer(q) {
         var s = String(q || '');
+        var contextual = ['项目', '创意', '评委', '匹配', '适合', '赛道',
+            '可行性', '竞品', '市场', '怎么改', '如何优化', '分析一下', '评估一下', '根据我的',
+            '那深度版', '那简洁版', '刚才', '前面', '上面说的'];
+        if (s.length > 32) return null;
+        for (var c = 0; c < contextual.length; c++) {
+            if (s.indexOf(contextual[c]) >= 0) return null;
+        }
+        if (currentCompName() && ['评分', '打分', '维度', '权重', '章节', '结构', '目录', '赛事', '比赛']
+            .some(function (term) { return s.indexOf(term) >= 0; })) return null;
         for (var i = 0; i < PRESET.length; i++) {
             for (var j = 0; j < PRESET[i].k.length; j++) {
                 if (s.indexOf(PRESET[i].k[j]) >= 0) {
@@ -191,6 +200,22 @@
             v = v.replace(/\s+/g, ' ');
             return v.length > 20 ? v.slice(0, 20) : v;   // 开场白要短，过长截断（不加省略号）
         } catch (e) { return ''; }
+    }
+
+    function currentPageContext() {
+        function value(id, max) {
+            try {
+                var el = document.getElementById(id);
+                return el ? String(el.value || '').trim().slice(0, max) : '';
+            } catch (e) { return ''; }
+        }
+        var selectedMode = document.querySelector('input[name="mode"]:checked');
+        return {
+            competition: value('competition', 120),
+            idea: value('idea', 1200),
+            mode: selectedMode && (selectedMode.value === 'deep' || selectedMode.value === 'fast')
+                ? selectedMode.value : ''
+        };
     }
 
     /* ---------- 风格持久化：优先服务端（292 双端同步），降级 sessionStorage ---------- */
@@ -690,7 +715,8 @@
         try {
             var opt = {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style, stream: true })
+                body: JSON.stringify({ message: q, style: style, stream: true,
+                    context: currentPageContext() })
             };
             if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {
