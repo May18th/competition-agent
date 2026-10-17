@@ -354,6 +354,7 @@ class ChatIntelligenceTests(unittest.TestCase):
             chat_js = stream.read()
         self.assertIn("window.wbChatStartGeneration", app_js)
         self.assertIn("startWork();", app_js)
+        self.assertIn("window.wbChat.close()", app_js)
         self.assertIn("window.wbChatStartGeneration(item)", chat_js)
         self.assertIn("window.wbChatTrackContext", app_js)
         self.assertIn("请先选择参赛赛道", app_js)

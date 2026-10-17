@@ -5474,7 +5474,11 @@
                 if (modeInput && !modeInput.checked) modeInput.click();
             }
             try { startWork(); } catch (e) { return false; }
-            return !!window._wbGenerating;
+            var started = !!window._wbGenerating;
+            if (started) {
+                try { if (window.wbChat && window.wbChat.close) window.wbChat.close(); } catch (e) {}
+            }
+            return started;
         };
 
         // 档位徽章（结果区头部）：赛事固定 emoji 做视觉锚点，一眼认出是哪场比赛
