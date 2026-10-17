@@ -7,8 +7,7 @@
  * - 风格：气泡右上角小图标切换；三档只影响回复口吻，与生成风格互不影响；
  *   选择持久化走服务端 /api/user_state 的 personalization（配合 292 双端同步），
  *   接口不可用时降级 sessionStorage，**不写 localStorage**（292 要求禁单端私有）
- * - 后端：POST /api/chat {message, style} → {success, reply}；404/异常一律静默降级本地预设
- * - 只答不写：不调任何写接口；聊天记录仅在内存，刷新即清
+ * - 后端：POST /api/chat 支持 SSE；历史按 comp_uid 隔离持久化
  * - ES5 语法，全 try/catch，只暴露 window.wbChat
  *
  * 第三百三十六轮（移动端实测三处修复）：
@@ -41,6 +40,7 @@
     var opened = false, panel = null, bubble = null, listEl = null, inputEl = null;
     var styleMenu = null, styleBadge = null, styleBtn = null;
     var busy = false;
+    var historyLoaded = false, historyLoading = false;
 
     /* 336：等待阈值。后端 /api/chat 命中预设约 3ms，落到 LLM 兜底时可能数秒，
        超过这个时间就中断并降级，绝不让用户干等。 */
@@ -136,7 +136,46 @@
 
     function esc(s) {
         return String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdown(text) {
+        var code = [];
+        var html = esc(text).replace(/```([^\n]*)\n([\s\S]*?)```/g, function (_, lang, body) {
+            var key = '@@WBCODE' + code.length + '@@';
+            code.push('<pre><code>' + body.replace(/\n$/, '') + '</code></pre>');
+            return key;
+        });
+        html = html.replace(/`([^`\n]+)`/g, function (_, body) {
+            var key = '@@WBCODE' + code.length + '@@';
+            code.push('<code>' + body + '</code>');
+            return key;
+        });
+        html = html.replace(/\[([^\]]{1,200})\]\((https?:\/\/[^\s)]+)\)/gi, function (_, label, url) {
+            return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+        });
+        html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+                   .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        var lines = html.split(/\r?\n/), out = [], list = '';
+        function closeList() {
+            if (list) { out.push('</' + list + '>'); list = ''; }
+        }
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i], ul = /^\s*[-*]\s+(.+)$/.exec(line), ol = /^\s*\d+\.\s+(.+)$/.exec(line);
+            if (ul || ol) {
+                var kind = ul ? 'ul' : 'ol';
+                if (list !== kind) { closeList(); out.push('<' + kind + '>'); list = kind; }
+                out.push('<li>' + (ul || ol)[1] + '</li>');
+            } else {
+                closeList();
+                if (line) out.push('<p>' + line + '</p>');
+            }
+        }
+        closeList();
+        html = out.join('');
+        for (var c = 0; c < code.length; c++) html = html.replace('@@WBCODE' + c + '@@', code[c]);
+        return html;
     }
 
     function isMobile() { return window.innerWidth <= 768; }
@@ -407,6 +446,9 @@
           + '<span id="wbChatStyleCur" style="font-weight:600; color:inherit;">简洁严谨</span>'
           + '<span id="wbChatStyleCaret" aria-hidden="true" style="font-size:10px; line-height:1;'
           + ' color:inherit;">▾</span></button>'
+          + '<button id="wbChatClear" title="清空对话历史" style="flex:0 0 auto; min-width:48px; min-height:40px;'
+          + ' border-radius:9px; border:1px solid var(--line); background:var(--btn-ghost);'
+          + ' color:var(--text-dim); cursor:pointer; font-size:12px;">清空</button>'
           + '<button id="wbChatClose" aria-label="收起" style="margin-left:auto; width:44px; height:44px;'
           + ' border-radius:11px; border:1px solid var(--line); background:var(--btn-ghost);'
           + ' color:var(--text-dim,#6b7280); cursor:pointer; line-height:1;">×</button></div>'
@@ -428,6 +470,11 @@
         if (close) close.addEventListener('click', function (e) {
             try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
             setOpen(false);
+        });
+        var clearBtn = document.getElementById('wbChatClear');
+        if (clearBtn) clearBtn.addEventListener('click', function (e) {
+            try { if (e && e.stopPropagation) e.stopPropagation(); } catch (er) {}
+            clearHistory(clearBtn);
         });
         var sb = document.getElementById('wbChatStyleBtn');
         styleBtn = sb;
@@ -514,7 +561,7 @@
         } else {
             d.innerHTML = '<div style="display:inline-block; max-width:88%; padding:8px 11px;'
                 + ' border-radius:12px 12px 12px 2px; background:var(--btn-ghost); color:var(--text);'
-                + ' white-space:normal; word-break:break-word;">' + esc(text)
+                + ' white-space:normal; word-break:break-word;"><div class="wbchat-bot-content">' + renderMarkdown(text) + '</div>'
                 + (opts.sub ? '<div style="margin-top:4px; font-size:11.5px; line-height:1.5;'
                     + ' color:var(--text-dim);">' + esc(opts.sub) + '</div>' : '')
                 + '</div>';
@@ -532,6 +579,60 @@
             listEl.appendChild(b);
         }
         try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+        return d;
+    }
+
+    function updateBotMsg(node, text) {
+        if (!node) return;
+        var content = node.querySelector('.wbchat-bot-content');
+        if (content) content.innerHTML = renderMarkdown(text);
+        try { if (listEl) listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+    }
+
+    function restoreHistory() {
+        if (historyLoaded || historyLoading || !listEl) return;
+        historyLoading = true;
+        if (inputEl) inputEl.disabled = true;
+        pushThinking();
+        fetch('/api/chat_history', { method: 'GET', credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+                removeThinking();
+                if (j && j.success && j.messages && j.messages.length) {
+                    for (var i = 0; i < j.messages.length; i++) {
+                        var m = j.messages[i];
+                        pushMsg(m.role === 'user' ? 'me' : 'bot', m.content || '');
+                    }
+                } else {
+                    pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
+                }
+                historyLoaded = true;
+                historyLoading = false;
+                if (inputEl) inputEl.disabled = false;
+            })
+            .catch(function () {
+                removeThinking();
+                if (!listEl.children.length) pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
+                historyLoaded = true;
+                historyLoading = false;
+                if (inputEl) inputEl.disabled = false;
+            });
+    }
+
+    function clearHistory(button) {
+        if (busy || historyLoading || !button) return;
+        button.disabled = true;
+        fetch('/api/chat_clear', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin', body: '{}'
+        }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+              if (!j || !j.success) return;
+              listEl.innerHTML = '';
+              pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
+              historyLoaded = true;
+          }).catch(function () {})
+          .then(function () { button.disabled = false; });
     }
 
     /* 336：
@@ -543,69 +644,98 @@
         if (!inputEl) return;
         var q = String(inputEl.value || '').trim();
         if (!q) return;
-        if (busy && force !== true) {      // 注意：事件对象也会传进来，必须严格判 true
-            pushMsg('bot', '上一条我还在想，稍等一下就好。');
-            return;
-        }
+        if (busy && force !== true) { pushMsg('bot', '上一条我还在想，稍等一下就好。'); return; }
         inputEl.value = '';
         pushMsg('me', q);
         busy = true;
-        pushThinking();                       // ① 立即等待态，不等任何网络回包
+        pushThinking();
 
-        var replied = false;
+        var replied = false, answerNode = null, answerText = '', timer = null, ctl = null;
         function finish(text, opts) {
             if (replied) return;
-            replied = true; busy = false;
-            removeThinking();
-            pushMsg('bot', text, opts);
+            if (timer) { clearTimeout(timer); timer = null; }
+            replied = true; busy = false; removeThinking(); pushMsg('bot', text, opts);
         }
-        /* 超时降级：命中本地预设 → 带答案降级；没命中 → 友好说明 + 「再问一次」按钮 */
-        function degrade() {
-            var hit = presetAnswer(q);
-            if (hit) { finish(hit, { sub: degradeNote(q) }); return; }
-            finish(degradeMiss(q), {
-                action: {
-                    id: 'wbChatRetry',
-                    label: '再问一次',
-                    onClick: function () {
-                        var b = document.getElementById('wbChatRetry');
-                        try { if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
-                        inputEl.value = q;
-                        ask(true);
-                    }
-                }
-            });
+        function fallback() {
+            if (replied) return;
+            if (timer) { clearTimeout(timer); timer = null; }
+            var hit = presetAnswer(q), answer = hit || localAnswer(q);
+            if (answerNode) {
+                updateBotMsg(answerNode, answer);
+                replied = true; busy = false; removeThinking();
+            } else finish(answer, hit ? { sub: degradeNote(q) } : null);
         }
-
-        var timer = null, ctl = null;
+        function handleEvent(event) {
+            var lines = event.split(/\r?\n/), payload = '';
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf('data:') === 0) payload += (payload ? '\n' : '') + lines[i].slice(5).replace(/^ /, '');
+            }
+            if (!payload) return false;
+            if (payload === '[DONE]') {
+                if (!answerNode && !replied) fallback();
+                else if (answerNode && !replied) { replied = true; busy = false; removeThinking(); }
+                return true;
+            }
+            var item = null;
+            try { item = JSON.parse(payload); } catch (e) { item = { token: payload }; }
+            if (item.error_code) { fallback(); return true; }
+            if (item.token) {
+                if (timer) { clearTimeout(timer); timer = null; }
+                if (!answerNode) { removeThinking(); answerNode = pushMsg('bot', ''); }
+                answerText += item.token;
+                updateBotMsg(answerNode, answerText);
+            }
+            return false;
+        }
         try {
             var opt = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style })   // 297：风格随请求下发
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: q, style: style, stream: true })
             };
-            if (window.AbortController) {
-                ctl = new window.AbortController();
-                opt.signal = ctl.signal;
-            }
+            if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {
-                try { if (ctl) ctl.abort(); } catch (e) {}   // ② 真正中断，别让请求继续挂着
-                degrade();
+                try { if (ctl) ctl.abort(); } catch (e) {}
+                fallback();
             }, ASK_TIMEOUT);
-            fetch('/api/chat', opt).then(function (r) { return r.ok ? r.json() : null; })
-              .then(function (j) {
-                  if (timer) { clearTimeout(timer); timer = null; }
-                  if (j && j.success && j.reply) finish(j.reply);
-                  else finish(localAnswer(q));
-              })
-              .catch(function () {
-                  if (timer) { clearTimeout(timer); timer = null; }
-                  if (replied) return;                        // 已走超时降级，abort 触发的 catch 不再覆盖
-                  finish(localAnswer(q));
-              });
+            fetch('/api/chat', opt).then(function (r) {
+                var type = (r.headers.get('content-type') || '').toLowerCase();
+                if (type.indexOf('text/event-stream') >= 0 && r.body && r.body.getReader) {
+                    var reader = r.body.getReader(), decoder = new window.TextDecoder('utf-8'), buffer = '', done = false;
+                    function pump() {
+                        return reader.read().then(function (part) {
+                            if (part.done) {
+                                buffer += decoder.decode();
+                                if (buffer) done = handleEvent(buffer);
+                                if (!done && !replied) fallback();
+                                if (answerNode && !replied) { replied = true; busy = false; removeThinking(); }
+                                return;
+                            }
+                            buffer += decoder.decode(part.value, { stream: true });
+                            var split;
+                            while ((split = buffer.search(/\r?\n\r?\n/)) >= 0) {
+                                var separatorLength = buffer.substr(split, 2) === '\r\n' ? 4 : 2;
+                                var event = buffer.slice(0, split);
+                                buffer = buffer.slice(split + separatorLength);
+                                done = handleEvent(event);
+                                if (done) { try { reader.cancel(); } catch (e) {} break; }
+                            }
+                            if (!done && !replied) return pump();
+                        });
+                    }
+                    return pump();
+                }
+                return r.json().then(function (j) {
+                    if (timer) { clearTimeout(timer); timer = null; }
+                    if (j && j.success && j.reply) finish(j.reply);
+                    else fallback();
+                });
+            }).catch(function () {
+                if (timer) { clearTimeout(timer); timer = null; }
+                if (!replied) fallback();
+            });
         } catch (e) {
             if (timer) { clearTimeout(timer); timer = null; }
-            finish(localAnswer(q));
+            fallback();
         }
     }
 
@@ -618,8 +748,8 @@
         // 302：面板展开时 ↑/↓ 淡出并停止接收点击，避免与面板边缘互相干扰
         try { document.body.classList.toggle('wbchat-open', opened); } catch (e) {}
         if (opened) {
-            if (!listEl || !listEl.children.length) pushMsg('bot', greetText(), { greet: true, sub: greetSub() });
-            else refreshGreet();                       // 336：赛事选过之后重开，开场白跟着更新
+            if (!listEl || !listEl.children.length) restoreHistory();
+            else refreshGreet();
             renderStyleBadge();
             if (inputEl) { try { inputEl.focus(); } catch (e) {} }
         }
@@ -704,6 +834,7 @@
         toggle: toggle,
         setStyle: saveStyle,
         getStyle: function () { return style; },
+        renderMarkdown: renderMarkdown,
         NAME: AGENT_NAME
     };
 
