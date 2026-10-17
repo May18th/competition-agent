@@ -32,6 +32,7 @@ if _no_proxy:
 llm = ChatDeepSeek(
     model="deepseek-chat",
     api_key=DEEPSEEK_API_KEY,
+    stream_usage=True,
     temperature=0.6,
     max_tokens=8192,
     request_timeout=180,
@@ -112,6 +113,7 @@ def get_quota_status():
 _LLM_GATE = threading.Semaphore(16)
 _quota_lock = threading.Lock()
 _llm_invoke_original = llm.invoke
+_llm_stream_original = llm.stream
 _llm_fail_count = 0            # 第二百一十一轮 E：主通道连续失败计数
 _llm_fail_lock = threading.Lock()
 
@@ -145,6 +147,25 @@ def _llm_invoke_with_quota(*args, **kwargs):
         _quota_save(data)
     _record_llm_usage(result, int((time.monotonic() - _started) * 1000), _target)
     return result
+
+
+def _llm_stream_with_usage(*args, **kwargs):
+    """Record the cumulative token usage exposed by the final streamed chunk."""
+    started = time.monotonic()
+    usage_chunk = None
+    try:
+        for chunk in _llm_stream_original(*args, **kwargs):
+            usage = getattr(chunk, "usage_metadata", None) or {}
+            response_meta = getattr(chunk, "response_metadata", None) or {}
+            token_usage = response_meta.get("token_usage") or response_meta.get("usage") or {}
+            if (isinstance(usage, dict) and any(usage.values())) or \
+                    (isinstance(token_usage, dict) and any(token_usage.values())):
+                usage_chunk = chunk
+            yield chunk
+    finally:
+        if usage_chunk is not None:
+            _record_llm_usage(usage_chunk, int((time.monotonic() - started) * 1000),
+                              _llm_stream_original)
 
 
 def _record_llm_usage(result, duration_ms=0, target=None):
@@ -191,6 +212,7 @@ def _record_llm_usage(result, duration_ms=0, target=None):
 
 # ChatDeepSeek 是 pydantic 模型，需用 object.__setattr__ 绕过字段校验来 monkey-patch
 object.__setattr__(llm, "invoke", _llm_invoke_with_quota)
+object.__setattr__(llm, "stream", _llm_stream_with_usage)
 
 # 第二百一十一轮 E：备用通道（火山引擎 Claude）。配置了 CLAUDE_API_KEY 才启用；
 # DeepSeek 连续失败 ≥3 次自动切到这里降档兜底，仍失败才向用户报错。

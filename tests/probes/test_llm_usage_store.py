@@ -85,6 +85,27 @@ class TestLlmUsageStore(unittest.TestCase):
         save_quota.assert_called_once()
         record_usage.assert_called_once()
 
+    def test_stream_wrapper_records_cumulative_usage_once(self):
+        import competition_agents
+        from unittest.mock import patch
+
+        self.assertTrue(competition_agents.llm.stream_usage)
+        first_chunk = SimpleNamespace(content="正文", usage_metadata=None, response_metadata={})
+        final_chunk = SimpleNamespace(
+            content="", usage_metadata={"input_tokens": 30, "output_tokens": 9, "total_tokens": 39},
+            response_metadata={},
+        )
+        with patch.object(competition_agents, "_llm_stream_original",
+                          return_value=iter([first_chunk, final_chunk])) as mock_stream, \
+             patch.object(competition_agents, "_record_llm_usage") as record_usage:
+            chunks = list(competition_agents._llm_stream_with_usage(["prompt"]))
+
+        self.assertEqual(chunks, [first_chunk, final_chunk])
+        record_usage.assert_called_once()
+        self.assertIs(record_usage.call_args.args[0], final_chunk)
+        self.assertGreaterEqual(record_usage.call_args.args[1], 0)
+        self.assertIs(record_usage.call_args.args[2], mock_stream)
+
 
 if __name__ == "__main__":
     unittest.main()

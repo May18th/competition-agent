@@ -4580,7 +4580,7 @@ def _find_revision_section(text, chapter):
     headings = []
     offset = 0
     for index, line in enumerate(lines):
-        match = re.match(r"^\s{0,3}(#{1,2})\s+(.+?)\s*#*\s*$", line)
+        match = re.match(r"^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$", line)
         if match:
             headings.append((index, offset, len(match.group(1)),
                              _normalize_heading_title(match.group(2))))
@@ -4592,7 +4592,7 @@ def _find_revision_section(text, chapter):
     end_offset = len(text)
     offset = start_offset + len(lines[start_index])
     for line in lines[start_index + 1:]:
-        match = re.match(r"^\s{0,3}(#{1,2})\s+", line)
+        match = re.match(r"^\s{0,3}(#{1,3})\s+", line)
         if match and len(match.group(1)) <= level:
             end_offset = offset
             break

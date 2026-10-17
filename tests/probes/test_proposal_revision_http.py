@@ -226,6 +226,29 @@ class ProposalRevisionHttpTests(unittest.TestCase):
         self.assertEqual(status, 413)
         self.assertIn("明确一个章节标题", json.loads(body)["error"])
 
+    def test_revision_can_target_third_level_heading(self):
+        import competition_agents
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        untouched = "### 数据分析\n原有分析步骤和口径保持不变。\n"
+        proposal = "## 实施方案\n### 数据采集\n原有采集方案。\n" + untouched
+        history_id = self.app.save_history_item({
+            "competition_name": "测试赛事", "mode": "fast", "user_id": self.uid,
+            "data": {"proposal": proposal, "rich_tables": self.rich_tables},
+        })
+        fake_llm = SimpleNamespace(invoke=lambda *_args, **_kwargs: SimpleNamespace(
+            content="### 数据采集\n更新后的采集方案。" + self.app._REVISION_END_MARKER))
+        with patch.object(competition_agents, "llm", fake_llm):
+            status, _headers, body = self._request("/api/revise_chapter", {
+                "history_id": history_id, "instruction": "完善采集方案", "chapter": "数据采集",
+            })
+
+        self.assertEqual(status, 200, body.decode("utf-8", errors="replace"))
+        revised = json.loads(body)["proposal"]
+        self.assertIn("更新后的采集方案", revised)
+        self.assertTrue(revised.endswith(untouched))
+
     def test_incomplete_model_output_is_not_returned_as_a_successful_preview(self):
         import competition_agents
         from types import SimpleNamespace
