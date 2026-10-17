@@ -44,9 +44,9 @@
     var defenseHistoryId = '';
     var historyLoaded = false, historyLoading = false;
 
-    /* 336：等待阈值。后端 /api/chat 命中预设约 3ms，落到 LLM 兜底时可能数秒，
-       超过这个时间就中断并降级，绝不让用户干等。 */
-    var ASK_TIMEOUT = 6000;
+    /* 等待首个流式片段的上限。模型冷启动或复杂问题可能超过数秒；
+       收到首 token 后会立即清除此计时器，并继续流式显示。 */
+    var ASK_TIMEOUT = 20000;
     var thinkNode = null, thinkTimer = null;
 
     /* ---------- 本地预设问答（接口不可用时兜底，绝不显示红字报错） ----------
@@ -193,6 +193,22 @@
             v = v.replace(/\s+/g, ' ');
             return v.length > 20 ? v.slice(0, 20) : v;   // 开场白要短，过长截断（不加省略号）
         } catch (e) { return ''; }
+    }
+
+    function currentPageContext() {
+        function value(id, max) {
+            try {
+                var el = document.getElementById(id);
+                return el ? String(el.value || '').trim().slice(0, max) : '';
+            } catch (e) { return ''; }
+        }
+        var selectedMode = document.querySelector('input[name="mode"]:checked');
+        return {
+            competition: value('competition', 120),
+            idea: value('idea', 1200),
+            mode: selectedMode && (selectedMode.value === 'deep' || selectedMode.value === 'fast')
+                ? selectedMode.value : ''
+        };
     }
 
     /* ---------- 风格持久化：优先服务端（292 双端同步），降级 sessionStorage ---------- */
@@ -994,7 +1010,8 @@
         try {
             var opt = {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: q, style: style, stream: true, history_id: defenseHistoryId })
+                body: JSON.stringify({ message: q, style: style, stream: true,
+                    history_id: defenseHistoryId, context: currentPageContext() })
             };
             if (window.AbortController) { ctl = new window.AbortController(); opt.signal = ctl.signal; }
             timer = setTimeout(function () {

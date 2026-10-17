@@ -42,13 +42,13 @@ class ChatStreamTests(unittest.TestCase):
         )
 
     def test_sse_stream_persists_user_and_bot_and_sends_no_buffer_header(self):
-        old_stream = competition_agents.llm.stream
-        object.__setattr__(competition_agents.llm, "stream", self._fake_stream(["第一段", "第二段"]))
+        old_stream = app_module.chat_llm.stream
+        object.__setattr__(app_module.chat_llm, "stream", self._fake_stream(["第一段", "第二段"]))
         try:
             with patch.object(app_module, "_chat_reserve_quota", return_value=True):
                 response = self._post_stream("请解释一个不在预设中的科研项目评估方法")
         finally:
-            object.__setattr__(competition_agents.llm, "stream", old_stream)
+            object.__setattr__(app_module.chat_llm, "stream", old_stream)
 
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -63,14 +63,14 @@ class ChatStreamTests(unittest.TestCase):
 
     def test_context_includes_previous_turn_for_followup(self):
         seen = []
-        old_stream = competition_agents.llm.stream
-        object.__setattr__(competition_agents.llm, "stream", self._fake_stream(["上轮回答"], seen))
+        old_stream = app_module.chat_llm.stream
+        object.__setattr__(app_module.chat_llm, "stream", self._fake_stream(["上轮回答"], seen))
         try:
             with patch.object(app_module, "_chat_reserve_quota", return_value=True):
                 self._post_stream("请分析罕见的项目可行性方法")
                 self._post_stream("那再进一步讲讲前面提到的内容")
         finally:
-            object.__setattr__(competition_agents.llm, "stream", old_stream)
+            object.__setattr__(app_module.chat_llm, "stream", old_stream)
 
         self.assertEqual(len(seen), 2)
         self.assertTrue(any(isinstance(m, HumanMessage) and "项目可行性方法" in m.content for m in seen[1]))
