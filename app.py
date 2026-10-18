@@ -2846,6 +2846,29 @@ loadViz();
         feedback_total, fb_rows, fail_rows)
 
 
+def _canonical_record_competition(raw_name, profiles=None):
+    """Return the catalogued competition name for a history value, or None."""
+    value = " ".join(str(raw_name or "").strip().casefold().split())
+    if not value:
+        return None
+    if profiles is None:
+        try:
+            from competition_agents import get_competition_profiles
+            profiles = get_competition_profiles()
+        except Exception:
+            profiles = []
+    for profile in profiles or []:
+        canonical = str(profile.get("name") or "").strip()
+        if not canonical:
+            continue
+        candidates = [canonical] + list(profile.get("aliases") or [])
+        for candidate in candidates:
+            candidate_key = " ".join(str(candidate or "").strip().casefold().split())
+            if candidate_key and value == candidate_key:
+                return canonical
+    return None
+
+
 @app.route('/admin/panel')
 def admin_dashboard():
     """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
@@ -2918,14 +2941,19 @@ def admin_dashboard():
     trend = c.execute(
         "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
         "WHERE %s GROUP BY d ORDER BY d DESC LIMIT 7" % _TEST_HISTORY_WHERE).fetchall()
-    # 赛事分布：后台核对必须展示全部真实赛事，不截断为 Top 8。
-    # 历史测试数据（如 x/y/测试赛事）不冒充正式赛事，但保留数量并单独提示。
+    # 赛事分布：只展示已收录赛事的正式名称，历史简称归并，未知名称隐藏并提示。
     _comp_rows = c.execute(
         "SELECT competition_name, COUNT(*) n FROM history "
         "GROUP BY competition_name ORDER BY n DESC, competition_name").fetchall()
-    comp_dist = []
+    try:
+        from competition_agents import get_competition_profiles
+        _catalog_profiles = get_competition_profiles()
+    except Exception:
+        _catalog_profiles = []
+    _comp_counts = {}
     _test_total = 0
     _missing_total = 0
+    _unknown_total = 0
     for _name, _count in _comp_rows:
         _name_s = str(_name or "").strip()
         if not _name_s:
@@ -2933,13 +2961,19 @@ def admin_dashboard():
         elif _name_s.lower() in ("x", "y") or _name_s.startswith("测试"):
             _test_total += int(_count or 0)
         else:
-            comp_dist.append((_name_s, int(_count or 0)))
-    comp_dist.sort(key=lambda item: (-item[1], item[0]))
+            _canonical = _canonical_record_competition(_name_s, _catalog_profiles)
+            if _canonical:
+                _comp_counts[_canonical] = _comp_counts.get(_canonical, 0) + int(_count or 0)
+            else:
+                _unknown_total += int(_count or 0)
+    comp_dist = sorted(_comp_counts.items(), key=lambda item: (-item[1], item[0]))
     _comp_quality_notes = []
     if _test_total:
         _comp_quality_notes.append("测试/占位记录 %d 条未纳入正式赛事分布" % _test_total)
     if _missing_total:
         _comp_quality_notes.append("%d 条历史记录缺少赛事字段，已单独标注" % _missing_total)
+    if _unknown_total:
+        _comp_quality_notes.append("%d 条历史记录使用未收录赛事名称，已隐藏" % _unknown_total)
     comp_quality_note = ("<div class=\"data-note\">数据质量提示：%s</div>" %
                          "；".join(_comp_quality_notes)) if _comp_quality_notes else ""
     # 反馈分类聚合
