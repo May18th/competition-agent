@@ -22,7 +22,7 @@
     <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://kechuang2026.cn/">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/static/style.css?v=20261001b">
+    <link rel="stylesheet" href="/static/style.css?v=20261018a">
 </head>
 <body>
     <!-- 110 轮：主题必须在「有任何可见内容之前」就定下来，否则会闪色。
@@ -1609,7 +1609,7 @@
     })();
     </script>
     <script src="/static/wbchat.js?v=20261017"></script>
-    <script src="/static/app.js?v=20261001c"></script>
+    <script src="/static/app.js?v=20261018a"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -2239,6 +2239,8 @@ window.addEventListener('resize', function () {
 
     var tipCard = null, tipText = null, lenBadge = null, sparkCount = null, tipNext = null;
     var tipTimer = null, lenTimer = null, sparkTimer = null, layer = null;
+    var wbReduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var wbMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
     var tipQueue = [], tipIdx = 0, score = 0, running = false;
 
     function el(id) { return document.getElementById(id); }
@@ -2362,12 +2364,12 @@ window.addEventListener('resize', function () {
         sparkTimer = setInterval(spawnSpark, 1100);
         setTimeout(spawnSpark, 400);
     }
-    function sparkStop() {
+    function sparkStop(silent) {
         sparkTimer = clear(sparkTimer);
         if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
         layer = null;
         if (sparkCount) sparkCount.style.display = 'none';
-        if (score > 0) miniToast('本次收集了 ' + score + ' 个灵感碎片');
+        if (!silent && score > 0) miniToast('本次收集了 ' + score + ' 个灵感碎片');
     }
     // 自带轻量提示：主 IIFE 里的 wbToast 挂不到 window 上，跨块取不到，这里不依赖它
     function miniToast(msg) {
@@ -2391,7 +2393,9 @@ window.addEventListener('resize', function () {
         running = true;
         try { tipStart(); } catch (e) {}
         try { lenStart(); } catch (e) {}
-        try { sparkStart(); } catch (e) {}
+        if (!wbMobile && !wbReduceMotion) {
+            try { sparkStart(); } catch (e) {}
+        }
     }
     function allStop() {
         if (!running) return;
@@ -2424,6 +2428,20 @@ window.addEventListener('resize', function () {
         }
         setInterval(check, 800);   // 老内核兜底：没有 MutationObserver 就轮询
     }
+    // 页面切到后台时，等待提示和字数徽章没有继续更新的价值；停掉定时器，
+    // 回到前台再恢复。生成本身由 app.js 的轮询单独管理。
+    document.addEventListener('visibilitychange', function () {
+        if (!running) return;
+        if (document.hidden) {
+            tipTimer = clear(tipTimer);
+            lenTimer = clear(lenTimer);
+            if (layer) sparkStop(true);
+        } else {
+            restartTipTimer();
+            lenStart();
+            if (!wbMobile && !wbReduceMotion && !layer) sparkStart();
+        }
+    });
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
@@ -2438,7 +2456,7 @@ window.addEventListener('resize', function () {
     <div style="opacity: .75;">基于官方评审规则 · 多智能体辅助撰写 · 最终内容以你的真实项目与署名为准</div>
     <!-- 免责说明：用原生 <details> 折叠，不依赖任何 JS / script 块，
          避免「改了主 IIFE 但挂载点在另一块」这类跨块 ReferenceError -->
-    <details style="max-width: 660px; margin: 6px auto 0;">
+    <details class="wb-disclosure" style="max-width: 660px; margin: 6px auto 0;">
         <summary style="cursor: pointer; text-align: center; color: var(--text-mute); opacity: .85;
                         text-decoration: underline; user-select: none; padding: 2px 0;">使用说明与免责声明</summary>
         <div style="margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px;
@@ -2457,5 +2475,35 @@ window.addEventListener('resize', function () {
         </div>
     </details>
 </footer>
+<script>
+/* 移动端 footer 折叠内容会从视口底部向下展开，原生 details 虽已打开，
+   但用户看不到内容，容易误以为点击无效。展开后把标题滚到视口中部，
+   不接管原生 toggle，也不影响桌面端行为。 */
+(function () {
+    function bind() {
+        var nodes = document.querySelectorAll('footer details.wb-disclosure, footer details.wb-disclosure details');
+        for (var i = 0; i < nodes.length; i++) {
+            var d = nodes[i];
+            if (d.__wbDisclosureBound) continue;
+            d.__wbDisclosureBound = true;
+            d.addEventListener('toggle', function () {
+                if (!this.open || !window.matchMedia || !window.matchMedia('(max-width: 768px)').matches) return;
+                var self = this;
+                setTimeout(function () {
+                    try {
+                        var root = document.documentElement;
+                        var oldBehavior = root.style.scrollBehavior;
+                        root.style.scrollBehavior = 'auto';
+                        self.scrollIntoView({ behavior: 'auto', block: 'center' });
+                        root.style.scrollBehavior = oldBehavior;
+                    } catch (e) {}
+                }, 0);
+            });
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
+})();
+</script>
 </body>
 </html>

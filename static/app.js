@@ -7292,6 +7292,9 @@
 /* ===== WB UI 增强：粒子背景 + 滚动进场 ===== */
         (function () {
             var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            // 移动端不启动全屏粒子画布。每帧点位/连线计算会持续唤醒 CPU/GPU，
+            // 对表单操作没有信息价值，却会明显增加发热和耗电。
+            var mobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
 
             /* 滚动进场 */
             var targets = document.querySelectorAll('.card, .result-hero, .content-block, .tabs');
@@ -7313,7 +7316,7 @@
             }
 
             /* 粒子网络背景 */
-            if (!reduce) {
+            if (!reduce && !mobile) {
                 var cv = document.getElementById('wbParticles');
                 if (cv && cv.getContext) {
                     var ctx = cv.getContext('2d');
