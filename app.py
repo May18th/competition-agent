@@ -117,6 +117,8 @@ def admin_notice():
     try:
         with open(_NOTICE_FILE, "w", encoding="utf-8") as f:
             json.dump(n, f, ensure_ascii=False)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
     return jsonify({"success": True, **n})
@@ -2667,12 +2669,20 @@ def admin_home():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+    try:
+        _scope = admin_scope(request.args)
+        _history_where, _history_params = admin_history_where(_scope)
+    except ValueError as exc:
+        conn.close()
+        return "统计范围无效：%s" % _html_escape(str(exc)), 400
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _history_where,
+                          _history_params).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
-        (today + "%",)).fetchone()[0]
-    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _history_where,
+        _history_params + (today + "%",)).fetchone()[0]
+    avg_row = c.execute("SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _history_where,
+                        _history_params).fetchone()
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
     rated_count = int(avg_row[1] or 0) if avg_row else 0
     avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
@@ -2852,9 +2862,60 @@ loadViz();
         feedback_total, fb_rows, fail_rows)
 
 
-def _canonical_record_competition(raw_name, profiles=None):
-    """Return the catalogued competition name for a history value, or None."""
-    value = " ".join(str(raw_name or "").strip().casefold().split())
+def admin_scope(args=None):
+    """Return one bounded date scope for all admin statistics.
+
+    ``args`` may be Flask's ``request.args`` or a plain mapping.  The helper
+    deliberately caps the window so a dashboard request cannot trigger an
+    unbounded scan of production history.
+    """
+    args = args or {}
+    get = args.get if hasattr(args, "get") else lambda key, default=None: default
+    raw_start = str(get("start", "") or "").strip()
+    raw_end = str(get("end", "") or "").strip()
+    raw_days = str(get("days", "") or "").strip()
+    if raw_start or raw_end:
+        if not (raw_start and raw_end):
+            raise ValueError("start 和 end 必须同时提供")
+        try:
+            start_date = datetime.strptime(raw_start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(raw_end, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("日期必须使用 YYYY-MM-DD") from exc
+        if end_date < start_date:
+            raise ValueError("end 不能早于 start")
+        days = (end_date - start_date).days + 1
+        if days > 90:
+            raise ValueError("统计范围最多 90 天")
+    else:
+        try:
+            days = int(raw_days or 30)
+        except (TypeError, ValueError):
+            raise ValueError("days 必须是 1-90 的整数")
+        if days < 1 or days > 90:
+            raise ValueError("统计范围最多 90 天")
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days - 1)
+    return {
+        "start": start_date.strftime("%Y-%m-%d 00:00:00"),
+        "end": end_date.strftime("%Y-%m-%d 23:59:59"),
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "days": days,
+    }
+
+
+def admin_history_where(scope):
+    """Build the shared history predicate and positional parameters."""
+    return (
+        "created_time >= ? AND created_time <= ? AND " + _TEST_HISTORY_WHERE,
+        (scope["start"], scope["end"]),
+    )
+
+
+def admin_competition_display(raw, profiles=None):
+    """Normalize a stored competition label to a registered display name."""
+    value = " ".join(str(raw or "").strip().casefold().split())
     if not value:
         return None
     if profiles is None:
@@ -2864,15 +2925,20 @@ def _canonical_record_competition(raw_name, profiles=None):
         except Exception:
             profiles = []
     for profile in profiles or []:
-        canonical = str(profile.get("name") or "").strip()
-        if not canonical:
+        if not isinstance(profile, dict):
             continue
+        canonical = str(profile.get("name") or "").strip()
         candidates = [canonical] + list(profile.get("aliases") or [])
         for candidate in candidates:
             candidate_key = " ".join(str(candidate or "").strip().casefold().split())
-            if candidate_key and value == candidate_key:
-                return canonical
+            if candidate_key and candidate_key == value:
+                return canonical or None
     return None
+
+
+def _canonical_record_competition(raw_name, profiles=None):
+    """Return the catalogued competition name for a history value, or None."""
+    return admin_competition_display(raw_name, profiles)
 
 
 def _sanitize_feedback_competition_text(content, profiles=None):
@@ -2897,13 +2963,21 @@ def admin_dashboard():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+    try:
+        _scope = admin_scope(request.args)
+        _history_where, _history_params = admin_history_where(_scope)
+    except ValueError as exc:
+        conn.close()
+        return "统计范围无效：%s" % _html_escape(str(exc)), 400
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _history_where,
+                          _history_params).fetchone()[0]
     today = datetime.now().strftime("%Y-%m-%d")
     today_gen = c.execute(
-        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _TEST_HISTORY_WHERE,
-        (today + "%",)).fetchone()[0]
+        "SELECT COUNT(*) FROM history WHERE %s AND created_time LIKE ?" % _history_where,
+        _history_params + (today + "%",)).fetchone()[0]
     avg_row = c.execute(
-        "SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _TEST_HISTORY_WHERE).fetchone()
+        "SELECT AVG(rating), COUNT(*) FROM history WHERE %s AND rating > 0" % _history_where,
+        _history_params).fetchone()
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
     rated_count = int(avg_row[1] or 0) if avg_row else 0
     avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
@@ -3340,13 +3414,20 @@ def monitor():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    try:
+        _scope = admin_scope(request.args)
+        _history_where, _history_params = admin_history_where(_scope)
+    except ValueError as exc:
+        conn.close()
+        return "统计范围无效：%s" % _html_escape(str(exc)), 400
     recent_gen = c.execute(
         "SELECT competition_name, mode, duration, status, created_time FROM history "
-        "WHERE %s ORDER BY id DESC LIMIT 50" % _TEST_HISTORY_WHERE).fetchall()
+        "WHERE %s ORDER BY id DESC LIMIT 50" % _history_where, _history_params).fetchall()
     recent_fail = c.execute(
         "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
         "FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
-    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+    total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _history_where,
+                          _history_params).fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
 
@@ -5272,8 +5353,10 @@ def quota():
 
 @app.route('/api/admin/quota')
 def admin_quota():
-    """额度监视（第九十一轮）：今日 quota + 近 7 日每日生成数（近似调用活跃度）。"""
+    """额度监视：今日 quota + 统一范围内每日生成数。"""
     try:
+        scope = admin_scope(request.args)
+        history_where, history_params = admin_history_where(scope)
         from competition_agents import get_quota_status
         q = get_quota_status()
         calls = int(q.get("calls") or 0)
@@ -5283,18 +5366,20 @@ def admin_quota():
         c = conn.cursor()
         rows = c.execute(
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
-            "WHERE created_time >= date('now','-7 day') GROUP BY d ORDER BY d").fetchall()
+            "WHERE %s GROUP BY d ORDER BY d" % history_where, history_params).fetchall()
         conn.close()
         day_map = {r[0]: r[1] for r in rows}
         daily = []
-        for i in range(6, -1, -1):
-            day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range(scope["days"] - 1, -1, -1):
+            day = (datetime.strptime(scope["end_date"], "%Y-%m-%d") - timedelta(days=i)).strftime("%Y-%m-%d")
             daily.append({"date": day, "count": day_map.get(day, 0)})
         return jsonify({
             "success": True, "calls": calls, "limit": limit,
             "remaining": max(0, limit - calls), "percent": percent,
-            "exceeded": calls >= limit, "daily": daily,
+            "exceeded": calls >= limit, "daily": daily, "scope": scope,
         })
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -5328,29 +5413,40 @@ def admin_stats():
     """后台可视化数据：生成趋势 / 失败率 / 反馈分类 / 评分分布 / AI 模拟评分分布。"""
     auto_resolve_failures()
     try:
+        scope = admin_scope(request.args)
+        history_where, history_params = admin_history_where(scope)
         conn = get_db()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         trend = c.execute(
             "SELECT substr(created_time,1,10) AS d, COUNT(*) AS n FROM history "
-            "WHERE %s AND created_time >= date('now','-14 day') GROUP BY d ORDER BY d" % _TEST_HISTORY_WHERE).fetchall()
+            "WHERE %s GROUP BY d ORDER BY d" % history_where, history_params).fetchall()
         recent_failures = c.execute(
             "SELECT task_id, type, path, error, detail, error_code, created_time, count FROM gen_failures "
-            "ORDER BY id DESC LIMIT 10").fetchall()
-        total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
+            "WHERE created_time >= ? AND created_time <= ? ORDER BY id DESC LIMIT 10",
+            (scope["start"], scope["end"])).fetchall()
+        total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % history_where,
+                          history_params).fetchone()[0]
         # 统计所有已记录的生成失败（包括已自动恢复），避免把历史失败清理后误报为 100%。
-        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
-        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history WHERE %s GROUP BY mode" % _TEST_HISTORY_WHERE).fetchall()
+        failed = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate' "
+                           "AND created_time >= ? AND created_time <= ?",
+                           (scope["start"], scope["end"])).fetchone()[0]
+        mode_rows = c.execute("SELECT mode, COUNT(*) AS n FROM history WHERE %s GROUP BY mode" % history_where,
+                              history_params).fetchall()
         # 第一百四十三轮：排除 duration≤1s 测试异常样本，用中位数口径，不被个别极值拉偏
-        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE %s AND duration > 1" % _TEST_HISTORY_WHERE).fetchall()]
+        _durs = [r[0] for r in c.execute("SELECT duration FROM history WHERE %s AND duration > 1" % history_where,
+                                          history_params).fetchall()]
         avg_dur = sorted(_durs)[len(_durs) // 2] if _durs else 0
         fb = c.execute(
             "SELECT category, COUNT(*) AS n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
         rating = c.execute(
-            "SELECT rating, COUNT(*) AS n FROM history WHERE %s AND rating > 0 " % _TEST_HISTORY_WHERE +
-            "GROUP BY rating ORDER BY rating").fetchall()
-        scores = c.execute("SELECT result_data FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchall()
+            "SELECT rating, COUNT(*) AS n FROM history WHERE %s AND rating > 0 " % history_where +
+            "GROUP BY rating ORDER BY rating", history_params).fetchall()
+        scores = c.execute("SELECT result_data FROM history WHERE %s" % history_where,
+                           history_params).fetchall()
         conn.close()
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -5378,8 +5474,8 @@ def admin_stats():
     # 生成趋势 14 天全序列补零（无数据日期补 0，含今日实时点）
     trend_map = {r["d"]: r["n"] for r in trend}
     trend_full = []
-    for i in range(13, -1, -1):
-        day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+    for i in range(scope["days"] - 1, -1, -1):
+        day = (datetime.strptime(scope["end_date"], "%Y-%m-%d") - timedelta(days=i)).strftime("%Y-%m-%d")
         trend_full.append({"date": day, "count": trend_map.get(day, 0)})
     recent_failures_list = [{
         "time": r["created_time"], "type": r["type"] or "generate",
@@ -5423,6 +5519,7 @@ def admin_stats():
         "feedback": [{"category": r["category"], "count": r["n"]} for r in fb],
         "rating": [{"rating": r["rating"], "count": r["n"]} for r in rating],
         "score_buckets": [{"range": k, "count": v} for k, v in buckets.items()],
+        "scope": scope,
         "data_provenance": {
             "hard_facts": ["生成次数、档位、耗时：history 原始记录", "失败次数与原因：gen_failures 原始记录"],
             "derived": ["成功率为有限样本约计；无失败记录时仅显示暂无失败记录，并标明样本边界"],
