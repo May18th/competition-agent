@@ -7254,7 +7254,11 @@ def _chat_generation_confirmation(msg):
 def _chat_candidate_selection(msg):
     """Return a 1-based candidate index when the user selects a recommendation."""
     text = str(msg or "").strip()
-    match = _re.fullmatch(r"(?:第\s*)?([1-9])\s*(?:号|个|项|个方向)?(?:方向)?", text)
+    match = _re.fullmatch(
+        r"(?:(?:选择|选|采用)\s*(?:候选|方向)?\s*)?"
+        r"(?:第\s*)?([1-9])\s*(?:号|个|项|个方向)?(?:方向)?",
+        text,
+    )
     if not match:
         return None
     return int(match.group(1))

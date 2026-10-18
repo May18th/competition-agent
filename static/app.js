@@ -1926,11 +1926,11 @@
                 tip.innerHTML =
                     '<div>' + step.text + '</div>' +
                     '<div style="margin-top: 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">' +
-                        '<span style="font-size: 12.5px; color: #aab8de; flex: none;">' +
+                        '<span style="font-size: 12.5px; color: var(--text-mute); flex: none;">' +
                             (_coachIdx + 1) + ' / ' + COACH_STEPS.length + '</span>' +
                         '<button onclick="coachNext()" style="padding: 6px 14px; background: var(--c-a); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; flex: none;">知道了</button>' +
-                        '<span onclick="coachEnd()" style="font-size: 12.5px; color: #cdd6f2; cursor: pointer; flex: none;">跳过</span>' +
-                        '<span style="font-size: 12px; color: #aab8de; flex: 1 1 100%;">点暗处或按 Esc 也可退出</span>' +
+                        '<span onclick="coachEnd()" style="font-size: 12.5px; color: var(--text-dim); cursor: pointer; flex: none;">跳过</span>' +
+                        '<span style="font-size: 12px; color: var(--text-mute); flex: 1 1 100%;">点暗处或按 Esc 也可退出</span>' +
                     '</div>';
                 document.body.appendChild(tip);
                 coachRepos();

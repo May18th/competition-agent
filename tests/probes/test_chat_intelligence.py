@@ -378,7 +378,7 @@ class ChatIntelligenceTests(unittest.TestCase):
             self.assertEqual(len(pending["candidates"]), 3)
 
             selected = self.client.post("/api/chat", json={
-                "message": "1", "context": {"competition": "示例创新赛", "competition_selected": True}
+                "message": "选择候选 1", "context": {"competition": "示例创新赛", "competition_selected": True}
             }, buffered=True)
             selected_body = selected.get_data(as_text=True)
             self.assertNotIn('"event":"generation"', selected_body)

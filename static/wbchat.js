@@ -41,6 +41,9 @@
     var styleMenu = null, styleBadge = null, styleBtn = null;
     var busy = false;
     var historyLoaded = false, historyLoading = false;
+    // 交互边界状态：建议只在聊天面板内呈现，不遮挡首页主流程。
+    var proactiveEnabled = true, chatPrefsLoaded = false;
+    var suggestionKey = '', suggestionNode = null;
 
     /* 336：等待阈值。后端 /api/chat 命中预设约 3ms，落到 LLM 兜底时可能数秒，
        超过这个时间就中断并降级，绝不让用户干等。 */
@@ -301,6 +304,51 @@
         renderStyleBadge();
     }
 
+    function chatPreference(field, value) {
+        try {
+            fetch('/api/chat_profile', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ fields: (function () { var o = {}; o[field] = value; return o; })() })
+            }).catch(function () {});
+        } catch (e) {}
+    }
+
+    function loadChatPreferences(done) {
+        if (chatPrefsLoaded) { if (done) done(); return; }
+        try {
+            var local = sessionStorage.getItem('wbChatProactive');
+            if (local === '0') proactiveEnabled = false;
+        } catch (e) {}
+        try {
+            fetch('/api/chat_profile', { method: 'GET', credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (j) {
+                    var p = (j && j.profile) || {};
+                    var v = p.proactive_suggestions_enabled;
+                    if (v === undefined) v = p.suggestions_enabled;
+                    if (v !== undefined) proactiveEnabled = !(v === false || String(v) === '0');
+                    chatPrefsLoaded = true;
+                    if (done) done();
+                }).catch(function () { chatPrefsLoaded = true; if (done) done(); });
+        } catch (e) { chatPrefsLoaded = true; if (done) done(); }
+    }
+
+    function setProactiveEnabled(enabled) {
+        proactiveEnabled = !!enabled;
+        try { sessionStorage.setItem('wbChatProactive', proactiveEnabled ? '1' : '0'); } catch (e) {}
+        try {
+            fetch('/api/suggestion_settings', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+                body: JSON.stringify({ enabled: proactiveEnabled })
+            }).catch(function () { chatPreference('proactive_suggestions_enabled', proactiveEnabled ? '1' : '0'); });
+        } catch (e) { chatPreference('proactive_suggestions_enabled', proactiveEnabled ? '1' : '0'); }
+        if (!proactiveEnabled && suggestionNode && suggestionNode.parentNode) {
+            suggestionNode.parentNode.removeChild(suggestionNode);
+            suggestionNode = null;
+        }
+    }
+
     function normalizeStyle(v) {
         // 第一版用过 brief/fun，落在用户会话里的旧值要认出来并映射成后端口径
         return (v && STYLE_ALIAS[v]) ? STYLE_ALIAS[v] : v;
@@ -329,29 +377,34 @@
           + '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.4-4.2A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>'
             // 297：右上角风格切换小图标
           + '<span id="wbChatStyleBadge" title="切换聊天风格" style="position:absolute; top:-4px; right:-4px;'
-          + ' width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;'
+          + ' width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center;'
           + ' font-size:11px; font-weight:700; cursor:pointer; border:1px solid var(--line,rgba(148,163,184,.5));'
-          + ' background:var(--surface-solid,#fff); color:var(--c-a,#0e7490);">文</span>';
+          + ' background:var(--c-a-soft,rgba(14,116,144,.12)); color:var(--c-a,#0e7490);">文</span>';
 
         var st = wrap.style;
         st.position = 'fixed';
         st.right = '16px';
         st.bottom = '196px';                 // 302 队形：fab16 / ↑76 / ↓136 / 聊196，间距 12px
         st.width = st.height = BUBBLE_SIZE + 'px';
-        st.borderRadius = '50%';
+        st.borderRadius = '14px';
         st.display = 'flex';
         st.alignItems = 'center';
         st.justifyContent = 'center';
         st.cursor = 'pointer';
         st.zIndex = '2600';
         st.border = '1px solid var(--line, rgba(148,163,184,.45))';
-        st.background = 'linear-gradient(135deg, rgba(var(--c-a-rgb,14,116,144),.95), rgba(var(--c-b-rgb,15,118,110),.95))';
-        st.color = '#fff';
-        st.boxShadow = '0 6px 18px rgba(15,23,42,.22)';
+        st.background = 'var(--surface-solid, #fff)';
+        st.color = 'var(--c-a, #0e7490)';
+        st.boxShadow = '0 6px 18px rgba(15,23,42,.14)';
         st.transition = 'transform .15s ease, box-shadow .18s ease';
 
-        wrap.addEventListener('mouseenter', function () { st.transform = 'translateY(-2px)'; });
-        wrap.addEventListener('mouseleave', function () { st.transform = ''; });
+        wrap.addEventListener('mouseenter', function () {
+            st.transform = 'translateY(-2px)';
+            st.boxShadow = '0 9px 22px rgba(15,23,42,.2)';
+        });
+        wrap.addEventListener('mouseleave', function () {
+            st.transform = ''; st.boxShadow = '0 6px 18px rgba(15,23,42,.14)';
+        });
         wrap.addEventListener('click', function (e) {
             if (e && e.target && e.target.id === 'wbChatStyleBadge') return;   // 点小图标不开关面板
             toggle();
@@ -664,6 +717,160 @@
         try { if (listEl) listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
     }
 
+    function controlButton(label, onClick, primary) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = 'min-height:40px;padding:7px 12px;border-radius:9px;cursor:pointer;font-size:12.5px;'
+            + 'border:1px solid ' + (primary ? 'var(--c-a)' : 'var(--line)') + ';'
+            + 'background:' + (primary ? 'var(--c-a)' : 'var(--surface-solid)') + ';'
+            + 'color:' + (primary ? '#fff' : 'var(--text)') + ';';
+        b.addEventListener('click', function () { try { onClick(); } catch (e) {} });
+        return b;
+    }
+
+    function sendQuick(text) {
+        if (!inputEl || !text) return;
+        inputEl.value = text;
+        ask(true);
+    }
+
+    function appendCard(title, subtitle) {
+        if (!listEl) return null;
+        var card = document.createElement('section');
+        card.setAttribute('role', 'region');
+        card.style.cssText = 'margin:2px 0 12px;padding:11px 12px;border:1px solid var(--line);'
+            + 'border-radius:11px;background:var(--surface-2);color:var(--text);';
+        var h = document.createElement('div');
+        h.style.cssText = 'font-weight:700;font-size:13px;line-height:1.5;';
+        h.textContent = title;
+        card.appendChild(h);
+        if (subtitle) {
+            var sub = document.createElement('div');
+            sub.style.cssText = 'margin-top:4px;color:var(--text-dim);font-size:12px;line-height:1.55;';
+            sub.textContent = subtitle;
+            card.appendChild(sub);
+        }
+        listEl.appendChild(card);
+        return card;
+    }
+
+    function showGenerationConfirmation(item) {
+        var comp = item.competition || '待确认';
+        var track = item.track || '未指定';
+        var idea = item.idea || '待补充';
+        var mode = item.mode === 'deep' ? '深度版' : '简洁版';
+        var card = appendCard('开始生成前，请确认这组信息', '小可不会把建议或未确认内容直接写入项目。');
+        if (!card) return;
+        var dl = document.createElement('dl');
+        dl.style.cssText = 'margin:9px 0;display:grid;grid-template-columns:4.5em 1fr;gap:5px 8px;font-size:12px;line-height:1.55;';
+        [['赛事', comp], ['赛道', track], ['主题', idea], ['档位', mode]].forEach(function (row) {
+            var dt = document.createElement('dt'); dt.style.color = 'var(--text-mute)'; dt.textContent = row[0];
+            var dd = document.createElement('dd'); dd.style.margin = '0'; dd.textContent = row[1];
+            dl.appendChild(dt); dl.appendChild(dd);
+        });
+        card.appendChild(dl);
+        var actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+        actions.appendChild(controlButton('确认生成', function () { sendQuick('确认生成'); }, true));
+        actions.appendChild(controlButton('修改信息', function () { sendQuick('我想修改赛事、赛道或项目主题'); }, false));
+        card.appendChild(actions);
+        try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+    }
+
+    function showRecommendationCandidates(item) {
+        var candidates = Array.isArray(item.candidates) ? item.candidates : [];
+        if (!candidates.length) return;
+        var card = appendCard('这些是候选方向', '候选不等于你的项目事实，先选一个，再确认是否采用。');
+        if (!card) return;
+        var list = document.createElement('div');
+        candidates.slice(0, 6).forEach(function (candidate, index) {
+            var value = typeof candidate === 'string' ? candidate : (candidate.title || candidate.name || candidate.label || '候选方向');
+            var desc = typeof candidate === 'string' ? '' : (candidate.description || candidate.desc || '');
+            var row = document.createElement('div');
+            row.style.cssText = 'padding:8px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:1.55;';
+            var text = document.createElement('div'); text.textContent = (index + 1) + '. ' + value;
+            row.appendChild(text);
+            if (desc) { var d = document.createElement('div'); d.style.color = 'var(--text-dim)'; d.textContent = desc; row.appendChild(d); }
+            row.appendChild(controlButton('选择这个方向', function () { sendQuick('选择候选 ' + (index + 1)); }, false));
+            list.appendChild(row);
+        });
+        card.appendChild(list);
+        try { listEl.scrollTop = listEl.scrollHeight; } catch (e) {}
+    }
+
+    function showSuggestion(text) {
+        if (!proactiveEnabled || !text || !listEl) return;
+        var key = String(text).replace(/\s+/g, ' ').trim();
+        if (!key || key === suggestionKey) return;
+        try { if (sessionStorage.getItem('wbChatSuggestion:' + key) === '1') return; } catch (e) {}
+        suggestionKey = key;
+        var card = appendCard('小可建议', text);
+        if (!card) return;
+        card.style.borderStyle = 'dashed';
+        var actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;';
+        actions.appendChild(controlButton('去处理', function () { sendQuick(text.replace(/^💡\s*/, '')); }, true));
+        actions.appendChild(controlButton('收起', function () {
+            try { sessionStorage.setItem('wbChatSuggestion:' + key, '1'); } catch (e) {}
+            if (card.parentNode) card.parentNode.removeChild(card);
+            suggestionNode = null;
+        }, false));
+        actions.appendChild(controlButton('关闭主动建议', function () { setProactiveEnabled(false); }, false));
+        card.appendChild(actions);
+        suggestionNode = card;
+    }
+
+    function loadSuggestion() {
+        loadChatPreferences(function () {
+            if (!proactiveEnabled) return;
+            try {
+                fetch('/api/chat_suggest', { method: 'GET', credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (j) { if (j && j.success) showSuggestion(j.suggestion); })
+                    .catch(function () {});
+            } catch (e) {}
+        });
+    }
+
+    function showProofreadControls(node, meta) {
+        var issues = meta && Array.isArray(meta.issues) ? meta.issues : [];
+        var hid = meta && meta.history_id;
+        if (!node || !issues.length || !hid) return;
+        var card = document.createElement('section');
+        card.style.cssText = 'margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;';
+        var title = document.createElement('div'); title.style.fontWeight = '700'; title.textContent = '校对建议（修改前可预览）'; card.appendChild(title);
+        var rows = [];
+        issues.forEach(function (issue, index) {
+            if (!issue || !issue.original || !issue.suggestion) return;
+            var row = document.createElement('div'); row.style.cssText = 'margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;';
+            var copy = document.createElement('div'); copy.style.lineHeight = '1.55';
+            copy.textContent = (index + 1) + '. ' + (issue.type || '文本问题') + '：' + issue.original + ' → ' + issue.suggestion;
+            row.appendChild(copy);
+            var actions = document.createElement('div'); actions.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;';
+            var preview = controlButton('预览', function () {
+                if (row.querySelector('.wbchat-proofread-preview')) return;
+                var p = document.createElement('div'); p.className = 'wbchat-proofread-preview';
+                p.style.cssText = 'margin:6px 0;padding:7px;background:var(--surface-solid);border-radius:7px;line-height:1.55;';
+                p.textContent = '将把「' + issue.original + '」替换为「' + issue.suggestion + '」。'; row.insertBefore(p, actions);
+                actions.appendChild(controlButton('确认采纳', function () {
+                    fetch('/api/chat_apply_proofread', { method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'same-origin',
+                        body: JSON.stringify({history_id: hid, original: issue.original, suggestion: issue.suggestion}) })
+                        .then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+                            if (!j || !j.success) return;
+                            preview.disabled = true; preview.textContent = '已采纳';
+                            var undo = controlButton('撤销', function () {
+                                fetch('/api/proposal_revision/' + encodeURIComponent(hid), { method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({action:'undo'}) })
+                                    .then(function (r) { return r.ok ? r.json() : null; }).then(function (u) { if (u && u.success) undo.disabled = true; }).catch(function () {});
+                            }, false);
+                            actions.appendChild(undo);
+                        }).catch(function () {});
+                }, true));
+            }, false);
+            actions.appendChild(preview);
+            row.appendChild(actions); card.appendChild(row); rows.push(row);
+        });
+        if (rows.length) { var content = node.querySelector('.wbchat-bot-content'); if (content) content.appendChild(card); }
+    }
+
     function restoreHistory() {
         if (historyLoaded || historyLoading || !listEl) return;
         historyLoading = true;
@@ -753,6 +960,7 @@
         pushThinking();
 
         var replied = false, answerNode = null, answerText = '', timer = null, ctl = null;
+        var controlShown = false, proofreadMeta = null;
         function finish(text, opts) {
             if (replied) return;
             if (timer) { clearTimeout(timer); timer = null; }
@@ -774,13 +982,21 @@
             }
             if (!payload) return false;
             if (payload === '[DONE]') {
-                if (!answerNode && !replied) fallback();
+                if (!answerNode && !replied && !controlShown) fallback();
                 else if (answerNode && !replied) { replied = true; busy = false; removeThinking(); }
+                else if (controlShown && !replied) { replied = true; busy = false; removeThinking(); }
                 return true;
             }
             var item = null;
             try { item = JSON.parse(payload); } catch (e) { item = { token: payload }; }
             if (item.error_code) { fallback(); return true; }
+            if (item.event === 'generation_confirmation' || item.event === 'generation_confirm') {
+                removeThinking(); showGenerationConfirmation(item); controlShown = true;
+            }
+            if (item.event === 'recommendation_candidates') {
+                removeThinking(); showRecommendationCandidates(item); controlShown = true;
+            }
+            if (item.event === 'proofread') proofreadMeta = item;
             if (item.event === 'generation') {
                 var started = false;
                 try {
@@ -796,6 +1012,7 @@
                 if (!answerNode) { removeThinking(); answerNode = pushMsg('bot', ''); }
                 answerText += item.token;
                 updateBotMsg(answerNode, answerText);
+                if (proofreadMeta) { showProofreadControls(answerNode, proofreadMeta); proofreadMeta = null; }
             }
             return false;
         }
@@ -861,6 +1078,7 @@
         try { document.body.classList.toggle('wbchat-open', opened); } catch (e) {}
         if (opened) {
             if (!listEl || !listEl.children.length) restoreHistory();
+            loadSuggestion();
             renderStyleBadge();
             if (inputEl) { try { inputEl.focus(); } catch (e) {} }
         }
