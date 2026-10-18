@@ -260,6 +260,17 @@ class AdminOperationsTests(unittest.TestCase):
                          "联系 [邮箱已脱敏]，电话 [电话已脱敏]")
         self.assertEqual(app_module.admin_history_display_key(123), "历史-a665a459")
 
+    def test_readonly_admin_cannot_download_full_feedback_export(self):
+        old_token = app_module.ADMIN_TOKEN
+        app_module.ADMIN_TOKEN = "probe-token"
+        client = app_module.app.test_client()
+        try:
+            with patch.object(app_module, "_admin_session_role", return_value="readonly"):
+                response = client.get("/api/feedback/export", headers={"X-Admin-Token": "probe-token"})
+            self.assertEqual(response.status_code, 403)
+        finally:
+            app_module.ADMIN_TOKEN = old_token
+
 
 if __name__ == "__main__":
     unittest.main()

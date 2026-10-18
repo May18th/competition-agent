@@ -2609,6 +2609,8 @@ def list_feedback():
 @app.route('/api/feedback/export')
 def export_feedback():
     """一键导出全部反馈为格式化 Excel（表头加粗底色、列宽自适应、冻结表头、斑马纹）。"""
+    if _admin_session_role() == "readonly":
+        return jsonify({"success": False, "error": "演示模式为只读，不能导出全量数据"}), 403
     from io import BytesIO
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
