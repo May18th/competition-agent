@@ -399,6 +399,10 @@ class ChatIntelligenceTests(unittest.TestCase):
             self.assertTrue(pending["idea"])
 
     def test_fixed_generation_prompts_follow_selected_chat_style(self):
+        self.assertTrue(app_module._chat_generation_confirmation("确认生成"))
+        self.assertTrue(app_module._chat_generation_confirmation("就按这个来，开始吧"))
+        self.assertFalse(app_module._chat_generation_confirmation("不确认生成"))
+        self.assertFalse(app_module._chat_generation_confirmation("好"))
         self.assertIn("先别急着开工", app_module._chat_recommendation_reply("挑战杯", "casual"))
         self.assertIn("仅作候选", app_module._chat_recommendation_reply("挑战杯", "academic"))
         self.assertIn("资料齐全后我再启动生成", app_module._chat_missing_requirements_reply(

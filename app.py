@@ -7241,6 +7241,8 @@ def _chat_generation_confirmation(msg):
     if not text or len(text) > 80:
         return False
     normalized = _re.sub(r"[\s，。！？?、,.!：:；;]+", "", text).casefold()
+    if any(token in normalized for token in ("不确认", "不要生成", "暂不生成", "先不生成", "不想生成")):
+        return False
     explicit = (
         "确认生成", "开始生成", "就按这个生成", "按这个生成", "按此生成",
         "可以开始生成", "同意生成", "确定生成", "确认开工", "开始吧生成",
