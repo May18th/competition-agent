@@ -158,7 +158,7 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/chat_history").get_json()["messages"], [])
 
     def test_name_origin_questions_use_team_identity_preset(self):
-        for question in ("谁给你取的名字？", "小创的名字是谁起的？"):
+        for question in ("谁给你取的名字？", "小可的名字是谁起的？", "小创的名字是谁起的？"):
             response = self.client.post("/api/chat", json={"message": question}, buffered=True)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.mimetype, "text/event-stream")
@@ -167,6 +167,12 @@ class ChatIntelligenceTests(unittest.TestCase):
             self.assertIn("团队", reply)
             self.assertNotIn("成员", reply)
             self.assertNotIn("iCAN", reply)
+
+    def test_agent_display_name_is_xiaoke_with_legacy_alias_support(self):
+        self.assertIn("小可", app_module._CHAT_NAME)
+        self.assertIn("你是「小可」", app_module._system_prompt("concise", "", {}))
+        self.assertIn("小可", app_module._CHAT_IDENTITY_ANSWER)
+        self.assertIsNotNone(app_module._chat_identity_answer("小创的名字是谁起的？"))
 
     def test_open_questions_do_not_hit_generic_keyword_presets(self):
         for question in (
