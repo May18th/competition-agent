@@ -2713,7 +2713,7 @@ def admin_home():
     success_rate = round(total_gen * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
     success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if total_gen else '暂无样本')
     feedback_total = c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
-    open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
+    open_issue = c.execute("SELECT COUNT(*) FROM issues WHERE status IN ('open','processing')").fetchone()[0]
     recent_fb = c.execute(
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
@@ -3330,8 +3330,8 @@ def admin_dashboard():
     judge_avg = round(judge_avg, 1) if judge_avg is not None else None
     judge_avg_display = ('%.1f' % judge_avg) if judge_avg is not None else '暂无评分'
     open_issues = c.execute(
-        "SELECT id, kind, source, content, created_time, priority, assignee, due_time FROM issues "
-        "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
+        "SELECT id, kind, source, content, created_time, status, resolution, priority, assignee, due_time FROM issues "
+        "WHERE status IN ('open','processing') ORDER BY id DESC LIMIT 15").fetchall()
     conn.close()
 
     # 今日大模型调用额度
@@ -3470,11 +3470,38 @@ def admin_dashboard():
         kind_label = "前端" if it["kind"] == "frontend" else "后端"
         kind_color = "#d97706" if it["kind"] == "frontend" else "#2563eb"
         issue_items.append(
-            '<li><div class="t">#%d · <span style="color:%s">%s</span> · %s · 优先级 %s · 负责人 %s</div>'
-            '<div>%s</div></li>'
-            % (it["id"], kind_color, kind_label, it["created_time"] or "",
+            '<li class="issue-card" data-issue-id="%d">'
+            '<div class="t">#%d · <span style="color:%s">%s</span> · %s · 优先级 %s · 负责人 %s</div>'
+            '<div class="issue-content">%s</div>'
+            '<div class="issue-editor" aria-label="工单处理">'
+            '<div class="issue-fields">'
+            '<label>状态<select data-issue-status>'
+            '<option value="open"%s>待处理</option>'
+            '<option value="processing"%s>处理中</option>'
+            '<option value="resolved">已解决</option></select></label>'
+            '<label>优先级<select data-issue-priority>'
+            '<option value="low"%s>低</option><option value="normal"%s>普通</option>'
+            '<option value="high"%s>高</option><option value="urgent"%s>紧急</option></select></label>'
+            '<label>负责人<input data-issue-assignee value="%s" placeholder="未分配"></label>'
+            '<label>截止时间<input data-issue-due value="%s" placeholder="YYYY-MM-DD HH:MM"></label>'
+            '</div>'
+            '<label class="issue-resolution">处理说明 / 给用户的回复'
+            '<textarea data-issue-resolution rows="2" maxlength="500" placeholder="填写处理结果后保存">%s</textarea></label>'
+            '<div class="issue-actions"><button type="button" data-issue-save>保存处理</button>'
+            '<button type="button" class="resolve" data-issue-resolve>标记已解决</button>'
+            '<span class="issue-feedback" data-issue-feedback role="status" aria-live="polite"></span></div>'
+            '</div></li>'
+            % (it["id"], it["id"], kind_color, kind_label, it["created_time"] or "",
+               " selected" if (it["status"] or "open") == "open" else "",
+               " selected" if (it["status"] or "open") == "processing" else "",
                _html_escape(it["priority"] or "normal"), _html_escape(it["assignee"] or "未分配"),
-               _html_escape(it["content"] or "")))
+               _html_escape(it["content"] or ""),
+               " selected" if (it["priority"] or "normal") == "low" else "",
+               " selected" if (it["priority"] or "normal") == "normal" else "",
+               " selected" if (it["priority"] or "normal") == "high" else "",
+               " selected" if (it["priority"] or "normal") == "urgent" else "",
+               _html_escape(it["assignee"] or ""), _html_escape(it["due_time"] or ""),
+               _html_escape(it["resolution"] or "")))
     issues_html = "".join(issue_items) or '<li class="empty">暂无待处理问题</li>'
 
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
@@ -3551,6 +3578,20 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 .nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
+.issue-card{border:1px solid #e6ebf5;padding:14px;margin-bottom:10px}
+.issue-content{color:#1f2937;word-break:break-word;margin-bottom:10px}
+.issue-editor{border-top:1px solid #eef2f7;padding-top:10px}
+.issue-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.issue-fields label,.issue-resolution{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#52627f}
+.issue-fields select,.issue-fields input,.issue-resolution textarea{width:100%;box-sizing:border-box;border:1px solid #dbe3ee;border-radius:7px;background:#fff;color:#1f2937;padding:7px 8px;font:inherit}
+.issue-resolution{margin-top:8px}
+.issue-resolution textarea{resize:vertical;min-height:52px}
+.issue-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.issue-actions button{border:0;border-radius:7px;padding:7px 12px;background:#2563eb;color:#fff;cursor:pointer;font:inherit;font-size:12px}
+.issue-actions button.resolve{background:#059669}
+.issue-actions button:disabled{opacity:.55;cursor:wait}
+.issue-feedback{font-size:12px;color:#059669}
+.issue-feedback.error{color:#b91c1c}
 @media(max-width:900px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.wrap{max-width:none}}
 @media(max-width:620px){body{padding:22px 14px 36px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card{padding:15px;min-height:96px}.num{font-size:27px}.barrow .bl{width:110px}}
 @media(max-width:400px){.cards{grid-template-columns:1fr}}
@@ -3585,13 +3626,72 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 %s
 </div>
 <div class="box">
-<h2 style="margin-top:0">待处理问题工单（自动路由给前端 / 后端）</h2>
+<h2 style="margin-top:0">工单处理 · 待处理问题（自动路由给前端 / 后端）</h2>
+<div style="font-size:12px;color:#64748b;margin:-4px 0 10px">可直接更新状态、优先级、负责人、截止时间和处理说明；保存后会写入状态审计。</div>
 <ul>%s</ul>
 </div>
 <h2 style="margin-top:0">%s</h2>
 <ul class="fblist">%s</ul>
 %s
 <div style="margin-top:14px"><a href="/api/feedback/export" style="color:#2563eb">⬇ 下载全部反馈 Excel</a></div>
+</div>
+<script>
+(function(){
+  function adminFetch(url, options){
+    options = options || {};
+    options.headers = options.headers || {};
+    options.headers['Content-Type'] = 'application/json';
+    var token = '';
+    try { token = localStorage.getItem('admin_token') || ''; } catch (e) {}
+    if (token) options.headers['X-Admin-Token'] = token;
+    return fetch(url, options);
+  }
+  function setFeedback(card, text, error){
+    var el = card.querySelector('[data-issue-feedback]');
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('error', !!error);
+  }
+  function updateIssue(card, status){
+    var id = card.getAttribute('data-issue-id');
+    var save = card.querySelector('[data-issue-save]');
+    var resolve = card.querySelector('[data-issue-resolve]');
+    var payload = {
+      status: status || card.querySelector('[data-issue-status]').value,
+      priority: card.querySelector('[data-issue-priority]').value,
+      assignee: card.querySelector('[data-issue-assignee]').value.trim(),
+      due_time: card.querySelector('[data-issue-due]').value.trim(),
+      resolution: card.querySelector('[data-issue-resolution]').value.trim()
+    };
+    save.disabled = true;
+    resolve.disabled = true;
+    setFeedback(card, '保存中…', false);
+    adminFetch('/api/admin/issues/' + encodeURIComponent(id), {
+      method: 'PATCH', body: JSON.stringify(payload)
+    }).then(function(resp){
+      return resp.json().then(function(data){ return {ok: resp.ok, data: data}; });
+    }).then(function(result){
+      if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存失败');
+      setFeedback(card, '已保存', false);
+      if (payload.status === 'resolved') {
+        setTimeout(function(){ location.reload(); }, 450);
+      }
+    }).catch(function(err){
+      setFeedback(card, err.message || '保存失败，请检查登录状态', true);
+    }).finally(function(){ save.disabled = false; resolve.disabled = false; });
+  }
+  document.querySelectorAll('[data-issue-save]').forEach(function(button){
+    button.addEventListener('click', function(){ updateIssue(button.closest('[data-issue-id]')); });
+  });
+  document.querySelectorAll('[data-issue-resolve]').forEach(function(button){
+    button.addEventListener('click', function(){
+      var card = button.closest('[data-issue-id]');
+      card.querySelector('[data-issue-status]').value = 'resolved';
+      updateIssue(card, 'resolved');
+    });
+  });
+})();
+</script>
 </div></body></html>""" % (total_gen, today_gen, quota_remaining, avg_rating_display,
                               rated_count, feedback_total, avg_dur, success_rate_display,
                               judge_avg_display, rating_bars_html, trend_html, comp_html,
@@ -5938,7 +6038,7 @@ def admin_alert_status():
             "SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate' "
             "AND created_time >= ? AND created_time <= ?",
             (scope["start"], scope["end"])).fetchone()[0]
-        overdue = conn.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
+        overdue = conn.execute("SELECT COUNT(*) FROM issues WHERE status!='resolved'").fetchone()[0]
         avg_row = conn.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 1" % history_where,
                                history_params).fetchone()
         conn.close()

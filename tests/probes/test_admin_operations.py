@@ -271,6 +271,21 @@ class AdminOperationsTests(unittest.TestCase):
         finally:
             app_module.ADMIN_TOKEN = old_token
 
+    def test_admin_panel_exposes_ticket_actions_for_open_issues(self):
+        old_token = app_module.ADMIN_TOKEN
+        app_module.ADMIN_TOKEN = "probe-token"
+        client = app_module.app.test_client()
+        try:
+            response = client.get("/admin/panel", headers={"X-Admin-Token": "probe-token"})
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertIn("工单处理", html)
+            self.assertIn("处理中", html)
+            self.assertIn("已解决", html)
+            self.assertIn("/api/admin/issues/", html)
+        finally:
+            app_module.ADMIN_TOKEN = old_token
+
 
 if __name__ == "__main__":
     unittest.main()
