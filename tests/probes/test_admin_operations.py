@@ -11,6 +11,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import app as app_module
+from llm_usage_store import aggregate_usage, record_usage
 
 
 class AdminOperationsTests(unittest.TestCase):
@@ -112,6 +113,34 @@ class AdminOperationsTests(unittest.TestCase):
         self.assertEqual(summary["metrics"]["recovery_success"], 1)
         self.assertEqual(summary["competitions"], [{"name": "挑战杯", "count": 1}])
         conn.close()
+
+    def test_usage_dashboard_has_bounded_aggregates_and_anonymized_dimensions(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tempdir:
+            db_path = os.path.join(tempdir, "usage.sqlite")
+            record_usage(db_path, task_id="task-a", user_id="alice", stage="generate",
+                         section="项目概述", model="deepseek-flash", total_tokens=120,
+                         created_at="2026-10-17 10:00:00")
+            record_usage(db_path, task_id="task-b", user_id="alice", stage="proofread",
+                         section="风险分析", model="deepseek-flash", total_tokens=80,
+                         created_at="2026-10-17 11:00:00")
+            result = aggregate_usage(db_path, days=999, limit=200,
+                                     now=datetime(2026, 10, 18, 12, 0, 0))
+            self.assertEqual(result["days"], 90)
+            self.assertEqual(result["totals"]["total_tokens"], 200)
+            self.assertEqual(result["totals"]["avg_tokens_per_call"], 100)
+            self.assertEqual(result["forecast"]["seven_day_tokens"], 200 * 7 / 90)
+            self.assertEqual(result["tasks"][0]["task_id"], "task-a")
+            self.assertEqual(len(result["users"][0]["user_key"]), 16)
+            self.assertEqual(result["models"][0]["model"], "deepseek-flash")
+
+    def test_usage_dashboard_empty_database_is_safe(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tempdir:
+            result = aggregate_usage(os.path.join(tempdir, "empty.sqlite"), days=0)
+            self.assertEqual(result["totals"]["calls"], 0)
+            self.assertEqual(result["tasks"], [])
+            self.assertEqual(result["forecast"]["seven_day_tokens"], 0)
 
 
 if __name__ == "__main__":

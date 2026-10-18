@@ -14,7 +14,7 @@
     .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px}.toolbar label{font-size:13px;color:#51616b}
     select,.action{font:inherit}.action{cursor:pointer}.action.primary{background:#087e78;color:#fff;border-color:#087e78}
     .action:focus-visible,select:focus-visible,.nav a:focus-visible{outline:2px solid #087e78;outline-offset:2px}
-    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px}
+    .grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:18px}
     .metric,.section{background:#fff;border:1px solid #dfe7e9;border-radius:6px;padding:14px}
     .metric .label{font-size:12px;color:#65747c}.metric .value{font-size:23px;font-weight:700;margin-top:5px;color:#122c34}
     .section{margin-top:12px}.section h2{font-size:16px;margin:0 0 12px}
@@ -26,6 +26,7 @@
     .bar-fill{height:100%;background:#12958d;border-radius:4px}.bar-value{text-align:right;font-variant-numeric:tabular-nums;color:#2f454d}
     .state{min-height:20px;color:#65747c;font-size:13px}.state.error{color:#a33131}
     .note{color:#728189;font-size:12px;margin:10px 0 0}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:720px){body{padding:18px 12px 32px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tables{grid-template-columns:1fr}}
     @media(max-width:380px){.metric{padding:11px}.metric .value{font-size:20px}.bar-row{grid-template-columns:72px minmax(30px,1fr) 80px}}
     @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
@@ -51,12 +52,15 @@
     <div class="metric"><div class="label">总 Token</div><div id="total" class="value">—</div></div>
     <div class="metric"><div class="label">输入 Token</div><div id="prompt" class="value">—</div></div>
     <div class="metric"><div class="label">输出 Token</div><div id="completion" class="value">—</div></div>
+    <div class="metric"><div class="label">单次均值</div><div id="average" class="value">—</div></div>
+    <div class="metric"><div class="label">7 日预测</div><div id="forecast" class="value">—</div></div>
   </section>
   <section class="section"><h2>每日用量</h2><div id="daily" class="bars"></div></section>
   <div class="tables">
     <section class="section"><h2>按任务/章节</h2><div id="sections"></div></section>
     <section class="section"><h2>按模型</h2><div id="models"></div></section>
   </div>
+  <section class="section"><h2>高用量任务</h2><div id="tasks"></div></section>
   <section class="section"><h2>高用量匿名用户</h2><div id="users"></div><p class="note">用户列为不可逆摘要，不可用于还原账号身份。</p></section>
 </main>
 <script>
@@ -90,8 +94,10 @@
       .then(function(res){if(res.status===401){throw new Error('管理员会话已失效，请重新登录。');}if(!res.ok){throw new Error('请求失败（HTTP '+res.status+'）');}return res.json();})
       .then(function(data){if(!data.success)throw new Error(data.error||'用量数据暂不可用');var t=data.totals||{};
         setText('calls',fmt(t.calls));setText('total',fmt(t.total_tokens));setText('prompt',fmt(t.prompt_tokens));setText('completion',fmt(t.completion_tokens));
+        setText('average',fmt(Math.round(Number(t.avg_tokens_per_call)||0)));setText('forecast',fmt(Math.round(Number((data.forecast||{}).seven_day_tokens)||0)));
         renderDaily(data.daily);table('sections',data.sections,[{key:'section',label:'任务/章节'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
         table('models',data.models,[{key:'model',label:'模型'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
+        table('tasks',data.tasks,[{key:'task_id',label:'任务'},{key:'stage',label:'功能'},{key:'total_tokens',label:'Token',numeric:true,format:fmt},{key:'peak_tokens',label:'峰值',numeric:true,format:fmt}]);
         table('users',data.users,[{key:'user_key',label:'用户摘要'},{key:'calls',label:'调用',numeric:true,format:fmt},{key:'total_tokens',label:'Token',numeric:true,format:fmt}]);
         state.textContent='已更新 · '+data.days+' 天';
       })

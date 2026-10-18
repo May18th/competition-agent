@@ -83,7 +83,9 @@ def aggregate_usage(db_path, days=30, limit=20, now=None):
             COALESCE(SUM(prompt_tokens),0) prompt_tokens,
             COALESCE(SUM(completion_tokens),0) completion_tokens,
             COALESCE(SUM(total_tokens),0) total_tokens,
-            COALESCE(SUM(duration_ms),0) duration_ms
+            COALESCE(SUM(duration_ms),0) duration_ms,
+            COALESCE(AVG(total_tokens),0) avg_tokens_per_call,
+            COALESCE(MAX(total_tokens),0) peak_tokens
             FROM llm_usage WHERE created_at >= ?""", (start,)).fetchone()
         daily = conn.execute("""SELECT substr(created_at,1,10) date, COUNT(*) calls,
             SUM(prompt_tokens) prompt_tokens, SUM(completion_tokens) completion_tokens,
@@ -104,6 +106,11 @@ def aggregate_usage(db_path, days=30, limit=20, now=None):
             COUNT(*) calls, SUM(total_tokens) total_tokens FROM llm_usage
             WHERE created_at >= ? GROUP BY model ORDER BY total_tokens DESC LIMIT ?""",
             (start, limit)).fetchall()
+        tasks = conn.execute("""SELECT task_id, stage, section, COUNT(*) calls,
+            SUM(total_tokens) total_tokens, MAX(total_tokens) peak_tokens
+            FROM llm_usage WHERE created_at >= ? AND task_id != ''
+            GROUP BY task_id, stage, section ORDER BY total_tokens DESC LIMIT ?""",
+            (start, limit)).fetchall()
     return {
         "days": days,
         "totals": dict(totals),
@@ -111,4 +118,9 @@ def aggregate_usage(db_path, days=30, limit=20, now=None):
         "users": [dict(row) for row in users],
         "sections": [dict(row) for row in sections],
         "models": [dict(row) for row in models],
+        "tasks": [dict(row) for row in tasks],
+        "forecast": {
+            "seven_day_tokens": (float(totals["total_tokens"] or 0) * 7 / days)
+            if totals["total_tokens"] else 0,
+        },
     }
