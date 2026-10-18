@@ -377,7 +377,7 @@
           + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
           + '<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>'
           + '<path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span>'
-          + '<span aria-hidden="true" style="font-size:14px;font-weight:700;line-height:1;letter-spacing:0;">小可</span>'
+          + '<span aria-hidden="true" style="font-size:14px;font-weight:700;line-height:1;letter-spacing:0;white-space:nowrap;">小可</span>'
             // 297：右上角风格切换小图标
           + '<span id="wbChatStyleBadge" title="切换聊天风格" style="position:absolute; top:-4px; right:-4px;'
           + ' width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center;'
@@ -388,7 +388,7 @@
         st.position = 'fixed';
         st.right = '16px';
         st.bottom = '196px';                 // 302 队形：fab16 / ↑76 / ↓136 / 聊196，间距 12px
-        st.width = '76px';
+        st.width = '88px';
         st.height = '42px';
         st.padding = '0 12px';
         st.boxSizing = 'border-box';
