@@ -2,6 +2,9 @@ const assert = require('assert');
 const fs = require('fs');
 
 const source = fs.readFileSync(process.argv[2], 'utf8');
+const css = fs.readFileSync(process.argv[3], 'utf8');
+const layout = fs.readFileSync(process.argv[4], 'utf8');
+const coachTipRule = (css.match(/#coachTip\s*\{([^}]*)\}/) || [])[1] || '';
 assert(source.includes("generation_confirmation"), 'generation confirmation event must be handled');
 assert(source.includes("recommendation_candidates"), 'candidate event must be handled');
 assert(source.includes("确认生成"), 'generation confirmation needs an explicit action');
@@ -12,6 +15,12 @@ assert(source.includes("proactive_suggestions_enabled"), 'proactive suggestions 
 assert(source.includes("关闭主动建议"), 'proactive suggestions need a visible opt-out');
 assert(source.includes("修改信息"), 'generation confirmation must offer a non-generating edit path');
 assert(source.includes("小可"), 'launcher should identify the assistant by name');
-assert(source.includes("st.width = '72px'"), 'launcher should use a compact assistant control, not a speech bubble');
+assert(source.includes("st.width = '88px'"), 'launcher should preserve a readable name beside its icon');
 assert(!source.includes("M21 11.5a8.4a8.4"), 'launcher must not use the speech-bubble outline');
+assert(!source.includes("styleBadge.textContent = style === 'casual'"), 'launcher must not show a cramped one-character style badge');
+assert(source.includes("st.background = 'var(--surface-solid)'") && source.includes("st.border = '1px solid var(--line-strong)'"), 'launcher colors must adapt to light and dark themes');
+assert(layout.includes('width: 88px !important') && layout.includes('height: 48px !important'), 'desktop launcher should be a 88x48 pill');
+assert(layout.includes('width: 88px !important') && layout.includes('height: 46px !important'), 'mobile launcher should keep a >=44px touch target');
+assert(coachTipRule.includes('background: var(--surface-2)') && coachTipRule.includes('color: var(--text)') && coachTipRule.includes('border: 1px solid var(--line);') && coachTipRule.includes('backdrop-filter: blur(16px)'), 'coach tip should use a theme-aware glass surface without a strong accent border');
+assert(source.includes("className = 'wbchat-undo-revision'") && source.includes("'已被后续操作覆盖'"), 'a newer adoption must disable stale single-slot undo controls');
 console.log('chat boundary probe passed');

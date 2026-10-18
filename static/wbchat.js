@@ -37,7 +37,7 @@
     var style = 'concise';
 
     var opened = false, panel = null, bubble = null, listEl = null, inputEl = null;
-    var styleMenu = null, styleBadge = null, styleBtn = null;
+    var styleMenu = null, styleBtn = null;
     var busy = false;
     var historyLoaded = false, historyLoading = false;
     // 交互边界状态：建议只在聊天面板内呈现，不遮挡首页主流程。
@@ -383,32 +383,31 @@
         st.position = 'fixed';
         st.right = '16px';
         st.bottom = '196px';                 // 302 队形：fab16 / ↑76 / ↓136 / 聊196，间距 12px
-        st.width = '72px';
-        st.height = '34px';
-        st.padding = '0 9px';
+        st.width = '88px';
+        st.height = '48px';
+        st.padding = '0 12px';
         st.boxSizing = 'border-box';
-        st.borderRadius = '6px';
+        st.borderRadius = '24px';
         st.display = 'flex';
         st.alignItems = 'center';
         st.justifyContent = 'flex-start';
-        st.gap = '6px';
+        st.gap = '8px';
         st.cursor = 'pointer';
         st.zIndex = '2600';
-        st.border = '1px solid rgba(148,163,184,.32)';
-        st.background = 'rgba(255,255,255,.92)';
-        st.color = 'var(--text, #16212e)';
-        st.boxShadow = '0 2px 8px rgba(15,23,42,.08)';
+        st.border = '1px solid var(--line-strong)';
+        st.background = 'var(--surface-solid)';
+        st.color = 'var(--text)';
+        st.boxShadow = '0 4px 14px rgba(var(--c-a-rgb,14,116,144),.16)';
         st.transition = 'transform .15s ease, box-shadow .18s ease';
 
         wrap.addEventListener('mouseenter', function () {
             st.transform = 'translateY(-1px)';
-            st.boxShadow = '0 3px 10px rgba(15,23,42,.12)';
+            st.boxShadow = '0 6px 18px rgba(var(--c-a-rgb,14,116,144),.24)';
         });
         wrap.addEventListener('mouseleave', function () {
-            st.transform = ''; st.boxShadow = '0 2px 8px rgba(15,23,42,.08)';
+            st.transform = ''; st.boxShadow = '0 4px 14px rgba(var(--c-a-rgb,14,116,144),.16)';
         });
         wrap.addEventListener('click', function (e) {
-            if (e && e.target && e.target.id === 'wbChatStyleBadge') return;   // 点小图标不开关面板
             toggle();
         });
         wrap.addEventListener('keydown', function (e) {
@@ -418,12 +417,6 @@
         });
         document.body.appendChild(wrap);
 
-        styleBadge = document.getElementById('wbChatStyleBadge');
-        if (styleBadge) {
-            styleBadge.setAttribute('aria-haspopup', 'menu');
-            styleBadge.setAttribute('aria-expanded', 'false');
-            styleBadge.addEventListener('click', function (e) { toggleStyleMenu(e, styleBadge); });
-        }
         return wrap;
     }
 
@@ -432,12 +425,8 @@
         try { styleBtn.style.background = bg; styleBtn.style.borderColor = bd; } catch (e) {}
     }
 
-    /* 回显当前风格：气泡角标 + 标题栏标签文字 + 箭头方向 + aria，三处同步 */
+    /* 回显当前风格：标题栏标签、箭头方向与 aria 状态同步 */
     function renderStyleBadge() {
-        if (styleBadge) {
-            styleBadge.textContent = style === 'casual' ? '趣' : (style === 'academic' ? '详' : '简');
-            styleBadge.title = '聊天风格：' + styleName() + '（点击切换）';
-        }
         var active = document.getElementById('wbChatStyleCur');
         if (active) active.textContent = styleName();
         if (styleBtn) {
@@ -468,7 +457,6 @@
         styleMenu.style.display = v ? 'block' : 'none';
         try {
             if (styleBtn) styleBtn.setAttribute('aria-expanded', v ? 'true' : 'false');
-            if (styleBadge) styleBadge.setAttribute('aria-expanded', v ? 'true' : 'false');
         } catch (e) {}
         renderStyleBadge();     // 箭头 ▾/▴ 与选中态跟着开合一起回显
     }
@@ -480,7 +468,7 @@
         var w = Math.min(230, (window.innerWidth || 360) - 24);
         var left = 16, top = 0;
         try {
-            var r = (anchor || styleBtn || styleBadge).getBoundingClientRect();
+            var r = (anchor || styleBtn).getBoundingClientRect();
             left = Math.round(r.right) - w;              // 右对齐触发元素
             if (left < 8) left = 8;
             if (left + w > (window.innerWidth || 360) - 8) left = (window.innerWidth || 360) - 8 - w;
@@ -864,10 +852,18 @@
                         .then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
                             if (!j || !j.success) return;
                             preview.disabled = true; preview.textContent = '已采纳';
+                            var previousUndos = document.querySelectorAll('.wbchat-undo-revision:not(:disabled)');
+                            for (var undoIndex = 0; undoIndex < previousUndos.length; undoIndex++) {
+                                if (previousUndos[undoIndex].getAttribute('data-history-id') !== String(hid)) continue;
+                                previousUndos[undoIndex].disabled = true;
+                                previousUndos[undoIndex].textContent = '已被后续操作覆盖';
+                            }
                             var undo = controlButton('撤销', function () {
                                 fetch('/api/proposal_revision/' + encodeURIComponent(hid), { method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({action:'undo'}) })
                                     .then(function (r) { return r.ok ? r.json() : null; }).then(function (u) { if (u && u.success) undo.disabled = true; }).catch(function () {});
                             }, false);
+                            undo.className = 'wbchat-undo-revision';
+                            undo.setAttribute('data-history-id', String(hid));
                             actions.appendChild(undo);
                         }).catch(function () {});
                 }, true));
@@ -1109,13 +1105,12 @@
                     st.left = ''; st.right = '16px'; st.bottom = '196px';
                     st.width = '360px'; st.height = '520px'; st.borderRadius = '14px';
                 }
-                if (menuIsOpen()) placeMenu(styleBtn || styleBadge);   // 336：转屏/改窗口后重新定位
+                if (menuIsOpen()) placeMenu(styleBtn);   // 336：转屏/改窗口后重新定位
             });
             // 336：点弹层外关闭（触发按钮已 stopPropagation，不会误关）；Esc 也关
             document.addEventListener('click', function (e) {
                 if (!menuIsOpen()) return;
                 if (styleMenu.contains(e.target)) return;
-                if (styleBadge && styleBadge.contains(e.target)) return;
                 if (styleBtn && styleBtn.contains(e.target)) return;
                 setMenuOpen(false);
             });

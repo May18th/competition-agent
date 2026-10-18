@@ -1129,13 +1129,15 @@ mark.wb-ph {
     z-index: 1502;
     max-width: 300px;
     padding: 12px 14px;
-    background: var(--surface-solid, #fff);
-    border: 1px solid var(--line-strong, var(--line));
-    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
     font-size: 13px;
     line-height: 1.7;
     color: var(--text);
-    box-shadow: 0 12px 32px rgba(15, 23, 42, .18);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .12);
+    -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    backdrop-filter: blur(16px) saturate(1.1);
 }
 #coachTip b, #coachTip strong { color: var(--text); }
 #coachTip::before {
@@ -1145,8 +1147,8 @@ mark.wb-ph {
     border-left: 8px solid transparent;
     border-right: 8px solid transparent;
 }
-#coachTip.coach-below::before { top: -8px; border-bottom: 8px solid var(--line-strong, var(--line)); }
-#coachTip.coach-above::before { bottom: -8px; border-top: 8px solid var(--line-strong, var(--line)); }
+#coachTip.coach-below::before { top: -8px; border-bottom: 8px solid var(--line); }
+#coachTip.coach-above::before { bottom: -8px; border-top: 8px solid var(--line); }
 
 /* ---------- 开始生成按钮：sticky 悬浮底栏 ---------- */
 /* 长表单场景按钮原位置远超首屏（实测手机 top≈1826 / 桌面 1736，视口 744/673）。

@@ -246,6 +246,37 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn('"event":"generation"', confirmed_body)
         self.assertNotIn('"event":"generation_confirmation"', confirmed_body)
 
+    def test_generation_confirmation_uses_the_exact_previewed_payload(self):
+        previewed = {
+            "competition": "示例创新赛",
+            "idea": "已预览的校园设备预约方案",
+            "mode": "deep",
+            "track": "innovation",
+            "track_options": [],
+            "confirmation_required": True,
+        }
+        chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation",
+                               json.dumps(previewed, ensure_ascii=False))
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            response = self.client.post("/api/chat", json={
+                "message": "确认生成",
+                "context": {
+                    "competition": "另一个赛事",
+                    "competition_selected": True,
+                    "idea": "预览后被修改的主题",
+                    "mode": "fast",
+                    "track": "other",
+                },
+            }, buffered=True)
+
+        body = response.get_data(as_text=True)
+        self.assertIn('"event":"generation"', body)
+        self.assertIn('"competition":"示例创新赛"', body)
+        self.assertIn('"idea":"已预览的校园设备预约方案"', body)
+        self.assertIn('"mode":"deep"', body)
+        self.assertIn('"track":"innovation"', body)
+        self.assertNotIn("预览后被修改的主题", body)
+
     def test_generation_request_without_requirements_never_defaults_to_profile_ican(self):
         with patch.object(app_module, "_current_uid", return_value="alice"), \
              patch.object(app_module, "_chat_profile_load", return_value={"competition": "iCAN大学生创新创业大赛"}), \
@@ -398,10 +429,34 @@ class ChatIntelligenceTests(unittest.TestCase):
             self.assertTrue(pending["confirmation_required"])
             self.assertTrue(pending["idea"])
 
+    def test_candidate_rejection_does_not_accept_recommended_idea(self):
+        pending = {
+            "competition": "示例创新赛", "idea": "", "mode": "deep", "track": "",
+            "track_options": [], "confirmation_required": True,
+            "selected_candidate": {"title": "候选", "idea": "系统推荐的项目方向"},
+            "candidates": [{"title": "候选", "idea": "系统推荐的项目方向"}],
+        }
+        chat_store.set_profile(app_module._CHAT_DB_PATH, "alice", "pending_generation",
+                               json.dumps(pending, ensure_ascii=False))
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            response = self.client.post("/api/chat", json={
+                "message": "我不确认这个方向",
+                "context": {"competition": "示例创新赛", "competition_selected": True},
+            }, buffered=True)
+        body = response.get_data(as_text=True)
+        self.assertNotIn('"event":"generation"', body)
+        stored = json.loads(chat_store.get_profile(
+            app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+        self.assertEqual(stored["idea"], "")
+        self.assertIn("selected_candidate", stored)
+
     def test_fixed_generation_prompts_follow_selected_chat_style(self):
         self.assertTrue(app_module._chat_generation_confirmation("确认生成"))
         self.assertTrue(app_module._chat_generation_confirmation("就按这个来，开始吧"))
         self.assertFalse(app_module._chat_generation_confirmation("不确认生成"))
+        self.assertFalse(app_module._chat_generation_confirmation("别开始吧"))
+        self.assertFalse(app_module._chat_generation_confirmation("确认生成吗？"))
+        self.assertFalse(app_module._chat_generation_confirmation("先不要开始吧"))
         self.assertFalse(app_module._chat_generation_confirmation("好"))
         self.assertIn("先别急着开工", app_module._chat_recommendation_reply("挑战杯", "casual"))
         self.assertIn("仅作候选", app_module._chat_recommendation_reply("挑战杯", "academic"))

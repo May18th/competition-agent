@@ -7856,7 +7856,10 @@ def _chat_generation_confirmation(msg):
     if not text or len(text) > 80:
         return False
     normalized = _re.sub(r"[\s，。！？?、,.!：:；;]+", "", text).casefold()
-    if any(token in normalized for token in ("不确认", "不要生成", "暂不生成", "先不生成", "不想生成")):
+    if "?" in text or "？" in text or any(token in normalized for token in (
+        "不确认", "别开始", "先别开始", "不要开始", "不要生成", "别生成",
+        "暂不生成", "先不生成", "不想生成", "不需要生成", "暂时不生成",
+    )):
         return False
     explicit = (
         "确认生成", "开始生成", "就按这个生成", "按这个生成", "按此生成",
@@ -8298,6 +8301,12 @@ def chat_apply_proofread():
                     conn.rollback()
                     return jsonify({"success": False, "error_code": "fragment_not_found",
                                     "error": "未找到匹配片段"}), 409
+                revision_stack = record.get("_revision_stack")
+                if not isinstance(revision_stack, list):
+                    revision_stack = []
+                revision_stack.append(record.get("proposal") or "")
+                record["_revision_stack"] = revision_stack[-20:]
+                record.pop("_revision_previous", None)
                 record["proposal"] = updated
                 cur = conn.execute(
                     "UPDATE history SET result_data=? WHERE id=? AND user_id=?",
@@ -8494,16 +8503,28 @@ def apply_proposal_revision(history_id):
                 conn.close()
                 return jsonify({"success": False, "error": "修订稿未通过安全校验，原稿未修改",
                                 "reasons": hard_issues}), 422
-            db_record["_revision_previous"] = db_record.get("proposal")
+            revision_stack = db_record.get("_revision_stack")
+            if not isinstance(revision_stack, list):
+                revision_stack = []
+            revision_stack.append(db_record.get("proposal") or "")
+            db_record["_revision_stack"] = revision_stack[-20:]
+            db_record.pop("_revision_previous", None)
             db_record["proposal"] = new_proposal
             db_record["competition_name"] = (data.get("competition_name") or '').strip() or db_record.get("competition_name", '')
         elif action == "undo":
-            previous = db_record.get("_revision_previous")
+            revision_stack = db_record.get("_revision_stack")
+            if not isinstance(revision_stack, list):
+                revision_stack = []
+            previous = revision_stack.pop() if revision_stack else db_record.get("_revision_previous")
             if previous is None:
                 conn.rollback()
                 conn.close()
                 return jsonify({"success": False, "error": "没有可撤销的修订"}), 409
             db_record["proposal"] = previous
+            if revision_stack:
+                db_record["_revision_stack"] = revision_stack
+            else:
+                db_record.pop("_revision_stack", None)
             db_record.pop("_revision_previous", None)
         else:
             conn.rollback()
@@ -8706,6 +8727,10 @@ def chat():
         candidate_confirmed = any(token in normalized for token in (
             "确认这个方向", "采用这个方向", "就这个方向", "用这个方向", "确定这个方向"
         ))
+        if "?" in msg or "？" in msg or any(token in normalized for token in (
+            "不确认", "不采用", "不接受", "先不", "不要", "别用", "不想用",
+        )):
+            candidate_confirmed = False
         if candidate_confirmed:
             pending["idea"] = selected_candidate.get("idea", "")
             pending.pop("selected_candidate", None)
@@ -8732,7 +8757,18 @@ def chat():
         pending["confirmed"] = True
         _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
     if (gen_verb and (gen_obj or comp_name)) or is_generation_followup or generation_confirmed or candidate_confirmed:
-        comp_name = comp_name or pending.get("competition", "")
+        # Confirmation must consume the exact server-side snapshot the user saw,
+        # not newer page fields that may have changed after the preview.
+        if generation_confirmed:
+            comp_name = pending.get("competition", "")
+            page_context["competition"] = comp_name
+            page_context["competition_selected"] = bool(comp_name)
+            page_context["idea"] = pending.get("idea", "")
+            page_context["mode"] = pending.get("mode", "fast")
+            page_context["track"] = pending.get("track", "")
+            page_context["track_options"] = pending.get("track_options") or []
+        else:
+            comp_name = comp_name or pending.get("competition", "")
         if message_comp and pending.get("competition") and message_comp != pending.get("competition"):
             pending["track"] = ""
             pending["track_options"] = []

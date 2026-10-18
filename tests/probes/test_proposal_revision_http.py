@@ -159,6 +159,17 @@ class ProposalRevisionHttpTests(unittest.TestCase):
         self.assertIn("修改后面向评委", applied_text)
         self.assertNotIn("项目解决真实需求", applied_text)
 
+        revised_again = "## 项目概述\n" + ("第二次修订仍保留评委关注的证据链与量化验证结果。\n" * 18)
+        status, _headers, body = self._request("/api/proposal_revision/%d" % history_id, {
+            "action": "apply", "proposal": revised_again, "competition_name": "测试赛事",
+        })
+        self.assertEqual(status, 200, body.decode("utf-8"))
+        self.assertEqual(self._history_proposal(history_id), revised_again.strip())
+
+        status, _headers, body = self._request("/api/proposal_revision/%d" % history_id, {"action": "undo"})
+        self.assertEqual(status, 200, body.decode("utf-8"))
+        self.assertEqual(self._history_proposal(history_id), revised.strip())
+
         status, _headers, body = self._request("/api/proposal_revision/%d" % history_id, {"action": "undo"})
         self.assertEqual(status, 200, body.decode("utf-8"))
         self.assertEqual(self._history_proposal(history_id), self.long_text)

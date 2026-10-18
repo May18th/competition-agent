@@ -11,8 +11,8 @@
        wbTop 占 78~126，wbBottom 占 96~140，重叠 30px；
      · #wbChatBubble 的 bottom:140px 又正好贴着 #wbBottom 的顶边，间距 0。
 
-   修法：四个控件从下往上统一排队，相邻间距固定 12px（满足「间距 ≥12px」），
-   尺寸统一 48px。
+   修法：四个控件从下往上统一排队，相邻间距固定 12px（满足「间距 ≥12px」）。
+   聊天入口横向展开成胶囊，触控高度仍为 48px。
 
    两条加载纪律：
      1. 本文件必须在 wbfix295.css **之后** 引入，否则会被它的 !important 压回去；
@@ -24,7 +24,7 @@
    ============================================================================= */
 
 /* ---------- 队形（自下而上）：fab 16 → ↑ 76 → ↓ 136 → 聊天 196 ----------
-   桌面端：每个 48px 高，相邻两块的底边差 60px = 高 48 + 间距 12。 */
+   聊天入口横向展开，不改变与其它控件的 12px 纵向间距。 */
 #wbFabMain {
     right: 16px !important;
     bottom: 16px !important;
@@ -51,7 +51,7 @@
 #wbChatBubble {
     right: 16px !important;
     bottom: 196px !important;
-    width: 48px !important;
+    width: 88px !important;
     height: 48px !important;
     z-index: 2600 !important;
 }
@@ -81,7 +81,7 @@
     #wbChatBubble {
         right: 12px !important;
         bottom: 182px !important;
-        width: 46px !important;
+        width: 88px !important;
         height: 46px !important;
     }
 }
