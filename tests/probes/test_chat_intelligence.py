@@ -231,11 +231,20 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertEqual(response.mimetype, "text/event-stream")
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
         body = response.get_data(as_text=True)
-        self.assertIn('"event":"generation"', body)
+        self.assertIn('"event":"generation_confirmation"', body)
+        self.assertNotIn('"event":"generation"', body)
         self.assertIn('"idea":"%s"' % data["context"]["idea"], body)
         self.assertIn('"mode":"deep"', body)
         reserve.assert_not_called()
         start.assert_not_called()
+
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            confirmed = self.client.post("/api/chat", json={
+                "message": "确认生成", "context": data["context"]
+            }, buffered=True)
+        confirmed_body = confirmed.get_data(as_text=True)
+        self.assertIn('"event":"generation"', confirmed_body)
+        self.assertNotIn('"event":"generation_confirmation"', confirmed_body)
 
     def test_generation_request_without_requirements_never_defaults_to_profile_ican(self):
         with patch.object(app_module, "_current_uid", return_value="alice"), \
@@ -288,9 +297,22 @@ class ChatIntelligenceTests(unittest.TestCase):
             }, buffered=True)
 
         body = followup.get_data(as_text=True)
-        self.assertIn('"event":"generation"', body)
+        self.assertIn('"event":"generation_confirmation"', body)
+        self.assertNotIn('"event":"generation"', body)
         self.assertIn("校园社区老人不会使用智能手机", body)
         self.assertIn('"mode":"deep"', body)
+        saved = json.loads(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+        self.assertTrue(saved["confirmation_required"])
+
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            confirmed = self.client.post("/api/chat", json={
+                "message": "开始生成", "context": {
+                    "competition": "示例创新赛", "competition_selected": True,
+                    "idea": "", "mode": "deep"
+                }
+            }, buffered=True)
+        confirmed_body = confirmed.get_data(as_text=True)
+        self.assertIn('"event":"generation"', confirmed_body)
         self.assertEqual(chat_store.get_profile(app_module._CHAT_DB_PATH, "alice").get("pending_generation"), "")
 
     def test_pending_generation_does_not_turn_a_question_into_a_project_idea(self):
@@ -340,6 +362,39 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertEqual(saved["competition"], "挑战杯全国大学生课外学术科技作品竞赛")
         self.assertEqual(saved["idea"], "")
         start.assert_not_called()
+
+    def test_recommendation_selection_stays_candidate_until_explicit_acceptance(self):
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            response = self.client.post("/api/chat", json={
+                "message": "帮我推荐一个项目",
+                "context": {"competition": "示例创新赛", "competition_selected": True},
+            }, buffered=True)
+            self.assertEqual(response.status_code, 200)
+            pending = json.loads(chat_store.get_profile(
+                app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+            self.assertEqual(pending["idea"], "")
+            self.assertEqual(len(pending["candidates"]), 3)
+
+            selected = self.client.post("/api/chat", json={
+                "message": "1", "context": {"competition": "示例创新赛", "competition_selected": True}
+            }, buffered=True)
+            selected_body = selected.get_data(as_text=True)
+            self.assertNotIn('"event":"generation"', selected_body)
+            pending = json.loads(chat_store.get_profile(
+                app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+            self.assertEqual(pending["idea"], "")
+            self.assertIn("selected_candidate", pending)
+
+            accepted = self.client.post("/api/chat", json={
+                "message": "确认这个方向", "context": {"competition": "示例创新赛", "competition_selected": True}
+            }, buffered=True)
+            accepted_body = accepted.get_data(as_text=True)
+            self.assertNotIn('"event":"generation"', accepted_body)
+            self.assertIn('"event":"generation_confirmation"', accepted_body)
+            pending = json.loads(chat_store.get_profile(
+                app_module._CHAT_DB_PATH, "alice")["pending_generation"])
+            self.assertTrue(pending["confirmation_required"])
+            self.assertTrue(pending["idea"])
 
     def test_fixed_generation_prompts_follow_selected_chat_style(self):
         self.assertIn("先别急着开工", app_module._chat_recommendation_reply("挑战杯", "casual"))
@@ -484,6 +539,34 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIn("智能校对", app_module._compute_suggestion({
             "done_generation": "1", "project": "校园设备工具"
         }))
+
+    def test_proactive_suggestions_are_deduplicated_and_can_be_disabled(self):
+        """主动提醒不能重复打扰，且用户关闭后应立即停止返回。"""
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            saved = self.client.post("/api/chat_profile", json={
+                "fields": {"project": "校园设备工具"}
+            })
+            self.assertEqual(saved.status_code, 200)
+
+            first = self.client.get("/api/chat_suggest")
+            self.assertEqual(first.status_code, 200)
+            self.assertTrue(first.get_json().get("suggestion"))
+
+            repeated = self.client.get("/api/chat_suggest")
+            self.assertEqual(repeated.status_code, 200)
+            self.assertIsNone(repeated.get_json().get("suggestion"))
+
+            disabled = self.client.post("/api/chat_profile", json={
+                "fields": {"proactive_suggestions_enabled": "0"}
+            })
+            self.assertEqual(disabled.status_code, 200)
+            self.assertEqual(
+                disabled.get_json().get("profile", {}).get("proactive_suggestions_enabled"),
+                "0",
+            )
+            after_disable = self.client.get("/api/chat_suggest")
+            self.assertEqual(after_disable.status_code, 200)
+            self.assertIsNone(after_disable.get_json().get("suggestion"))
 
     def test_proofread_uses_latest_owned_proposal_and_reserves_quota(self):
         self._save_proposal("alice", "当前用户申报书的创新点和验证方法。")

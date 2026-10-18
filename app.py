@@ -7016,6 +7016,7 @@ _PROFILE_FIELDS = {
     "stage": "当前阶段",
     "role": "身份/角色",
     "goal": "目标",
+    "proactive_suggestions_enabled": "主动建议",
 }
 
 
@@ -7228,6 +7229,51 @@ _CHAT_RECOMMENDATION_TERMS = (
     "给我推荐方向", "帮我想个项目", "帮我想一个项目", "帮我想个方向",
     "想不出项目", "想不出方向", "还没想好做什么", "不知道选什么项目",
 )
+
+
+def _chat_generation_confirmation(msg):
+    """Only explicit confirmation may cross the generation boundary.
+
+    Short acknowledgements such as ``好`` or ``继续`` are deliberately excluded:
+    the user may be acknowledging the summary while still wanting to edit it.
+    """
+    text = str(msg or "").strip()
+    if not text or len(text) > 80:
+        return False
+    normalized = _re.sub(r"[\s，。！？?、,.!：:；;]+", "", text).casefold()
+    explicit = (
+        "确认生成", "开始生成", "就按这个生成", "按这个生成", "按此生成",
+        "可以开始生成", "同意生成", "确定生成", "确认开工", "开始吧生成",
+        "开始吧", "开工吧", "现在生成", "生成吧", "可以生成了",
+    )
+    return any(token in normalized for token in explicit)
+
+
+def _chat_candidate_selection(msg):
+    """Return a 1-based candidate index when the user selects a recommendation."""
+    text = str(msg or "").strip()
+    match = _re.fullmatch(r"(?:第\s*)?([1-9])\s*(?:号|个|项|个方向)?(?:方向)?", text)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _chat_recommendation_candidates():
+    """Stable candidate metadata kept in pending state, never in confirmed profile."""
+    return [
+        {
+            "title": "校园/社区高频问题服务工具",
+            "idea": "面向校园或社区中的真实高频问题，设计一套可验证的服务工具或流程改进方案",
+        },
+        {
+            "title": "绿色与公共治理改进方案",
+            "idea": "围绕节能、资源循环或公共安全，设计一个有明确服务对象和量化改进指标的项目",
+        },
+        {
+            "title": "智能技术场景应用",
+            "idea": "把团队已有的技术能力落到一个具体使用场景，明确用户、现有痛点与可验证的改善结果",
+        },
+    ]
 
 
 def _chat_is_recommendation_request(msg):
@@ -7977,17 +8023,92 @@ def chat():
         pending = {}
     recommendation_intent = _chat_is_recommendation_request(msg)
     is_question_message = bool(_re.search(r"[?？]|吗\s*$|^(为什么|怎么|如何|能否|可以吗|是否|是什么)", msg.strip()))
-    is_generation_followup = bool(pending) and not is_question_message
+    pending_confirmation = bool(pending.get("confirmation_required"))
+    candidate_selection_required = bool(pending.get("candidates")) and not pending.get("selected_candidate")
+    # A pending confirmation is an explicit state boundary.  An arbitrary
+    # follow-up can revise the draft, but it must return to confirmation and
+    # can never fall through to the generation event.
+    is_generation_followup = bool(pending) and not is_question_message and not pending_confirmation
     if recommendation_intent:
         # 推荐只负责澄清方向；保留 pending_generation，等用户明确题目后再发 generation 事件。
         recommendation_comp = comp_name or pending.get("competition", "")
-        if pending:
-            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+        pending = dict(pending or {})
+        pending.setdefault("competition", recommendation_comp)
+        pending.setdefault("idea", "")
+        pending.setdefault("mode", page_context.get("mode") or "fast")
+        pending.setdefault("track", page_context.get("track") or "")
+        pending.setdefault("track_options", page_context.get("track_options") or [])
+        pending["candidates"] = _chat_recommendation_candidates()
+        pending.pop("selected_candidate", None)
+        pending["confirmation_required"] = False
+        _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
         reply = _chat_recommendation_reply(recommendation_comp, style)
         _chat_persist(uid, "user", msg, style)
         _chat_persist(uid, "bot", reply, style)
         return _sse_text_reply(reply)
-    if (gen_verb and (gen_obj or comp_name)) or is_generation_followup:
+
+    # Choosing a recommendation is not the same as accepting it as a project
+    # fact.  Keep it in pending state and ask for an explicit confirmation.
+    if candidate_selection_required:
+        candidate_index = _chat_candidate_selection(msg)
+        candidates = pending.get("candidates") or []
+        if candidate_index is not None and 1 <= candidate_index <= len(candidates):
+            selected = candidates[candidate_index - 1]
+            pending["selected_candidate"] = selected
+            pending["confirmation_required"] = True
+            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+            title = selected.get("title") or "这个方向"
+            reply = (
+                "你选的是「%s」。它目前只是候选方向，还没有写入项目资料。\n"
+                "如果要把它作为项目主题并进入生成，请明确回复“确认这个方向”；"
+                "也可以直接补充你自己的主题，我会以你提供的内容为准。"
+            ) % title
+            if style == "academic":
+                reply = (
+                    "已记录候选方向「%s」，但尚未将其视为项目事实。\n"
+                    "请明确回复“确认这个方向”后，我才会把它纳入项目主题并进入生成；"
+                    "如需调整，请直接提供新的问题、对象和方案。"
+                ) % title
+            _chat_persist(uid, "user", msg, style)
+            _chat_persist(uid, "bot", reply, style)
+            return _sse_text_reply(reply)
+
+    # A selected candidate still needs a separate acceptance.  This is kept
+    # separate from generation confirmation so a recommendation cannot silently
+    # become a user fact.
+    selected_candidate = pending.get("selected_candidate")
+    candidate_confirmed = False
+    if selected_candidate and pending_confirmation:
+        normalized = _re.sub(r"[\s，。！？?、,.!：:；;]+", "", msg).casefold()
+        candidate_confirmed = any(token in normalized for token in (
+            "确认这个方向", "采用这个方向", "就这个方向", "用这个方向", "确定这个方向"
+        ))
+        if candidate_confirmed:
+            pending["idea"] = selected_candidate.get("idea", "")
+            pending.pop("selected_candidate", None)
+            pending.pop("candidates", None)
+            pending["confirmation_required"] = False
+            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+            # Continue through requirement collection; a final generation
+            # confirmation is still required below.
+            pending_confirmation = False
+        elif not _chat_generation_confirmation(msg):
+            # Keep the user in the review state instead of interpreting an
+            # unrelated acknowledgement as a generation command.
+            title = selected_candidate.get("title") or "这个方向"
+            return _sse_text_reply(
+                "目前仍是候选方向「%s」，尚未写入项目资料。请回复“确认这个方向”接受，"
+                "或直接告诉我需要调整的内容。" % title
+            )
+
+    # Confirmation can only be accepted after a complete, user-visible summary
+    # has been shown.  The event is emitted only in the confirmed branch below.
+    generation_confirmed = bool(pending_confirmation and _chat_generation_confirmation(msg))
+    if generation_confirmed:
+        pending["confirmation_required"] = False
+        pending["confirmed"] = True
+        _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+    if (gen_verb and (gen_obj or comp_name)) or is_generation_followup or generation_confirmed or candidate_confirmed:
         comp_name = comp_name or pending.get("competition", "")
         if message_comp and pending.get("competition") and message_comp != pending.get("competition"):
             pending["track"] = ""
@@ -8045,6 +8166,41 @@ def chat():
             _chat_persist(uid, "user", msg, style)
             _chat_persist(uid, "bot", prompt, style)
             return _sse_text_reply(prompt)
+        # Never launch generation merely because the form/chat now contains
+        # enough fields.  Present the exact payload first and wait for an
+        # explicit confirmation message.
+        if not generation_confirmed:
+            pending = {
+                "competition": comp_name,
+                "idea": idea,
+                "mode": mode,
+                "track": selected_track,
+                "track_options": track_options,
+                "confirmation_required": True,
+                "confirmed": False,
+            }
+            _chat_profile_save(uid, "pending_generation", _json.dumps(pending, ensure_ascii=False))
+            track_label = selected_track or "未单独指定赛道"
+            confirm_reply = (
+                "资料已齐，我先把本次生成内容列出来供你确认：\n"
+                "- 赛事：%s\n- 赛道：%s\n- 项目主题：%s\n- 版本：%s\n\n"
+                "以上信息仅按你当前填写整理，尚未开始生成。请明确回复“确认生成”或“开始生成”；"
+                "需要修改时直接告诉我修改哪一项。"
+            ) % (comp_name, track_label, idea, "深度版" if mode == "deep" else "简洁版")
+            if style == "academic":
+                confirm_reply = (
+                    "【生成前确认】\n赛事：%s\n赛道：%s\n项目主题：%s\n版本：%s\n\n"
+                    "上述内容仅为当前已确认资料的汇总，不含我擅自补写的事实。"
+                    "请回复“确认生成”后启动；如需调整，请先指出具体字段。"
+                ) % (comp_name, track_label, idea, "深度版" if mode == "deep" else "简洁版")
+            _chat_persist(uid, "user", msg, style)
+            _chat_persist(uid, "bot", confirm_reply, style)
+            return _sse_text_with_event(confirm_reply, "generation_confirmation", {
+                "competition": comp_name,
+                "track": selected_track,
+                "idea": idea,
+                "mode": mode,
+            })
         reply = ("已收到你的项目需求，将按「%s」和「%s」走首页标准生成流程。" %
                  (comp_name, "深度版" if mode == "deep" else "简洁版"))
         _chat_profile_save(uid, "pending_generation", "")
@@ -8205,16 +8361,35 @@ def _chat_set_last_gen(uid, hid):
         return False
 
 
-def _compute_suggestion(profile):
+def _suggestion_key(profile):
+    """Stable key for one workflow milestone; used to avoid repeated nudges."""
     if not profile:
         return None
     if not profile.get('done_generation'):
         if not (profile.get("project") or profile.get("competition")):
             return None
-        return "💡 建议先生成一份申报书：把参赛赛事和项目创意告诉小可即可。"
+        return "start_generation"
     if not profile.get('done_proofread'):
-        return "💡 初稿已生成，建议做一次「智能校对」检查错别字和语病。"
+        return "proofread"
     if not profile.get('done_defense'):
+        return "defense"
+    return None
+
+
+def _suggestions_enabled(profile):
+    value = profile.get("proactive_suggestions_enabled", "1") if profile else "1"
+    return str(value).strip().lower() not in ("0", "false", "off", "no", "disabled")
+
+
+def _compute_suggestion(profile):
+    if not profile or not _suggestions_enabled(profile):
+        return None
+    key = _suggestion_key(profile)
+    if key == "start_generation":
+        return "💡 建议先生成一份申报书：把参赛赛事和项目创意告诉小可即可。"
+    if key == "proofread":
+        return "💡 初稿已生成，建议做一次「智能校对」检查错别字和语病。"
+    if key == "defense":
         return "💡 文字已校对，建议试试「模拟答辩」用评委视角预测高频问题、提前演练。"
     return None
 
@@ -8270,5 +8445,36 @@ def chat_last_gen():
 
 @app.route('/api/chat_suggest', methods=['GET'])
 def chat_suggest():
-    return jsonify({"success": True, "suggestion": _compute_suggestion(_chat_profile_load(_current_uid()))})
+    uid = _current_uid()
+    profile = _chat_profile_load(uid)
+    if not _suggestions_enabled(profile):
+        return jsonify({"success": True, "suggestion": None, "disabled": True})
+    key = _suggestion_key(profile)
+    suggestion = _compute_suggestion(profile)
+    if suggestion and key and profile.get("last_suggestion_key") == key:
+        suggestion = None
+    elif suggestion and key and _admin_session_role() != 'readonly':
+        _chat_profile_save(uid, "last_suggestion_key", key)
+    return jsonify({"success": True, "suggestion": suggestion, "suggestion_key": key})
+
+
+@app.route('/api/suggestion_settings', methods=['POST'])
+def suggestion_settings():
+    """Persist the user's proactive suggestion preference without touching work data."""
+    if _admin_session_role() == 'readonly':
+        return jsonify({"success": False, "error_code": "demo_readonly"}), 403
+    data = request.get_json(silent=True) or {}
+    raw = data.get("enabled")
+    if isinstance(raw, bool):
+        value = "1" if raw else "0"
+    elif str(raw).strip().lower() in ("1", "true", "on", "yes"):
+        value = "1"
+    elif str(raw).strip().lower() in ("0", "false", "off", "no"):
+        value = "0"
+    else:
+        return jsonify({"success": False, "error": "enabled 必须是布尔值"}), 400
+    uid = _current_uid()
+    _chat_profile_save(uid, "proactive_suggestions_enabled", value)
+    return jsonify({"success": True, "enabled": value == "1",
+                    "profile": _chat_profile_load(uid)})
 
