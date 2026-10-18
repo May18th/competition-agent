@@ -11,6 +11,7 @@ history.json
 quota.json
 error.log
 *.log
+admin_retention_reports/
 data/vulns.json
 docs/后台审计.md
 口令备忘.md

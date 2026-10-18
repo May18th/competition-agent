@@ -232,6 +232,34 @@ class AdminOperationsTests(unittest.TestCase):
         self.assertNotIn("content_raw", rows["items"][0])
         conn.close()
 
+    def test_retention_preview_only_reports_safe_expired_paths(self):
+        import tempfile
+        import time
+        with tempfile.TemporaryDirectory() as tempdir:
+            os.makedirs(os.path.join(tempdir, "logs"))
+            os.makedirs(os.path.join(tempdir, "uploads"))
+            os.makedirs(os.path.join(tempdir, "backups"))
+            old = time.time() - 45 * 86400
+            for path in (
+                os.path.join(tempdir, "logs", "old.log"),
+                os.path.join(tempdir, "uploads", "user.docx"),
+                os.path.join(tempdir, "backups", "rollback.db"),
+                os.path.join(tempdir, "competition.db"),
+            ):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("probe")
+                os.utime(path, (old, old))
+            result = app_module.admin_retention_preview(tempdir, days=30,
+                                                        now="2026-10-18 12:00:00")
+            self.assertEqual([item["relative_path"] for item in result["candidates"]], ["logs/old.log"])
+            self.assertIn("uploads", result["excluded_roots"])
+            self.assertFalse(result["deleted"])
+
+    def test_admin_feedback_export_redacts_history_identifier_and_pii(self):
+        self.assertEqual(app_module.admin_redact_feedback("联系 alice@example.com，电话 13812345678"),
+                         "联系 [邮箱已脱敏]，电话 [电话已脱敏]")
+        self.assertEqual(app_module.admin_history_display_key(123), "历史-a665a459")
+
 
 if __name__ == "__main__":
     unittest.main()

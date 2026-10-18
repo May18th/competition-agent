@@ -2623,7 +2623,7 @@ def export_feedback():
     ws = wb.active
     ws.title = "用户反馈"
 
-    headers = ["提交时间", "反馈内容", "分类", "关联历史ID"]
+    headers = ["提交时间", "反馈内容（已脱敏）", "分类", "关联历史摘要"]
     header_fill = PatternFill("solid", fgColor="2563EB")
     header_font = Font(bold=True, color="FFFFFF", size=12)
     thin = Side(style="thin", color="D9D9D9")
@@ -2639,9 +2639,9 @@ def export_feedback():
 
     for i, r in enumerate(rows, start=2):
         vals = [r["created_time"] or "",
-                r["content"] or "",
+                admin_redact_feedback(r["content"]),
                 r["category"] or "其他",
-                r["history_id"] if r["history_id"] is not None else ""]
+                admin_history_display_key(r["history_id"]) if r["history_id"] is not None else ""]
         for col, v in enumerate(vals, 1):
             cell = ws.cell(row=i, column=col, value=v)
             cell.border = border
@@ -3112,6 +3112,56 @@ def admin_service_diagnose():
         "warning" if any(item["status"] == "warning" for item in checks) else "ok")
     return {"status": overall, "checks": checks,
             "updated_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+
+
+def admin_redact_feedback(value):
+    """Remove common contact identifiers before an admin data export."""
+    text = str(value or "")
+    text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[邮箱已脱敏]", text)
+    text = re.sub(r"(?<!\d)1[3-9]\d{9}(?!\d)", "[电话已脱敏]", text)
+    return text[:2000]
+
+
+def admin_history_display_key(history_id):
+    import hashlib
+    return "历史-%s" % hashlib.sha256(str(history_id).encode("utf-8")).hexdigest()[:8]
+
+
+def admin_retention_preview(root, days=30, now=None):
+    """Report expired files in safe operational directories; never delete."""
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        raise ValueError("days 必须是整数")
+    if days < 7 or days > 365:
+        raise ValueError("留存预览范围必须是 7-365 天")
+    root = os.path.abspath(root)
+    now_dt = datetime.strptime(now, "%Y-%m-%d %H:%M:%S") if isinstance(now, str) else datetime.now()
+    cutoff = now_dt.timestamp() - days * 86400
+    safe_roots = ("logs", "tests/probes/_outputs")
+    excluded_roots = ["uploads", "generated", "artifacts", "backups", "competition.db", "chat_history.db"]
+    candidates = []
+    for relative_root in safe_roots:
+        scan_root = os.path.join(root, relative_root.replace("/", os.sep))
+        if not os.path.isdir(scan_root):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(scan_root):
+            for filename in filenames:
+                path = os.path.join(dirpath, filename)
+                try:
+                    stat = os.stat(path)
+                except OSError:
+                    continue
+                if stat.st_mtime < cutoff:
+                    candidates.append({
+                        "relative_path": os.path.relpath(path, root).replace(os.sep, "/"),
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+    candidates.sort(key=lambda item: item["relative_path"])
+    return {"days": days, "cutoff": now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "candidates": candidates, "excluded_roots": excluded_roots,
+            "deleted": False, "note": "仅预览，不会自动删除用户作品、数据库或回滚点"}
 
 
 def _canonical_record_competition(raw_name, profiles=None):
@@ -5897,6 +5947,18 @@ def admin_alert_status():
 @app.route('/api/admin/diagnose')
 def admin_diagnose():
     return jsonify({"success": True, **admin_service_diagnose()})
+
+
+@app.route('/api/admin/retention/preview')
+def admin_retention_preview_api():
+    try:
+        days = request.args.get("days", 30, type=int)
+        result = admin_retention_preview(os.path.dirname(os.path.abspath(__file__)), days=days)
+        return jsonify({"success": True, **result})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"success": False, "error": "留存预览暂不可用"}), 503
 
 
 @app.route('/api/stats')
