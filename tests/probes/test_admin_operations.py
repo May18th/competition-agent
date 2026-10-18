@@ -275,6 +275,7 @@ class AdminOperationsTests(unittest.TestCase):
         old_token = app_module.ADMIN_TOKEN
         app_module.ADMIN_TOKEN = "probe-token"
         client = app_module.app.test_client()
+        issue_id = app_module.create_issue("backend", "probe", "后台工单页面控件验证")
         try:
             response = client.get("/admin/panel", headers={"X-Admin-Token": "probe-token"})
             self.assertEqual(response.status_code, 200)
@@ -284,6 +285,12 @@ class AdminOperationsTests(unittest.TestCase):
             self.assertIn("已解决", html)
             self.assertIn("/api/admin/issues/", html)
         finally:
+            if issue_id:
+                conn = app_module.get_db()
+                conn.execute("DELETE FROM issue_audit WHERE issue_id=?", (issue_id,))
+                conn.execute("DELETE FROM issues WHERE id=?", (issue_id,))
+                conn.commit()
+                conn.close()
             app_module.ADMIN_TOKEN = old_token
 
 
