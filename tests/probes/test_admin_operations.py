@@ -142,6 +142,42 @@ class AdminOperationsTests(unittest.TestCase):
             self.assertEqual(result["tasks"], [])
             self.assertEqual(result["forecast"]["seven_day_tokens"], 0)
 
+    def test_operational_alerts_have_stable_levels_and_dedupe_keys(self):
+        alerts = app_module.admin_alerts({
+            "quota": {"calls": 98, "limit": 100, "date": "2026-10-18"},
+            "failure_rate": 0.32,
+            "overdue_tickets": 2,
+            "avg_latency_sec": 141,
+            "updated_at": "2026-10-18T12:00:00+08:00",
+        })
+        self.assertEqual({item["key"] for item in alerts}, {
+            "quota:2026-10-18", "failure-rate", "tickets:overdue", "latency:avg"
+        })
+        self.assertTrue(all(item["level"] in {"info", "warning", "critical"} for item in alerts))
+        self.assertTrue(all(item["updated_at"] == "2026-10-18T12:00:00+08:00" for item in alerts))
+        self.assertEqual(app_module.admin_alerts({"failure_rate": 0})[0:1], [])
+
+    def test_service_diagnose_is_direct_and_returns_safe_check_structure(self):
+        result = app_module.admin_service_diagnose()
+        self.assertIn(result["status"], {"ok", "warning", "error"})
+        self.assertIsInstance(result["checks"], list)
+        self.assertTrue(all({"key", "status", "detail"} <= set(item) for item in result["checks"]))
+
+    def test_alert_and_diagnose_routes_have_safe_error_boundary(self):
+        old_token = app_module.ADMIN_TOKEN
+        app_module.ADMIN_TOKEN = "probe-token"
+        client = app_module.app.test_client()
+        try:
+            response = client.get("/api/admin/diagnose", headers={"X-Admin-Token": "probe-token"})
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("checks", response.get_json())
+            response = client.get("/api/admin/alert_status?days=999",
+                                  headers={"X-Admin-Token": "probe-token"})
+            self.assertEqual(response.status_code, 400)
+            self.assertFalse(response.get_json()["success"])
+        finally:
+            app_module.ADMIN_TOKEN = old_token
+
 
 if __name__ == "__main__":
     unittest.main()

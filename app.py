@@ -2754,6 +2754,7 @@ h1{font-size:24px;margin:0 0 4px}
 </style></head><body><div class="wrap">
 <nav class="nav"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <div class="mode %s"><span class="badge">%s</span><div><b>当前后台身份</b><span>%s</span></div></div>
+<div class="box" id="adminAlerts" style="margin-bottom:14px;color:#64748b;font-size:13px">服务告警：加载中…</div>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
@@ -2822,6 +2823,14 @@ bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',functio
 bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
 function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return (x.label||x.code||'未知失败')+'（代码 '+(x.code||'unknown')+'）×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
+AF('/api/admin/alert_status').then(function(r){return r.json()}).then(function(j){
+    var el=document.getElementById('adminAlerts');
+    if(!el)return;
+    if(!j.success){el.textContent='服务告警：暂不可用';return;}
+    var a=j.alerts||[];
+    el.textContent=a.length?'服务告警：'+a.map(function(x){return x.title+'（'+x.detail+'）';}).join('；'):'服务告警：当前无高风险项';
+    el.style.color=a.some(function(x){return x.level==='critical';})?'#b91c1c':(a.length?'#a16207':'#166534');
+});
 AF('/api/admin/quality-summary').then(function(r){return r.json()}).then(function(j){
     var el=document.getElementById('qualitySummary');
     if(!el)return;
@@ -3009,6 +3018,82 @@ def admin_quality_summary(conn, scope=None, profiles=None):
         ],
         "sample_note": "暂无质量样本" if not (reviews or failures) else "基于当前时间范围内的记录",
     }
+
+
+def admin_alerts(snapshot):
+    """Convert operational measurements into stable, de-duplicable alerts."""
+    snapshot = snapshot or {}
+    updated_at = str(snapshot.get("updated_at") or datetime.now().astimezone().isoformat(timespec="seconds"))
+    alerts = []
+    quota = snapshot.get("quota") or {}
+    try:
+        calls, limit = int(quota.get("calls") or 0), int(quota.get("limit") or 0)
+    except (TypeError, ValueError):
+        calls, limit = 0, 0
+    if limit and calls >= limit * 0.9:
+        alerts.append({
+            "key": "quota:%s" % (quota.get("date") or datetime.now().strftime("%Y-%m-%d")),
+            "level": "critical" if calls >= limit else "warning",
+            "title": "模型调用额度接近上限" if calls < limit else "模型调用额度已耗尽",
+            "detail": "%d / %d 次" % (calls, limit), "updated_at": updated_at,
+        })
+    try:
+        failure_rate = float(snapshot.get("failure_rate") or 0)
+    except (TypeError, ValueError):
+        failure_rate = 0
+    if failure_rate >= 0.1:
+        alerts.append({
+            "key": "failure-rate", "level": "critical" if failure_rate >= 0.3 else "warning",
+            "title": "生成失败率偏高", "detail": "当前失败率 %.1f%%" % (failure_rate * 100),
+            "updated_at": updated_at,
+        })
+    try:
+        overdue = int(snapshot.get("overdue_tickets") or 0)
+    except (TypeError, ValueError):
+        overdue = 0
+    if overdue:
+        alerts.append({
+            "key": "tickets:overdue", "level": "critical" if overdue >= 5 else "warning",
+            "title": "存在逾期工单", "detail": "%d 条待处理" % overdue,
+            "updated_at": updated_at,
+        })
+    try:
+        latency = float(snapshot.get("avg_latency_sec") or 0)
+    except (TypeError, ValueError):
+        latency = 0
+    if latency >= 120:
+        alerts.append({
+            "key": "latency:avg", "level": "critical" if latency >= 300 else "warning",
+            "title": "服务平均延迟偏高", "detail": "平均 %.1f 秒" % latency,
+            "updated_at": updated_at,
+        })
+    return alerts
+
+
+def admin_service_diagnose():
+    """Run direct local health checks without simulating a Flask request."""
+    checks = []
+    try:
+        conn = get_db()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        checks.append({"key": "database", "status": "ok", "detail": "SQLite 可读写"})
+    except Exception:
+        checks.append({"key": "database", "status": "error", "detail": "数据库暂不可用"})
+    try:
+        import competition_agents as _agents
+        usage_path = getattr(_agents, "_LLM_USAGE_DB_PATH", "")
+        usage_ok = bool(usage_path and (os.path.exists(usage_path) or os.path.isdir(os.path.dirname(usage_path))))
+        checks.append({"key": "llm_usage", "status": "ok" if usage_ok else "warning",
+                       "detail": "Token 用量存储可用" if usage_ok else "Token 用量存储尚未创建"})
+    except Exception:
+        checks.append({"key": "llm_usage", "status": "warning", "detail": "Token 用量暂不可用"})
+    uptime = max(0, int(time.time() - START_TIME))
+    checks.append({"key": "process", "status": "ok", "detail": "进程已运行 %d 秒" % uptime})
+    overall = "error" if any(item["status"] == "error" for item in checks) else (
+        "warning" if any(item["status"] == "warning" for item in checks) else "ok")
+    return {"status": overall, "checks": checks,
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds")}
 
 
 def _canonical_record_competition(raw_name, profiles=None):
@@ -5624,6 +5709,46 @@ def admin_quality_summary_api():
     except Exception as exc:
         print("[admin-quality] summary failed: %s" % exc)
         return jsonify({"success": False, "error": "质量统计暂不可用"}), 503
+
+
+@app.route('/api/admin/alert_status')
+def admin_alert_status():
+    """Return de-duplicable operational alerts for the current admin range."""
+    try:
+        scope = admin_scope(request.args)
+        conn = get_db()
+        history_where, history_params = admin_history_where(scope)
+        total = conn.execute("SELECT COUNT(*) FROM history WHERE %s" % history_where,
+                             history_params).fetchone()[0]
+        failed = conn.execute(
+            "SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate' "
+            "AND created_time >= ? AND created_time <= ?",
+            (scope["start"], scope["end"])).fetchone()[0]
+        overdue = conn.execute("SELECT COUNT(*) FROM issues WHERE status='open'").fetchone()[0]
+        avg_row = conn.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 1" % history_where,
+                               history_params).fetchone()
+        conn.close()
+        from competition_agents import get_quota_status
+        quota = get_quota_status()
+        snapshot = {
+            "quota": quota,
+            "failure_rate": failed / float(total + failed) if total + failed else 0,
+            "overdue_tickets": overdue,
+            "avg_latency_sec": float(avg_row[0] or 0),
+            "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        return jsonify({"success": True, "scope": scope, "alerts": admin_alerts(snapshot),
+                        "diagnose": admin_service_diagnose()})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        print("[admin-alert] status failed: %s" % exc)
+        return jsonify({"success": False, "error": "告警状态暂不可用"}), 503
+
+
+@app.route('/api/admin/diagnose')
+def admin_diagnose():
+    return jsonify({"success": True, **admin_service_diagnose()})
 
 
 @app.route('/api/stats')
