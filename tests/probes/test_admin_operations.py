@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import sys
 import unittest
 from datetime import datetime
@@ -63,6 +64,54 @@ class AdminOperationsTests(unittest.TestCase):
                 self.assertFalse(response.get_json()["success"], path)
         finally:
             app_module.ADMIN_TOKEN = old_token
+
+    def test_quality_summary_separates_deliverable_warning_block_and_recovery(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE history (
+                id INTEGER PRIMARY KEY, competition_name TEXT, result_data TEXT,
+                created_time TEXT, status TEXT
+            );
+            CREATE TABLE export_reviews (
+                id INTEGER PRIMARY KEY, history_id INTEGER, score INTEGER,
+                reasons TEXT, passed INTEGER, created_time TEXT
+            );
+            CREATE TABLE gen_failures (
+                id INTEGER PRIMARY KEY, type TEXT, status TEXT,
+                competition_name TEXT, created_time TEXT
+            );
+            """
+        )
+        conn.executemany(
+            "INSERT INTO history VALUES (?, ?, ?, ?, ?)",
+            [
+                (1, "挑战杯", "{}", "2026-10-03 10:00:00", "success"),
+                (2, "未知比赛", "{}", "2026-10-04 10:00:00", "success"),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO export_reviews VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (1, 1, 92, "[]", 1, "2026-10-03 10:05:00"),
+                (2, 1, 82, '["缺少目录"]', 1, "2026-10-03 10:06:00"),
+                (3, 2, 0, '["正文为空"]', 0, "2026-10-04 10:06:00"),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO gen_failures VALUES (1, 'generate', 'auto-recovered', '挑战杯', '2026-10-03 10:07:00')"
+        )
+        conn.commit()
+        profiles = [{"name": "挑战杯", "aliases": []}]
+        scope = {"start": "2026-10-01 00:00:00", "end": "2026-10-07 23:59:59", "days": 7}
+        summary = app_module.admin_quality_summary(conn, scope, profiles)
+        self.assertEqual(summary["metrics"]["deliverable_success"], 1)
+        self.assertEqual(summary["metrics"]["soft_warning"], 1)
+        self.assertEqual(summary["metrics"]["hard_blocked"], 1)
+        self.assertEqual(summary["metrics"]["recovery_success"], 1)
+        self.assertEqual(summary["competitions"], [{"name": "挑战杯", "count": 1}])
+        conn.close()
 
 
 if __name__ == "__main__":

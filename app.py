@@ -2769,6 +2769,9 @@ h1{font-size:24px;margin:0 0 4px}
 <div class="box"><h2>最近失败</h2><ul>%s</ul></div>
 </div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
+<div class="box" style="margin-top:14px"><h2>✅ 生成与导出质量</h2>
+<div id="qualitySummary" style="font-size:13px;color:#64748b">加载中…</div>
+</div>
 <div class="box" style="margin-top:14px"><h2>🧠 写作范式蒸馏</h2>
 <p style="font-size:13px;color:#64748b;margin:0 0 10px">从当前范文库重新提炼「获奖写法共性规律」，注入生成 prompt（约耗 1 次 LLM 调用）。</p>
 <button id="distillBtn" style="background:#4f46e5;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-size:14px;cursor:pointer">重新蒸馏</button>
@@ -2819,6 +2822,13 @@ bindDistill('distillDeckBtn','distillDeckMsg','/api/distill/deck_speech',functio
 bindDistill('distillSimBtn','distillSimMsg','/api/distill/similarity',function(j){return '完成：提炼 '+j.angle_count+' 个撞车角度';});
 function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return (x.label||x.code||'未知失败')+'（代码 '+(x.code||'unknown')+'）×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
 loadInsights();
+AF('/api/admin/quality-summary').then(function(r){return r.json()}).then(function(j){
+    var el=document.getElementById('qualitySummary');
+    if(!el)return;
+    if(!j.success){el.textContent='质量统计：暂不可用';return;}
+    var m=j.metrics||{};
+    el.textContent='可交付 '+(m.deliverable_success||0)+' · 软警告 '+(m.soft_warning||0)+' · 硬拦截 '+(m.hard_blocked||0)+' · 恢复成功 '+(m.recovery_success||0)+' · 渲染失败 '+(m.render_failed||0);
+});
 function loadViz(){
     AF('/api/admin/stats').then(function(r){return r.json()}).then(function(j){
         if(!j||!j.success)return;
@@ -2934,6 +2944,71 @@ def admin_competition_display(raw, profiles=None):
             if candidate_key and candidate_key == value:
                 return canonical or None
     return None
+
+
+def admin_quality_summary(conn, scope=None, profiles=None):
+    """Aggregate delivery quality without exposing raw proposal content."""
+    scope = scope or admin_scope({})
+    if profiles is None:
+        try:
+            from competition_agents import get_competition_profiles
+            profiles = get_competition_profiles()
+        except Exception:
+            profiles = []
+    conn.row_factory = sqlite3.Row
+    start, end = scope["start"], scope["end"]
+    histories = conn.execute(
+        "SELECT id, competition_name, status FROM history "
+        "WHERE created_time >= ? AND created_time <= ? AND %s" % _TEST_HISTORY_WHERE,
+        (start, end),
+    ).fetchall()
+    reviews = conn.execute(
+        "SELECT history_id, passed, reasons FROM export_reviews WHERE created_time >= ? AND created_time <= ?",
+        (start, end),
+    ).fetchall()
+    failures = conn.execute(
+        "SELECT type, status FROM gen_failures WHERE created_time >= ? AND created_time <= ?",
+        (start, end),
+    ).fetchall()
+    soft_warning = 0
+    hard_blocked = 0
+    for review in reviews:
+        try:
+            reasons = json.loads(review["reasons"] or "[]")
+        except (TypeError, ValueError):
+            reasons = []
+        if int(review["passed"] or 0) == 0:
+            hard_blocked += 1
+        elif reasons:
+            soft_warning += 1
+    recovery_success = sum(1 for row in failures if (row["status"] or "") == "auto-recovered")
+    render_failed = sum(
+        1 for row in failures
+        if (row["status"] or "") in ("open", "failed")
+        or (row["type"] or "generate") in ("export", "render")
+    )
+    deliverable_success = len({int(row["history_id"]) for row in reviews
+                               if row["history_id"] is not None and int(row["passed"] or 0) == 1})
+    # Keep history as the source of competition counts; unknown labels are hidden only here.
+    comp_counts = {}
+    for row in histories:
+        canonical = admin_competition_display(row["competition_name"], profiles)
+        if canonical:
+            comp_counts[canonical] = comp_counts.get(canonical, 0) + 1
+    return {
+        "metrics": {
+            "deliverable_success": deliverable_success,
+            "soft_warning": soft_warning,
+            "hard_blocked": hard_blocked,
+            "recovery_success": recovery_success,
+            "render_failed": render_failed,
+        },
+        "competitions": [
+            {"name": name, "count": count}
+            for name, count in sorted(comp_counts.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "sample_note": "暂无质量样本" if not (reviews or failures) else "基于当前时间范围内的记录",
+    }
 
 
 def _canonical_record_competition(raw_name, profiles=None):
@@ -5526,6 +5601,29 @@ def admin_stats():
             "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
     })
+
+
+@app.route('/api/admin/quality-summary')
+def admin_quality_summary_api():
+    """质量总览：区分可交付、软警告、硬拦截和恢复成功。"""
+    try:
+        scope = admin_scope(request.args)
+        conn = get_db()
+        try:
+            from competition_agents import get_competition_profiles
+            profiles = get_competition_profiles()
+        except Exception:
+            profiles = []
+        try:
+            summary = admin_quality_summary(conn, scope, profiles)
+        finally:
+            conn.close()
+        return jsonify({"success": True, "scope": scope, **summary})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        print("[admin-quality] summary failed: %s" % exc)
+        return jsonify({"success": False, "error": "质量统计暂不可用"}), 503
 
 
 @app.route('/api/stats')
