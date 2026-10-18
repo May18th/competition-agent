@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="科创赛事助手：从备赛到获奖全程助力，支持选题、项目打磨、赛事管理与 AI 备赛。">
+  <title>科创赛事助手｜从备赛到获奖全程助力</title>
+  <style>
+    :root {
+      --primary: #165DFF;
+      --primary-dark: #0d47c7;
+      --primary-soft: #E8F3FF;
+      --primary-pale: #f5f9ff;
+      --text: #333333;
+      --muted: #667085;
+      --line: #e5eaf2;
+      --surface: #ffffff;
+      --page: #f8fafc;
+      --success: #16835b;
+      --warning: #a86700;
+      --danger: #c24141;
+      --radius: 10px;
+      --shadow: 0 8px 24px rgba(24, 58, 112, .08);
+      --content: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--page);
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    }
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
+    :focus-visible { outline: 3px solid rgba(22, 93, 255, .25); outline-offset: 2px; }
+
+    .skip-link {
+      position: absolute; left: 12px; top: -48px; z-index: 100;
+      padding: 8px 12px; border-radius: 6px; color: #fff; background: var(--primary);
+    }
+    .skip-link:focus { top: 12px; }
+    .container { width: min(var(--content), calc(100% - 40px)); margin: 0 auto; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(255, 255, 255, .96); border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .nav { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 750; letter-spacing: .02em; }
+    .brand-mark {
+      width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px;
+      color: #fff; background: var(--primary); font-size: 16px;
+    }
+    .nav-links { display: flex; align-items: center; gap: 22px; color: var(--muted); font-size: 14px; }
+    .nav-links a:hover { color: var(--primary); }
+    .nav-actions { display: flex; align-items: center; gap: 10px; }
+
+    .btn {
+      min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 0 16px; border: 1px solid transparent; border-radius: 8px; font-weight: 650;
+      transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { color: #fff; background: var(--primary); box-shadow: 0 5px 12px rgba(22, 93, 255, .16); }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { color: var(--primary); background: #fff; border-color: #bcd2ff; }
+    .btn-secondary:hover { background: var(--primary-soft); border-color: var(--primary); }
+    .btn-quiet { color: var(--muted); background: #fff; border-color: var(--line); }
+    .btn-quiet:hover { color: var(--primary); border-color: #bcd2ff; }
+    .btn-small { min-height: 34px; padding: 0 12px; font-size: 13px; }
+
+    .hero { padding: 58px 0 42px; background: #fff; border-bottom: 1px solid var(--line); }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(340px, .92fr); gap: 52px; align-items: center; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--primary); font-weight: 750; font-size: 13px; }
+    .eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--primary); }
+    h1 { margin: 14px 0 16px; font-size: clamp(34px, 5vw, 54px); line-height: 1.14; letter-spacing: -.025em; }
+    .hero-copy { max-width: 620px; margin: 0; color: var(--muted); font-size: 17px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .hero-note { margin-top: 16px; color: var(--muted); font-size: 13px; }
+    .hero-panel { padding: 22px; border: 1px solid #d9e6ff; border-radius: 12px; background: var(--primary-pale); }
+    .hero-panel h2 { margin: 0 0 14px; font-size: 18px; }
+    .workflow { display: grid; gap: 12px; }
+    .workflow-step { display: grid; grid-template-columns: 30px 1fr; align-items: start; gap: 10px; padding: 12px; border: 1px solid #dbe7fb; border-radius: 8px; background: #fff; }
+    .workflow-num { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--primary); font-size: 13px; font-weight: 700; }
+    .workflow-step strong { display: block; font-size: 14px; }
+    .workflow-step span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+    section { padding: 64px 0; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+    .section-head h2 { margin: 0; font-size: 28px; line-height: 1.25; }
+    .section-head p { max-width: 600px; margin: 8px 0 0; color: var(--muted); }
+    .section-kicker { color: var(--primary); font-size: 13px; font-weight: 750; }
+
+    .stats-band { padding: 22px 0; background: #fff; border-bottom: 1px solid var(--line); }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    .stat { padding: 6px 18px; border-left: 2px solid #cfe0ff; }
+    .stat strong { display: block; color: var(--primary); font-size: 28px; line-height: 1.2; }
+    .stat span { color: var(--muted); font-size: 13px; }
+
+    .competition-section { background: #f4f8ff; }
+    .competition-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .competition-card { min-height: 158px; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; border: 1px solid #dbe5f5; border-radius: var(--radius); background: #fff; text-align: left; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+    .competition-card:hover, .competition-card[aria-pressed="true"] { border-color: #8db2ff; box-shadow: var(--shadow); transform: translateY(-2px); }
+    .competition-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); font-weight: 800; }
+    .competition-card strong { display: block; margin-top: 14px; font-size: 15px; }
+    .competition-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .text-link { color: var(--primary); font-size: 13px; font-weight: 650; }
+
+    .tools-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px; align-items: start; }
+    .tool-tabs { display: grid; gap: 8px; }
+    .tool-tab { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: #fff; text-align: left; font-weight: 650; }
+    .tool-tab:hover { border-color: #bcd2ff; color: var(--primary); }
+    .tool-tab[aria-selected="true"] { color: var(--primary); border-color: #8db2ff; background: var(--primary-soft); }
+    .tool-tab-icon { width: 24px; text-align: center; font-weight: 800; }
+    .tool-panel { min-height: 410px; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+    .tool-panel h3 { margin: 0; font-size: 20px; }
+    .tool-panel > p { margin: 7px 0 20px; color: var(--muted); }
+    .tool-content { display: none; }
+    .tool-content.active { display: block; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .field { display: grid; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: #475467; font-size: 13px; font-weight: 650; }
+    .field input, .field textarea, .field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #d6deea; border-radius: 7px; color: var(--text); background: #fff; }
+    .field textarea { min-height: 102px; resize: vertical; }
+    .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--primary); outline: 3px solid rgba(22, 93, 255, .12); }
+    .field-error { min-height: 18px; color: var(--danger); font-size: 12px; }
+    .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
+    .helper { color: var(--muted); font-size: 12px; }
+    .skeleton-wrap { display: none; margin-top: 20px; }
+    .skeleton-wrap.show { display: grid; gap: 9px; }
+    .skeleton { height: 14px; border-radius: 5px; background: #edf2f9; animation: pulse 1.2s ease-in-out infinite; }
+    .skeleton:nth-child(2) { width: 84%; animation-delay: .12s; }
+    .skeleton:nth-child(3) { width: 68%; animation-delay: .24s; }
+    @keyframes pulse { 50% { opacity: .45; } }
+    .result-box { display: none; margin-top: 20px; padding: 16px; border: 1px solid #cfe0ff; border-radius: 8px; background: var(--primary-pale); }
+    .result-box.show { display: block; }
+    .result-box h4 { margin: 0 0 10px; font-size: 15px; }
+    .result-list { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+    .result-list li::marker { color: var(--primary); }
+    .upload-zone { display: grid; place-items: center; min-height: 150px; padding: 20px; border: 1px dashed #9eb8e9; border-radius: 9px; color: var(--muted); background: var(--primary-pale); text-align: center; }
+    .upload-zone.dragover { border-color: var(--primary); background: #eaf2ff; }
+    .upload-zone strong { display: block; color: var(--text); }
+    .upload-zone small { display: block; margin-top: 4px; }
+    .file-name { margin-top: 8px; color: var(--success); font-size: 13px; }
+    .feature-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 0; padding: 0; list-style: none; }
+    .feature-list li { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
+    .feature-list strong { display: block; font-size: 14px; }
+    .feature-list span { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+    .manage-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+    .manage-row:last-child { border-bottom: 0; }
+    .manage-row strong { display: block; font-size: 14px; }
+    .manage-row span { color: var(--muted); font-size: 12px; }
+    .status { display: inline-flex; align-items: center; min-height: 26px; padding: 0 8px; border-radius: 999px; color: var(--success); background: #eaf8f1; font-size: 12px; font-weight: 650; white-space: nowrap; }
+
+    .audience-section { background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .audience-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .audience-card { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+    .audience-card h3 { margin: 12px 0 6px; font-size: 17px; }
+    .audience-card p { margin: 0; color: var(--muted); }
+    .audience-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); font-weight: 800; }
+
+    .team-section { background: #f8fbff; }
+    .team-layout { display: grid; grid-template-columns: 1.05fr .95fr; gap: 34px; align-items: center; }
+    .team-layout p { color: var(--muted); }
+    .role-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .role { padding: 13px 14px; border: 1px solid #dbe5f5; border-radius: 8px; background: #fff; }
+    .role strong { display: block; font-size: 14px; }
+    .role span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .privacy-note { margin-top: 14px; color: var(--muted); font-size: 12px; }
+
+    footer { padding: 34px 0 26px; color: var(--muted); background: #fff; border-top: 1px solid var(--line); }
+    .footer-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 28px; }
+    footer h3 { margin: 0 0 10px; color: var(--text); font-size: 14px; }
+    footer a { display: block; margin: 6px 0; font-size: 13px; }
+    footer a:hover { color: var(--primary); }
+    .copyright { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; }
+
+    .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; padding: 20px; background: rgba(19, 35, 64, .34); }
+    .modal-backdrop.show { display: grid; }
+    .modal { width: min(520px, 100%); max-height: min(620px, calc(100vh - 40px)); overflow: auto; padding: 24px; border-radius: 12px; background: #fff; box-shadow: 0 22px 60px rgba(19, 35, 64, .2); }
+    .modal-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+    .modal h2 { margin: 0; font-size: 21px; }
+    .modal-close { width: 32px; height: 32px; border: 0; border-radius: 6px; color: var(--muted); background: #f2f5f9; font-size: 20px; line-height: 1; }
+    .modal-close:hover { color: var(--text); background: #e8edf5; }
+    .modal-body { margin-top: 16px; color: var(--muted); }
+    .modal-body ul { margin: 10px 0 0; padding-left: 20px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+    .toast { position: fixed; right: 20px; bottom: 20px; z-index: 70; max-width: min(360px, calc(100vw - 40px)); display: none; padding: 11px 14px; border: 1px solid #cfe0ff; border-radius: 8px; color: #18468f; background: #f0f6ff; box-shadow: var(--shadow); }
+    .toast.show { display: block; }
+    .print-report { display: none; }
+
+    @media (max-width: 960px) {
+      .nav-links { display: none; }
+      .hero-grid, .team-layout { grid-template-columns: 1fr; }
+      .competition-grid { grid-template-columns: repeat(3, 1fr); }
+      .tools-layout { grid-template-columns: 1fr; }
+      .tool-tabs { grid-template-columns: repeat(4, 1fr); }
+      .tool-tab { justify-content: center; padding: 0 8px; font-size: 13px; }
+      .tool-tab-icon { display: none; }
+    }
+    @media (max-width: 680px) {
+      .container { width: min(100% - 28px, var(--content)); }
+      .nav { min-height: 58px; }
+      .brand span { font-size: 14px; }
+      .nav-actions .btn-secondary { display: none; }
+      .hero { padding: 40px 0 30px; }
+      h1 { font-size: 34px; }
+      .hero-copy { font-size: 15px; }
+      section { padding: 44px 0; }
+      .section-head { display: block; }
+      .section-head h2 { font-size: 24px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 14px 6px; }
+      .stat { padding: 4px 10px; }
+      .stat strong { font-size: 23px; }
+      .competition-grid { grid-template-columns: repeat(2, 1fr); }
+      .competition-card { min-height: 145px; }
+      .tool-tabs { gap: 6px; }
+      .tool-tab { min-height: 42px; font-size: 12px; }
+      .tool-panel { padding: 17px; }
+      .form-grid, .feature-list, .audience-grid, .role-grid { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: repeat(2, 1fr); gap: 22px 16px; }
+      .footer-grid > :first-child { grid-column: 1 / -1; }
+    }
+    @media print {
+      body { background: #fff; }
+      body > *:not(.print-report) { display: none !important; }
+      .print-report { display: block; padding: 24px; color: #111; }
+      .print-report h1 { font-size: 27px; }
+      .print-report h2 { margin-top: 22px; font-size: 18px; border-bottom: 1px solid #ccd4df; padding-bottom: 5px; }
+      .print-report p, .print-report li { font-size: 13px; line-height: 1.7; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="topbar">
+    <div class="container nav">
+      <a class="brand" href="#top" aria-label="科创赛事助手首页">
+        <span class="brand-mark" aria-hidden="true">科</span><span>科创赛事助手</span>
+      </a>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#competitions">赛事覆盖</a><a href="#tools">核心功能</a><a href="#audience">适用对象</a><a href="#team">关于团队</a>
+      </nav>
+      <div class="nav-actions"><button class="btn btn-secondary btn-small" data-scroll="#competitions">查看赛事</button><button class="btn btn-primary btn-small" data-scroll="#tools">开始规划</button></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow">面向大学生科创团队与赛事组织者</div>
+          <h1>从备赛到获奖<br><span style="color:var(--primary)">全程助力</span></h1>
+          <p class="hero-copy">把赛事规则、项目材料和备赛动作放在同一条工作流里。先明确方向，再打磨项目，最后用评委视角完成路演准备。</p>
+          <div class="hero-actions"><button class="btn btn-primary" data-scroll="#tools">开始我的备赛规划</button><button class="btn btn-secondary" data-scroll="#competitions">浏览支持赛事</button></div>
+          <p class="hero-note">当前页面为无后端依赖的单页演示；接入接口后可替换为真实赛事库、模型服务和组织者后台。</p>
+        </div>
+        <aside class="hero-panel" aria-label="备赛工作流">
+          <h2>一条清晰的备赛路径</h2>
+          <div class="workflow">
+            <div class="workflow-step"><span class="workflow-num">1</span><div><strong>识别赛事与选题空间</strong><span>按赛道、团队能力与研究方向筛选机会</span></div></div>
+            <div class="workflow-step"><span class="workflow-num">2</span><div><strong>把项目讲清楚、做扎实</strong><span>围绕评审标准补齐证据、方案与商业逻辑</span></div></div>
+            <div class="workflow-step"><span class="workflow-num">3</span><div><strong>用评委视角完成路演</strong><span>生成答辩问题、路演脚本与 PPT 结构</span></div></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="stats-band" aria-label="平台数据概览">
+      <div class="container stats-grid">
+        <div class="stat"><strong>2,680+</strong><span>累计服务项目</span></div><div class="stat"><strong>78%</strong><span>材料完成度提升率</span></div><div class="stat"><strong>120+</strong><span>覆盖高校与组织</span></div><div class="stat"><strong>15</strong><span>已整理赛事口径</span></div>
+      </div>
+    </section>
+
+    <section class="competition-section" id="competitions">
+      <div class="container">
+        <div class="section-head"><div><div class="section-kicker">赛事覆盖</div><h2>先选清楚比赛，再安排备赛动作</h2><p>卡片内容为演示数据。接入正式赛事库后，可按年份、赛道和地区动态更新。</p></div><button class="btn btn-quiet btn-small" id="showAllCompetitions">查看全部赛事</button></div>
+        <div class="competition-grid" id="competitionGrid"></div>
+      </div>
+    </section>
+
+    <section id="tools">
+      <div class="container">
+        <div class="section-head"><div><div class="section-kicker">核心功能</div><h2>把想法变成可提交、可路演的材料</h2><p>每个工具都保留人工确认入口，系统给建议，团队做决定。</p></div></div>
+        <div class="tools-layout">
+          <div class="tool-tabs" role="tablist" aria-label="核心功能">
+            <button class="tool-tab" role="tab" aria-selected="true" aria-controls="topicPanel" data-tab="topic"><span class="tool-tab-icon">01</span>选题推荐</button>
+            <button class="tool-tab" role="tab" aria-selected="false" aria-controls="polishPanel" data-tab="polish"><span class="tool-tab-icon">02</span>项目打磨</button>
+            <button class="tool-tab" role="tab" aria-selected="false" aria-controls="managePanel" data-tab="manage"><span class="tool-tab-icon">03</span>赛事管理</button>
+            <button class="tool-tab" role="tab" aria-selected="false" aria-controls="prepPanel" data-tab="prep"><span class="tool-tab-icon">04</span>AI 备赛</button>
+          </div>
+          <div class="tool-panel">
+            <div class="tool-content active" id="topicPanel" role="tabpanel">
+              <h3>选题推荐</h3><p>输入团队现状和研究方向，先得到可讨论的选题清单。</p>
+              <form id="topicForm" novalidate><div class="form-grid">
+                <div class="field"><label for="teamSize">团队规模</label><select id="teamSize"><option value="">请选择</option><option>1-3 人</option><option>4-6 人</option><option>7 人以上</option></select><div class="field-error" data-error-for="teamSize"></div></div>
+                <div class="field"><label for="direction">研究方向</label><input id="direction" placeholder="如：智慧养老、低碳材料、乡村治理"><div class="field-error" data-error-for="direction"></div></div>
+                <div class="field full"><label for="teamContext">团队优势与资源</label><textarea id="teamContext" placeholder="已有技术、调研对象、实验条件或产业资源"></textarea><div class="field-error" data-error-for="teamContext"></div></div>
+              </div><div class="form-actions"><button class="btn btn-primary" type="submit">生成选题建议</button><span class="helper">演示模式会根据输入生成 3 条可讨论方向</span></div></form>
+              <div class="skeleton-wrap" id="topicSkeleton" aria-live="polite" aria-label="正在生成选题"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+              <div class="result-box" id="topicResult" aria-live="polite"></div>
+            </div>
+
+            <div class="tool-content" id="polishPanel" role="tabpanel">
+              <h3>项目打磨</h3><p>上传已有材料，先获得结构、证据和评审表达的检查清单。</p>
+              <div class="upload-zone" id="uploadZone"><div><strong>拖入项目材料，或点击选择文件</strong><small>支持 DOCX、PDF、PPTX、TXT，单个文件不超过 20MB</small><input id="materialFile" type="file" accept=".docx,.pdf,.pptx,.txt" hidden><button class="btn btn-secondary btn-small" id="chooseFile" type="button" style="margin-top:12px">选择文件</button><div class="file-name" id="fileName" aria-live="polite"></div></div></div>
+              <div class="form-actions" style="margin-top:16px"><button class="btn btn-primary" id="analyzeMaterial" type="button">生成优化建议</button><span class="helper">正式接入时在此调用材料解析与质量门接口</span></div>
+              <div class="result-box" id="polishResult"></div>
+            </div>
+
+            <div class="tool-content" id="managePanel" role="tabpanel">
+              <h3>赛事管理</h3><p>为赛事组织者提供规则配置、团队收集与评审进度的统一入口。</p>
+              <div class="manage-row"><div><strong>2026 校园创新项目路演</strong><span>已配置 5 个评审维度 · 参赛团队 42</span></div><span class="status">进行中</span></div>
+              <div class="manage-row"><div><strong>高校创新创业训练营</strong><span>已收集材料 86 份 · 待评审 18 份</span></div><span class="status">评审中</span></div>
+              <div class="manage-row"><div><strong>创建新的赛事</strong><span>设置赛道、评分权重、时间节点和评委权限</span></div><button class="btn btn-secondary btn-small" id="createCompetition" type="button">创建赛事</button></div>
+            </div>
+
+            <div class="tool-content" id="prepPanel" role="tabpanel">
+              <h3>AI 备赛</h3><p>围绕同一份项目事实，生成可继续人工修改的备赛素材。</p>
+              <ul class="feature-list"><li><strong>智能问答</strong><span>按赛事规则解释评分维度与材料要求</span></li><li><strong>路演脚本</strong><span>按时间限制组织开场、证据与收束</span></li><li><strong>PPT 大纲</strong><span>把章节重点转成面向评委的页面结构</span></li><li><strong>答辩模拟</strong><span>从质疑点出发练习追问与回应</span></li></ul>
+              <div class="form-actions" style="margin-top:18px"><button class="btn btn-primary" id="generateScript" type="button">生成路演脚本</button><button class="btn btn-secondary" id="generateOutline" type="button">生成 PPT 大纲</button></div>
+              <div class="result-box" id="prepResult"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="audience-section" id="audience">
+      <div class="container"><div class="section-head"><div><div class="section-kicker">服务对象</div><h2>同一套底层能力，适配三类工作场景</h2></div></div>
+        <div class="audience-grid"><article class="audience-card"><div class="audience-mark">队</div><h3>大学生科创团队</h3><p>从选题、调研、方案到答辩，减少材料反复修改，把时间放回项目本身。</p></article><article class="audience-card"><div class="audience-mark">赛</div><h3>赛事组织者</h3><p>统一赛事规则、材料收集、评审进度和结果通知，减少人工汇总。</p></article><article class="audience-card"><div class="audience-mark">校</div><h3>高校创新创业负责人</h3><p>沉淀项目过程数据和辅导记录，为校内培育、筛选与复盘提供依据。</p></article></div>
+      </div>
+    </section>
+
+    <section class="team-section" id="team">
+      <div class="container team-layout"><div><div class="section-kicker">关于团队</div><h2>可创无限：让科创备赛更有方法</h2><p>我们关注赛事规则、项目事实与评委阅读路径之间的连接，持续把复杂的备赛工作拆成团队能执行的步骤。</p><p>页面展示角色分工，不公开个人成员信息；正式部署时可由管理员配置对外展示内容。</p><button class="btn btn-primary" data-scroll="#tools">进入备赛工作区</button></div><div class="role-grid"><div class="role"><strong>赛事研究</strong><span>整理官方规则与评审口径</span></div><div class="role"><strong>项目辅导</strong><span>拆解问题、证据与技术方案</span></div><div class="role"><strong>产品工程</strong><span>建设材料、流程与协作工具</span></div><div class="role"><strong>评审体验</strong><span>从评委视角检验表达质量</span></div></div></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-grid"><div><div class="brand"><span class="brand-mark">科</span><span>科创赛事助手</span></div><p style="max-width:300px;margin:12px 0 0;font-size:13px">把备赛流程变得清晰、可协作、可复盘。</p></div><div><h3>使用指南</h3><a href="#tools">如何开始备赛</a><a href="#competitions">赛事覆盖说明</a><a href="#tools">材料上传规范</a></div><div><h3>联系与支持</h3><a href="mailto:hello@example.com">hello@example.com</a><a href="#team">可创无限团队</a><a href="#top">回到顶部</a></div><div><h3>说明</h3><a href="#top">隐私与数据使用</a><a href="#top">服务条款</a><a href="#top">免责声明</a></div></div>
+    <div class="container copyright">© 2026 可创无限团队 · 科创赛事助手。赛事名称与评审要求以各赛事官方发布为准。</div>
+  </footer>
+
+  <div class="modal-backdrop" id="modalBackdrop" role="presentation"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-head"><h2 id="modalTitle">赛事详情</h2><button class="modal-close" id="modalClose" type="button" aria-label="关闭">×</button></div><div class="modal-body" id="modalBody"></div><div class="modal-actions"><button class="btn btn-primary btn-small" id="modalUse" type="button">用于备赛规划</button><button class="btn btn-quiet btn-small" id="modalCancel" type="button">稍后再看</button></div></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="print-report" id="printReport"></div>
+
+  <script>
+    'use strict';
+    const competitions = [
+      { name: '国创赛', short: '国', desc: '创新创业训练与成果转化', detail: '适合已有科研、产品原型或社会实践基础的团队。规划时重点关注项目问题、技术路线、成果证明与实施计划。' },
+      { name: '挑战杯', short: '挑', desc: '学术科技与创业计划', detail: '适合需要呈现研究价值、社会价值或创业逻辑的项目。正式参赛前应核对学校、赛道和年度通知。' },
+      { name: '三创赛', short: '三', desc: '电子商务创新创业实践', detail: '适合有用户场景、交易链路和运营数据的项目。建议先明确目标用户、平台机制与验证数据。' },
+      { name: 'iCAN', short: 'i', desc: '创新设计与工程实践', detail: '适合硬件、软件和交叉技术创新项目。应准备原型、性能指标、应用场景和知识产权依据。' },
+      { name: '金砖大赛', short: '金', desc: '技能实践与产业应用', detail: '适合强调岗位能力、产业场景和实践成果的团队。需按当年度赛项确认作品形式与评审要求。' },
+      { name: '互联网+', short: '互', desc: '创新创业综合展示', detail: '适合有清晰用户价值、商业模型和社会影响的项目。建议用真实数据支撑市场与运营判断。' },
+      { name: '其他赛事', short: '更', desc: '支持自定义赛事规则', detail: '可在正式版本中导入赛事通知、评分表和提交模板，形成专属备赛工作区。' }
+    ];
+    const state = { selectedCompetition: null, selectedFile: null };
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+    function showToast(message) {
+      const toast = $('#toast'); toast.textContent = message; toast.classList.add('show');
+      window.clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+    function scrollToSelector(selector) { const target = document.querySelector(selector); if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    $$('[data-scroll]').forEach(button => button.addEventListener('click', () => scrollToSelector(button.dataset.scroll)));
+
+    function renderCompetitions(items = competitions) {
+      $('#competitionGrid').innerHTML = items.map((item, index) => '<button class="competition-card" type="button" data-index="' + index + '" aria-pressed="false">' +
+        '<span><span class="competition-icon" aria-hidden="true">' + item.short + '</span><strong>' + item.name + '</strong><span>' + item.desc + '</span></span>' +
+        '<span class="text-link">查看详情 →</span></button>').join('');
+      $$('.competition-card').forEach(card => card.addEventListener('click', () => openCompetition(Number(card.dataset.index), card)));
+    }
+    function openCompetition(index, card) {
+      const item = competitions[index]; state.selectedCompetition = item;
+      $$('.competition-card').forEach(node => node.setAttribute('aria-pressed', node === card ? 'true' : 'false'));
+      $('#modalTitle').textContent = item.name;
+      $('#modalBody').innerHTML = '<p>' + item.detail + '</p><ul><li>先核对当年度官方通知与赛道口径</li><li>再按评审维度整理项目事实与证据</li><li>最后安排材料、路演和答辩练习</li></ul>';
+      $('#modalBackdrop').classList.add('show'); $('#modalClose').focus();
+    }
+    function closeModal() { $('#modalBackdrop').classList.remove('show'); }
+    $('#modalClose').addEventListener('click', closeModal); $('#modalCancel').addEventListener('click', closeModal);
+    $('#modalBackdrop').addEventListener('click', event => { if (event.target === $('#modalBackdrop')) closeModal(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeModal(); });
+    $('#modalUse').addEventListener('click', () => { closeModal(); scrollToSelector('#tools'); showToast('已将「' + state.selectedCompetition.name + '」作为备赛参考'); });
+    $('#showAllCompetitions').addEventListener('click', event => { event.currentTarget.textContent = event.currentTarget.textContent === '查看全部赛事' ? '已显示全部赛事' : '查看全部赛事'; renderCompetitions(); });
+    renderCompetitions(competitions.slice(0, 5));
+
+    $$('.tool-tab').forEach(tab => tab.addEventListener('click', () => {
+      $$('.tool-tab').forEach(item => item.setAttribute('aria-selected', item === tab ? 'true' : 'false'));
+      $$('.tool-content').forEach(panel => panel.classList.toggle('active', panel.id === tab.getAttribute('aria-controls')));
+    }));
+
+    function setError(id, message) { const node = $('[data-error-for="' + id + '"]'); if (node) node.textContent = message || ''; }
+    $('#topicForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const size = $('#teamSize').value.trim(), direction = $('#direction').value.trim(), context = $('#teamContext').value.trim();
+      setError('teamSize', size ? '' : '请选择团队规模'); setError('direction', direction ? '' : '请填写研究方向'); setError('teamContext', context.length >= 8 ? '' : '请至少填写 8 个字，便于判断团队优势');
+      if (!size || !direction || context.length < 8) return;
+      $('#topicResult').classList.remove('show'); $('#topicSkeleton').classList.add('show');
+      window.setTimeout(() => {
+        $('#topicSkeleton').classList.remove('show');
+        const selected = state.selectedCompetition ? state.selectedCompetition.name : '适配赛事';
+        $('#topicResult').innerHTML = '<h4>围绕「' + direction + '」的讨论方向</h4><ol class="result-list"><li>面向真实用户的「' + direction + '」问题解决方案：把团队资源转成可验证的服务流程。</li><li>「' + direction + '」数据化评估工具：围绕现有优势建立指标、原型与试点。</li><li>「' + direction + '」场景创新项目：优先选取可在 8-12 周内完成验证的应用切口。</li></ol><p class="helper" style="margin:12px 0 0">当前参考：' + selected + '。正式版本会结合该赛事官方评审维度进一步排序。</p>';
+        $('#topicResult').classList.add('show');
+      }, 850);
+    });
+
+    const uploadZone = $('#uploadZone'), fileInput = $('#materialFile');
+    $('#chooseFile').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+    ['dragenter', 'dragover'].forEach(type => uploadZone.addEventListener(type, event => { event.preventDefault(); uploadZone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach(type => uploadZone.addEventListener(type, event => { event.preventDefault(); uploadZone.classList.remove('dragover'); }));
+    uploadZone.addEventListener('drop', event => handleFile(event.dataTransfer.files[0]));
+    function handleFile(file) {
+      if (!file) return; const limit = 20 * 1024 * 1024;
+      if (file.size > limit) { showToast('文件超过 20MB，请压缩后再上传'); return; }
+      state.selectedFile = file; $('#fileName').textContent = '已选择：' + file.name + '（' + Math.ceil(file.size / 1024) + 'KB）';
+    }
+    $('#analyzeMaterial').addEventListener('click', () => {
+      if (!state.selectedFile) { showToast('请先选择一份项目材料'); return; }
+      $('#polishResult').innerHTML = '<h4>建议先检查这三项</h4><ul class="result-list"><li>项目问题是否有真实调研或数据支撑</li><li>技术方案是否能对应到用户价值与验证路径</li><li>每个关键结论是否能被评委快速找到依据</li></ul><p class="helper" style="margin:12px 0 0">这是前端演示结果，正式接入后将由材料解析接口生成逐段建议。</p>'; $('#polishResult').classList.add('show');
+    });
+
+    function showPrepResult(title, lines) { $('#prepResult').innerHTML = '<h4>' + title + '</h4><ul class="result-list">' + lines.map(line => '<li>' + line + '</li>').join('') + '</ul><p class="helper" style="margin:12px 0 0">生成后仍需团队核对事实、数据和赛事口径。</p>'; $('#prepResult').classList.add('show'); }
+    $('#generateScript').addEventListener('click', () => showPrepResult('路演脚本骨架', ['开场 20 秒：一句话说明问题、对象与结果', '主体 3 分钟：用证据讲清方案、验证和差异化', '收束 30 秒：说明下一步计划与希望获得的支持']));
+    $('#generateOutline').addEventListener('click', () => showPrepResult('面向评委的 PPT 结构', ['问题与场景：评委先理解为什么值得做', '方案与证据：说明如何做、做到什么程度', '价值与计划：说明谁会使用、如何落地、下一步是什么']));
+    $('#createCompetition').addEventListener('click', () => showToast('演示入口已触发；正式版本将打开赛事创建表单')); 
+
+    function makePrintReport() {
+      const direction = $('#direction').value.trim() || '待填写研究方向';
+      const selected = state.selectedCompetition ? state.selectedCompetition.name : '待选择赛事';
+      $('#printReport').innerHTML = '<h1>科创赛事助手｜备赛规划报告</h1><p>生成时间：' + new Date().toLocaleString('zh-CN') + '</p><h2>当前规划</h2><p>参考赛事：' + selected + '</p><p>研究方向：' + direction + '</p><h2>备赛建议</h2><ol><li>核对当年度官方通知与赛道要求。</li><li>围绕评审维度补齐调研、技术和实施证据。</li><li>用评委阅读路径安排申报书、PPT 和答辩练习。</li></ol><h2>说明</h2><p>本报告由科创赛事助手单页演示生成，正式提交前请以赛事官方文件和团队真实资料为准。</p>';
+    }
+    const exportButton = document.createElement('button'); exportButton.className = 'btn btn-secondary btn-small'; exportButton.textContent = '导出备赛报告 PDF'; exportButton.type = 'button'; exportButton.addEventListener('click', () => { makePrintReport(); window.print(); }); $('.nav-actions').appendChild(exportButton);
+  </script>
+</body>
+</html>
