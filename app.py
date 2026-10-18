@@ -677,6 +677,7 @@ def _audit_admin_login(username, ip, ok, role):
 
 _ADMIN_LOGIN_HTML = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
 <title>科创赛事助手 · 管理后台</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
@@ -2743,6 +2744,7 @@ def admin_home():
 
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
 <title>科创赛事助手 · 管理后台</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(160deg,#eef2ff,#f8fafc);color:#111827;margin:0;padding:32px 18px;line-height:1.6}
@@ -3509,6 +3511,7 @@ def admin_dashboard():
 
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
 <title>科创赛事助手 · 后台数据</title>
 <style>
 *{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}
@@ -3827,6 +3830,7 @@ def monitor():
     return """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.ico?v=20260930d" sizes="any">
 <title>科创赛事助手 · 动态监视</title>
 <style>
 *{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(145deg,#f3f6ff,#f8fafc 58%%,#eef3ff);color:#16213f;margin:0;padding:30px 22px 46px;line-height:1.6}

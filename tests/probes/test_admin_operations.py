@@ -304,6 +304,18 @@ class AdminOperationsTests(unittest.TestCase):
         finally:
             response.close()
 
+    def test_admin_pages_declare_versioned_frontend_favicon(self):
+        old_token = app_module.ADMIN_TOKEN
+        app_module.ADMIN_TOKEN = "probe-token"
+        client = app_module.app.test_client()
+        try:
+            for path in ("/admin", "/admin/panel", "/monitor"):
+                response = client.get(path, headers={"X-Admin-Token": "probe-token"})
+                self.assertEqual(response.status_code, 200, path)
+                self.assertIn('/static/favicon.ico?v=20260930d', response.get_data(as_text=True), path)
+        finally:
+            app_module.ADMIN_TOKEN = old_token
+
 
 if __name__ == "__main__":
     unittest.main()
