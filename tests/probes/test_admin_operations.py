@@ -293,6 +293,14 @@ class AdminOperationsTests(unittest.TestCase):
                 conn.close()
             app_module.ADMIN_TOKEN = old_token
 
+    def test_favicon_matches_frontend_brand_asset(self):
+        client = app_module.app.test_client()
+        response = client.get("/favicon.ico")
+        self.assertEqual(response.status_code, 200)
+        with open(os.path.join(ROOT, "static", "favicon.ico"), "rb") as handle:
+            self.assertEqual(response.data, handle.read())
+        self.assertIn("image/x-icon", response.content_type)
+
 
 if __name__ == "__main__":
     unittest.main()

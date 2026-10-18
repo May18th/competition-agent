@@ -53,10 +53,13 @@ START_TIME = time.time()
 
 @app.route('/favicon.ico')
 def favicon():
-    """站点图标：优先用真实 .ico，缺失时回退内联 SVG（避免浏览器刷 404/500）。"""
-    ico_path = os.path.join(FRONTEND_DIR, '科创赛事助手.ico')
-    if os.path.exists(ico_path):
-        return send_file(ico_path, mimetype='image/x-icon')
+    """站点图标：后台与前台统一复用 static/favicon.ico。"""
+    frontend_ico = os.path.join(FRONTEND_DIR, 'static', 'favicon.ico')
+    if os.path.exists(frontend_ico):
+        return send_file(frontend_ico, mimetype='image/x-icon')
+    legacy_ico = os.path.join(FRONTEND_DIR, '科创赛事助手.ico')
+    if os.path.exists(legacy_ico):
+        return send_file(legacy_ico, mimetype='image/x-icon')
     _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
             '<rect width="32" height="32" rx="7" fill="#22d3ee"/>'
             '<path d="M8 22 L14 11 L18 16 L21 12 L25 21" fill="none" stroke="#050816" '
