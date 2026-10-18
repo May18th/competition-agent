@@ -178,6 +178,60 @@ class AdminOperationsTests(unittest.TestCase):
         finally:
             app_module.ADMIN_TOKEN = old_token
 
+    def test_issue_update_records_status_transition_and_sla_metadata(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE issues (
+                id INTEGER PRIMARY KEY, kind TEXT, source TEXT, content TEXT,
+                created_time TEXT, status TEXT, resolved_time TEXT, resolution TEXT,
+                priority TEXT, assignee TEXT, due_time TEXT, updated_time TEXT,
+                updated_by TEXT
+            );
+            CREATE TABLE issue_audit (
+                id INTEGER PRIMARY KEY, issue_id INTEGER, actor TEXT, action TEXT,
+                old_status TEXT, new_status TEXT, created_time TEXT, detail TEXT
+            );
+            INSERT INTO issues VALUES
+                (1, 'backend', 'probe', '导出慢', '2026-10-01 10:00', 'open', '', '',
+                 'normal', '', '2026-10-20 10:00', '', '');
+            """
+        )
+        result = app_module.admin_update_issue(
+            conn, 1, {"status": "processing", "priority": "high", "assignee": "ops",
+                      "due_time": "2026-10-19 18:00", "resolution": "已安排排查"}, "admin-a"
+        )
+        self.assertEqual(result["status"], "processing")
+        row = conn.execute("SELECT * FROM issues WHERE id=1").fetchone()
+        self.assertEqual(row["priority"], "high")
+        self.assertEqual(row["assignee"], "ops")
+        audit = conn.execute("SELECT actor, old_status, new_status, detail FROM issue_audit").fetchone()
+        self.assertEqual(tuple(audit), ("admin-a", "open", "processing", "已安排排查"))
+        conn.close()
+
+    def test_issue_list_reports_overdue_without_exposing_unknown_fields(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE issues (
+                id INTEGER PRIMARY KEY, kind TEXT, source TEXT, content TEXT,
+                created_time TEXT, status TEXT, resolved_time TEXT, resolution TEXT,
+                priority TEXT, assignee TEXT, due_time TEXT, updated_time TEXT,
+                updated_by TEXT
+            );
+            INSERT INTO issues VALUES
+                (1, 'frontend', 'probe', '移动端问题', '2026-10-01 10:00', 'open', '', '',
+                 'high', 'ops', '2026-10-02 10:00', '', '');
+            """
+        )
+        rows = app_module.admin_list_issues(conn, {"status": "open"}, now="2026-10-03 12:00:00")
+        self.assertEqual(rows["overdue"], 1)
+        self.assertEqual(rows["items"][0]["assignee"], "ops")
+        self.assertNotIn("content_raw", rows["items"][0])
+        conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

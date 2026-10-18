@@ -951,7 +951,25 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS issues
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   kind TEXT, source TEXT, content TEXT, created_time TEXT,
-                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '')''')
+                  status TEXT DEFAULT 'open', resolved_time TEXT, resolution TEXT DEFAULT '',
+                  priority TEXT DEFAULT 'normal', assignee TEXT DEFAULT '', due_time TEXT,
+                  updated_time TEXT, updated_by TEXT)''')
+    for _col, _ddl in (
+        ("priority", "TEXT DEFAULT 'normal'"),
+        ("assignee", "TEXT DEFAULT ''"),
+        ("due_time", "TEXT"),
+        ("updated_time", "TEXT"),
+        ("updated_by", "TEXT"),
+    ):
+        try:
+            c.execute("ALTER TABLE issues ADD COLUMN %s %s" % (_col, _ddl))
+        except Exception:
+            pass
+    c.execute('''CREATE TABLE IF NOT EXISTS issue_audit
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  issue_id INTEGER NOT NULL, actor TEXT NOT NULL,
+                  action TEXT NOT NULL, old_status TEXT, new_status TEXT,
+                  created_time TEXT NOT NULL, detail TEXT DEFAULT '')''')
     # 临时分享链接表：token -> 历史记录，7 天过期，无需登录即可看结果
     c.execute('''CREATE TABLE IF NOT EXISTS shares
                  (token TEXT PRIMARY KEY,
@@ -3249,7 +3267,7 @@ def admin_dashboard():
     judge_avg = round(judge_avg, 1) if judge_avg is not None else None
     judge_avg_display = ('%.1f' % judge_avg) if judge_avg is not None else '暂无评分'
     open_issues = c.execute(
-        "SELECT id, kind, source, content, created_time FROM issues "
+        "SELECT id, kind, source, content, created_time, priority, assignee, due_time FROM issues "
         "WHERE status='open' ORDER BY id DESC LIMIT 15").fetchall()
     conn.close()
 
@@ -3389,9 +3407,10 @@ def admin_dashboard():
         kind_label = "前端" if it["kind"] == "frontend" else "后端"
         kind_color = "#d97706" if it["kind"] == "frontend" else "#2563eb"
         issue_items.append(
-            '<li><div class="t">#%d · <span style="color:%s">%s</span> · %s</div>'
+            '<li><div class="t">#%d · <span style="color:%s">%s</span> · %s · 优先级 %s · 负责人 %s</div>'
             '<div>%s</div></li>'
             % (it["id"], kind_color, kind_label, it["created_time"] or "",
+               _html_escape(it["priority"] or "normal"), _html_escape(it["assignee"] or "未分配"),
                _html_escape(it["content"] or "")))
     issues_html = "".join(issue_items) or '<li class="empty">暂无待处理问题</li>'
 
@@ -3761,6 +3780,135 @@ def create_issue(kind, source, content):
         return new_id
     except Exception:
         return None
+
+
+def _audit_write(conn, issue_id, actor, action, old_status, new_status, detail=""):
+    conn.execute(
+        "INSERT INTO issue_audit (issue_id, actor, action, old_status, new_status, created_time, detail) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (int(issue_id), str(actor or "admin")[:80], str(action or "update")[:40],
+         old_status, new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+         str(detail or "")[:500]),
+    )
+
+
+def admin_update_issue(conn, issue_id, payload, actor):
+    """Update ticket metadata and record a status transition audit row."""
+    conn.row_factory = sqlite3.Row
+    payload = payload or {}
+    allowed_status = {"open", "processing", "resolved"}
+    allowed_priority = {"low", "normal", "high", "urgent"}
+    row = conn.execute("SELECT * FROM issues WHERE id=?", (int(issue_id),)).fetchone()
+    if not row:
+        raise LookupError("工单不存在")
+    old_status = str(row["status"] or "open")
+    status = str(payload.get("status", old_status) or old_status).strip().lower()
+    priority = str(payload.get("priority", row["priority"] or "normal") or "normal").strip().lower()
+    if status not in allowed_status:
+        raise ValueError("status 必须是 open、processing 或 resolved")
+    if priority not in allowed_priority:
+        raise ValueError("priority 无效")
+    assignee = str(payload.get("assignee", row["assignee"] or "") or "").strip()[:80]
+    due_time = str(payload.get("due_time", row["due_time"] or "") or "").strip()[:32]
+    resolution = str(payload.get("resolution", row["resolution"] or "") or "").strip()[:500]
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    resolved_time = (row["resolved_time"] or "")
+    if status == "resolved" and old_status != "resolved":
+        resolved_time = now
+    elif status != "resolved":
+        resolved_time = ""
+    conn.execute(
+        "UPDATE issues SET status=?, resolved_time=?, resolution=?, priority=?, assignee=?, "
+        "due_time=?, updated_time=?, updated_by=? WHERE id=?",
+        (status, resolved_time, resolution, priority, assignee, due_time, now,
+         str(actor or "admin")[:80], int(issue_id)),
+    )
+    if status != old_status:
+        _audit_write(conn, issue_id, actor, "status_change", old_status, status, resolution)
+    else:
+        _audit_write(conn, issue_id, actor, "metadata_update", old_status, status, resolution)
+    conn.commit()
+    return {
+        "id": int(issue_id), "status": status, "priority": priority,
+        "assignee": assignee, "due_time": due_time, "resolution": resolution,
+        "updated_time": now, "updated_by": str(actor or "admin")[:80],
+    }
+
+
+def admin_list_issues(conn, filters=None, now=None):
+    """List sanitized ticket metadata and compute SLA overdue count."""
+    conn.row_factory = sqlite3.Row
+    filters = filters or {}
+    clauses, params = [], []
+    if filters.get("status") in {"open", "processing", "resolved"}:
+        clauses.append("status=?")
+        params.append(filters["status"])
+    if filters.get("priority") in {"low", "normal", "high", "urgent"}:
+        clauses.append("priority=?")
+        params.append(filters["priority"])
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute("SELECT id, kind, source, content, created_time, status, resolved_time, "
+                        "resolution, priority, assignee, due_time, updated_time, updated_by "
+                        "FROM issues" + where + " ORDER BY id DESC LIMIT 500", params).fetchall()
+    now_s = now or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    items, overdue = [], 0
+    for row in rows:
+        due = str(row["due_time"] or "")
+        is_overdue = bool(due and row["status"] != "resolved" and due < now_s)
+        overdue += int(is_overdue)
+        items.append({
+            "id": row["id"], "kind": row["kind"] or "", "source": row["source"] or "",
+            "content": str(row["content"] or "")[:500], "created_time": row["created_time"] or "",
+            "status": row["status"] or "open", "resolved_time": row["resolved_time"] or "",
+            "resolution": row["resolution"] or "", "priority": row["priority"] or "normal",
+            "assignee": row["assignee"] or "", "due_time": due,
+            "updated_time": row["updated_time"] or "", "updated_by": row["updated_by"] or "",
+            "overdue": is_overdue,
+        })
+    return {"items": items, "total": len(items), "overdue": overdue}
+
+
+@app.route('/api/admin/issues')
+def admin_issues_api():
+    conn = get_db()
+    try:
+        return jsonify({"success": True, **admin_list_issues(conn, {
+            "status": request.args.get("status"), "priority": request.args.get("priority")
+        })})
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/issues/<int:issue_id>', methods=['PATCH'])
+def admin_issue_update_api(issue_id):
+    if _admin_session_role() == "readonly":
+        return jsonify({"success": False, "error": "演示模式为只读，此操作已被禁止"}), 403
+    payload = request.get_json(silent=True) or {}
+    actor = _admin_session_role() or (request.headers.get("X-Admin-Actor") or "admin-token")
+    conn = get_db()
+    try:
+        try:
+            result = admin_update_issue(conn, issue_id, payload, actor)
+        except LookupError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        return jsonify({"success": True, "issue": result})
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/issues/<int:issue_id>/audit')
+def admin_issue_audit_api(issue_id):
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT actor, action, old_status, new_status, created_time, detail "
+            "FROM issue_audit WHERE issue_id=? ORDER BY id DESC LIMIT 100", (issue_id,)
+        ).fetchall()
+        return jsonify({"success": True, "items": [dict(row) for row in rows]})
+    finally:
+        conn.close()
 
 
 @app.route('/api/history/<int:history_id>', methods=['DELETE'])
