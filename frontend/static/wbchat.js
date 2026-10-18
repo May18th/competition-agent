@@ -301,45 +301,41 @@
         wrap.setAttribute('aria-label', '打开' + AGENT_NAME + '问答');
         wrap.title = AGENT_NAME + ' · 科创赛事助手智能助手（只答不写，不消耗额度）';
         wrap.innerHTML =
-            '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:none;opacity:.82;">'
-          + '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" '
+            '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none;opacity:.72;">'
+          + '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" '
           + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
           + '<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>'
           + '<path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span>'
-          + '<span aria-hidden="true" style="font-size:14px;font-weight:700;line-height:1;white-space:nowrap;">小可</span>'
-          + '<span id="wbChatStyleBadge" title="切换聊天风格" style="display:inline-flex;align-items:center;justify-content:center;'
-          + ' min-width:20px; height:20px; padding:0 4px; box-sizing:border-box; border-radius:5px;'
-          + ' font-size:11px; font-weight:700; cursor:pointer; border:1px solid var(--line,rgba(148,163,184,.5));'
-          + ' background:var(--c-a-soft,rgba(14,116,144,.12)); color:var(--c-a,#0e7490);">简</span>';
+          + '<span aria-hidden="true" style="font-size:13px;font-weight:650;line-height:1;white-space:nowrap;">小可</span>';
 
         var st = wrap.style;
         st.position = 'fixed';
         st.right = '16px';
         st.bottom = '196px';                 // 302 队形：fab16 / ↑76 / ↓136 / 聊196，间距 12px
-        st.width = '88px';
-        st.height = '40px';
-        st.padding = '0 10px';
+        st.width = '72px';
+        st.height = '34px';
+        st.padding = '0 9px';
         st.boxSizing = 'border-box';
-        st.borderRadius = '8px';
+        st.borderRadius = '6px';
         st.display = 'flex';
         st.alignItems = 'center';
         st.justifyContent = 'flex-start';
-        st.gap = '7px';
+        st.gap = '6px';
         st.cursor = 'pointer';
         st.zIndex = '2600';
-        st.border = '1px solid var(--line, rgba(148,163,184,.45))';
-        st.background = 'var(--surface-solid, #fff)';
+        st.border = '1px solid rgba(148,163,184,.32)';
+        st.background = 'rgba(255,255,255,.92)';
         st.color = 'var(--text, #16212e)';
-        st.boxShadow = '0 4px 12px rgba(15,23,42,.10)';
+        st.boxShadow = '0 2px 8px rgba(15,23,42,.08)';
         st.transition = 'transform .15s ease, box-shadow .18s ease';
 
         wrap.addEventListener('mouseenter', function () {
             st.transform = 'translateY(-1px)';
-            st.boxShadow = '0 6px 16px rgba(15,23,42,.14)';
+            st.boxShadow = '0 3px 10px rgba(15,23,42,.12)';
         });
         wrap.addEventListener('mouseleave', function () {
             st.transform = '';
-            st.boxShadow = '0 4px 12px rgba(15,23,42,.10)';
+            st.boxShadow = '0 2px 8px rgba(15,23,42,.08)';
         });
         wrap.addEventListener('click', function (e) {
             if (e && e.target && e.target.id === 'wbChatStyleBadge') return;   // 点小图标不开关面板
