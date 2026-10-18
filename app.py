@@ -3583,7 +3583,7 @@ li.empty{color:#57606e;text-align:center;padding:22px}
 .issue-editor{border-top:1px solid #eef2f7;padding-top:10px}
 .issue-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .issue-fields label,.issue-resolution{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#52627f}
-.issue-fields select,.issue-fields input,.issue-resolution textarea{width:100%;box-sizing:border-box;border:1px solid #dbe3ee;border-radius:7px;background:#fff;color:#1f2937;padding:7px 8px;font:inherit}
+.issue-fields select,.issue-fields input,.issue-resolution textarea{width:100%%;box-sizing:border-box;border:1px solid #dbe3ee;border-radius:7px;background:#fff;color:#1f2937;padding:7px 8px;font:inherit}
 .issue-resolution{margin-top:8px}
 .issue-resolution textarea{resize:vertical;min-height:52px}
 .issue-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
