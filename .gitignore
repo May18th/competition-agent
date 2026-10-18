@@ -39,3 +39,4 @@ _verify_out/
 # ---- 一次性调试产物归档（2026-09-29 整理，勿提交）----
 _archive_tmp/
 .venv/
+.superpowers/
