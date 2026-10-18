@@ -8045,7 +8045,9 @@ def chat():
         reply = _chat_recommendation_reply(recommendation_comp, style)
         _chat_persist(uid, "user", msg, style)
         _chat_persist(uid, "bot", reply, style)
-        return _sse_text_reply(reply)
+        return _sse_text_with_event(reply, "recommendation_candidates", {
+            "candidates": pending["candidates"],
+        })
 
     # Choosing a recommendation is not the same as accepting it as a project
     # fact.  Keep it in pending state and ask for an explicit confirmation.

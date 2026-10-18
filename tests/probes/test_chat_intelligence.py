@@ -370,6 +370,8 @@ class ChatIntelligenceTests(unittest.TestCase):
                 "context": {"competition": "示例创新赛", "competition_selected": True},
             }, buffered=True)
             self.assertEqual(response.status_code, 200)
+            recommendation_body = response.get_data(as_text=True)
+            self.assertIn('"event":"recommendation_candidates"', recommendation_body)
             pending = json.loads(chat_store.get_profile(
                 app_module._CHAT_DB_PATH, "alice")["pending_generation"])
             self.assertEqual(pending["idea"], "")
