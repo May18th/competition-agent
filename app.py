@@ -2704,7 +2704,9 @@ def admin_home():
     avg_rating = round(avg_row[0], 2) if avg_row and avg_row[0] is not None else None
     rated_count = int(avg_row[1] or 0) if avg_row else 0
     avg_rating_display = ('%.2f' % avg_rating) if avg_rating is not None else '暂无评分'
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate' "
+                           "AND created_time >= ? AND created_time <= ?",
+                           (_scope["start"], _scope["end"])).fetchone()[0]
     _attempts = total_gen + fail_total
     success_rate = round(total_gen * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
     success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if total_gen else '暂无样本')
@@ -2714,7 +2716,8 @@ def admin_home():
         "SELECT content, created_time FROM feedback ORDER BY id DESC LIMIT 4").fetchall()
     recent_fail = c.execute(
         "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
-        "FROM gen_failures ORDER BY id DESC LIMIT 4").fetchall()
+        "FROM gen_failures WHERE created_time >= ? AND created_time <= ? ORDER BY id DESC LIMIT 4",
+        (_scope["start"], _scope["end"])).fetchall()
     conn.close()
 
     fb_rows = "".join(
@@ -3259,16 +3262,19 @@ def admin_dashboard():
     # 满意度分布（1-5 星）
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     for r, n in c.execute(
-            "SELECT rating, COUNT(*) FROM history WHERE %s AND rating > 0 GROUP BY rating" % _TEST_HISTORY_WHERE).fetchall():
+            "SELECT rating, COUNT(*) FROM history WHERE %s AND rating > 0 GROUP BY rating" % _history_where,
+            _history_params).fetchall():
         rating_dist[int(r)] = n
     # 生成趋势（最近 14 天）
     trend = c.execute(
         "SELECT substr(created_time,1,10) d, COUNT(*) n FROM history "
-        "WHERE %s GROUP BY d ORDER BY d DESC LIMIT 7" % _TEST_HISTORY_WHERE).fetchall()
+        "WHERE %s GROUP BY d ORDER BY d DESC LIMIT ?" % _history_where,
+        _history_params + (min(_scope["days"], 30),)).fetchall()
     # 赛事分布：只展示已收录赛事的正式名称，历史简称归并，未知名称隐藏并提示。
     _comp_rows = c.execute(
         "SELECT competition_name, COUNT(*) n FROM history "
-        "GROUP BY competition_name ORDER BY n DESC, competition_name").fetchall()
+        "WHERE %s GROUP BY competition_name ORDER BY n DESC, competition_name" % _history_where,
+        _history_params).fetchall()
     try:
         from competition_agents import get_competition_profiles
         _catalog_profiles = get_competition_profiles()
@@ -3304,16 +3310,21 @@ def admin_dashboard():
     fb_cat = c.execute(
         "SELECT category, COUNT(*) n FROM feedback GROUP BY category ORDER BY n DESC").fetchall()
     # 评估指标：平均耗时 / 成功率 / AI 评委平均分
-    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 0" % _TEST_HISTORY_WHERE).fetchone()[0]
+    avg_dur = c.execute("SELECT AVG(duration) FROM history WHERE %s AND duration > 0" % _history_where,
+                        _history_params).fetchone()[0]
     avg_dur = round(avg_dur, 1) if avg_dur else 0
-    succ_total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate'").fetchone()[0]
+    succ_total = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _history_where,
+                           _history_params).fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE IFNULL(type,'generate')='generate' "
+                           "AND created_time >= ? AND created_time <= ?",
+                           (_scope["start"], _scope["end"])).fetchone()[0]
     _attempts = succ_total + fail_total
     success_rate = round(succ_total * 100.0 / _attempts, 1) if (_attempts and fail_total) else None
     success_rate_display = ('约 %.1f%%' % success_rate) if success_rate is not None else ('暂无失败记录' if succ_total else '暂无样本')
     judge_avg = c.execute(
         "SELECT AVG(CAST(json_extract(result_data,'$.score') AS REAL)) FROM history "
-        "WHERE %s AND json_extract(result_data,'$.score') IS NOT NULL" % _TEST_HISTORY_WHERE).fetchone()[0]
+        "WHERE %s AND json_extract(result_data,'$.score') IS NOT NULL" % _history_where,
+        _history_params).fetchone()[0]
     judge_avg = round(judge_avg, 1) if judge_avg is not None else None
     judge_avg_display = ('%.1f' % judge_avg) if judge_avg is not None else '暂无评分'
     open_issues = c.execute(
@@ -3654,10 +3665,13 @@ def monitor():
         "WHERE %s ORDER BY id DESC LIMIT 50" % _history_where, _history_params).fetchall()
     recent_fail = c.execute(
         "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
-        "FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
+        "FROM gen_failures WHERE created_time >= ? AND created_time <= ? ORDER BY id DESC LIMIT 12",
+        (_scope["start"], _scope["end"])).fetchall()
     total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _history_where,
                           _history_params).fetchone()[0]
-    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
+    fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open' "
+                           "AND created_time >= ? AND created_time <= ?",
+                           (_scope["start"], _scope["end"])).fetchone()[0]
     conn.close()
 
     try:
