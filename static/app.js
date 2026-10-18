@@ -750,14 +750,10 @@
             });
         })();
         wbLoadForm();
-        // 赛事名改成输入框后没有默认值了，这里补回默认（原来 select 默认第一项就是 iCAN），
-        // 并顺带把「赛事要求卡」渲染出来
+        // 赛事名不再自动填入某个具体比赛，避免用户还没选赛事就被带入 iCAN 口径。
+        // 保留已有草稿中的赛事值；新用户必须明确选择或手动填写后才开始生成。
         (function () {
             var el = document.getElementById('competition');
-            if (el && !String(el.value || '').trim()) {
-                el.value = 'iCAN大学生创新创业大赛';
-                try { wbSaveForm(); } catch (e) {}
-            }
             try { onCompetitionChange(); } catch (e) {}
         })();
         // 存储被拦时明确说一次：否则「历史是空的」「草稿刷新就没了」对用户全是黑盒
