@@ -2659,6 +2659,11 @@ def admin_home():
                   if _readonly_mode else
                   "当前账号可查看和维护统计、失败记录、反馈、知识库、公告及蒸馏任务。")
     _mode_class = "readonly" if _readonly_mode else "admin"
+    try:
+        from competition_agents import get_competition_profiles
+        _catalog_profiles = get_competition_profiles()
+    except Exception:
+        _catalog_profiles = []
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -2686,7 +2691,8 @@ def admin_home():
 
     fb_rows = "".join(
         '<li><span class="t">%s</span>%s</li>'
-        % (r["created_time"] or "", _html_escape(r["content"] or ""))
+        % (r["created_time"] or "",
+           _html_escape(_sanitize_feedback_competition_text(r["content"] or "", _catalog_profiles)))
         for r in recent_fb) or '<li class="e">暂无反馈</li>'
     fail_rows = "".join(
         '<li><span class="t">%s%s</span><b>%s</b><br><span class="failure-reason">%s</span>'
@@ -2869,9 +2875,25 @@ def _canonical_record_competition(raw_name, profiles=None):
     return None
 
 
+def _sanitize_feedback_competition_text(content, profiles=None):
+    """Keep only catalogued competition labels embedded in feedback text."""
+    text = str(content or "")
+
+    def _replace(match):
+        canonical = _canonical_record_competition(match.group(1), profiles)
+        return ("｜赛事：" + canonical) if canonical else ""
+
+    return re.sub(r"｜赛事：([^｜\n]*)", _replace, text)
+
+
 @app.route('/admin/panel')
 def admin_dashboard():
     """极简后台页：纯展示，不做登录。总生成次数 / 满意度平均分 / 最近反馈。"""
+    try:
+        from competition_agents import get_competition_profiles
+        _catalog_profiles = get_competition_profiles()
+    except Exception:
+        _catalog_profiles = []
     conn = get_db()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -3021,7 +3043,7 @@ def admin_dashboard():
             _n = _fb_rating[int(_hid)]
             _stars = ('<span class="fbstar" title="该次生成用户打了 %d 星">%s</span>'
                       % (_n, "★" * _n + "☆" * (5 - _n)))
-        _txt = _html_escape(r["content"] or "")
+        _txt = _html_escape(_sanitize_feedback_competition_text(r["content"] or "", _catalog_profiles))
         fb_items.append(
             '<li class="fbcard">'
             '<div class="fbmeta">'
@@ -3320,13 +3342,26 @@ def monitor():
     c = conn.cursor()
     recent_gen = c.execute(
         "SELECT competition_name, mode, duration, status, created_time FROM history "
-        "WHERE %s ORDER BY id DESC LIMIT 12" % _TEST_HISTORY_WHERE).fetchall()
+        "WHERE %s ORDER BY id DESC LIMIT 50" % _TEST_HISTORY_WHERE).fetchall()
     recent_fail = c.execute(
         "SELECT error, detail, error_code, task_id, type, path, count, status, competition_name, created_time "
         "FROM gen_failures ORDER BY id DESC LIMIT 12").fetchall()
     total_gen = c.execute("SELECT COUNT(*) FROM history WHERE %s" % _TEST_HISTORY_WHERE).fetchone()[0]
     fail_total = c.execute("SELECT COUNT(*) FROM gen_failures WHERE status='open'").fetchone()[0]
     conn.close()
+
+    try:
+        from competition_agents import get_competition_profiles
+        _catalog_profiles = get_competition_profiles()
+    except Exception:
+        _catalog_profiles = []
+    _recent_gen_display = []
+    for _row in recent_gen:
+        _canonical = _canonical_record_competition(_row["competition_name"], _catalog_profiles)
+        if _canonical:
+            _recent_gen_display.append((_row, _canonical))
+        if len(_recent_gen_display) >= 12:
+            break
 
     uptime = int(time.time() - START_TIME)
     up_h, up_m = divmod(uptime // 60, 60)
@@ -3346,11 +3381,11 @@ def monitor():
 
     gen_rows = "".join(
         '<tr><td>%s</td><td>%s</td><td>%s</td><td>%ss</td></tr>'
-        % (_html_escape(r["competition_name"] or "未记录赛事"),
+        % (_html_escape(_canonical),
            _monitor_mode_label(r["mode"]),
            _monitor_status_label(r["status"] or "success"),
            ("%.1f" % float(r["duration"])) if r["duration"] else "0.0")
-        for r in recent_gen) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
+        for r, _canonical in _recent_gen_display) or '<tr><td colspan="4" class="e">暂无生成记录</td></tr>'
     fail_rows = "".join(
         '<tr><td>%s</td><td><b>%s</b><br><span class="reason">%s</span><br><small>%s%s</small></td></tr>'
         % (r["created_time"] or "",

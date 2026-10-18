@@ -27,6 +27,25 @@ class AdminCompetitionCatalogTests(unittest.TestCase):
         self.assertIsNone(app._canonical_record_competition("正大杯", profiles))
         self.assertIsNone(app._canonical_record_competition("", profiles))
 
+    def test_feedback_drops_unregistered_competition_suffix(self):
+        profiles = [{
+            "name": "iCAN大学生创新创业大赛",
+            "aliases": ["iCAN"],
+        }]
+
+        self.assertEqual(
+            app._sanitize_feedback_competition_text(
+                "用户未补充文字反馈｜赛事：正大杯", profiles
+            ),
+            "用户未补充文字反馈",
+        )
+        self.assertEqual(
+            app._sanitize_feedback_competition_text(
+                "内容建议｜赛事：iCAN", profiles
+            ),
+            "内容建议｜赛事：iCAN大学生创新创业大赛",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
