@@ -36,7 +36,6 @@
     var STYLE_ALIAS = { 'brief': 'concise', 'fun': 'casual' };
     var style = 'concise';
 
-    var BUBBLE_SIZE = 48;
     var opened = false, panel = null, bubble = null, listEl = null, inputEl = null;
     var styleMenu = null, styleBadge = null, styleBtn = null;
     var busy = false;
@@ -364,17 +363,21 @@
         return STYLES[0].name;
     }
 
-    /* ---------- 气泡 + 右上角风格小图标 ---------- */
+    /* ---------- 侧边助手入口 + 风格标记 ---------- */
     function makeBubble() {
         var wrap = document.createElement('div');
         wrap.id = 'wbChatBubble';
         wrap.setAttribute('role', 'button');
+        wrap.setAttribute('tabindex', '0');
         wrap.setAttribute('aria-label', '打开' + AGENT_NAME + '问答');
         wrap.title = AGENT_NAME + ' · 科创赛事助手智能助手（只答不写，不消耗额度）';
         wrap.innerHTML =
-            '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" '
+            '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;opacity:.9;">'
+          + '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" '
           + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-          + '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.4-4.2A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>'
+          + '<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>'
+          + '<path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span>'
+          + '<span aria-hidden="true" style="font-size:14px;font-weight:700;line-height:1;letter-spacing:0;">小可</span>'
             // 297：右上角风格切换小图标
           + '<span id="wbChatStyleBadge" title="切换聊天风格" style="position:absolute; top:-4px; right:-4px;'
           + ' width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center;'
@@ -385,11 +388,15 @@
         st.position = 'fixed';
         st.right = '16px';
         st.bottom = '196px';                 // 302 队形：fab16 / ↑76 / ↓136 / 聊196，间距 12px
-        st.width = st.height = BUBBLE_SIZE + 'px';
-        st.borderRadius = '14px';
+        st.width = '76px';
+        st.height = '42px';
+        st.padding = '0 12px';
+        st.boxSizing = 'border-box';
+        st.borderRadius = '12px';
         st.display = 'flex';
         st.alignItems = 'center';
-        st.justifyContent = 'center';
+        st.justifyContent = 'flex-start';
+        st.gap = '8px';
         st.cursor = 'pointer';
         st.zIndex = '2600';
         st.border = '1px solid var(--line, rgba(148,163,184,.45))';
@@ -407,6 +414,11 @@
         });
         wrap.addEventListener('click', function (e) {
             if (e && e.target && e.target.id === 'wbChatStyleBadge') return;   // 点小图标不开关面板
+            toggle();
+        });
+        wrap.addEventListener('keydown', function (e) {
+            if (!e || (e.key !== 'Enter' && e.key !== ' ' && e.keyCode !== 13 && e.keyCode !== 32)) return;
+            e.preventDefault();
             toggle();
         });
         document.body.appendChild(wrap);

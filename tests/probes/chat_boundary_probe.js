@@ -11,4 +11,7 @@ assert(source.includes("/api/proposal_revision/"), 'proofread card must expose u
 assert(source.includes("proactive_suggestions_enabled"), 'proactive suggestions need a persisted preference');
 assert(source.includes("关闭主动建议"), 'proactive suggestions need a visible opt-out');
 assert(source.includes("修改信息"), 'generation confirmation must offer a non-generating edit path');
+assert(source.includes("小可"), 'launcher should identify the assistant by name');
+assert(source.includes("st.width = '76px'"), 'launcher should use a compact assistant control, not a speech bubble');
+assert(!source.includes("M21 11.5a8.4a8.4"), 'launcher must not use the speech-bubble outline');
 console.log('chat boundary probe passed');
