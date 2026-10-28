@@ -1,0 +1,15 @@
+# 二进制文件不做行尾转换，也不做文本 diff（避免行尾污染和 diff 噪音）
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.gif  binary
+*.webp binary
+*.docx binary
+*.pptx binary
+*.pdf  binary
+*.zip  binary
+*.db   binary
+*.sqlite binary
+*.so   binary
+*.woff2 binary

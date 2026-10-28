@@ -87,3 +87,7 @@ git push -u origin feature/your-topic
 ```
 
 提交前请确认 `python -m unittest tests.test_repository_layout` 通过，且没有把数据库、日志或生成产物带进提交。
+
+## 许可
+
+MIT License，详见 [LICENSE](LICENSE)。引用或二次开发请保留版权声明。
