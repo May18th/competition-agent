@@ -1,25 +1,27 @@
 # -*- coding: utf-8 -*-
-"""纯函数单元测试（零消费，不调 DeepSeek）
+"""纯函数单元测试（零消费，不调任何外部模型）
 
 运行方式：
-    python -m unittest test_backend -v
+    python -m unittest tests.test_backend -v
 """
 import unittest
 import competition_agents as ca
 
 
 class TestCompetitionMatch(unittest.TestCase):
+    """赛事名（含简称/别名）→ 赛事档案匹配。"""
+
     def test_full_name_match(self):
-        self.assertTrue(ca._competition_match("iCAN大赛", "iCAN大学生创新创业大赛"))
-        self.assertTrue(ca._competition_match("互联网+大赛", "中国国际互联网+大学生创新创业大赛"))
+        self.assertIn("iCAN", ca.get_competition_profile("iCAN大赛")["name"])
+        self.assertIn("互联网+", ca.get_competition_profile("互联网+大赛")["name"])
 
     def test_alias_match(self):
-        self.assertTrue(ca._competition_match("国创项目", "国家级大学生创新创业训练计划"))
-        self.assertTrue(ca._competition_match("挑战杯", "大挑"))
+        self.assertIn("创新创业训练计划", ca.get_competition_profile("国创项目")["name"])
+        self.assertIn("挑战杯", ca.get_competition_profile("挑战杯")["name"])
 
     def test_no_match(self):
-        self.assertFalse(ca._competition_match("iCAN大赛", "数学建模"))
-        self.assertFalse(ca._competition_match("", "xxx"))
+        self.assertFalse(ca.get_competition_profile("不存在的比赛XYZ"))
+        self.assertFalse(ca.get_competition_profile(""))
 
 
 class TestParseKnowledge(unittest.TestCase):
@@ -57,28 +59,43 @@ class TestProposalCompleteness(unittest.TestCase):
 
 
 class TestShouldIterate(unittest.TestCase):
+    """深度版：低分稿最多 3 版，其余最多 2 版；返回下一跳节点列表。"""
+
     def test_approved(self):
-        self.assertEqual(ca.should_iterate({"approved": True, "revision_count": 1}), "defense")
+        st = {"approved": True, "revision_count": 1}
+        self.assertEqual(ca.should_iterate(st), ["defense", "ppt"])
 
     def test_low_score_first(self):
-        self.assertEqual(ca.should_iterate({"approved": False, "revision_count": 1}), "revise")
+        st = {"approved": False, "score": 40, "revision_count": 1}
+        self.assertEqual(ca.should_iterate(st), ["revise"])
+
+    def test_low_score_extra_round(self):
+        st = {"approved": False, "score": 40, "revision_count": 2}
+        self.assertEqual(ca.should_iterate(st), ["revise"])
 
     def test_max_iterations(self):
-        self.assertEqual(ca.should_iterate({"approved": False, "revision_count": 2}), "defense")
+        st = {"approved": False, "score": 80, "revision_count": 2}
+        self.assertEqual(ca.should_iterate(st), ["defense", "ppt"])
 
 
 class TestShouldIterateFast(unittest.TestCase):
+    """简洁版：默认不迭代；仅显式 iterate=True 且低分时补写。"""
+
     def test_off(self):
-        self.assertEqual(ca.should_iterate_fast({"iterate": False, "approved": False, "revision_count": 1}), "defense")
+        st = {"iterate": False, "approved": False, "revision_count": 1}
+        self.assertEqual(ca.should_iterate_fast(st), ["defense", "ppt"])
 
     def test_on_low_score(self):
-        self.assertEqual(ca.should_iterate_fast({"iterate": True, "approved": False, "revision_count": 1}), "revise")
+        st = {"iterate": True, "approved": False, "revision_count": 1}
+        self.assertEqual(ca.should_iterate_fast(st), ["revise"])
 
     def test_on_approved(self):
-        self.assertEqual(ca.should_iterate_fast({"iterate": True, "approved": True, "revision_count": 1}), "defense")
+        st = {"iterate": True, "approved": True, "revision_count": 1}
+        self.assertEqual(ca.should_iterate_fast(st), ["defense", "ppt"])
 
     def test_on_max(self):
-        self.assertEqual(ca.should_iterate_fast({"iterate": True, "approved": False, "revision_count": 2}), "defense")
+        st = {"iterate": True, "approved": False, "revision_count": 3}
+        self.assertEqual(ca.should_iterate_fast(st), ["defense", "ppt"])
 
 
 class TestQuotaStatus(unittest.TestCase):

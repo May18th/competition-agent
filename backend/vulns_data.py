@@ -5,10 +5,10 @@ import re
 import json
 from datetime import datetime
 
-# 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
+# 数据源：.data/漏洞库.md 首次解析入库到 assets/data/vulns.json，之后以 JSON 为准（存储同步）。
 # 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
 _VULNS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', 'assets', 'data', 'vulns.json')
-_VULNS_MD = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs', '漏洞库.md')
+_VULNS_MD = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.data', '漏洞库.md')
 _LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
 _LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -54,7 +54,7 @@ def _infer_vuln_category(name):
 
 
 def _parse_vulns_md():
-    """解析 docs/漏洞库.md 的高/中/低三张表格，返回结构化列表。"""
+    """解析 .data/漏洞库.md 的高/中/低三张表格，返回结构化列表。"""
     items = []
     if not os.path.isfile(_VULNS_MD):
         return items
@@ -122,8 +122,8 @@ def _save_vulns(items):
 def _load_vulns():
     """读漏洞库；无 JSON、解析失败、或 md 比 JSON 新时回退解析 md 并落盘。
 
-    关键：data/vulns.json 是 gitignored 的运行时缓存。md（source of truth）一旦被
-    豆包/后端更新（owner/状态/经验列改动），若不按 mtime 失效，服务会一直返回旧
+    关键：vulns.json 是 gitignored 的运行时缓存。md（source of truth）一旦被
+    更新（owner/状态/经验列改动），若不按 mtime 失效，服务会一直返回旧
     JSON，解析层修了也看不到效果——所以这里用 md 更新于 JSON 作为重解析信号。
     """
     json_mtime = 0.0

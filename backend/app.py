@@ -7222,6 +7222,9 @@ def kb_search():
 
 @app.route('/api/logs')
 def api_logs():
+    _a = _require_admin()
+    if _a is not None:
+        return _a
     level = request.args.get('level', '')
     try:
         limit = int(request.args.get('limit', 100))
@@ -7250,6 +7253,9 @@ def api_logs_report():
 
 @app.route('/api/lessons')
 def api_lessons():
+    _a = _require_admin()
+    if _a is not None:
+        return _a
     q = request.args.get('q', '')
     lessons = app_log.match_lessons(q) if q else app_log.LESSONS
     return jsonify({"success": True, "lessons": lessons, "total": len(lessons)})
