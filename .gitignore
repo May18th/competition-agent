@@ -36,3 +36,21 @@ _verify_out/
 
 # ---- 一次性调试产物归档（2026-09-29 整理，勿提交）----
 _archive_tmp/
+
+# ---- 本地运行环境与验收产物 ----
+.workbuddy/
+.superpowers/
+.comp_agent_gens
+artifacts/
+logs/
+tests/probes/_outputs/
+*.db
+backend/.uid_secret
+backend/competition.db
+backend/quota.json
+backend/chroma_db/
+backend/archive/
+backend/tmp_export/
+backend/uploads/
+backend/scripts/generated/
+backend/scripts/__pycache__/
