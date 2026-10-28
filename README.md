@@ -1,56 +1,86 @@
 # 科创赛事多智能体协同创作助手
 
-面向大学生科创竞赛团队的端到端多智能体系统，基于 Flask + LangGraph 多智能体编排开发，实现赛事规则解析、创意同质化检测、申报书智能生成/优化、模拟评委评审全流程自动化。
+面向大学生科创竞赛团队的端到端多智能体系统，基于 Flask + LangGraph 多智能体编排，实现赛事规则解析、创意同质化检测、申报书生成/优化、模拟评委评审的全流程自动化。
 
-## 功能特性
-- 📋 赛事规则自动解析
-- 🔍 创意同质化检测
-- ✍️ 智能申报书生成/优化
-- 📝 申报书诊断分析
-- ⚖️ 模拟评委评审打分
-- 📥 一键导出所有结果
+## 目录
 
-## 版本区分
-- **简洁版**：约1-2分钟快速出结果，申报书 2000~4000 字级，包含规则解析、同质化检测、申报书生成、评委点评
-- **深度版**：约3-5分钟全面分析，申报书 12000 字级，并增加竞品/商业/风险分析、技术方案+实施计划、答辩问题预测、PPT大纲、可视化图表
+- `backend/`：Flask 应用、智能体编排与全部后端模块
+- `frontend/`：首页与静态资源（`index.html` + `static/`）
+- `docs/`：项目说明、接口契约、边界与排障文档；`docs/assets/` 放交付样例
+- `data/`：赛事规则原始资料（按赛事分 txt）
+- `knowledge_base/`：结构化提示、范文库与蒸馏产物（JSON）
+- `训练库/`：归档的成品样本与元数据
+- `scripts/`：索引构建等维护脚本
+- `tests/`：自动化测试；`tests/probes/` 为一次性探针与手工校验脚本
 
-## 运行环境
-- Python 3.10+
-- 依赖：langgraph、langchain、flask、chroma、pypdf、deepseek/openai SDK
+完整结构：
+
+```
+competition-agent
+├─ backend/            后端源码（app.py / competition_agents.py 等）
+├─ frontend/           前端源码
+│  ├─ index.html
+│  └─ static/          样式、脚本、图标
+├─ docs/               说明、契约、边界文档
+│  └─ assets/          申报书/说明书等交付样例
+├─ data/               赛事资料
+├─ knowledge_base/     结构化知识与范文库
+├─ 训练库/             成品样本归档
+├─ scripts/            维护脚本
+├─ tests/              测试与探针
+├─ app.py              兼容入口（实际实现见 backend/app.py）
+├─ run.py              本地启动入口
+├─ wsgi.py             云端 WSGI 入口
+└─ requirements.txt
+```
+
+**不要把临时日志、数据库、上传文件和生成产物放进版本库**：`competition.db`、`chat_history.db`、`quota.json`、`uploads/`、`generated/`、`logs/`、`artifacts/`、`tmp_export/` 均已由 `.gitignore` 排除，仅存在于本地。
+
+根目录保留 9 个薄壳（`app.py`、`chat_store.py`、`competition_agents.py`、`deploy_guard.py`、`docx_render.py`、`export_quality.py`、`export_recovery.py`、`llm_usage_store.py`、`pptx_builder.py`），把导入转发到 `backend/` 同名模块，用于兼容 `run.py`、WSGI、Vercel 入口与历史脚本。
 
 ## 快速启动
+
 ```bash
 pip install -r requirements.txt
 python run.py
-# 访问 http://127.0.0.1:8080
+# 打开 http://127.0.0.1:8080
 ```
 
-## 目录结构
-```
-├── run.py                 # 本地启动入口
-├── wsgi.py                # 云端 WSGI 入口
-├── app.py                 # 兼容入口（实际实现位于 backend/）
-├── backend/               # Flask 后端、智能体编排与后端模块
-│   ├── app.py
-│   └── competition_agents.py
-├── frontend/              # 首页、静态资源与前端图标
-│   ├── index.html
-│   └── static/
-├── data/                  # 比赛知识库原始资料
-│   ├── iCAN大赛.txt
-│   ├── 互联网+大赛.txt
-│   ├── 挑战杯.txt
-│   └── 国创项目.txt
-├── knowledge_base/        # 结构化提示与范文库
-├── scripts/               # 索引构建等维护脚本
-├── tests/                 # 自动化测试与验收探针
-├── docs/                  # 项目说明、交接记录与验收资料
-└── uploads/               # 用户上传文件临时目录（本地运行时）
+云端入口用 WSGI：
+
+```bash
+gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 600
 ```
 
-根目录保留少量兼容入口（如 `app.py`、`competition_agents.py`），以兼容现有 `run.py`、WSGI、Vercel 入口和历史测试；实际后端实现统一位于 `backend/`。`backend/` 下的本地数据库、缓存和归档目录已通过 `.gitignore` 排除。
+`workers` 必须为 1：异步任务状态保存在进程内字典，多进程会让「提交任务」和「轮询进度」落到不同进程。
+
+## 验证
+
+```bash
+python -m unittest tests.test_repository_layout   # 目录布局与静态资源可访问
+python tests/probes/_check_startup.py             # 启动块位置防回归
+```
 
 ## 配置
-在环境变量中设置：
-- `DEEPSEEK_API_KEY`：DeepSeek大模型密钥
-- `CLAUDE_API_KEY`：火山引擎Claude密钥
+
+环境变量：
+
+- `DEEPSEEK_API_KEY`：DeepSeek 模型密钥
+- `CLAUDE_API_KEY`：火山引擎 Claude 密钥
+
+## 版本区分
+
+- **简洁版**：约 1-2 分钟，申报书 2000-4000 字，含规则解析、同质化检测、申报书生成、评委点评
+- **深度版**：约 3-5 分钟，申报书 12000 字级，增加竞品/商业/风险分析、技术方案与实施计划、答辩问题预测、PPT 大纲、可视化图表
+
+## 协作
+
+```bash
+git pull
+git checkout -b feature/your-topic
+git add .
+git commit -m "describe your change"
+git push -u origin feature/your-topic
+```
+
+提交前请确认 `python -m unittest tests.test_repository_layout` 通过，且没有把数据库、日志或生成产物带进提交。
