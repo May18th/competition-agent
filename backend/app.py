@@ -165,7 +165,7 @@ def _gzip_response(resp):
 # 的 32 位 hex cookie 兼容接受，本次响应重签平滑升级，不丢老用户历史。
 
 def _load_uid_secret():
-    _p = os.getenv("COMPETITION_UID_SECRET_PATH") or os.path.join(os.path.dirname(os.path.dirname(__file__)), '.uid_secret')
+    _p = os.getenv("COMPETITION_UID_SECRET_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), '.data', '.uid_secret')
     try:
         with open(_p, encoding='utf-8') as _f:
             _s = _f.read().strip()
