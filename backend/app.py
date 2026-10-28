@@ -35,6 +35,16 @@ import backend.app_log as app_log
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _FRONTEND_DIR = os.path.join(_PROJECT_ROOT, "frontend")
+# 运行产物统一落在 backend/.data（数据库、上传、生成物、临时导出），不出现在仓库根
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".data")
+_UPLOAD_DIR = os.path.join(_DATA_DIR, "uploads")
+_GENERATED_DIR = os.path.join(_DATA_DIR, "generated")
+_TMP_EXPORT_DIR = os.path.join(_DATA_DIR, "tmp_export")
+for _d in (_DATA_DIR, _UPLOAD_DIR, _GENERATED_DIR, _TMP_EXPORT_DIR):
+    try:
+        os.makedirs(_d, exist_ok=True)
+    except OSError:
+        pass
 
 app = Flask(
     __name__,
@@ -971,7 +981,7 @@ def _user_export_guard():
 
 # ============ 初始化数据库 ============
 DB_PATH = os.path.abspath(os.getenv("COMPETITION_DB_PATH") or
-                          os.path.join(os.path.dirname(os.path.dirname(__file__)), "competition.db"))
+                          os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".data", "competition.db"))
 
 def get_db():
     """统一 SQLite 连接：timeout=5 秒，写锁冲突时等待而非秒抛 database is locked。"""
@@ -1113,7 +1123,7 @@ def _seed_kb_if_needed():
         from kb_samples import add_sample
 
         seed_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                 "knowledge_base", "seed_samples.json")
+                                 "backend", "assets", "knowledge_base", "seed_samples.json")
         if not os.path.exists(seed_path):
             return
         with open(seed_path, "rb") as f:
@@ -1153,7 +1163,7 @@ _seed_kb_if_needed()
 # 生成并发闸：允许最多 3 个生成任务同时进行（原来 Lock 只有 1 个，多用户会排长队）。
 # 大模型调用另有 _LLM_GATE(4) 限流 + SQLite WAL 并发写，3 个并行是稳定与速度的平衡点。
 lock = threading.Semaphore(3)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = _UPLOAD_DIR
 app.config['HISTORY_FILE'] = 'history.json'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 上传文件上限 50MB，防超大文件把服务压垮
@@ -2581,8 +2591,8 @@ def share_export(token):
     if etype == "zip":
         import zipfile as _zf
         from docx import Document as _Doc
-        os.makedirs('tmp_export', exist_ok=True)
-        zpath = 'tmp_export/分享材料包.zip'
+        os.makedirs(_TMP_EXPORT_DIR, exist_ok=True)
+        zpath = os.path.join(_TMP_EXPORT_DIR, '分享材料包.zip')
         mappings = [
             ("01_项目申报书全文.docx", "项目申报书全文", data.get('proposal', '')),
             ("02_申报书诊断分析.docx", "申报书诊断分析", data.get('proposal_analysis', '')),
@@ -2603,13 +2613,13 @@ def share_export(token):
                 d.add_heading(_lbl, 0)
                 for seg in str(content).split('\n'):
                     d.add_paragraph(seg)
-                tpath = os.path.join('tmp_export', fname)
+                tpath = os.path.join(_TMP_EXPORT_DIR, fname)
                 d.save(tpath)
                 zf.write(tpath, fname)
             # PDF 一起进包
             try:
                 from pdf_render import render_markdown_to_pdf
-                pfp = 'tmp_export/项目申报书.pdf'
+                pfp = os.path.join(_TMP_EXPORT_DIR, '项目申报书.pdf')
                 render_markdown_to_pdf(text, pfp, title=title)
                 zf.write(pfp, '项目申报书.pdf')
             except Exception:
@@ -5262,7 +5272,7 @@ def export_zip():
     if skipped:
         print("[export_zip] 内容为空已跳过 %d 项：%s" % (len(skipped), ", ".join(skipped)))
 
-    tmpdir = 'tmp_export'
+    tmpdir = _TMP_EXPORT_DIR
     os.makedirs(tmpdir, exist_ok=True)
     zippath = os.path.join(tmpdir, '项目材料包.zip')
 
@@ -5325,7 +5335,7 @@ def export_zip():
                 ch.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 cdoc.add_paragraph()
                 for c in charts:
-                    img = os.path.join('generated', os.path.basename(c.get('url', '')))
+                    img = os.path.join(_GENERATED_DIR, os.path.basename(c.get('url', '')))
                     if c.get('title'):
                         p = cdoc.add_paragraph()
                         r = p.add_run(c['title'])
@@ -5358,7 +5368,7 @@ def export_zip():
                         s['table'] = tmap.get(s['table'])
                 chart_paths = {}
                 for c in (data.get('rich_charts') or []):
-                    img = os.path.join('generated', os.path.basename(c.get('url', '')))
+                    img = os.path.join(_GENERATED_DIR, os.path.basename(c.get('url', '')))
                     if os.path.exists(img):
                         chart_paths[c.get('id')] = img
                 build_deck(deck, os.path.join(tmpdir, '14_路演PPT.pptx'), chart_paths)
@@ -5385,7 +5395,7 @@ def export_zip():
 @app.route('/generated/<path:filename>')
 def generated_file(filename):
     from flask import send_from_directory
-    return send_from_directory('generated', filename)
+    return send_from_directory(_GENERATED_DIR, filename)
 
 
 @app.route('/api/knowledge_status')
@@ -6627,7 +6637,7 @@ _CHAT_PRESET = [
 
 
 _CHAT_DB_PATH = os.path.abspath(os.getenv("COMPETITION_CHAT_DB_PATH") or
-                                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chat_history.db"))
+                                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", ".data", "chat_history.db"))
 
 
 def _chat_reserve_quota():
@@ -6907,14 +6917,14 @@ def export_pptx():
                 s['table'] = tmap.get(s['table'])
         chart_paths = {}
         for c in (data.get('charts') or data.get('rich_charts') or []):
-            img = os.path.join('generated', os.path.basename(c.get('url', '')))
+            img = os.path.join(_GENERATED_DIR, os.path.basename(c.get('url', '')))
             if os.path.exists(img):
                 chart_paths[c.get('id')] = img
-        os.makedirs('generated', exist_ok=True)
+        os.makedirs(_GENERATED_DIR, exist_ok=True)
         # L5：落盘名用友好名（{项目}_{赛事}_路演PPT.pptx），不再用临时名 _deck_export
         project = deck.get('project') or data.get('idea') or _project_name_hint(data) or '路演PPT'
         competition = deck.get('competition') or data.get('competition_name') or ''
-        out = os.path.join('generated', _export_filename(project, competition, '路演PPT', '.pptx'))
+        out = os.path.join(_GENERATED_DIR, _export_filename(project, competition, '路演PPT', '.pptx'))
         build_deck(deck, out, chart_paths)
         # 导出终检（第一百二十五轮）：PPT 页数/体积/生成指令残留
         try:

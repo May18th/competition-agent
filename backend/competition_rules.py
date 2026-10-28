@@ -4,7 +4,7 @@ import os
 import re
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE, "data")
+DATA_DIR = os.path.join(BASE, "backend", "assets", "data")
 
 # 出现这些词说明该块是推断/非官方口径，需要补官方原文
 INFER_MARKERS = ["推断", "推测", "估计", "未标注", "未公布", "通用参考", "非官方",

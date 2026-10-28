@@ -16,8 +16,8 @@ import sys
 from datetime import datetime
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SEED = os.path.join(BASE, "knowledge_base", "seed_samples.json")
-DB = os.path.join(BASE, "competition.db")
+SEED = os.path.join(BASE, "backend", "assets", "knowledge_base", "seed_samples.json")
+DB = os.path.join(BASE, "backend", ".data", "competition.db")
 
 CREATE_SQL = """CREATE TABLE IF NOT EXISTS kb_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -13,7 +13,7 @@ import os
 import sys
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SEED = os.path.join(BASE, "knowledge_base", "real_winning_samples.json")
+SEED = os.path.join(BASE, "backend", "assets", "knowledge_base", "real_winning_samples.json")
 
 
 def main():

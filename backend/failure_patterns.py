@@ -4,7 +4,7 @@ import os
 import sqlite3
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(BASE, "competition.db")
+DB = os.path.join(BASE, "backend", ".data", "competition.db")
 
 FIX_SUGGESTIONS = {
     "rate_limit": "请求太频繁，触发 DeepSeek 限流/并发闸；加退避重试或降低并发",

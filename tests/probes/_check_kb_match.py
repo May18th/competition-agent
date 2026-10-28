@@ -7,7 +7,7 @@ html = open('frontend/index.html', encoding='utf-8').read()
 block = html.split('id="competition"')[1].split('</select>')[0]
 options = re.findall(r'value="([^"]+)"', block)
 
-files = [os.path.basename(p).replace('.txt','') for p in sorted(glob.glob('data/*.txt'))]
+files = [os.path.basename(p).replace('.txt','') for p in sorted(glob.glob('backend/assets/data/*.txt'))]
 
 print("下拉 %d 个赛事 / data 里 %d 个文件\n" % (len(options), len(files)))
 print("%-40s %-8s %s" % ("下拉赛事", "命中?", "匹配到的知识库文件"))

@@ -13,7 +13,7 @@ import shutil
 import time
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(BASE, "competition.db")
+DB = os.path.join(BASE, "backend", ".data", "competition.db")
 BACKUP_DIR = os.path.join(BASE, "backups")
 KEEP = 7
 

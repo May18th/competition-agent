@@ -47,7 +47,7 @@ if not _FONT_OK:
           "Linux 上请执行：apt-get install -y fonts-noto-cjk")
 plt.rcParams["axes.unicode_minus"] = False
 
-OUT_DIR = "generated"
+OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".data", "generated")
 
 
 def _ensure_dir():

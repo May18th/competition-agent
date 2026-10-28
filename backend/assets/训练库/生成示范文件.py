@@ -10,13 +10,13 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 from docx_render import build_docx  # noqa: E402
 from pptx_builder import build_deck  # noqa: E402
 
-BASE = os.path.join(ROOT, "训练库")
+BASE = os.path.dirname(os.path.abspath(__file__))
 LABEL = "AI生成 · 经人工确认 · 规范示范"
 
 DECK_STRUCTURE = [
@@ -31,7 +31,7 @@ DECK_STRUCTURE = [
 
 
 def load_profiles():
-    p = os.path.join(ROOT, "data", "competition_profiles.json")
+    p = os.path.join(ROOT, "assets", "data", "competition_profiles.json")
     with open(p, encoding="utf-8") as f:
         return json.load(f)["competitions"]
 

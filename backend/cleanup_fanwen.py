@@ -9,7 +9,7 @@ import os
 import sqlite3
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(BASE, "competition.db")
+DB = os.path.join(BASE, "backend", ".data", "competition.db")
 
 conn = sqlite3.connect(DB)
 cur = conn.cursor()

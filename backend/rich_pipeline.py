@@ -21,7 +21,7 @@ try:
 except Exception:
     from chart_renderer import render as render_chart
 
-GEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated")
+GEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".data", "generated")
 
 # 专用 LLM：比主链路更长超时/更多输出 token（结构化 JSON 比较长）
 _llm = None
@@ -93,7 +93,7 @@ source 写「来源 + 统计年份」（如「教育部 2024」「中国信通�
 
 def _load_kb_industry_data(competition):
     """从 data/*.txt 里找当前赛事的「行业数据」章节，喂给图表 LLM 引用真实数字。"""
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "assets", "data")
     if not os.path.isdir(data_dir):
         return ""
     comp = str(competition or "")

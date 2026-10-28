@@ -5,11 +5,10 @@
 ## 目录
 
 - `backend/`：Flask 应用、智能体编排与全部后端模块
+  - `backend/assets/`：内容资产（赛事资料 `data/`、知识库 `knowledge_base/`、`训练库/`）
+  - `backend/.data/`：运行产物（数据库、配额、上传、生成物、临时导出、日志），不入库
 - `frontend/`：首页与静态资源（`index.html` + `static/`）
 - `docs/`：项目说明、接口契约、边界与排障文档；`docs/assets/` 放交付样例
-- `data/`：赛事规则原始资料（按赛事分 txt）
-- `knowledge_base/`：结构化提示、范文库与蒸馏产物（JSON）
-- `训练库/`：归档的成品样本与元数据
 - `scripts/`：索引构建等维护脚本
 - `tests/`：自动化测试；`tests/probes/` 为一次性探针与手工校验脚本
 
@@ -18,14 +17,18 @@
 ```
 competition-agent
 ├─ backend/            后端源码（app.py / competition_agents.py 等）
+│  ├─ assets/          内容资产
+│  │  ├─ data/         赛事资料（按赛事分 txt）
+│  │  ├─ knowledge_base/  结构化提示与范文库（JSON）
+│  │  └─ 训练库/       成品样本归档
+│  └─ .data/           运行产物（不入库）
+│     ├─ competition.db / chat_history.db / quota.json
+│     └─ uploads/ generated/ tmp_export/ logs/
 ├─ frontend/           前端源码
 │  ├─ index.html
 │  └─ static/          样式、脚本、图标
 ├─ docs/               说明、契约、边界文档
 │  └─ assets/          申报书/说明书等交付样例
-├─ data/               赛事资料
-├─ knowledge_base/     结构化知识与范文库
-├─ 训练库/             成品样本归档
 ├─ scripts/            维护脚本
 ├─ tests/              测试与探针
 ├─ app.py              兼容入口（实际实现见 backend/app.py）
@@ -34,7 +37,7 @@ competition-agent
 └─ requirements.txt
 ```
 
-**不要把临时日志、数据库、上传文件和生成产物放进版本库**：`competition.db`、`chat_history.db`、`quota.json`、`uploads/`、`generated/`、`logs/`、`artifacts/`、`tmp_export/` 均已由 `.gitignore` 排除，仅存在于本地。
+**不要把临时日志、数据库、上传文件和生成产物放进版本库**：它们统一落在 `backend/.data/`，已由 `.gitignore` 整体排除，仅存在于本地。
 
 根目录保留 9 个薄壳（`app.py`、`chat_store.py`、`competition_agents.py`、`deploy_guard.py`、`docx_render.py`、`export_quality.py`、`export_recovery.py`、`llm_usage_store.py`、`pptx_builder.py`），把导入转发到 `backend/` 同名模块，用于兼容 `run.py`、WSGI、Vercel 入口与历史脚本。
 

@@ -699,7 +699,7 @@ def render_charts(chart_data):
     """
     if not isinstance(chart_data, dict) or not chart_data:
         return []
-    out_dir = "generated"
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".data", "generated")
     os.makedirs(out_dir, exist_ok=True)
     results = []
 

@@ -7,7 +7,7 @@ from datetime import datetime
 
 # 数据源：docs/漏洞库.md 首次解析入库到 data/vulns.json，之后以 JSON 为准（存储同步）。
 # 字段：id / level / name / status / owner / round / experience / distilled / category / updated_at
-_VULNS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'vulns.json')
+_VULNS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', 'assets', 'data', 'vulns.json')
 _VULNS_MD = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs', '漏洞库.md')
 _LEVEL_TAG = {"一": "high", "二": "medium", "三": "low"}
 _LEVEL_ORDER = {"high": 0, "medium": 1, "low": 2}

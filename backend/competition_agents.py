@@ -60,9 +60,9 @@ import json as _json
 from datetime import datetime as _datetime
 
 _QUOTA_FILE = os.path.abspath(os.getenv("COMPETITION_QUOTA_PATH") or
-                              os.path.join(os.path.dirname(os.path.dirname(__file__)), "quota.json"))
+                              os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".data", "quota.json"))
 _LLM_USAGE_DB_PATH = os.path.abspath(os.getenv("COMPETITION_LLM_USAGE_PATH") or
-                                     os.path.join(os.path.dirname(os.path.dirname(__file__)), "llm_usage.sqlite"))
+                                     os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".data", "llm_usage.sqlite"))
 _QUOTA_DAILY_LIMIT = int(os.getenv("QUOTA_DAILY_LIMIT", "500"))
 
 
@@ -244,7 +244,7 @@ except Exception as _e:
 def load_competition_knowledge():
     """加载data目录里的所有比赛资料"""
     knowledge = {}
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "assets", "data")
     if os.path.exists(data_dir):
         for filename in os.listdir(data_dir):
             if filename.endswith(".txt"):
@@ -259,7 +259,7 @@ competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
 
 _PROFILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             "data", "competition_profiles.json")
+                             "backend", "assets", "data", "competition_profiles.json")
 _PROFILES_CACHE = None
 
 
@@ -369,7 +369,7 @@ def get_competition_knowledge(competition_name: str) -> str:
     return ""
 
 
-_OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "official_docs.json")
+_OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", "assets", "data", "official_docs.json")
 
 
 def save_official_doc(competition_name, text):
@@ -410,7 +410,7 @@ def get_official_doc(competition_name):
 
 
 _INDUSTRY_DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                   "knowledge_base", "industry_data.txt")
+                                   "backend", "assets", "knowledge_base", "industry_data.txt")
 _industry_cache = None
 
 
@@ -468,7 +468,7 @@ def check_knowledge_format(content: str) -> dict:
 def get_knowledge_status() -> dict:
     """返回知识库收录状态 + 每个文件的格式校验结果"""
     import glob
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "assets", "data")
     files = []
     for filepath in sorted(glob.glob(os.path.join(data_dir, "*.txt"))):
         name = os.path.basename(filepath).replace(".txt", "")

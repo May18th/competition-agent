@@ -16,7 +16,7 @@ import threading
 import time
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(BASE, "competition.db")
+DB = os.path.join(BASE, "backend", ".data", "competition.db")
 
 # 5 类范式：数据源 → 阈值（新增 N 条才蒸馏）。有数据才跑，没数据休眠，不空转不烧配额。
 THRESHOLDS = {

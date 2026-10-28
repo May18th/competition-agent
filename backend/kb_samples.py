@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime
 
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "competition.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", ".data", "competition.db")
 
 # 三类标签词表（可持续扩充）
 MODULE_TAGS = ["项目简介", "社会价值", "实践过程", "商业模式", "创新点", "风险分析"]

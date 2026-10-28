@@ -10,7 +10,7 @@ import json
 import os
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "writing_paradigm.json")
+PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "writing_paradigm.json")
 
 
 def _load():
@@ -145,9 +145,9 @@ def distill_from_samples(max_samples=40, max_chars=16000):
 
 
 # ============ 答辩范式 / 评委评分范式 蒸馏 ============
-DEFENSE_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "defense_paradigm.json")
-JUDGE_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "judge_paradigm.json")
-DEFENSE_QUESTIONS_PATH = os.path.join(BASE, "knowledge_base", "defense_questions.json")
+DEFENSE_PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "defense_paradigm.json")
+JUDGE_PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "judge_paradigm.json")
+DEFENSE_QUESTIONS_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "defense_questions.json")
 
 
 def _load_json(path):
@@ -259,7 +259,7 @@ def distill_defense(max_questions=40, max_chars=16000):
 def _history_judge_corpus(limit=60):
     """从 history 抽取评委评分 + 多专家批注，拼成蒸馏素材；无数据返回空串。"""
     import sqlite3
-    conn = sqlite3.connect(os.path.join(BASE, "competition.db"))
+    conn = sqlite3.connect(os.path.join(BASE, "backend", ".data", "competition.db"))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -333,15 +333,15 @@ def distill_judge(limit=60):
 
 
 # ============ 分析模块 / PPT·演讲稿 / 同质化 范式 ============
-ANALYSIS_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "analysis_paradigm.json")
-DECK_SPEECH_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "deck_speech_paradigm.json")
-SIMILARITY_PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "similarity_paradigm.json")
+ANALYSIS_PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "analysis_paradigm.json")
+DECK_SPEECH_PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "deck_speech_paradigm.json")
+SIMILARITY_PARADIGM_PATH = os.path.join(BASE, "backend", "assets", "knowledge_base", "similarity_paradigm.json")
 
 
 def _history_corpus(fields, limit=60, max_chars=16000):
     """从历史 result_data 抽取若干字段拼成蒸馏素材；无数据返回空串。"""
     import sqlite3
-    conn = sqlite3.connect(os.path.join(BASE, "competition.db"))
+    conn = sqlite3.connect(os.path.join(BASE, "backend", ".data", "competition.db"))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
