@@ -60,7 +60,7 @@ def main():
             print("--csv 需要跟一个文件路径")
             return
 
-    import competition_agents as ca
+    import backend.competition_agents as ca
 
     if mock:
         class FakeLLM:

@@ -34,7 +34,7 @@ def main():
         except ValueError:
             pass
 
-    base = os.path.dirname(os.path.abspath(__file__))
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     db = os.path.join(base, "competition.db")
     if not os.path.isfile(db):
         print("未找到 competition.db：", db)
@@ -102,7 +102,7 @@ def main():
         print("[%d] id=%s %s -> %s (%dB)" % (i + 1, hid, comp, fname, size))
 
     # 前端 static/demo_sample.json：{success, data} 包装，取第一条
-    static_dir = os.path.join(base, "static")
+    static_dir = os.path.join(base, "frontend", "static")
     os.makedirs(static_dir, exist_ok=True)
     static_path = os.path.join(static_dir, "demo_sample.json")
     with open(static_path, "w", encoding="utf-8") as f:

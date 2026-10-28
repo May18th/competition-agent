@@ -17,7 +17,7 @@ import re
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generated')
+GEN_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'generated')
 
 # 每张图 → 目标章节的语义匹配表
 # 结构：(图表侧关键字, 章节侧关键字)

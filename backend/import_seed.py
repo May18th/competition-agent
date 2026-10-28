@@ -15,7 +15,7 @@ import sqlite3
 import sys
 from datetime import datetime
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEED = os.path.join(BASE, "knowledge_base", "seed_samples.json")
 DB = os.path.join(BASE, "competition.db")
 

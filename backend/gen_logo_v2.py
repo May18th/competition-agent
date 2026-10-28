@@ -26,8 +26,8 @@ def lerp(c1, c2, t):
 
 
 def main():
-    root = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(root, 'static', 'logo.png')
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = os.path.join(root, 'frontend', 'static', 'logo.png')
     if os.path.exists(out):
         bak = out + '.bak_' + time.strftime('%Y%m%d%H%M%S')
         shutil.copy2(out, bak)

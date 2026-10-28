@@ -427,12 +427,12 @@ def _page_number_footer(doc):
 _LOGO_HEIGHT_CM = 1.6      # 封面 Logo 显示高度
 _LOGO_X_CM = 1.5           # 相对页面左上角的水平偏移
 _LOGO_Y_CM = 1.2           # 相对页面左上角的垂直偏移
-_LOGO_REL_PATH = ('static', 'logo.png')
+_LOGO_REL_PATH = ('frontend', 'static', 'logo.png')
 
 
 def _logo_path():
-    """Logo 绝对路径：以本文件位置为基准定位 static/logo.png，不依赖进程工作目录。"""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), *_LOGO_REL_PATH)
+    """Logo 绝对路径：以项目文件位置为基准定位 frontend/static/logo.png。"""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), *_LOGO_REL_PATH)
 
 
 def _logo_aspect(path):

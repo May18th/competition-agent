@@ -29,15 +29,17 @@ import shutil
 import subprocess
 import datetime
 
-REPO = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY_FILES = [
-    "app.py", "competition_agents.py", "rich_pipeline.py",
-    "docx_render.py", "pdf_render.py", "pptx_builder.py",
-    "kb_distill.py", "kb_samples.py", "stage_reporter.py",
+    os.path.join("backend", name) for name in (
+        "app.py", "competition_agents.py", "rich_pipeline.py",
+        "docx_render.py", "pdf_render.py", "pptx_builder.py",
+        "kb_distill.py", "kb_samples.py", "stage_reporter.py",
+    )
 ]
 # 前端资源也纳入备份/回滚，旧版漏了这里才导致事故
-FRONTEND_FILES = ["index.html"]
-FRONTEND_DIRS = ["static"]
+FRONTEND_FILES = [os.path.join("frontend", "index.html")]
+FRONTEND_DIRS = [os.path.join("frontend", "static")]
 HEALTH_URL = "http://127.0.0.1:8080/api/health"
 PYTHON = os.path.join(REPO, ".venv", "bin", "python")
 if not os.path.exists(PYTHON):

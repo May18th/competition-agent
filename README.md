@@ -27,16 +27,28 @@ python run.py
 
 ## 目录结构
 ```
-├── run.py                 # 启动入口
-├── app.py                 # Flask后端+前端页面
-├── competition_agents.py  # 多智能体工作流定义（LangGraph 编排，多Agent并行协作）
-├── data/                  # 比赛知识库
+├── run.py                 # 本地启动入口
+├── wsgi.py                # 云端 WSGI 入口
+├── app.py                 # 兼容入口（实际实现位于 backend/）
+├── backend/               # Flask 后端、智能体编排与后端模块
+│   ├── app.py
+│   └── competition_agents.py
+├── frontend/              # 首页、静态资源与前端图标
+│   ├── index.html
+│   └── static/
+├── data/                  # 比赛知识库原始资料
 │   ├── iCAN大赛.txt
 │   ├── 互联网+大赛.txt
 │   ├── 挑战杯.txt
 │   └── 国创项目.txt
-└── uploads/               # 用户上传文件临时目录
+├── knowledge_base/        # 结构化提示与范文库
+├── scripts/               # 索引构建等维护脚本
+├── tests/                 # 自动化测试与验收探针
+├── docs/                  # 项目说明、交接记录与验收资料
+└── uploads/               # 用户上传文件临时目录（本地运行时）
 ```
+
+根目录保留少量兼容入口（如 `app.py`、`competition_agents.py`），以兼容现有 `run.py`、WSGI、Vercel 入口和历史测试；实际后端实现统一位于 `backend/`。`backend/` 下的本地数据库、缓存和归档目录已通过 `.gitignore` 排除。
 
 ## 配置
 在环境变量中设置：

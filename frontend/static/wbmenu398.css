@@ -19,6 +19,48 @@
     padding: 6px !important;
 }
 
+/* ---------- 403 轮：浮层可读性（用户实测：点开「更多」后周边内容发灰、看不清） ----------
+   根因全部来自 index.html 里写死的内联样式，那套配色是按**夜间**调的，日间白底上不成立：
+   1. box-shadow: 0 10px 30px rgba(0,0,0,.45) —— 45% 纯黑 + 30px 大扩散。
+      在深色底上是"投影"，在白色卡片上就是一片 30px 灰雾：截图像素实测，
+      菜单边缘外约 20px 处的白底被压到 rgb(241,241,242)，正落在「清空重写」按钮上，
+      深灰蓝的文字压灰后对比度肉眼可见地塌，这就是"内容看不清"的直接原因。
+   2. background: var(--surface-solid) 在日间等于 #ffffff，与卡片同白；边框 --line 仅 16% 透明。
+      → 菜单边界等于不存在，被它挡掉左半边的「清空重写」看起来像"字被裁掉了"。
+
+   处理原则：只压视觉，不改结构、不改定位、不改行为。日间换成「窄扩散 + 低不透明度」的
+   冷色投影（贴着面板收边，10px 外基本衰减干净，不再污染周围文字）；
+   夜间保留原来的深色投影，深底上需要更强的分离感。 */
+#wbMoreMenu,
+#wbExpMenu {
+    /* 实色底：挡住下面的内容，而不是让内容透上来 */
+    background: var(--surface-solid, #ffffff) !important;
+    /* 边框提到 --line-strong（日间 32%）：白底上也必须能看出"这里有一个浮层" */
+    border: 1px solid var(--line-strong, rgba(40, 60, 120, .32)) !important;
+    /* 双层：贴身 1px 收边 + 24px 内衰减，整体比原来窄一半以上 */
+    box-shadow:
+        0 1px 2px rgba(15, 23, 42, .10),
+        0 10px 24px rgba(15, 23, 42, .14) !important;
+}
+
+/* 夜间（含自定义深色主题预设）保留原有深色投影：深底上浅投影根本看不见 */
+body:not(.light) #wbMoreMenu,
+body:not(.light) #wbExpMenu {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45) !important;
+}
+
+/* 菜单项继承了 .wb-glass-btn 的 backdrop-filter: blur(10px)：
+   1. 面板已是实色底，模糊自己的背景纯属白耗 GPU（低端机每次开菜单都要重采样）；
+   2. 实测面板内部会出现约 1% 的底层内容残影（白底 253~254 / 255），
+      叠在菜单文字后面就是那层"脏"。 */
+#wbMoreMenu,
+#wbMoreMenu *,
+#wbExpMenu,
+#wbExpMenu * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 #wbMenu398Body {
     display: block;
     width: 100%;
@@ -164,4 +206,22 @@
     .wbmenu398-hint {
         font-size: 11.5px;
     }
+}
+
+/* ---------- 404 轮：菜单项 hover 后文字消失（与线上 style.css 同一处修复） ----------
+   .wb-glass-btn:hover 写死 color:#fff，而菜单项内联 background:transparent 把 hover 底色压掉
+   → 白字落白底，鼠标一放上去字就没了。这里统一走主色 + 可见的 hover 底色。 */
+#wbMoreMenu .wb-glass-btn,
+#wbExpMenu .wb-glass-btn {
+    color: var(--text, #1a2340) !important;
+}
+
+#wbMoreMenu .wb-glass-btn:hover,
+#wbMoreMenu .wb-glass-btn:focus-visible,
+#wbExpMenu .wb-glass-btn:hover,
+#wbExpMenu .wb-glass-btn:focus-visible {
+    color: var(--text, #1a2340) !important;
+    background: var(--c-a-soft, rgba(14, 116, 144, .12)) !important;
+    transform: none !important;
+    box-shadow: none !important;
 }

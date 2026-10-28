@@ -12,7 +12,7 @@ import json
 import os
 import sys
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEED = os.path.join(BASE, "knowledge_base", "real_winning_samples.json")
 
 

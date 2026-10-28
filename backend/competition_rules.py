@@ -3,7 +3,7 @@
 import os
 import re
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE, "data")
 
 # 出现这些词说明该块是推断/非官方口径，需要补官方原文

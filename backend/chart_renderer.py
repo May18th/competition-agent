@@ -125,7 +125,7 @@ def render_charts(chart_data):
 #
 # 配色统一走深色底（#0F1535），和 pptx_builder 的深蓝版式、网页深色主题一致；
 # 插到白底 Word 里也能看清（深色卡片）。
-# 追加于 2026-09-25 by WorkBuddy：原 render_charts() 保持不动，供旧契约兼容。
+# 追加于 2026-09-25 by 前端：原 render_charts() 保持不动，供旧契约兼容。
 # ==========================================================================
 BG = "#0F1535"
 FG = "#E9EEFC"
@@ -426,7 +426,7 @@ def render(chart, out_dir, theme=None):
         return None
 
 
-# ---- 兜底（WorkBuddy 加，勿删）-------------------------------------------
+# ---- 兜底（前端加，勿删）-------------------------------------------
 # rich_pipeline.py 依赖本文件的 render()。本文件被重写过多次，
 # 万一 render() 被覆盖丢失，从独立副本 chart_render_wb.py 自动补回，
 # 避免整条富媒体链路因 ImportError 静默失效（表现是 rich_* 全空）。

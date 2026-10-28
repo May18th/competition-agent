@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import time
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(BASE, "competition.db")
 
 # 5 类范式：数据源 → 阈值（新增 N 条才蒸馏）。有数据才跑，没数据休眠，不空转不烧配额。
@@ -120,7 +120,7 @@ def _run(kind):
             distill_similarity()
     except Exception as e:
         try:
-            import app_log
+            import backend.app_log as app_log
             app_log.warn("distill", "自动蒸馏 %s 失败：%s" % (kind, e))
         except Exception:
             pass

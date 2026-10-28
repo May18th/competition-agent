@@ -21,7 +21,7 @@ import os, re, json, glob
 # 用脚本自身位置反推仓库根目录，换机器也能直接跑
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(REPO, "data")
-OUT = os.path.join(REPO, "static", "competition_index.json")
+OUT = os.path.join(REPO, "frontend", "static", "competition_index.json")
 
 # 下拉里的赛名 → 知识库文件名（key）。用于前端本地匹配，保证选哪个都能命中。
 ALIAS = {
@@ -265,7 +265,7 @@ RE_TRACK = re.compile(r"^[(（]?\s*\d+\s*[)）、.]\s*(.+?)\s*[：:]\s*(.+)$")
 
 def parse_tracks(key, sec):
     """
-    赛道：官方描述以知识库 `## 赛道设置` 为准（Codex 改了 txt 就自动跟上），
+    赛道：官方描述以知识库 `## 赛道设置` 为准（后端改了 txt 就自动跟上），
     TRACKS 里的 ban / focus / avoid / sections 作为结构化补充。
     知识库没写赛道的赛事 → 返回空数组，前端不显示赛道选择（宁缺毋滥）。
     """

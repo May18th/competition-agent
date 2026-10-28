@@ -25,22 +25,29 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeSerializer
 from pypdf import PdfReader
 from docx import Document
-from competition_agents import fast_app, deep_app, CompetitionState
-from stage_reporter import (tasks, set_current_task, clear_current_task,
+from backend.competition_agents import fast_app, deep_app, CompetitionState
+from backend.stage_reporter import (tasks, set_current_task, clear_current_task,
                             report_stage as _report_stage, stage_meta, TaskCancelled,
                             get_speech_stream, clear_speech_stream, set_partial)
-import progress
-import app_log
+import backend.progress as progress
+import backend.app_log as app_log
 
 
-app = Flask(__name__)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FRONTEND_DIR = os.path.join(_PROJECT_ROOT, "frontend")
+
+app = Flask(
+    __name__,
+    static_folder=os.path.join(_FRONTEND_DIR, "static"),
+    static_url_path="/static",
+)
 START_TIME = time.time()
 
 
 @app.route('/favicon.ico')
 def favicon():
     """站点图标：优先用真实 .ico，缺失时回退内联 SVG（避免浏览器刷 404/500）。"""
-    ico_path = os.path.join(os.path.dirname(__file__), '科创赛事助手.ico')
+    ico_path = os.path.join(_FRONTEND_DIR, '科创赛事助手.ico')
     if os.path.exists(ico_path):
         return send_file(ico_path, mimetype='image/x-icon')
     _svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
@@ -76,7 +83,7 @@ def robots_txt():
     return content, 200, {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400'}
 
 
-_NOTICE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notice.json")
+_NOTICE_FILE = os.path.join(_PROJECT_ROOT, "notice.json")
 
 
 def _load_notice():
@@ -148,7 +155,7 @@ def _gzip_response(resp):
 # 的 32 位 hex cookie 兼容接受，本次响应重签平滑升级，不丢老用户历史。
 
 def _load_uid_secret():
-    _p = os.getenv("COMPETITION_UID_SECRET_PATH") or os.path.join(os.path.dirname(__file__), '.uid_secret')
+    _p = os.getenv("COMPETITION_UID_SECRET_PATH") or os.path.join(os.path.dirname(os.path.dirname(__file__)), '.uid_secret')
     try:
         with open(_p, encoding='utf-8') as _f:
             _s = _f.read().strip()
@@ -556,7 +563,7 @@ def _load_admin_users():
     返回 [{user, pass_hash, role}]；未配置返回 []（回退旧 ADMIN_TOKEN 单一口令模式）。"""
     raw = os.getenv("ADMIN_USERS", "").strip()
     if not raw:
-        p = os.path.join(os.path.dirname(__file__), '.admin_users.json')
+        p = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.admin_users.json')
         if os.path.isfile(p):
             try:
                 with open(p, encoding='utf-8') as f:
@@ -714,7 +721,7 @@ def _admin_login_verify(username, password, ip):
 def _audit_admin_login(username, ip, ok, role):
     """登录审计（195 层6 / 198 轮）：记录用户名+IP+成功/失败+角色。"""
     try:
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
             _f.write("%s | login | user=%s | ip=%s | %s | role=%s\n" % (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username or '-', ip,
                 'ok' if ok else 'fail', role or '-'))
@@ -730,7 +737,7 @@ def _audit_write(action, object_id=""):
     try:
         _role = _admin_session_role() or '-'
         _who = (_admin_session_role() or '') + '/' + (_current_uid() or '-')
-        with open(os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs', '后台审计.md'), 'a', encoding='utf-8') as _f:
             _f.write("%s | write | action=%s | obj=%s | who=%s\n" % (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), action or '-', object_id or '-', _who))
     except Exception:
@@ -964,7 +971,7 @@ def _user_export_guard():
 
 # ============ 初始化数据库 ============
 DB_PATH = os.path.abspath(os.getenv("COMPETITION_DB_PATH") or
-                          os.path.join(os.path.dirname(__file__), "competition.db"))
+                          os.path.join(os.path.dirname(os.path.dirname(__file__)), "competition.db"))
 
 def get_db():
     """统一 SQLite 连接：timeout=5 秒，写锁冲突时等待而非秒抛 database is locked。"""
@@ -1105,7 +1112,7 @@ def _seed_kb_if_needed():
         import hashlib
         from kb_samples import add_sample
 
-        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+        seed_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                  "knowledge_base", "seed_samples.json")
         if not os.path.exists(seed_path):
             return
@@ -1434,7 +1441,7 @@ _migrate_history_json()
 def _normalize_history_competition_names():
     """把历史记录的赛事名统一为官方全称（第十二轮刺：互联网+ 两种写法并存）。"""
     try:
-        from competition_agents import get_competition_profile
+        from backend.competition_agents import get_competition_profile
         conn = get_db()
         c = conn.cursor()
         rows = c.execute("SELECT id, competition_name FROM history WHERE IFNULL(competition_name,'') != ''").fetchall()
@@ -1466,7 +1473,7 @@ def _is_double_blind(competition_name):
     if not competition_name:
         return False
     try:
-        from competition_agents import get_competition_profile
+        from backend.competition_agents import get_competition_profile
         return bool(get_competition_profile(competition_name).get("double_blind"))
     except Exception:
         return False
@@ -1514,7 +1521,7 @@ def _mask_double_blind(text, school=None, advisor=None):
 def _build_docx(title, text, doc_type='report', subtitle=None,
                 school=None, team=None, advisor=None, competition_name=None,
                 header_title=None):
-    """统一走 docx_render 渲染器（格式层，WorkBuddy 已交付）。"""
+    """统一走 docx_render 渲染器（格式层已交付）。"""
     from docx_render import build_docx
     text = _strip_identifying_text(text or "")
     show_school_advisor = True
@@ -1570,7 +1577,7 @@ def _official_chapter_titles(competition_name):
     if not competition_name:
         return []
     try:
-        from competition_agents import _official_chapters
+        from backend.competition_agents import _official_chapters
         return _official_chapters({"competition_name": competition_name})
     except Exception:
         return []
@@ -1581,7 +1588,7 @@ def _pdf_limits(competition_name):
     max_pages, max_bytes = 20, 50 * 1024 * 1024
     if competition_name:
         try:
-            from competition_agents import get_competition_profile
+            from backend.competition_agents import get_competition_profile
             prof = get_competition_profile(competition_name) or {}
             wr = prof.get('word_requirement') or {}
             official = wr.get('official') or ''
@@ -1607,7 +1614,7 @@ _DOWNLOAD_TMP_DIR = None
 def _download_tmp_dir():
     global _DOWNLOAD_TMP_DIR
     if _DOWNLOAD_TMP_DIR is None:
-        _DOWNLOAD_TMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tmp_downloads')
+        _DOWNLOAD_TMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tmp_downloads')
     try:
         os.makedirs(_DOWNLOAD_TMP_DIR, exist_ok=True)
     except Exception:
@@ -1770,7 +1777,7 @@ def _export_review_gate(data, mode="deep"):
         # 没回源到完整记录（如只传了 text），跳过评分门，正常导出
         return True, None, []
     try:
-        from quality_gate import score_export
+        from backend.quality_gate import score_export
         # 档位判定：优先请求体 mode，其次回源记录 mode/tier，最后用入参默认（deep）
         _mode = (data.get('mode') or rec.get('mode') or rec.get('tier') or mode or 'deep')
         _mode = 'deep' if str(_mode).strip().lower() == 'deep' else 'fast'
@@ -1853,11 +1860,12 @@ _INDEX_CACHE = {"mtime": 0.0, "content": ""}
 def index():
     # L4：首页 HTML 内存缓存（按文件 mtime 失效），省去每次 400KB 磁盘读，降低首字节延迟
     try:
-        _mt = os.path.getmtime('index.html')
+        _index_path = os.path.join(_FRONTEND_DIR, 'index.html')
+        _mt = os.path.getmtime(_index_path)
     except Exception:
         _mt = 0.0
     if _INDEX_CACHE["mtime"] != _mt or not _INDEX_CACHE["content"]:
-        with open('index.html', 'r', encoding='utf-8') as f:
+        with open(_index_path, 'r', encoding='utf-8') as f:
             _INDEX_CACHE["content"] = f.read()
         _INDEX_CACHE["mtime"] = _mt
     resp = make_response(_INDEX_CACHE["content"])
@@ -1870,7 +1878,7 @@ def _assess_and_summarize(text, max_len=4000):
     """一次 LLM 调用：生成一句话摘要 + 质量评分 + 主要问题。返回 (summary, score, reason)。"""
     import re
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = f"""请对下面这份材料做两件事，只输出一个 JSON（不要任何解释文字）：
 
@@ -2042,7 +2050,7 @@ def upload_pdf():
                         "error": "没能从文件里提取到文字（扫描版/图片型 PDF 提取不了），请直接把文字粘贴到草稿框"})
     if purpose == 'reference':
         try:
-            from competition_agents import save_official_doc
+            from backend.competition_agents import save_official_doc
             ok = save_official_doc(competition_name, text)
             return jsonify({"success": True, "text": text[:20000],
                             "purpose": "reference", "saved": ok,
@@ -2102,7 +2110,7 @@ def parse_material():
     text = re.sub(r'\n\s*\n', '\n', (text or '')).strip()
     if not text:
         return jsonify({"success": False, "error": "没有可解析的文字（请上传 PDF/DOCX/TXT/MD，或直接粘贴文字）"})
-    from competition_agents import extract_material_profile
+    from backend.competition_agents import extract_material_profile
     profile = extract_material_profile(text)
     return jsonify({"success": True, "profile": profile})
 
@@ -2150,7 +2158,7 @@ def export_word():
     project = _project_name_hint(data) or _extract_project_name(text) or title
     text = _clean_export_text(_strip_identifying_text(text))
     # 导出件不得残留给作者看的占位符（【待你填写：团队名称】等），交给评委的正式件必须干净。
-    from export_recovery import sanitize_export_text
+    from backend.export_recovery import sanitize_export_text
     text = sanitize_export_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
@@ -2182,7 +2190,7 @@ def export_word():
     # 三轮·导出终检（第一百二十二轮）：回读产物，中文乱码/标题层级异常则删产物打回。
     # 暂不查 TOC（TOC 是另一处 docx_render 的活，先修乱码/标题，避免误伤现有导出）。
     try:
-        from quality_gate import check_docx
+        from backend.quality_gate import check_docx
         _ok, _issues = check_docx(filepath, expect_type=None)
         if not _ok:
             _safe_unlink(filepath)
@@ -2231,7 +2239,7 @@ def export_pdf():
         return jsonify({"error": "内容为空"}), 400
     text = _clean_export_text(_strip_identifying_text(text))
     # 与 export_word 同口径：导出件剔除给作者看的占位符（【待你填写】等）
-    from export_recovery import sanitize_export_text
+    from backend.export_recovery import sanitize_export_text
     text = sanitize_export_text(text)
     chapter_order = data.get('chapter_order')
     if not chapter_order and data.get('competition_name'):
@@ -2253,7 +2261,7 @@ def export_pdf():
         return jsonify({"error": f"PDF 生成失败：{e}"}), 500
     # 导出终检（第一百二十五轮）：PDF 页数/中文/体积
     try:
-        from quality_gate import check_pdf
+        from backend.quality_gate import check_pdf
         _max_pages, _max_bytes = _pdf_limits(data.get('competition_name'))
         _ok, _issues = check_pdf(filepath, max_pages=_max_pages, max_bytes=_max_bytes)
         if not _ok:
@@ -3112,7 +3120,7 @@ def admin_dashboard():
     # 与 env 的 QUOTA_DAILY_LIMIT 不一致，导致数据面板/动态监视/health 三处口径打架）
     quota_remaining = 0
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         quota_remaining = int(get_quota_status().get("remaining", 0) or 0)
     except Exception:
         pass
@@ -3434,7 +3442,7 @@ def monitor():
     up_h, up_m = divmod(uptime // 60, 60)
     quota = {"remaining": 0, "limit": 500}
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         quota = get_quota_status()
     except Exception:
         pass
@@ -3699,7 +3707,7 @@ def _deident_protect_terms():
         return _DEIDENT_PROTECT_CACHE
     terms = set()
     try:
-        from competition_agents import get_competition_profiles
+        from backend.competition_agents import get_competition_profiles
         for p in get_competition_profiles():
             for n in ([p.get("name", "")] + (p.get("aliases") or [])):
                 n = str(n).strip()
@@ -3780,7 +3788,7 @@ def _run_generation(data):
         # 让后面各 Agent 拿到的是「测试数据/成本/用户」分类清单，而不是一整段文件原文。
         _raw_user_data = data.get("user_data", "") or data.get("real_data", "")
         try:
-            from competition_agents import _smart_extract_user_data
+            from backend.competition_agents import _smart_extract_user_data
             _user_data = _smart_extract_user_data(_raw_user_data)
         except Exception:
             _user_data = _raw_user_data
@@ -3935,7 +3943,7 @@ def _run_generation(data):
         _gate_mode = data.get("mode") or "fast"
         _gate_log = None
         if _gate_mode == "fast":
-            from competition_agents import _cjk_len as _gate_len, _compress_to_length as _gate_comp
+            from backend.competition_agents import _cjk_len as _gate_len, _compress_to_length as _gate_comp
             # 口径：_cjk_len 剥掉 Markdown 标记后的有效字（与前端展示的字数一致）。
             # 别用 len()——它把 # * 空格也算字，会虚高 15%~20%，导致误判超标。
             _gate_before = _gate_len(result.get("proposal", ""))
@@ -3964,7 +3972,7 @@ def _run_generation(data):
         print(f"[final-length-gate] 跳过，保留原文：{_e}")
 
     try:
-        from competition_agents import check_proposal_completeness
+        from backend.competition_agents import check_proposal_completeness
         completeness = check_proposal_completeness(
             result.get("proposal", ""), data.get("mode", "fast"),
             data.get("competition_name", ""))
@@ -3974,7 +3982,7 @@ def _run_generation(data):
     # 这里在最终交付前再补一次，保证章节数与官方结构对齐，revision 无法再回滚。
     try:
         if completeness.get("missing"):
-            from competition_agents import _official_chapters, _fill_missing_chapters
+            from backend.competition_agents import _official_chapters, _fill_missing_chapters
             chapters = _official_chapters({"competition_name": data.get("competition_name", "")})
             if chapters:
                 result["proposal"] = _fill_missing_chapters(result.get("proposal", ""), chapters)
@@ -3985,7 +3993,7 @@ def _run_generation(data):
         print(f"[fill_missing] 最终补写漏章失败：{_e}")
     # 正文字数（去掉 Markdown 标记的有效字数，用户一眼看到写了多少字）
     try:
-        from competition_agents import _cjk_len
+        from backend.competition_agents import _cjk_len
         proposal_chars = _cjk_len(result.get("proposal", ""))
     except Exception:
         proposal_chars = len(re.sub(r'\s', '', result.get("proposal", "") or ""))
@@ -4036,7 +4044,7 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts
+        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
@@ -4048,7 +4056,7 @@ def _run_generation(data):
     # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
     # 命中的写进 payload.theme_drift 供导出质检/前端标记（重生成由 219 轮自愈层处理）。
     try:
-        from competition_agents import _theme_drifted
+        from backend.competition_agents import _theme_drifted
         _drifted, _hitwords = _theme_drifted(data.get("idea", ""), payload.get("proposal", ""))
         payload["theme_drift"] = {"drifted": bool(_drifted), "hit_words": _hitwords}
         if _drifted:
@@ -4068,7 +4076,7 @@ def _run_generation(data):
         print(f"[history] 回写完整结果失败：{_e}")
     # 分层质检（第一百一十九轮）：生成完成后跑 L1 完整性，未通过记日志不阻断交付
     try:
-        from quality_gate import check_generation
+        from backend.quality_gate import check_generation
         _gok, _gissues = check_generation(payload, data.get("mode") or "fast")
         if not _gok:
             print(f"[quality_gate] L1 生成质检未通过：{_gissues}")
@@ -4082,7 +4090,7 @@ def _run_generation(data):
         pass
     # 分层质检 L6（第一百三十三轮）：评价真实性（quote 存在/评分一致/优缺平衡/无套话）
     try:
-        from quality_gate import check_review
+        from backend.quality_gate import check_review
         _review = payload.get("expert_review") or ""
         if _review:
             _rok, _rissues = check_review(_review, payload.get("proposal") or "")
@@ -4098,7 +4106,7 @@ def _run_generation(data):
         pass
     # 总审质检（第一百三十四轮）：板块完整性 + 跨板块数字一致性，未通过记日志
     try:
-        from quality_gate import check_total
+        from backend.quality_gate import check_total
         _tok, _tissues = check_total(payload, data.get("mode") or "fast")
         if not _tok:
             print(f"[quality_gate] 总审未通过：{_tissues}")
@@ -4149,7 +4157,7 @@ def _extract_keywords_llm(idea):
     if not idea or not idea.strip():
         return []
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = ("从下面这段创意描述里提取 3-5 个最能代表项目的关键词"
                   "（技术领域、应用场景、核心功能、服务对象等）。\n"
@@ -4284,7 +4292,7 @@ def _sync_gen_marker():
     try:
         # 421 轮孪生站独立化：marker 不能写死 /tmp，否则生产与 staging 互相覆盖计数，
         # 谁重启都判断错在跑任务数。改为随 app.py 所在目录（生产/staging 各自独立）。
-        _marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.comp_agent_gens')
+        _marker = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.comp_agent_gens')
         with open(_marker, "w") as f:
             f.write(str(_active_gen_count))
     except Exception:
@@ -4310,7 +4318,7 @@ def _start_generation(data):
                               "error": "当前服务繁忙（内存紧张），请 1 分钟后再试"})
     # 今日额度撞顶（第九十九轮）：提前拦下，前端据此 toast「今日生成额度已满，明日恢复」
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         _qs = get_quota_status()
         _calls = int(_qs.get("calls", 0))
         _limit = int(_qs.get("limit", 0)) or 1
@@ -4376,7 +4384,7 @@ def _launch_worker(task_id):
                     # 第二百一十九轮：主题跑偏自动重生成——检测到异赛道关键词就同 idea 再跑一次，
                     # 用户全程看不到跑偏内容；控制只重试 1 次（成本/历史重复可控）。
                     try:
-                        from competition_agents import _theme_drifted
+                        from backend.competition_agents import _theme_drifted
                         _d, _h = _theme_drifted(data.get("idea", ""), rd.get("proposal", ""))
                         if _d:
                             print(f"[theme-drift] 跑偏（{_h}），自动重生成 1 次")
@@ -4516,7 +4524,7 @@ def restyle():
     if style not in _RESTYLE_STYLES:
         return jsonify({"success": False, "error": "未知风格"}), 400
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         desc = _RESTYLE_STYLES[style]
         prompt = f"""请把下面这份申报书整体改写成【{desc}】的风格。
@@ -4547,7 +4555,7 @@ def rewrite_paragraph():
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = f"""请对下面这段申报书文字做局部修改，指令：{instruction}
 
@@ -4654,7 +4662,7 @@ def revise_chapter():
          source, _REVISION_END_MARKER)
     try:
         from langchain_core.messages import HumanMessage
-        import competition_agents as _agents
+        import backend.competition_agents as _agents
         resp = _agents.llm.invoke([HumanMessage(content=prompt)], max_tokens=8192)
         raw_revision = (resp.content or '').strip()
         finish_reason = (getattr(resp, "response_metadata", {}) or {}).get("finish_reason")
@@ -4678,7 +4686,7 @@ def revise_chapter():
     except Exception as exc:
         print("[revise_chapter] llm failed: %s" % exc)
         if "今日 LLM 调用已达上限" in str(exc):
-            from competition_agents import get_quota_status
+            from backend.competition_agents import get_quota_status
             return jsonify({"success": False, "error_code": "quota_exhausted",
                             "quota": get_quota_status()}), 429
         return jsonify({"success": False, "error_code": "upstream_error",
@@ -4699,7 +4707,7 @@ def proofread():
     if not text or not text.strip():
         return jsonify({"success": False, "error": "内容为空"}), 400
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         import json as _json
         prompt = ("你是中文文本校对专家。请找出下面文本里的错别字、语法错误、标点误用、语句不通顺等问题。\n"
@@ -4943,7 +4951,7 @@ def speech_stream(task_id):
 
 @app.route('/api/export_all')
 def export_all():
-    # DEPRECATED（WorkBuddy 2026-09-28 催复）：前端 0 处调用，且取 load_history()[0]
+    # DEPRECATED（2026-09-28 确认废弃）：前端 0 处调用，且取 load_history()[0]
     # 即「最新一条历史」而非当前记录——换设备/开历史时必然拿错记录。请勿接此接口，
     # 统一走下方 /api/export_zip（14 项、绑定当前记录）。仅保留以兼容潜在外部脚本。
     print("[export_all] DEPRECATED：请改走 /api/export_zip（绑定当前记录、14 项）")
@@ -5045,7 +5053,7 @@ def export_original_format():
             fname = '申报书_标准排版.docx'
         else:
             # B 链路：原位换字，格式排版一律不动
-            from docx_inplace import apply_content_keep_style
+            from backend.docx_inplace import apply_content_keep_style
             buf, report = apply_content_keep_style(original_bytes, optimized_text)
             print('[export_original_format] 替换报告:', report)
             fname = '优化后的申报书.docx'
@@ -5154,7 +5162,7 @@ def upload_file():
         # 智能识别：用 LLM 判断文件类型 + 一句话摘要 + 关键点，前端可据此提示并自动路由
         file_type, summary, key_points = "其他", "", []
         try:
-            from competition_agents import llm
+            from backend.competition_agents import llm
             from langchain_core.messages import HumanMessage
             iprompt = f"""你是文件内容识别专家。下面是一个上传文件「{filename}」解析出的文本。
 请判断它的类型，并输出一个 JSON（不要任何解释）：
@@ -5181,7 +5189,7 @@ def upload_file():
 
 @app.route('/api/export_manifest')
 def export_manifest():
-    """导出产物权威清单（WorkBuddy 导出统一方案）：前端唯一数据源，避免同一份清单写多份漂移。
+    """导出产物权威清单（导出统一方案）：前端唯一数据源，避免同一份清单写多份漂移。
     与 /api/export_zip 的 mappings 一一对应；tier=common 简洁/深度版都有，deep 仅深度版。"""
     items = [
         {"filename": "01_赛事规则解析报告.docx", "title": "赛事规则解析报告", "field": "parsed_rules", "tier": "common"},
@@ -5336,7 +5344,7 @@ def export_zip():
         try:
             deck = data.get('rich_deck')
             if deck:
-                from pptx_builder import build_deck
+                from backend.pptx_builder import build_deck
                 deck = dict(deck)
                 # 前端手动选的主题/模板优先于自动推断（与 /api/export_pptx 行为保持一致）
                 if data.get('theme'):
@@ -5361,7 +5369,7 @@ def export_zip():
     competition = data.get('competition_name') or ''
     # 导出终检（第一百二十五轮）：zip 文件数/体积
     try:
-        from quality_gate import check_zip
+        from backend.quality_gate import check_zip
         _ok, _issues = check_zip(zippath, expect_count=12)
         if not _ok:
             _safe_unlink(zippath)
@@ -5384,7 +5392,7 @@ def generated_file(filename):
 def knowledge_status():
     """返回比赛知识库收录状态 + 每个文件的格式校验结果"""
     try:
-        from competition_agents import get_knowledge_status
+        from backend.competition_agents import get_knowledge_status
         return jsonify({"success": True, **get_knowledge_status()})
     except Exception as e:
         print(f"[knowledge] 状态读取失败：{e}")
@@ -5395,7 +5403,7 @@ def knowledge_status():
 def competition_profiles():
     """返回结构化比赛配置：章节顺序/评分重点/类型/提示词侧重/字数要求。"""
     try:
-        from competition_agents import get_competition_profiles
+        from backend.competition_agents import get_competition_profiles
         return jsonify({"success": True, "competitions": get_competition_profiles()})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -5409,7 +5417,7 @@ def competition_index():
     """
     try:
         import importlib.util
-        _script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+        _script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                "scripts", "build_comp_index.py")
         spec = importlib.util.spec_from_file_location("build_comp_index_dyn", _script)
         mod = importlib.util.module_from_spec(spec)
@@ -5423,7 +5431,7 @@ def competition_index():
 def quota():
     """返回今日 LLM 调用配额使用情况（324⑦：加 near_limit，供前端只在接近限额时提示、不展示具体数字）"""
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         q = get_quota_status()
         calls = int(q.get("calls") or 0)
         limit = int(q.get("limit") or 0)
@@ -5438,7 +5446,7 @@ def quota():
 def admin_quota():
     """额度监视（第九十一轮）：今日 quota + 近 7 日每日生成数（近似调用活跃度）。"""
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         q = get_quota_status()
         calls = int(q.get("calls") or 0)
         limit = int(q.get("limit") or 0)
@@ -5469,8 +5477,8 @@ def admin_llm_usage():
     if auth:
         return auth
     try:
-        import competition_agents as _agents
-        from llm_usage_store import aggregate_usage
+        import backend.competition_agents as _agents
+        from backend.llm_usage_store import aggregate_usage
         days = request.args.get("days", default=30, type=int)
         limit = request.args.get("limit", default=20, type=int)
         return jsonify({"success": True, **aggregate_usage(
@@ -5612,7 +5620,7 @@ def api_stats():
         return jsonify({"success": False, "error": str(e)}), 500
 
     try:
-        from competition_agents import _cjk_len
+        from backend.competition_agents import _cjk_len
     except Exception:
         _cjk_len = lambda s: len(re.sub(r'\s', '', s or ""))
 
@@ -5847,7 +5855,7 @@ def _probe_deepseek():
         def _bg_probe():
             result = "down"
             try:
-                from competition_agents import llm
+                from backend.competition_agents import llm
                 from langchain_core.messages import HumanMessage
                 r = llm.invoke([HumanMessage(content="回复两个字：OK")])
                 if bool(getattr(r, "content", "").strip()):
@@ -5867,7 +5875,7 @@ def list_docs():
     _a = _require_admin()
     if _a is not None:
         return _a
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs')
     try:
         files = []
         for f in sorted(os.listdir(docs_dir)):
@@ -5887,7 +5895,7 @@ def read_doc(filename):
         return _a
     if '..' in filename or filename.startswith('/'):
         return jsonify({"success": False, "error": "非法路径"}), 400
-    docs_dir = os.path.join(os.path.dirname(__file__), 'docs')
+    docs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs')
     p = os.path.join(docs_dir, filename)
     if not os.path.isfile(p) or not filename.lower().endswith(('.md', '.txt', '.json')):
         return jsonify({"success": False, "error": "文件不存在或类型不支持"}), 404
@@ -5995,7 +6003,7 @@ def api_admin_audit():
         limit = min(int(request.args.get("limit", 200)), 2000)
     except (TypeError, ValueError):
         limit = 200
-    p = os.path.join(os.path.dirname(__file__), 'docs', '后台审计.md')
+    p = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'docs', '后台审计.md')
     if not os.path.isfile(p):
         return jsonify({"success": True, "audit": [], "total": 0})
     try:
@@ -6023,7 +6031,7 @@ def api_admin_textcheck():
     _files = ["index.html", "static/app.js", "static/style.css", "static/wbconst.js"]
     _hits = []
     for _fname in _files:
-        _p = os.path.join(os.path.dirname(__file__), _fname)
+        _p = os.path.join(_FRONTEND_DIR, _fname)
         if not os.path.isfile(_p):
             continue
         try:
@@ -6068,10 +6076,10 @@ def demo_data():
 
 def _demo_sample_files():
     """309 轮：扫描根目录 + static/ 下的演示样例 json（文件名含 demo/sample）。"""
-    _base = os.path.dirname(__file__)
+    _base = _PROJECT_ROOT
     _files = []
     _seen = set()
-    for _d in (_base, os.path.join(_base, 'static')):
+    for _d in (_base, os.path.join(_FRONTEND_DIR, 'static')):
         if not os.path.isdir(_d):
             continue
         for _fn in sorted(os.listdir(_d)):
@@ -6188,7 +6196,7 @@ def defense_review():
     if len(answer) > 2000:
         answer = answer[:2000]
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         _ctx = ("项目创意：" + idea[:300] + "\n") if idea else ""
         prompt = ("你是答辩评委。下面是一道答辩题、选手的项目创意与作答，请用 3~5 句点评："
@@ -6208,7 +6216,7 @@ def judge_preview():
     mode = (data.get('mode') or 'deep').strip()
     title = (data.get('title') or '').strip()
     try:
-        from quality_gate import preview_report
+        from backend.quality_gate import preview_report
         return jsonify({"success": True, "report": preview_report(proposal, mode, title)})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
@@ -6224,7 +6232,7 @@ def demo_script():
     if not idea and not proposal:
         return jsonify({"success": False, "error": "缺少项目创意或正文"}), 400
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         _body = (proposal or idea)[:3000]
         prompt = ("你是路演导演。请为下面这个参赛项目设计一份 5 分钟以内的演示视频方案，输出 Markdown：\n"
@@ -6248,7 +6256,7 @@ def score_rationale():
     if not dimension or not proposal:
         return jsonify({"success": False, "error": "缺少维度或正文"}), 400
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         _score = ("（得分 %s）" % score) if score is not None else ""
         prompt = ("你是赛事评委。请为下面项目在「%s」这个维度%s写评分判据："
@@ -6303,7 +6311,7 @@ def rewrite_text():
     if len(text) > 1500:
         text = text[:1500]
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = ("把下面这段申报书正文改写降重，给出 3 个版本（保持原意与所有数据不变，去掉模板腔/套话/AI 味，"
                   "措辞更具体）。用 Markdown 有序列表输出，每版一段。\n原文：\n" + text)
@@ -6321,7 +6329,7 @@ def competition_match():
     if not idea:
         return jsonify({"success": False, "error": "请先输入项目创意"}), 400
     try:
-        from competition_agents import get_competition_profiles
+        from backend.competition_agents import get_competition_profiles
         profiles = get_competition_profiles()
     except Exception:
         profiles = []
@@ -6449,7 +6457,7 @@ def health_score():
 def alert_status():
     """第三百七十七轮：监控告警——额度/失败率/工单滞留三类阈值。"""
     try:
-        from competition_agents import get_quota_status
+        from backend.competition_agents import get_quota_status
         _q = get_quota_status()
         _ratio = _q.get('calls', 0) / max(_q.get('limit', 1), 1)
     except Exception:
@@ -6529,7 +6537,7 @@ def export_csv():
 @app.route('/api/prefs', methods=['GET', 'POST'])
 def user_prefs():
     """第二百九十二轮：双端同步——草稿/赛事选择/档位/个性化设置等服务端存储，跨设备一致。
-    契约（供 WorkBuddy 对接）：路径 /api/user_state（/api/prefs 保留为别名）；
+    契约（供前端对接）：路径 /api/user_state（/api/prefs 保留为别名）；
     GET → {success, state}；POST body {state}（兼容旧 {prefs}）；cookie=comp_uid 自动；
     冲突策略：服务端为准（前端启动拉一次覆盖本地，之后 debounce 写回，后写胜）。"""
     uid = _current_uid()
@@ -6619,12 +6627,12 @@ _CHAT_PRESET = [
 
 
 _CHAT_DB_PATH = os.path.abspath(os.getenv("COMPETITION_CHAT_DB_PATH") or
-                                os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db"))
+                                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chat_history.db"))
 
 
 def _chat_reserve_quota():
     """Atomically reserve one LLM call because llm.stream bypasses invoke's quota wrapper."""
-    import competition_agents as _agents
+    import backend.competition_agents as _agents
     with _agents._quota_lock:
         _data = _agents._quota_load()
         before = int(_data.get("calls", 0) or 0)
@@ -6641,7 +6649,7 @@ def _chat_persist(uid, role, content, style):
     if not uid or _admin_session_role() == 'readonly':
         return
     try:
-        from chat_store import append_message
+        from backend.chat_store import append_message
         append_message(_CHAT_DB_PATH, uid, role, content, style)
     except Exception as exc:
         print("[chat] history write failed: %s" % exc)
@@ -6707,7 +6715,7 @@ def apply_proposal_revision(history_id):
                 conn.close()
                 return jsonify({"success": False, "error": "修订稿缺少原有章节，未覆盖原稿"}), 422
             try:
-                from export_quality import hard_content_issues
+                from backend.export_quality import hard_content_issues
                 blind = _is_double_blind(data.get("competition_name") or db_record.get("competition_name"))
                 hard_issues = hard_content_issues(new_proposal, double_blind=blind)
             except Exception as exc:
@@ -6769,7 +6777,7 @@ def chat():
                         "error": "演示账号不接入外部模型，可提问评分 / 章节 / 答辩 / PPT / 档位等预设问题",
                         "error_code": "demo_readonly"}), 403
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         prompt = ("你是「%s」智能助手，用中文回答用户问题，只谈本产品功能与赛事规则，不编造数据。"
                   "回答口吻：%s。\n用户问题：%s" % (_CHAT_NAME, _CHAT_STYLES[style]["tone"], msg))
@@ -6801,7 +6809,7 @@ def analyze_segment():
                         "error": "演示账号不接入外部模型，登录后可深度解读",
                         "error_code": "demo_readonly"}), 403
     try:
-        from competition_agents import llm
+        from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
         if kind == 'chart':
             _task = ("下面是一张图表的标题与数据。请用通俗中文「说人话」讲清这张图说明了什么、"
@@ -6827,7 +6835,7 @@ def health():
         return jsonify(_health_cache["data"])
     auto_resolve_failures()
     try:
-        from competition_agents import competition_knowledge, get_quota_status
+        from backend.competition_agents import competition_knowledge, get_quota_status
         knowledge_count = len(competition_knowledge)
         quota = get_quota_status()
     except Exception:
@@ -6853,7 +6861,7 @@ def health():
 def ppt_themes():
     """返回可用主题与版式模板清单，供前端下拉选择"""
     try:
-        import pptx_builder
+        import backend.pptx_builder
         if hasattr(pptx_builder, "list_themes"):
             return jsonify({"success": True, **pptx_builder.list_themes()})
     except Exception as e:
@@ -6878,7 +6886,7 @@ def export_pptx():
     if not deck or not deck.get('slides'):
         return jsonify({"error": "没有可导出的PPT数据，请先用深度版生成"}), 400
     try:
-        from pptx_builder import build_deck
+        from backend.pptx_builder import build_deck
         deck = dict(deck)
         # 前端选了主题/模板时，覆盖 deck 内置值（手动优先于自动推断）
         if data.get("theme"):
@@ -6910,7 +6918,7 @@ def export_pptx():
         build_deck(deck, out, chart_paths)
         # 导出终检（第一百二十五轮）：PPT 页数/体积/生成指令残留
         try:
-            from quality_gate import check_pptx
+            from backend.quality_gate import check_pptx
             _ok, _issues = check_pptx(out)
             if not _ok:
                 _safe_unlink(out)
@@ -7200,7 +7208,7 @@ def kb_search():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ============ 运行日志 / 错误报告（Codex 后端接口 + WorkBuddy 前端面板）============
+# ============ 运行日志 / 错误报告（后端接口 + 前端面板）============
 
 @app.route('/api/logs')
 def api_logs():
@@ -7226,7 +7234,7 @@ def api_logs_report():
             lines.append("    ↳ 可能相关踩坑：%s —— %s" % (lesson["title"], lesson["summary"]))
     lines.append("")
     lines.append("---")
-    lines.append("（由 /api/logs/report 自动生成，可直接转发给 Codex / WorkBuddy 排查）")
+    lines.append("（由 /api/logs/report 自动生成，可直接转发给研发排查）")
     return jsonify({"success": True, "report": "\n".join(lines), "errors": errors})
 
 

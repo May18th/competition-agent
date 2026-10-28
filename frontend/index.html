@@ -47,7 +47,7 @@
     <link rel="stylesheet" href="/static/wbtools307.css?v=20260930d">
     <link rel="stylesheet" href="/static/wbdemo.css?v=20260930d">
     <link rel="stylesheet" href="/static/wbtheme344.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbmenu398.css?v=20260930d">
+    <link rel="stylesheet" href="/static/wbmenu398.css?v=20261028b">
     <link rel="stylesheet" href="/static/wbresult339.css?v=20260930d">
     <link rel="stylesheet" href="/static/wblogo412.css?v=20260930d">
     <!-- 402 轮：首页浅底小字对比度。
@@ -429,7 +429,7 @@
                     <div id="kbCompare" style="margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid);"></div>
                     <textarea id="rules" style="display: none;"></textarea>
 
-                    <!-- 上传官方文件降级为默认折叠的小字入口（Codex 待办 P0-2）：
+                    <!-- 上传官方文件降级为默认折叠的小字入口（后端待办 P0-2）：
                          15 个赛事评分标准已内置，正常流程不需要传规则；
                          只有官方模板/最新通知有特殊要求时才展开补充。 -->
                     <div onclick="wbAdvToggle('ruleUploadBody')" style="margin-top: 10px; font-size: 12.5px; color: var(--c-a); cursor: pointer; user-select: none;">
@@ -467,7 +467,7 @@
                 </div>
 
                 <!-- 团队成员（选填）：后端已放宽口径——用户给的真实姓名/角色/分工原样写进团队章节，
-                     没给才回退「角色 + 职责」模板（competition_agents.py，Codex 2026-09-28）。
+                     没给才回退「角色 + 职责」模板（competition_agents.py，2026-09-28）。
                      整块可选，手机上默认折叠，不占首屏 -->
                 <div class="form-group">
                     <!-- 324 轮：原来标签写「（选填，强烈建议：有真人就填）」、下方正文又劝一遍「有真实团队就填」，
@@ -665,7 +665,7 @@
                     </label>
                 </div>
             </div>
-            <!-- 简洁版「低分自动补写」开关：与 Codex 约定 should_iterate_fast 只在显式传
+            <!-- 简洁版「低分自动补写」开关：与后端约定 should_iterate_fast 只在显式传
                  iterate=true 且低分时才返工一轮，默认关闭以保证「50 秒出稿」的定位。
                  深度版本来就该迭代（后端 should_iterate 未动），所以选深度版时整行隐藏 -->
             <div id="iterateRow" style="display: none; margin-bottom: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;">

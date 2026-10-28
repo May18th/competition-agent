@@ -456,7 +456,7 @@ window.addEventListener('resize', function () {
 })();
 
 
-/* ===== Codex 接手：手机端 5 个细节优化 ===== */
+/* ===== 后端接手：手机端 5 个细节优化 ===== */
 (function () {
     // 1) 首屏骨架屏：JS 就绪后淡出（最迟 window load 兜底隐藏）
     function hideSkeleton() {
@@ -529,7 +529,7 @@ window.addEventListener('resize', function () {
 })();
 
 
-/* ===== WorkBuddy 接手：等待期三件套 =====
+/* ===== 前端接手：等待期三件套 =====
    A 冷知识轮播 / B 实时字数徽章 / C 点灵感碎片
    设计原则：自驱动 + 零侵入。只在 #progressSteps 上挂一个 MutationObserver 感知「生成开始/结束」，
    不往主流程塞任何回调，也不调用主 IIFE 的内部函数（wbToast 之类跨块取不到，这里自带轻量提示）。

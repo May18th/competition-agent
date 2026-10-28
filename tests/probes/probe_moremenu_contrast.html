@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>探针：更多菜单浮层可读性（浅色主题）</title>
+<!-- 探针壳：只引真实线上样式（file:// 绝对地址），不自造配色。
+     用途：复现「鼠标点开『更多』后，菜单周边的『清空重写』等文字发灰看不清」。
+     跑法：仓库根目录起 python -m http.server 8770 --bind 127.0.0.1，浏览器开 http://127.0.0.1:8770/tests/probes/probe_moremenu_contrast.html -->
+<link rel="stylesheet" href="/frontend/static/style.css">
+<link rel="stylesheet" href="/frontend/static/wbtools307.css">
+<link rel="stylesheet" href="/frontend/static/wbtheme344.css">
+<link rel="stylesheet" href="/frontend/static/wbmenu398.css">
+<style>
+    body { margin: 0; padding: 24px 20px; background: #fbfcfe; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+    .tools { display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
+    .card-stub {
+        margin-top: 14px; padding: 22px 24px; border-radius: 16px;
+        background: #ffffff; border: 1px solid rgba(40,60,120,.16);
+        box-shadow: 0 12px 32px rgba(21,64,150,.10);
+        position: relative; min-height: 200px;
+    }
+    .card-head { display: flex; align-items: center; justify-content: space-between; }
+    .card-head h2 { margin: 0; font-size: 16px; color: #1a2340; }
+    .pill-btn {
+        padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(40,60,120,.16);
+        background: #ffffff; color: #2a3558; font-size: 13px; cursor: pointer;
+    }
+    .body-text { margin-top: 14px; font-size: 13.5px; line-height: 1.9; color: #55618a; max-width: 520px; }
+</style>
+</head>
+<body class="light">
+    <div class="tools">
+        <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn">使用说明</button>
+        <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn">历史</button>
+        <div id="wbMoreWrap" style="position: relative;">
+            <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm wbtools307-btn">更多 ▾</button>
+            <!-- 下面这行的内联样式与 frontend/index.html:231 完全一致，改探针不改线上 -->
+            <div id="wbMoreMenu" style="display: block; position: absolute; right: 0; top: calc(100% + 6px);
+                                        z-index: 1700; min-width: 148px; padding: 6px;
+                                        background: var(--surface-solid); border: 1px solid var(--line);
+                                        border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45);">
+                <div id="wbMenu398Body">
+                    <div class="wbmenu398-group">个性化</div>
+                    <button class="wbmenu398-item" type="button">
+                        <span class="wb-dot"></span><span class="wbmenu398-txt"><span class="wbmenu398-title">页面背景</span></span>
+                    </button>
+                </div>
+                <div class="wbmenu398-group" style="border-top:1px solid var(--line)">运维</div>
+                <button class="wbmenu398-item" type="button">
+                    <span class="wb-dot"></span><span class="wbmenu398-txt"><span class="wbmenu398-title">管理后台</span></span>
+                </button>
+            </div>
+        </div>
+        <button class="wb-glass-btn wb-glass-btn-sm wbtools307-btn">反馈</button>
+    </div>
+
+    <div class="card-stub">
+        <div class="card-head">
+            <h2>赛事信息</h2>
+            <button class="pill-btn">清空重写</button>
+        </div>
+        <div class="body-text">
+            这一行用来观察菜单下方正文是否被浮层投影压灰：鼠标点开「更多」时，它应当仍然清晰可读，
+            菜单边缘也应当能和白底卡片明确分开。
+        </div>
+    </div>
+</body>
+</html>

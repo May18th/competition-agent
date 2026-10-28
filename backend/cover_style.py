@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFilter
 W, H = 1240, 1754
 
 # 缓存目录（放在 static 下，便于 http 访问与 .gitignore 忽略）
-_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'covers')
+_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'frontend', 'static', 'covers')
 
 
 # ============ 风格库 ============
@@ -326,7 +326,7 @@ def style_label(style_key):
 
 if __name__ == '__main__':
     # 自测：把六种风格各画一张
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_cover_preview')
+    out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_cover_preview')
     os.makedirs(out, exist_ok=True)
     for k in STYLES:
         p, sk, ink = get_cover('测试主题', style=k, cache_dir=out)

@@ -9,7 +9,7 @@
 import json
 import os
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PARADIGM_PATH = os.path.join(BASE, "knowledge_base", "writing_paradigm.json")
 
 
@@ -127,7 +127,7 @@ def distill_from_samples(max_samples=40, max_chars=16000):
     corpus = "\n\n---\n\n".join((s.get("content") or "").strip()[:600] for s in picked)
     corpus = corpus[:max_chars]
 
-    from competition_agents import llm
+    from backend.competition_agents import llm
     from langchain_core.messages import HumanMessage
     resp = llm.invoke([HumanMessage(content=_build_distill_prompt(corpus))])
     data = _validate_paradigm(_extract_json(resp.content))
@@ -196,7 +196,7 @@ def judge_paradigm_ref():
 
 def _llm_json(prompt):
     """调 LLM 并稳健抠出 JSON（复用全局 llm 与配额保护）。"""
-    from competition_agents import llm
+    from backend.competition_agents import llm
     from langchain_core.messages import HumanMessage
     resp = llm.invoke([HumanMessage(content=prompt)])
     return _extract_json(resp.content)

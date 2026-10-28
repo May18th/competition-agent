@@ -5,7 +5,7 @@ import os
 import sqlite3
 from datetime import datetime
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(BASE, "competition.db")
 
 

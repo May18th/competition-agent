@@ -16,7 +16,7 @@ import re
 import shutil
 import zipfile
 
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRAIN_DIR = os.path.join(REPO_ROOT, "训练库")
 
 # ---- 脱敏正则（保守、不误伤官方赛事名/泛化词）----

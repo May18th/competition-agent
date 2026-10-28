@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>线上真机样式验证：更多菜单</title>
+<!-- 探针壳：样式直接加载**已部署的那份** style.deploy.css（与服务器 /static/style.css 字节一致），
+     菜单 DOM 从线上首页原样搬过来（只把 display:none 改成 block 模拟展开）。
+     跑法：仓库根 python -m http.server 8771 --bind 127.0.0.1，
+     打开 http://127.0.0.1:8771/tests/probes/probe_live_menu.html -->
+<link rel="stylesheet" href="/artifacts/qa/_remote_base/style.deploy.css">
+<style>
+    body { margin: 0; padding: 22px 18px; }
+    .bar { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+    .card-stub { margin-top: 12px; padding: 20px 22px; border-radius: 16px; background: #fff;
+                 border: 1px solid rgba(40,60,120,.16); box-shadow: 0 12px 32px rgba(21,64,150,.10); min-height: 180px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; }
+    .card-head h2 { margin: 0; font-size: 15px; color: #1a2340; }
+    .text { margin-top: 12px; font-size: 13.5px; line-height: 1.9; color: #55618a; max-width: 460px; }
+</style>
+</head>
+<body class="light">
+<div class="bar">
+    <button class="wb-glass-btn wb-glass-btn-sm">使用说明</button>
+    <button class="wb-glass-btn wb-glass-btn-sm">历史</button>
+            <div id="wbMoreWrap" style="position: relative;">
+                <button id="wbMoreBtn" class="wb-glass-btn wb-glass-btn-sm" onclick="wbMoreToggle(event)"
+                        aria-haspopup="true" aria-controls="wbMoreMenu" aria-expanded="false" title="更多功能">
+                    更多
+                </button>
+                <div id="wbMoreMenu" style="display: block; position: absolute; right: 0; top: calc(100% + 6px);
+                                            z-index: 1700; min-width: 148px; padding: 6px;
+                                            background: var(--surface-solid); border: 1px solid var(--line);
+                                            border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.18);">
+                    <button class="wb-glass-btn wb-glass-btn-sm"
+                            style="display: flex; width: 100%; justify-content: flex-start; border: none; background: transparent;"
+                            onclick="wbBgPanelToggle();wbMoreClose()" title="更换页面底图（图片只存本机）">
+                        <span class="wb-dot"></span>页面背景
+                    </button>
+                    <a class="wb-glass-btn wb-glass-btn-sm" href="/admin/login"
+                       title="评委或管理员进入管理后台"
+                       style="display: flex; width: 100%; justify-content: flex-start; align-items: center; border: none; background: transparent; margin-top: 2px; text-decoration: none;">
+                        <span class="wb-dot"></span>管理后台
+                    </a>
+                </div>
+            </div>
+    <button class="wb-glass-btn wb-glass-btn-sm"><span class="wb-dot"></span>反馈</button>
+</div>
+<div class="card-stub">
+    <div class="card-head">
+        <h2>赛事信息</h2>
+        <button class="wb-glass-btn wb-glass-btn-sm">清空重写</button>
+    </div>
+    <div class="text">这一行用来观察菜单下方正文是否被浮层投影压灰：菜单边缘应当能和白底卡片明确分开，
+        被菜单挡住半边的按钮也不应当糊成一团。</div>
+</div>
+</body>
+</html>

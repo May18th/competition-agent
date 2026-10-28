@@ -2,7 +2,7 @@
 """进度 / 取消 / 并发的统一出口（薄封装）。
 
 背景：为了避开 app.py 与 competition_agents.py 的循环导入，任务字典与阶段上报
-下沉在 stage_reporter.py（零依赖，Codex 维护）。为避免出现两份互不一致的真相，
+下沉在 stage_reporter.py（零依赖，后端维护）。为避免出现两份互不一致的真相，
 本模块**不再自己持有任务字典**，只做三件补充：
 
 1. 并发数：resolve_workers()，优先用本次任务设定值；
@@ -18,7 +18,7 @@ import json
 import threading
 import time
 
-from stage_reporter import STAGE_META, tasks, \
+from backend.stage_reporter import STAGE_META, tasks, \
     set_current_task, clear_current_task, report_stage, \
     cancel_task as _sr_cancel, is_cancelled as _sr_is_cancelled, clear_cancel as _sr_clear_cancel
 
@@ -31,7 +31,7 @@ STAGE_ORDER = list(STAGE_META.keys())
 _workers_lock = threading.Lock()
 _workers = {"n": None}
 
-_LIVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "progress_live.json")
+_LIVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "progress_live.json")
 
 
 # ---------------- 阶段元数据转发 ----------------

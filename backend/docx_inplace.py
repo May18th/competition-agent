@@ -26,7 +26,7 @@ docx_inplace.py —— 「优化申报表」专用：保留原表格的一切格
 并返回一份报告，方便排查哪一段没对上。
 
 用法：
-    from docx_inplace import apply_content_keep_style
+    from backend.docx_inplace import apply_content_keep_style
     buf, report = apply_content_keep_style(original_bytes, optimized_text)
 """
 import io

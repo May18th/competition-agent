@@ -17,13 +17,13 @@ fix_rich_wiring.py —— 修复 /api/generate 里富媒体（表格/图表/PPT�
 修法：只动取值与 return，不碰 rich_pipeline / chart_renderer / pptx_builder 的业务逻辑。
 幂等，可重复跑；每处替换都打印命中次数，别信 ✅ 看数字。
 
-作者：WorkBuddy（阿渡） 2026-09-25
+作者：前端（阿渡） 2026-09-25
 """
 import io
 import os
 import sys
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET = os.path.join(BASE, "app.py")
 
 # ---------------------------------------------------------------- B1+B2+B3
@@ -151,7 +151,7 @@ def main():
     print(f"app.py 原始长度：{before}")
 
     if all(m in src for m in MARKS):
-        print("✅ 四处修复均已存在，跳过（避免和 Codex 的改动重复叠加）")
+        print("✅ 四处修复均已存在，跳过（避免和后端的改动重复叠加）")
         return 0
 
     bak = TARGET + ".bak.wiring"

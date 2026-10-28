@@ -1413,7 +1413,7 @@ def _slide_cover(prs, s, meta):
 def _cover_logo(slide):
     """第三百零二轮：封面左上角加团队 Logo（等比缩放，白底直接使用，失败静默）。"""
     try:
-        _p = os.path.join(os.path.dirname(__file__), "static", "logo.png")
+        _p = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "static", "logo.png")
         if os.path.isfile(_p):
             slide.shapes.add_picture(_p, Inches(0.35), Inches(0.28), height=Inches(0.48))
     except Exception:

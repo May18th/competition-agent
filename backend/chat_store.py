@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 _LOCK = threading.Lock()
-_DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
+_DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chat_history.db")
 
 
 def ensure_schema(db_path=None):

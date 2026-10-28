@@ -185,7 +185,7 @@
             wbToast('已清除赛事规则', { type: 'ok' });
         }
 
-        // ============ 实测数据「上传数据文件」+ 智能识别路由（Codex 待办 P0-1）============
+        // ============ 实测数据「上传数据文件」+ 智能识别路由（后端待办 P0-1）============
         // 后端 /api/upload_file 解析文本后用 LLM 判断 file_type（赛事规则|申报书草稿|实测数据|参考文献|其他），
         // 前端把识别结果摆出来，让用户一键确认路由——不自动写入，避免误覆盖已填内容。
         async function wbUdHandleFile(file) {
@@ -413,7 +413,7 @@
 
         // DOM id -> 生成结果里的字段名（隐藏 tab 的 innerText 会是空串，必须走原始数据）
         var _DOM_TO_KEY = window._DOM_TO_KEY;
-        // ===== 封面信息 / 原格式导出（WorkBuddy）=====
+        // ===== 封面信息 / 原格式导出（前端）=====
         // 各导出项对应的文档档位：default=申报书 report=报告 analysis=分析 outline=大纲
         var _DOC_TYPE = window._DOC_TYPE;
         function wbMeta() {
@@ -618,7 +618,7 @@
         }
 
         /* ---------- 292 轮：双端同步（桌面生成 → 手机历史可见；手机草稿 → 桌面接续） ----------
-           接口：GET /api/user_state 拉、POST /api/user_state 写（Codex 295 回执定稿）。
+           接口：GET /api/user_state 拉、POST /api/user_state 写（295 版接口定稿）。
            原则：服务端为准（启动拉一次覆盖本地）；本地改动 debounce 2s 写回；后写胜。
            隐私：只同步中性字段（赛事 / 档位 / 勾选项）。idea、proposal_draft、keywords 等
            敏感内容仍在 WB_FORM_SENSITIVE 里，只写 sessionStorage，绝不上传服务端。
@@ -4497,7 +4497,7 @@
         window.wbMatClose = wbMatClose;
         window.wbMatGo = wbMatGo;
 
-        /* ===== 等待期趣味增强（Codex P3）=====
+        /* ===== 等待期趣味增强（P3）=====
            只动「生成等待期」的文案，正文 / 表单 / 导出 / 评分权重一律不碰。
            阶段中文名的单一真相源是后端 stage_reporter.STAGE_META（/api/status 的 stage_label），
            这里只额外补一句有温度的话，不覆盖、不替换，避免两边中文打架。 */
@@ -4716,7 +4716,7 @@
                     proposal_draft: proposal_draft,
                     mode: mode,
                     // 文风：standard=标准 / strong=去 AI 味。
-                    // 与 Codex 约定：只在深度版生效，简洁版一律按 standard 传，避免和「短而准」冲突
+                    // 与后端约定：只在深度版生效，简洁版一律按 standard 传，避免和「短而准」冲突
                     humanize: (mode === 'deep'
                         ? ((document.querySelector('input[name=humanize]:checked') || {}).value || 'standard')
                         : 'standard'),
@@ -4743,7 +4743,7 @@
                     chart_theme: wbChartThemeKey(),
                     // 赛事要求卡：后端收到就按这个结构生成（不认识该字段会自动忽略，不影响旧链路）
                     doc_type: (evCurrent() || {}).doc_type || null,
-                    // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
+                    // 与后端约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
                     outline_requirement: (mode === 'deep' ? ((evCurrent() || {}).sections || []) : []),
                     scoring_weights: ((evCurrent() || {}).scoring || []).filter(function (x) { return _wbPctOf(x) !== null; })
                 })
@@ -6283,7 +6283,7 @@
         }).then(function (r) {
             // 297 轮：403 / 其它错误码也必须读 body。原来 r.ok 为 false 时直接返回 null，
             // 会一路走到下面「感谢你的反馈」——用户以为提交成功，实际一条都没进后台（假成功，
-            // 比生硬报错更糟）。演示只读会话提交反馈正是 403（Codex 已给友好文案）。
+            // 比生硬报错更糟）。演示只读会话提交反馈正是 403（后端已给友好文案）。
             if (r.ok) return r.json();
             return r.json().catch(function () { return null; }).then(function (j) {
                 if (j && j.error) throw new Error(j.error);
@@ -6860,7 +6860,7 @@
             });
         })();
         /* ===== 维护公告（第九十四轮【中】）=====
-           为什么要双源：后端 /api/notice 要等 Codex 发版，而「停机前先开公告」本身就是
+           为什么要双源：后端 /api/notice 要等后端发版，而「停机前先开公告」本身就是
            应急预案——真到要停机那一刻，改一个 JSON 文件就能挂上去，才算可用。
            所以优先读 /api/notice，拿不到就读静态 /static/notice.json；
            两边都没有 → 整条不渲染（默认行为，不会平白多一条黄条）。
@@ -7641,7 +7641,7 @@
             else bind();
         })();
 
-        /* ---------- 170 轮（WorkBuddy 半边）：结果区相邻重复段落去重兜底 ----------
+        /* ---------- 170 轮：结果区相邻重复段落去重兜底 ----------
            豆包实测：评委意见「需要改进的地方」重复显示 2 次、作品说明书「四、评审建议」重复 2 次。
            根因在后端重复拼接，但前端不能只指望对方修——这里是第二道防线：
            渲染成 HTML 后，凡是与上一段文本完全相同的相邻块，只保留第一份。 */

@@ -6,7 +6,7 @@ from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import HumanMessage
-from stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
+from backend.stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
 
 
 # ============ 配置 ============
@@ -60,9 +60,9 @@ import json as _json
 from datetime import datetime as _datetime
 
 _QUOTA_FILE = os.path.abspath(os.getenv("COMPETITION_QUOTA_PATH") or
-                              os.path.join(os.path.dirname(__file__), "quota.json"))
+                              os.path.join(os.path.dirname(os.path.dirname(__file__)), "quota.json"))
 _LLM_USAGE_DB_PATH = os.path.abspath(os.getenv("COMPETITION_LLM_USAGE_PATH") or
-                                     os.path.join(os.path.dirname(__file__), "llm_usage.sqlite"))
+                                     os.path.join(os.path.dirname(os.path.dirname(__file__)), "llm_usage.sqlite"))
 _QUOTA_DAILY_LIMIT = int(os.getenv("QUOTA_DAILY_LIMIT", "500"))
 
 
@@ -201,7 +201,7 @@ def _record_llm_usage(result, duration_ms=0, target=None):
             pass
         model_obj = getattr(target, "__self__", None) if target else None
         model_name = getattr(model_obj, "model", "") or getattr(model_obj, "model_name", "")
-        from llm_usage_store import record_usage
+        from backend.llm_usage_store import record_usage
         record_usage(_LLM_USAGE_DB_PATH, task_id=task_id, user_id=user_id,
                      stage=stage, section=section, mode=mode, model=model_name,
                      prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
@@ -244,7 +244,7 @@ except Exception as _e:
 def load_competition_knowledge():
     """加载data目录里的所有比赛资料"""
     knowledge = {}
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     if os.path.exists(data_dir):
         for filename in os.listdir(data_dir):
             if filename.endswith(".txt"):
@@ -258,7 +258,7 @@ def load_competition_knowledge():
 competition_knowledge = load_competition_knowledge()
 print(f"📚 已加载 {len(competition_knowledge)} 个比赛知识库：{', '.join(competition_knowledge.keys())}")
 
-_PROFILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+_PROFILE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "data", "competition_profiles.json")
 _PROFILES_CACHE = None
 
@@ -369,7 +369,7 @@ def get_competition_knowledge(competition_name: str) -> str:
     return ""
 
 
-_OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "official_docs.json")
+_OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "official_docs.json")
 
 
 def save_official_doc(competition_name, text):
@@ -409,7 +409,7 @@ def get_official_doc(competition_name):
         return ""
 
 
-_INDUSTRY_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+_INDUSTRY_DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                    "knowledge_base", "industry_data.txt")
 _industry_cache = None
 
@@ -468,7 +468,7 @@ def check_knowledge_format(content: str) -> dict:
 def get_knowledge_status() -> dict:
     """返回知识库收录状态 + 每个文件的格式校验结果"""
     import glob
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
     files = []
     for filepath in sorted(glob.glob(os.path.join(data_dir, "*.txt"))):
         name = os.path.basename(filepath).replace(".txt", "")
@@ -893,11 +893,11 @@ _CONCRETE_SPEC = """【具体化与落地要求 —— 必须遵守（评委最�
 17. 原创重写（硬性·版权红线）：禁止直接复制任何范文/获奖项目原文句子、标题、金句；禁止复刻往届项目的独特创意、商业模式、案例故事。全文必须用自己的话原创表达，结构可以借鉴范文规律，但句子、数据和故事必须原创——查重一抓到照搬原文就取消资格。
 18. 符号半角（硬性）：正文里的数学运算、逻辑比较、单位与百分比符号统一用半角（+ - * / = > < >= <= % ~），禁止写全角（＋ － × ÷ ＝ ＞ ＜ ≥ ≤ ％ ～）；但中文标点（逗号、句号、冒号、括号、书名号）仍用全角，二者不混。
 19. 避免晦涩术语（硬性）：正文禁止出现「蒸馏」「知识蒸馏」「对抗训练」「注意力机制」「向量化」「嵌入向量」等专业黑话，一律改用通俗表达（如「知识提炼/浓缩」「智能体」「模型学习」「关键词匹配」）；要保证普通参赛者和评委不查资料也能直接看懂。
-20. 禁止平台自述（硬性）：正文严禁出现「评审引擎、多智能体、智能体节点、双盲、去AI味、流式输出、Flask、LangGraph、豆包、WorkBuddy、PPT模板、知识库、大模型、范文库」等平台/工具自身功能描述；正文只能写参赛项目本身的背景、痛点、技术方案、实测数据、商业模式、团队分工，不得写「本平台/本系统/本工具能做什么」这类自我说明。
+20. 禁止平台自述（硬性）：正文严禁出现「评审引擎、多智能体、智能体节点、双盲、去AI味、流式输出、Flask、LangGraph、豆包、PPT模板、知识库、大模型、范文库」等平台/工具自身功能描述；正文只能写参赛项目本身的背景、痛点、技术方案、实测数据、商业模式、团队分工，不得写「本平台/本系统/本工具能做什么」这类自我说明。
 """
 
 
-_SELF_TECH_HIGHLIGHTS = """【硬性约束：禁止输出平台/工具自身描述】正文严禁出现「评审引擎、多智能体、智能体节点、双盲、去AI味、流式输出、Flask、LangGraph、豆包、WorkBuddy、PPT模板、知识库、大模型、范文库、图表自动生成」等平台/工具自身功能描述；正文只能写参赛项目本身的背景、痛点、技术方案、实测数据、商业模式、团队分工，不得写「本平台/本系统能做什么」这类自我说明。"""
+_SELF_TECH_HIGHLIGHTS = """【硬性约束：禁止输出平台/工具自身描述】正文严禁出现「评审引擎、多智能体、智能体节点、双盲、去AI味、流式输出、Flask、LangGraph、豆包、PPT模板、知识库、大模型、范文库、图表自动生成」等平台/工具自身功能描述；正文只能写参赛项目本身的背景、痛点、技术方案、实测数据、商业模式、团队分工，不得写「本平台/本系统能做什么」这类自我说明。"""
 
 
 _SELF_DEFENSE_HINTS = """【如果本项目是「AI 多智能体创作 / 申报书生成 / 竞赛辅导工具」这一类系统，下面 4 个尖锐问题必须出现在 10 个问题里，并各自给出回答框架】
@@ -2803,7 +2803,7 @@ PPT大纲：{state['ppt_outline']}
 )}
 """
     # 流式生成，边生成边写入缓冲区，前端可实时预览，不再干等 20~40 秒
-    import stage_reporter as _sr
+    import backend.stage_reporter as _sr
     full_text = ""
     try:
         for chunk in llm.stream([HumanMessage(content=prompt)]):

@@ -25,7 +25,7 @@
     var AGENT_TITLE = '小创 · 科创赛事助手智能助手';
     var STORE_KEY = 'wbChatStyle';           // 仅作服务端不可用时的降级（sessionStorage）
 
-    /* 297 轮：三档风格。取值必须与后端 /api/chat 的 style 入参一致（Codex 297 回执定稿）：
+    /* 297 轮：三档风格。取值必须与后端 /api/chat 的 style 入参一致（297 版接口定稿）：
        concise=简洁严谨(默认) / casual=轻松幽默 / academic=学术详细。
        ⚠️ 我第一版写成了 brief/fun，与后端对不上会导致切了风格后端不生效，已对齐。 */
     var STYLES = [

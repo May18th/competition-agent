@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-chart_render_wb.py —— 单图渲染器的独立副本（WorkBuddy）
+chart_render_wb.py —— 单图渲染器的独立副本（前端）
 
 存在理由：`rich_pipeline.py` 依赖 `chart_renderer.render(chart, out_dir)`，
-而 chart_renderer.py 由 Codex 维护、被重写过多次，render 有被覆盖丢失的风险。
+而 chart_renderer.py 由后端维护、被重写过多次，render 有被覆盖丢失的风险。
 本文件是同一份实现的独立副本，chart_renderer.py 末尾有兜底导入：
 
     if "render" not in dir():
