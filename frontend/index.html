@@ -34,22 +34,22 @@
     <link rel="stylesheet" href="/static/style.css?v=20260930d">
     <!-- 283 轮：全站按钮统一规范。拆成三个独立文件（基础族 / 结果页 / 历史弹窗+后台），
          由三条线并行产出，互不覆盖；必须排在 style.css 之后才能盖住既有规则。 -->
-    <link rel="stylesheet" href="/static/wbbtn-base.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbbtn-result.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260930d">
+    <link rel="stylesheet" href="/static/btn-base.css?v=20260930d">
+    <link rel="stylesheet" href="/static/btn-result.css?v=20260930d">
+    <link rel="stylesheet" href="/static/btn-admin.css?v=20260930d">
     <!-- 286 轮：移动端表单步骤顺序（≤480px 恢复自然文档顺序） -->
-    <link rel="stylesheet" href="/static/wbsteps.css?v=20260930d">
+    <link rel="stylesheet" href="/static/steps.css?v=20260930d">
     <!-- 295 轮：293 导出中心按钮统一 + 289 结果页 tabs 溢出/图标/浮动按钮/对比度 -->
-    <link rel="stylesheet" href="/static/wbfix295.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbfab302.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbsmart.css?v=20260930d">
+    <link rel="stylesheet" href="/static/layout-fix.css?v=20260930d">
+    <link rel="stylesheet" href="/static/floating-btn.css?v=20260930d">
+    <link rel="stylesheet" href="/static/smart-bar.css?v=20260930d">
     <!-- 307/318 轮：顶部工具入口与 hero 新手步骤的双端增强，保持最后加载以覆盖旧样式。 -->
-    <link rel="stylesheet" href="/static/wbtools307.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbdemo.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbtheme344.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wbmenu398.css?v=20261028b">
-    <link rel="stylesheet" href="/static/wbresult339.css?v=20260930d">
-    <link rel="stylesheet" href="/static/wblogo412.css?v=20260930d">
+    <link rel="stylesheet" href="/static/tools-bar.css?v=20260930d">
+    <link rel="stylesheet" href="/static/demo-panel.css?v=20260930d">
+    <link rel="stylesheet" href="/static/theme.css?v=20260930d">
+    <link rel="stylesheet" href="/static/more-menu.css?v=20261028b">
+    <link rel="stylesheet" href="/static/result-panel.css?v=20260930d">
+    <link rel="stylesheet" href="/static/logo.css?v=20260930d">
     <!-- 402 轮：首页浅底小字对比度。
          只在本文件内定义两个私有变量，不动任何公共样式表（另一条线在统一收 css）：
          .light 下给出实测达标的固定值，夜间模式继续沿用主题自带的 --text / --text-mute，
@@ -1664,18 +1664,18 @@
         };
     })();
     </script>
-    <script src="/static/wbconst.js?v=20260930d"></script>
+    <script src="/static/ui-const.js?v=20260930d"></script>
     <script src="/static/app.js?v=20260930d"></script>
     <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
          它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
-    <script src="/static/wbnavig.js?v=20260930d"></script>
-<script src="/static/wbdefense.js?v=20260930d"></script>
-<script src="/static/wbkb.js?v=20260930d"></script>
-<script src="/static/wbpwa.js?v=20260930d"></script>
-<script src="/static/wbchat.js?v=20260930d"></script>
-<script src="/static/wbsync.js?v=20260930d"></script>
-<script src="/static/wbsmart.js?v=20260930d"></script>
-<script src="/static/wbdemo.js?v=20260930d"></script>
+    <script src="/static/section-nav.js?v=20260930d"></script>
+<script src="/static/defense-panel.js?v=20260930d"></script>
+<script src="/static/kb-panel.js?v=20260930d"></script>
+<script src="/static/pwa.js?v=20260930d"></script>
+<script src="/static/chat-panel.js?v=20260930d"></script>
+<script src="/static/sync-panel.js?v=20260930d"></script>
+<script src="/static/smart-bar.js?v=20260930d"></script>
+<script src="/static/demo-panel.js?v=20260930d"></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
 
@@ -1745,9 +1745,9 @@
     </div>
 </div>
 
-<script src="/static/wbpage.js?v=20260930d"></script>
-<script src="/static/wbtheme344.js?v=20260930d"></script>
-<script src="/static/wbresult339.js?v=20260930d" defer></script>
+<script src="/static/page-enhance.js?v=20260930d"></script>
+<script src="/static/theme.js?v=20260930d"></script>
+<script src="/static/result-panel.js?v=20260930d" defer></script>
 <script>
 /* wbresult339 外挂自启动：不改动 app.js，轮询等待结果页落位后注入 */
 (function () {
@@ -1782,7 +1782,7 @@
   } catch (e) {}
 })();
 </script>
-<script src="/static/wbmenu398.js?v=20260930d"></script>
+<script src="/static/more-menu.js?v=20260930d"></script>
 <footer style="text-align: center; padding: 16px 10px 24px; margin-top: 20px; font-size: 11px; color: var(--text-mute); line-height: 1.8;">
     <!-- 赛事名原来写死 iCAN：切到大挑/互联网+ 后页脚还是 iCAN，赛事联动不彻底（第三十/三十三轮刺） -->
     <div style="opacity: .75;">© 2026 可创无限团队<span id="wbFooterComp"></span></div>

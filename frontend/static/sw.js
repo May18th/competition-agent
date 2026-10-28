@@ -15,7 +15,7 @@
  */
 
 // ===================== 版本号：每次发版必须改这里 =====================
-var BUILD = '20260929ao';
+var BUILD = '20261029a';
 var SHELL_CACHE = 'wb-shell-' + BUILD;
 var DATA_CACHE = 'wb-data-' + BUILD;
 // ====================================================================
@@ -29,25 +29,25 @@ var PRECACHE_SHELL = [
   '/',
   '/static/style.css',
   '/static/app.js',
-  '/static/wbchat.js',
-  '/static/wbconst.js',
-  '/static/wbdefense.js',
-  '/static/wbdemo.css',
-  '/static/wbdemo.js',
-  '/static/wbkb.js',
-  '/static/wbnavig.js',
-  '/static/wbpage.js',
-  '/static/wbsmart.css',
-  '/static/wbsmart.js',
-  '/static/wbsteps.css',
-  '/static/wbsync.js',
-  '/static/wbbtn-base.css',
-  '/static/wbbtn-result.css',
-  '/static/wbbtn-admin.css',
-  '/static/wbfab302.css',
-  '/static/wbfix295.css',
-  '/static/wbtools307.css',
-  '/static/wbpwa.js',
+  '/static/chat-panel.js',
+  '/static/ui-const.js',
+  '/static/defense-panel.js',
+  '/static/demo-panel.css',
+  '/static/demo-panel.js',
+  '/static/kb-panel.js',
+  '/static/section-nav.js',
+  '/static/page-enhance.js',
+  '/static/smart-bar.css',
+  '/static/smart-bar.js',
+  '/static/steps.css',
+  '/static/sync-panel.js',
+  '/static/btn-base.css',
+  '/static/btn-result.css',
+  '/static/btn-admin.css',
+  '/static/floating-btn.css',
+  '/static/layout-fix.css',
+  '/static/tools-bar.css',
+  '/static/pwa.js',
   '/static/marked.min.js',
   '/static/purify.min.js',
   '/static/echarts.min.js',

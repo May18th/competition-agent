@@ -1,0 +1,159 @@
+/* 307/318 轮：增强顶部工具入口对比度，并重排 hero 新手三步流程。 */
+.wbtools307-bar {
+    align-items: stretch;
+    gap: 10px !important;
+}
+
+.wbtools307-btn {
+    min-height: 38px;
+    margin-top: 0;
+    padding: 8px 14px;
+    justify-content: center;
+    gap: 7px;
+    color: #f8fafc;
+    background: #10254a;
+    border: 1px solid #7dd3fc;
+    box-shadow: 0 5px 16px rgba(2, 8, 23, .3), inset 0 1px 0 rgba(255, 255, 255, .1);
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.wbtools307-btn:hover {
+    color: #ffffff;
+    background: #164e63;
+    border-color: #a5f3fc;
+    box-shadow: 0 7px 20px rgba(34, 211, 238, .24), inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+
+.wbtools307-btn:focus-visible {
+    outline: 3px solid #facc15;
+    outline-offset: 2px;
+}
+
+.wbtools307-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    /* 402 轮：原来是写死的亮青，改走 token，换主题时不会再「图标颜色不跟着变」 */
+    color: var(--info-strong, #67e8f9);
+    stroke-width: 2.2;
+}
+
+body.light .wbtools307-btn {
+    color: #172554;
+    background: #ffffff;
+    border-color: #0e7490;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .12), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+
+body.light .wbtools307-btn:hover {
+    color: #0f172a;
+    background: #ecfeff;
+    border-color: #155e75;
+    box-shadow: 0 6px 18px rgba(14, 116, 144, .18);
+}
+
+body.light .wbtools307-icon {
+    color: #0e7490;
+}
+
+.hero p.wbhero318-newbie {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    max-width: min(720px, 100%);
+    margin: 10px auto 0;
+    color: var(--text-dim);
+    line-height: 1.45;
+}
+
+.wbhero318-label {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.wbhero318-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, .38);
+}
+
+.wbhero318-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px 10px;
+    color: var(--text-soft);
+    text-align: center;
+}
+
+.wbhero318-step + .wbhero318-step {
+    border-left: 1px solid var(--line-strong);
+}
+
+.wbhero318-step strong {
+    color: var(--info-strong, #67e8f9);
+    font-size: 15px;
+}
+
+.wbhero318-promise {
+    color: var(--text);
+    font-weight: 650;
+}
+
+body.light .wbhero318-steps {
+    background: #ffffff;
+    border-color: rgba(14, 116, 144, .48);
+}
+
+body.light .wbhero318-step {
+    color: #2a3558;
+}
+
+body.light .wbhero318-step strong {
+    color: #0e7490;
+}
+
+@media (max-width: 600px) {
+    .wbtools307-bar {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        justify-content: stretch !important;
+        gap: 8px !important;
+        margin: 0 4px 8px !important;
+    }
+
+    .wbtools307-bar > .wbtools307-btn,
+    .wbtools307-bar > #wbMoreWrap,
+    .wbtools307-bar > #wbMoreWrap > .wbtools307-btn {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .wbtools307-btn {
+        min-height: 40px;
+        padding: 8px 10px;
+    }
+
+    .hero p.wbhero318-newbie {
+        gap: 5px;
+        margin-top: 9px;
+        font-size: 12.5px;
+    }
+
+    .wbhero318-step {
+        gap: 4px;
+        padding: 7px 5px;
+        line-height: 1.35;
+    }
+
+    .wbhero318-step strong {
+        font-size: 14px;
+    }
+}
