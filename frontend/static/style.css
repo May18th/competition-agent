@@ -543,6 +543,13 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(34,211,238,.18);
 }
+/* 同日间修复：hover 的底色是 10% 半透明，浅色下变成浅灰块，白字直接看不见。
+   日间改成深字 + 略深一层的 surface-2，hover 仍然"浮起来"，但字读得出。 */
+body.light .wb-glass-btn:hover{
+    color: var(--text);
+    background: var(--surface-2);
+    box-shadow: 0 8px 24px rgba(14,116,144,.12);
+}
 .wb-glass-btn-sm{ margin-top: 0; padding: 8px 16px; font-size: 13px; }
 .wb-dot{
     width: 7px; height: 7px; border-radius: 50%;
@@ -784,6 +791,14 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
     font-weight: 600;
     box-shadow: inset 0 0 0 1px var(--line-strong), 0 6px 20px rgba(34,211,238,.16);
 }
+/* 同日间修复：--grad-soft 是 16% 青色渐变，压在深色页上是深底（白字没问题），
+   压在白色页上就是一片浅青，白字等于消失——顶部「导出中心/深度分析/申报与评审」
+   选中项直接空白。日间改深青字 + 实色浅青底。 */
+body.light .tab.active {
+    color: var(--c-a);
+    background: var(--c-a-soft);
+    box-shadow: inset 0 0 0 1px var(--c-a), 0 6px 14px rgba(14,116,144,.10);
+}
 .tab-content { display: none; animation: wbFadeUp .5s cubic-bezier(.2,.7,.2,1); }
 /* AI 模拟自评面板内的二级标签：原来整个面板是一个 <details> 折叠条，
    8 个板块全藏在「展开 ▾」后面，用户不知道里面有什么。改成常驻标签导航后，
@@ -894,6 +909,24 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .content-block hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
 .content-block a { color: var(--info-strong); }
 
+/* ---------- 2026-10-31 修：日间（body.light）正文区写死 #fff 的四处 ----------
+   症状（用户截图）：`**加粗**` 渲染出来的高亮块里，文字白成一片认不出
+   （方向一/二/三 那几段），段落中间的标题整行看不见，只剩一条空白。
+   根因：上面 .content-block h1-h3 / strong / th 三处 + 下面 rich-table 两处
+   都写死了 color:#fff，只对深色底成立；日间页面是白底，等于白字压白底。
+   处理：只加日间覆盖，深色主题的色值一个字不动；字色一律走 --text（已过 WCAG AA，
+   contrast-high/max 两档也会自动跟着变），底色走 --c-a-soft，和 .wb-keynum
+   的重点高亮同一套配色，日间 5.36:1、夜间 8.67:1。 */
+body.light .content-block h1,
+body.light .content-block h2,
+body.light .content-block h3,
+body.light .content-block th { color: var(--text); }
+
+body.light .content-block strong {
+    color: var(--text);
+    background: var(--c-a-soft);
+}
+
 /* ===== AI 生成表格（rich_tables）=====
    独立作用域，不依赖 .content-block —— renderRich() 渲染的是裸 table，
    之前完全没吃到样式（无边框、无表头底色）。 */
@@ -917,6 +950,13 @@ table.rich-table caption {
     caption-side: bottom; padding: 7px 4px 0; font-size: 11.5px;
     color: var(--text-mute); text-align: left;
 }
+/* 同上（2026-10-31）：表头与首列写死的 #fff 在日间是白字压浅靛/白底，一并改走主题色 */
+body.light table.rich-table thead th {
+    background: rgba(14, 116, 144, .14);
+    color: var(--text);
+    border-bottom-color: rgba(14, 116, 144, .30);
+}
+body.light table.rich-table td:first-child { color: var(--text); }
 
 /* ===== AI 路演 PPT 预览卡 ===== */
 .deck-card {
@@ -1980,7 +2020,9 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
 }
 #wbNoticeBar .nb-ico{
     flex: none; width: 18px; height: 18px; border-radius: 50%;
-    background: #e8a72a; color: #fff; font-weight: 700; font-size: 12px;
+    /* 2026-10-31：原来写死 #fff 压在 #e8a72a 上只有 1.94:1（不到 AA 的一半），
+       小字号几乎看不清。改深褐字，和白条正文 #6b4a05 同色系，实测约 6.4:1。 */
+    background: #e8a72a; color: #4a3005; font-weight: 700; font-size: 12px;
     display: flex; align-items: center; justify-content: center; margin-top: 2px;
 }
 #wbNoticeBar .nb-body{ flex: 1; min-width: 0; word-break: break-word; }
