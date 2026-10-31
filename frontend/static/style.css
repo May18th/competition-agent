@@ -2093,3 +2093,91 @@ body.light #wbFabPanel{ box-shadow:0 16px 40px rgba(31,42,68,.14); }
     /* 同 104 轮的老规矩：手机上这类薄片要有触达面积，别做成 4px 小目标 */
     .wbnav-toggle { padding: 10px 14px; font-size: 12.5px; }
 }
+
+/* ===== 选赛道（2026-10-31 用户反馈「选赛道的按钮不明显」）=====
+   原来三处叠在一起，等于藏起来：
+   ① 赛区块背景写的是 --surface-2，和赛事卡底色**完全同一个值**，没有任何边界；
+   ② 标题 12.5px/600 用 --text-dim，括号说明同字号，整块和正文一个层级；
+   ③ 未选中的 chip 是「白底 + --line 细边 + --text-dim 字」，看着像禁用标签不像选项。
+   现在：赛区块用实底 + 左侧主色强调条立起来，chip 放大到 38px 高、
+   未选中就是可点样子（--text 字 + --line-strong 边），选中实底 + 对勾；
+   卡片收起时另有 #evTrackBadge 回执（见 app.js），不再零提示。 */
+#evTrackBox {
+    position: relative;
+    margin: 0 0 12px;
+    padding: 12px 14px 12px 15px;
+    border-radius: 8px;
+    /* 实底：卡片是半透明 surface-2，这里必须换成不透明的才分得开 */
+    background: var(--surface-solid);
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--c-a);
+}
+#evTrackBox .ev-track-title {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 9px;
+    font-size: 13.5px; font-weight: 700; color: var(--text);
+}
+#evTrackBox .ev-track-hint {
+    font-size: 11.5px; font-weight: 400; color: var(--text-mute);
+}
+/* 赛道 chips：点得着（38px 高）、看得出可点（字用正文色、边用 --line-strong） */
+.ev-track-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    min-height: 38px; padding: 8px 16px;
+    font-size: 13.5px; font-weight: 600; line-height: 1;
+    font-family: inherit;
+    border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--line-strong);
+    background: var(--surface-solid);
+    color: var(--text);
+    transition: border-color .15s, color .15s, background .15s, box-shadow .15s;
+}
+.ev-track-chip:hover { border-color: var(--c-a); color: var(--c-a); background: var(--c-a-soft); }
+.ev-track-chip:focus-visible { outline: 2px solid var(--c-a); outline-offset: 2px; }
+.ev-track-chip[aria-pressed="true"] {
+    /* 夜间 --c-a 是亮青 #38bdf8，白字压上去只有 1.9:1（看不清）；
+       夜间改用深字，日间 --c-a 是深青 #0e7490，白字 5.36:1 才成立。 */
+    background: var(--c-a); border-color: var(--c-a); color: #08131f; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(var(--c-a-rgb, 56,189,248), .32);
+}
+body.light .ev-track-chip[aria-pressed="true"] { color: #fff; }
+.ev-track-chip[aria-pressed="true"]:hover { background: var(--c-a); color: #08131f; }
+body.light .ev-track-chip[aria-pressed="true"]:hover { color: #fff; }
+/* 标题栏的赛道回执：收起状态下唯一能看见「有没有选赛道」的地方 */
+#evTrackBadge {
+    display: none; align-items: center; gap: 4px;
+    margin-left: 2px; padding: 3px 9px;
+    font-size: 12px; font-weight: 600; line-height: 1.3;
+    border-radius: 999px; cursor: pointer; white-space: nowrap;
+    border: 1px solid var(--c-a);
+    background: var(--c-a-soft); color: var(--c-a);
+}
+#evTrackBadge:hover { background: var(--c-a); color: #fff; }
+/* 有赛道但用户还没亲手选过：用警示色催一下，选完立刻回到主色 */
+#evTrackBadge.is-todo {
+    border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-text);
+}
+#evTrackBadge.is-todo:hover { background: var(--warn-text); color: #fff; border-color: var(--warn-text); }
+@media (max-width: 768px) {
+    /* 手机上三行 chip 会挤，改整行铺开：一行一个，指头好点 */
+    #evTrackChips { width: 100%; }
+    .ev-track-chip { flex: 1 1 100%; justify-content: center; min-height: 42px; font-size: 14px; }
+}
+
+/* 未选赛道提示条（2026-10-31 第二轮：用户要「没选赛道提醒一下」）
+   只在「这个赛事有赛道 + 用户一次没选过」时出现，选完立刻消失。
+   用警示色 + 左侧 3px 实条，和芯片同宽，扫一眼就知道这里没填完。 */
+#evTrackWarn {
+    display: none;
+    margin: 0 0 10px;
+    padding: 8px 11px;
+    border-radius: 6px;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-left: 3px solid var(--warn-text);
+    font-size: 12.5px; line-height: 1.7;
+    color: var(--text);
+}
+#evTrackWarn b { color: var(--warn-text); }
+/* 生成被拦下时整块抖两下：和输入框共用同一套 wbShakeHL，用户已认识这个反馈 */
+#evTrackBox.wb-shake-hl { animation-duration: 1.1s; }

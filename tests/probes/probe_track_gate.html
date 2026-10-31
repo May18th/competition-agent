@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>赛道守卫检查</title>
+<style>html,body{margin:0;background:#fff}iframe{display:block;width:1000px;height:820px;border:0}</style>
+</head>
+<body>
+<iframe id="f" src="/"></iframe>
+<script>
+// 探针：验证「有赛道/未选 → 提示条 + 生成拦截 → 选了 → 放行」这条链路。
+// 不靠截图判断（超时风险），把关键状态写进 data-r，用 --dump-dom 读。
+// ?pick=1 会先点第一条赛道，用来看「选完之后是否放行」。
+var PICK = /pick=1/.test(location.search);
+var f = document.getElementById('f'), n = 0, out = {};
+f.onload = function () {
+  var w = f.contentWindow, d = f.contentDocument;
+  var t = setInterval(function () {
+    n++;
+    var chip = d.querySelector('[data-comp^="iCAN"]');
+    if (!chip) { if (n > 80) { clearInterval(t); done('no-chip'); } return; }
+    clearInterval(t);
+    chip.click();
+    setTimeout(function () {
+      try { w.wbUaClose(); } catch (e) {}
+      try { w.coachEnd(); } catch (e) {}
+      ['wbUaMask', 'wbGuideMask'].forEach(function (id) {
+        var el = d.getElementById(id); if (el) el.remove();
+      });
+      var warn = d.getElementById('evTrackWarn');
+      var badge = d.getElementById('evTrackBadge');
+      out.tracks = (function () { try { var c = w.evCurrent(); return (c._tracks || []).length; } catch (e) { return 'err:' + e.message; } })();
+      out.warn = warn ? getComputedStyle(warn).display : 'missing';
+      out.badge = badge ? badge.textContent : 'missing';
+      out.cardOpen = (function () {
+        var b = d.getElementById('evBody');
+        return b ? (b.style.display === 'none' ? 'closed' : 'open') : 'missing';
+      })();
+
+      if (PICK) {
+        var c1 = d.querySelector('#evTrackChips .ev-track-chip');
+        if (c1) c1.click();
+        setTimeout(afterPick, 500);
+      } else {
+        afterPick();
+      }
+    }, 1400);
+  }, 100);
+
+  function afterPick() {
+    var warn2 = d.getElementById('evTrackWarn');
+    var badge2 = d.getElementById('evTrackBadge');
+    out.warnAfter = warn2 ? getComputedStyle(warn2).display : 'missing';
+    out.badgeAfter = badge2 ? badge2.textContent : 'missing';
+    out.selChip = d.querySelectorAll('#evTrackChips .ev-track-chip[aria-pressed="true"]').length;
+    out.pending = (function () { try { return w.evTrackPending() ? 'yes' : 'no'; } catch (e) { return 'err:' + e.message; } })();
+
+    // 真点一次生成：填创意、不填别的 → 要么被赛道拦下，要么正常起步。
+    // 注意：已选赛道时不再点生成，否则会真发起一次生成、白烧一次配额与 LLM 调用。
+    if (PICK) { out.generating = false; out.progress = '-'; out.toast = 'skipped'; return done('ok'); }
+    d.getElementById('idea').value = '校园快递最后一公里智能取件柜';
+    var steps = d.getElementById('progressSteps');
+    steps.style.display = 'none';
+    try { w.startWork(); } catch (e) { out.err = e.message; }
+    out.generating = !!w._wbGenerating;
+    out.progress = steps.style.display || 'none';
+    var toast = d.getElementById('wbToast');
+    out.toast = toast ? (toast.textContent || '').slice(0, 30) : 'none';
+    done('ok');
+  }
+
+  function done(tag) {
+    out.tag = tag;
+    document.body.setAttribute('data-r', JSON.stringify(out));
+  }
+};
+</script>
+</body>
+</html>

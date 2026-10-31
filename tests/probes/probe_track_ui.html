@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>赛区块视觉探针</title>
+<link rel="stylesheet" href="/static/style.css?v=1793456502">
+<style>
+  html { background: var(--bg-0); }
+  body { padding: 24px; max-width: 860px; margin: 0 auto; }
+  .probe-h { font-size: 12px; color: var(--text-mute); margin: 26px 0 8px; }
+</style>
+</head>
+<body class="light">
+<script>
+  // ?theme=dark 走夜间变量，验证同一套样式在深底上是否还分得清
+  if (/theme=dark/.test(location.search)) document.body.className = '';
+</script>
+
+<div class="probe-h">改后 ①：卡片展开，选了「创新赛道」——赛区块有实底、左侧主色条、chip 38px 高</div>
+
+<div style="margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+    <div style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+      本赛事要求 · <span style="color: var(--c-a);">申报书</span><span style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span>
+      <span id="evTrackBadge" style="display:inline-flex;">赛道 · 创新赛道</span>
+      <span style="color: var(--c-a); font-weight: 400;">▾</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">+ 加一章</button>
+      <button style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">恢复默认</button>
+    </div>
+  </div>
+  <div id="evBody">
+    <div id="evTrackBox" style="display: block;">
+      <div class="ev-track-title">选赛道<span class="ev-track-hint">决定章节结构和硬性禁忌，选错容易偏题</span></div>
+      <div id="evTrackChips" style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="ev-track-chip" aria-pressed="true"><span aria-hidden="true">✓</span>创新赛道</button>
+        <button type="button" class="ev-track-chip" aria-pressed="false">创业赛道</button>
+        <button type="button" class="ev-track-chip" aria-pressed="false">挑战赛道</button>
+      </div>
+      <div id="evTrackInfo" style="display: block; margin-top: 10px; font-size: 12.5px; line-height: 1.75;">
+        <div style="margin-bottom: 6px; font-size: 13px; font-weight: 700; color: var(--text);">当前按「创新赛道」生成</div>
+        <div style="margin-bottom: 4px;"><span style="display:inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; background: var(--surface-2); color: var(--text-dim); font-weight: 600;">知识库整理</span></div>
+        <div style="color: var(--text-dim);">面向以技术创新为核心的原创作品，评审看技术含量与可实现性。</div>
+        <div style="margin-top: 5px; color: var(--danger, #C0392B); font-weight: 600;">⚠ 不能出现：学校、导师<span style="font-weight:400;">（匿名评审，出现即扣分）</span></div>
+        <div style="margin-top: 4px; color: var(--text-dim);">要写到：技术方案；创新点；可行性</div>
+      </div>
+    </div>
+    <div id="evSections" style="font-size: 13px;"></div>
+  </div>
+</div>
+
+<div class="probe-h">改后 ②：卡片收起 + 用户还没选过赛道（首屏默认态）</div>
+
+<div style="padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+    <div style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+      本赛事要求 · <span style="color: var(--c-a);">申报书</span><span style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span>
+      <span class="is-todo" style="display:inline-flex; align-items:center; gap:4px; margin-left:2px; padding:3px 9px; font-size:12px; font-weight:600; line-height:1.3; border-radius:999px; cursor:pointer; white-space:nowrap; border:1px solid var(--warn-line); background:var(--warn-bg); color:var(--warn-text);">待选赛道</span>
+      <span style="color: var(--c-a); font-weight: 400;">▸</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">+ 加一章</button>
+      <button style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">恢复默认</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* PROBE_COMPUTED: 把关键计算值写进 title，供 --dump-dom 读取 */
+setTimeout(function(){
+  var c=document.querySelector('.ev-track-chip[aria-pressed="true"]');
+  var cs=c?getComputedStyle(c):{};
+  var k=document.querySelector('#evTrackInfo span');
+  document.title='C|body='+document.body.className+'|chipColor='+cs.color+'|chipBg='+cs.backgroundColor+
+    '|kbBg='+(k?getComputedStyle(k).backgroundColor:'-');
+},600);
+</script>
+</body>
+</html>

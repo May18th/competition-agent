@@ -367,8 +367,12 @@
                     <!-- 赛事要求卡：跟着赛事名自动切换文档类型与章节结构，可直接改 -->
                     <div id="eventReqCard" style="display: none; margin-top: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
-                            <div onclick="evToggleBody()" style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px;">
-                                本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span><span id="evSummary" style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span><span id="evBodyArrow" style="color: var(--c-a); font-weight: 400;">▾</span>
+                            <div onclick="evToggleBody()" style="font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                本赛事要求 · <span id="evDocType" style="color: var(--c-a);">申报书</span><span id="evSummary" style="font-weight: 400; font-size: 12.5px; color: var(--text-mute);"></span>
+                                <!-- 赛道回执：卡片默认收起，没这个的话「要选赛道」这件事在首屏完全不可见。
+                                     点击 = 展开卡片并滚到赛区块（stopPropagation 防止再触发标题的折叠） -->
+                                <span id="evTrackBadge" onclick="evTrackBadgeClick(event)"></span>
+                                <span id="evBodyArrow" style="color: var(--c-a); font-weight: 400;">▾</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
                                 <button onclick="evAddSection()" style="padding: 4px 10px; font-size: 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;">+ 加一章</button>
@@ -378,13 +382,16 @@
                         <!-- 匹配状态：这份要求是官方知识库来的，还是通用兜底 -->
                         <div id="evBody">
 <div id="evMatchBar" style="margin-bottom: 10px; font-size: 12.5px;"></div>
-                        <!-- 赛道选择：只有知识库真写了赛道差异的赛事才出现（目前 iCAN 三赛道） -->
-                        <div id="evTrackBox" style="display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2);">
-                            <div style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 7px;">
-                                选赛道<span style="font-weight:400; color: var(--text-mute);">（不同赛道打分侧重和禁忌不一样）</span>
+                        <!-- 赛道选择：只有知识库真写了赛道差异的赛事才出现（iCAN 三赛道、互联网+ 九个组别） -->
+                        <div id="evTrackBox" style="display: none;">
+                            <div class="ev-track-title">
+                                选赛道
+                                <span class="ev-track-hint">决定章节结构和硬性禁忌，选错容易偏题</span>
                             </div>
+                            <!-- 未选赛道时的醒目提示：只在还没选过时出现，选完立即消失 -->
+                            <div id="evTrackWarn" style="display: none;"></div>
                             <div id="evTrackChips" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
-                            <div id="evTrackInfo" style="display: none; margin-top: 9px; font-size: 12.5px; line-height: 1.75;"></div>
+                            <div id="evTrackInfo" style="display: none; margin-top: 10px; font-size: 12.5px; line-height: 1.75;"></div>
                         </div>
                         <div id="evSections" style="font-size: 13px;"></div>
                         <div id="evScoring" style="margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8;"></div>
@@ -1665,7 +1672,7 @@
     })();
     </script>
     <script src="/static/ui-const.js?v=20260930d"></script>
-    <script src="/static/app.js?v=20260930d"></script>
+    <script src="/static/app.js?v=20261031b"></script>
     <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
          它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
     <script src="/static/section-nav.js?v=20260930d"></script>
@@ -1749,35 +1756,62 @@
 <script src="/static/theme.js?v=20260930d"></script>
 <script src="/static/result-panel.js?v=20260930d" defer></script>
 <script>
-/* wbresult339 外挂自启动：不改动 app.js，轮询等待结果页落位后注入 */
+/* wbresult339 外挂自启动：不改动 app.js，轮询等待结果页落位后注入。
+   2026-11-01 修死循环：原来 observer 的判据是 getElementById("wb339")，
+   而 result-panel.js 生成的容器 id 是 "wb339-root"（带后缀），这个判据**永远为真**，
+   于是「DOM 一变 → 重新 init → init 又改 DOM → 又触发 observer」无限循环，
+   首页主线程被占满、永远等不到 idle（headless 里表现为页面加载不完，实机上表现为 CPU 空转）。
+   三处收紧：① 判据改成真实命名空间；② 观察范围从整个 body 收窄到结果区；
+   ③ 加内容指纹，结果没变化就直接返回，保证循环一定收敛。 */
 (function () {
-  var tries = 0, MAX = 100;
+  var tries = 0, MAX = 100, locked = false, lastFp = null;
   function data() {
     return (window._lastData || (window.lastData) || null);
   }
-  function tick() {
+  function host() {
+    return document.getElementById("resultArea") || document.getElementById("scorePanel");
+  }
+  // 真实容器是 #wb339-root / .wb339-*，不是 #wb339
+  function mounted() {
+    return !!document.querySelector('[id^="wb339-"], .wb339, #wb339-root');
+  }
+  function fingerprint() {
+    var h = host();
+    var t = h ? (h.textContent || "") : "";
+    // 长度 + 首尾摘要足够判断「结果区有没有换内容」，比逐字比对便宜
+    return t.length + "|" + t.slice(0, 40) + "|" + t.slice(-40) + "|" + (data() ? 1 : 0);
+  }
+  function sync() {
+    if (locked) return;
+    if (!window.wbResult339 || !host()) return;
+    var fp = fingerprint();
+    if (mounted() && fp === lastFp) return;   // 内容没变：不写 DOM，循环到此收敛
+    locked = true;
     try {
-      var host = document.getElementById("resultArea") || document.getElementById("scorePanel");
-      if (host && window.wbResult339 && typeof window.wbResult339.init === "function") {
+      if (mounted() && typeof window.wbResult339.refresh === "function") {
+        window.wbResult339.refresh(data());
+      } else if (typeof window.wbResult339.init === "function") {
         window.wbResult339.init({ data: data() });
-        return;
       }
-    } catch (e) {}
-    if (++tries < MAX) { setTimeout(tick, 400); }
+      lastFp = fingerprint();
+    } catch (e) {
+    } finally {
+      locked = false;
+    }
+  }
+  function tick() {
+    try { sync(); } catch (e) {}
+    if (++tries < MAX && !mounted()) { setTimeout(tick, 400); }
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () { setTimeout(tick, 300); });
   } else { setTimeout(tick, 300); }
-  // 结果页是动态渲染的，观察到的 DOM 变动要重新注入
+  // 结果区是动态渲染的：只盯它，别盯整个 body
   try {
-    var mo = new MutationObserver(function () {
-      var host = document.getElementById("resultArea") || document.getElementById("scorePanel");
-      if (host && window.wbResult339 && !document.getElementById("wb339")) {
-        try { window.wbResult339.init({ data: data() }); } catch (e) {}
-      }
-    });
+    var mo = new MutationObserver(function () { try { sync(); } catch (e) {} });
     document.addEventListener("DOMContentLoaded", function () {
-      mo.observe(document.body, { childList: true, subtree: true });
+      var h = host();
+      if (h) mo.observe(h, { childList: true, subtree: true });
     });
   } catch (e) {}
 })();

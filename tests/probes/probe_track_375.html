@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>赛区块 375 宽探针</title>
+<style>
+  /* headless 窗口有最小宽度，靠固定宽度 iframe 才能得到真 375 视口（媒体查询按 iframe 宽度生效）。
+     iframe 必须留在视口内、不能 left:-9999px，否则里面的布局/定时器被节流，量到的是假值。 */
+  html, body { margin: 0; background: #fff; }
+  #wrap { position: fixed; left: 0; top: 0; width: 375px; height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<iframe id="wrap" src="/__probe/probe_track_ui.html"></iframe>
+<script>
+  var f = document.getElementById('wrap');
+  f.onload = function () {
+    var d = f.contentDocument, w = f.contentWindow;
+    setTimeout(function () {
+      var chips = d.getElementById('evTrackChips');
+      var box = d.getElementById('evTrackBox');
+      var out = [];
+      if (box) {
+        var br = box.getBoundingClientRect();
+        out.push('box w=' + Math.round(br.width));
+      }
+      if (chips) {
+        var cr = chips.getBoundingClientRect();
+        out.push('chips scrollW=' + chips.scrollWidth + ' clientW=' + Math.round(cr.width));
+        Array.prototype.forEach.call(chips.children, function (c, i) {
+          var r = c.getBoundingClientRect();
+          out.push('  chip' + i + ' w=' + Math.round(r.width) + ' h=' + Math.round(r.height) +
+                   ' right=' + Math.round(r.right) + (r.right > cr.right + 1 ? ' <<溢出' : ''));
+        });
+      }
+      document.title = 'M|' + out.join('|');
+    }, 500);
+  };
+</script>
+</body>
+</html>

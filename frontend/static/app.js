@@ -1547,6 +1547,18 @@
             if (!tracks.length && base._prof && base._prof.scoring_by_track) {
                 tracks = base._prof.scoring_by_track.tracks || [];
             }
+            // 两套源的字段名不一样：索引里的赛道带 key，profiles 里只有 id/name。
+            // 不归一化的话 t.key 恒为 undefined → ① evSetTrack 里 filter 找不到赛道、
+            // 静默 return，用户点了没反应；② 所有 chip 的 key 都是 undefined，
+            // 判 on 时 undefined===undefined 成立 → 看起来「已选中」但实际没存。
+            // 统一补一个 key（id > name），下游只认 key。
+            tracks = tracks.map(function (t) {
+                if (t.key) return t;
+                var o = {};
+                for (var k in t) { if (Object.prototype.hasOwnProperty.call(t, k)) o[k] = t[k]; }
+                o.key = t.id || t.name || '';
+                return o;
+            });
             var tk = null;
             if (tracks.length) {
                 var tkey = (custom && custom.track) || '';
@@ -1582,6 +1594,65 @@
             } catch (e) {}
             renderEventCard();
             wbSaveForm();
+        }
+
+        // 标题栏的「待选赛道 / 赛道 · XX」徽章：点它 = 展开卡并滚到赛区块
+        // 必须拦冒泡，否则外层标题的 onclick 会先把卡收起来，用户点了跟没点一样
+        function evTrackBadgeClick(e) {
+            if (e && e.stopPropagation) e.stopPropagation();
+            var b = document.getElementById('evBody');
+            var a = document.getElementById('evBodyArrow');
+            if (b) {
+                b.style.display = '';
+                if (a) a.textContent = '▾';
+                try { _evUserOpen = true; } catch (err) {}
+            }
+            var box = document.getElementById('evTrackBox');
+            setTimeout(function () {
+                if (!box) return;
+                try { box.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { box.scrollIntoView(); }
+                // 滚过去顺便把焦点放到当前选中的 chip 上，键盘/读屏用户能直接接上
+                var on = box.querySelector('.ev-track-chip[aria-pressed="true"]') || box.querySelector('.ev-track-chip');
+                if (on) { try { on.focus({ preventScroll: true }); } catch (err) {} }
+            }, 60);
+            return false;
+        }
+
+        // 当前赛事是否「有赛道但用户没选」——生成前要用它拦一道。
+        // 只拦「多选一」的场景：只有一条赛道的赛事没得选，逼用户点一下纯属添堵
+        // （与线上 build 的 `_tracks.length > 1 && !_track` 判定保持一致）。
+        function evTrackPending() {
+            var c;
+            try { c = evCurrent(); } catch (e) { return null; }
+            if (!c || !c._tracks || c._tracks.length < 2) return null;
+            var picked = false;
+            try {
+                var sv = JSON.parse(_wbStoreGet(c.key) || 'null');
+                picked = !!(sv && sv.track);
+            } catch (e) {}
+            return picked ? null : c;
+        }
+
+        // 把赛区块拉到眼前抖一下：展开（若收起）→ 滚到中间 → 复用输入框那套抖动
+        function evNudgeTrack() {
+            var b = document.getElementById('evBody');
+            var a = document.getElementById('evBodyArrow');
+            if (b && b.style.display === 'none') {
+                b.style.display = '';
+                if (a) a.textContent = '▾';
+                try { _evUserOpen = true; } catch (e) {}
+            }
+            var box = document.getElementById('evTrackBox');
+            if (!box) return;
+            try { box.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { box.scrollIntoView(); }
+            box.classList.remove('wb-shake-hl');
+            void box.offsetWidth;                 // 重启动画
+            box.classList.add('wb-shake-hl');
+            setTimeout(function () { box.classList.remove('wb-shake-hl'); }, 1200);
+            setTimeout(function () {
+                var on = box.querySelector('.ev-track-chip');
+                if (on) { try { on.focus({ preventScroll: true }); } catch (e) {} }
+            }, 80);
         }
 
         // 赛道规则拼成给 AI 看的约束文本（走 rule_content 链路，后端不用改）
@@ -1723,32 +1794,94 @@
             }
             // 赛道选择：无赛道数据的赛事整块隐藏，不留空壳
             var tb = document.getElementById('evTrackBox');
+            var bd0 = document.getElementById('evTrackBadge');
+            // 标题栏回执默认收起：只有真的有赛道才显示（无赛道的赛事不该多一个空徽章）
+            if (bd0) { bd0.style.display = 'none'; bd0.className = ''; bd0.innerHTML = ''; }
             if (tb) {
                 var tks = c._tracks || [];
                 if (tks.length) {
                     tb.style.display = 'block';
+                    // 用户有没有亲手选过：只有存过 track 才算。没选过时下面会默认用第一条，
+                    // 但界面上必须标「待选」——不然他以为自己已经选好了，直接开始生成
+                    var picked = false;
+                    try {
+                        var cc = JSON.parse(_wbStoreGet(c.key) || 'null');
+                        picked = !!(cc && cc.track);
+                    } catch (e) {}
                     var chips = document.getElementById('evTrackChips');
                     if (chips) {
                         chips.innerHTML = tks.map(function (t) {
                             var on = c._track && t.key === c._track.key;
-                            return '<button onclick="evSetTrack(\'' + t.key + '\')" ' +
-                                'title="' + _esc(t.desc) + '" ' +
-                                'style="padding: 6px 12px; font-size: 12.5px; border-radius: 999px; cursor: pointer; ' +
-                                'border: 1px solid ' + (on ? 'var(--c-a)' : 'var(--line)') + '; ' +
-                                'background: ' + (on ? 'var(--c-a)' : 'var(--surface-solid)') + '; ' +
-                                'color: ' + (on ? '#fff' : 'var(--text-dim)') + '; ' +
-                                'font-weight: ' + (on ? '600' : '400') + ';">' + _esc(t.name) + '</button>';
+                            return '<button type="button" class="ev-track-chip" aria-pressed="' + (on ? 'true' : 'false') + '" ' +
+                                'onclick="evSetTrack(\'' + t.key + '\')" ' +
+                                'title="' + _esc(t.desc) + '">' +
+                                (on ? '<span aria-hidden="true">✓</span>' : '') + _esc(t.name) +
+                                '</button>';
                         }).join('');
+                    }
+                    // 标题栏回执：卡片收起时，这是首屏唯一能看出「有赛道要选」的地方
+                    // 注意：不能写在 `if (bd0 && c._track)` 里。线上版 evCurrent 没有
+                    // 「默认选中第一条」的兜底，用户没点过时 c._track 就是 null——
+                    // 那样恰恰是最该提示的时刻，却一个徽章都没有（线上实测踩到）。
+                    if (bd0) {
+                        bd0.style.display = 'inline-flex';
+                        if (picked && c._track) {
+                            bd0.className = '';
+                            bd0.innerHTML = '赛道 · ' + _esc(c._track.name);
+                            bd0.title = '已选 ' + c._track.name + '，点这里展开细则';
+                        } else if (tks.length === 1) {
+                            // 只有一条：没得选，别标「待选」误导人
+                            bd0.className = '';
+                            bd0.innerHTML = '赛道 · ' + _esc(tks[0].name);
+                            bd0.title = '这个赛事只有这一条赛道';
+                        } else {
+                            bd0.className = 'is-todo';
+                            bd0.innerHTML = '待选赛道';
+                            bd0.title = '这个赛事有 ' + tks.length + ' 条赛道，规则不一样，点这里选';
+                        }
+                    }
+                    // 未选提示条 + 自动展开：用户明确要求「没选赛道提醒一下」。
+                    // 只在这一种状态下做（本赛事有 2 条以上赛道 && 一次没选过），选完立刻撤掉；
+                    // 单赛道赛事没得选，不提示也不自动展开（否则等于制造一个假待办）。
+                    var needPick = !picked && tks.length > 1;
+                    var wn = document.getElementById('evTrackWarn');
+                    if (wn) {
+                        if (needPick) {
+                            wn.style.display = 'block';
+                            wn.innerHTML = '⚠ <b>还没选赛道</b>：这个赛事分 ' + tks.length +
+                                ' 条，评分侧重和禁忌都不一样。先选一条再点生成，否则按通用规则写，容易偏题。';
+                        } else {
+                            wn.style.display = 'none';
+                            wn.innerHTML = '';
+                        }
+                    }
+                    // 没选过就把卡展开，让选项直接露出来。两个约束：
+                    // ① 用户自己收起过（_evUserOpen 为 false 且已自动展开过这个赛事）就不再强拉，
+                    //    否则「我收起来了它又自己弹开」；② 按赛事 key 记，换赛事才重新展开一次。
+                    if (needPick && window._evTrackAutoFor !== c.key) {
+                        var _eb = document.getElementById('evBody');
+                        var _ea = document.getElementById('evBodyArrow');
+                        window._evTrackAutoFor = c.key;
+                        if (_eb && _eb.style.display === 'none') {
+                            _eb.style.display = '';
+                            if (_ea) _ea.textContent = '▾';
+                            window._evUserOpen = true;   // 别被 resize 时的 wbAdvInit 又收回去
+                        }
                     }
                     // 赛道细则：禁忌用红色，必须写/不要写用普通色；
                     // focus/avoid/sections 是我们按赛道定位推导的，不是官方原文，必须标注清楚
                     var ti = document.getElementById('evTrackInfo');
                     if (ti && c._track) {
                         var t = c._track, h = '';
+                        // 明确回执：告诉他现在是按哪个赛道在生成（默认选中不等于已选，
+                        // 所以这里只是「当前生效」而不是「你选的」）
+                        h += '<div style="margin-bottom: 6px; font-size: 13px; font-weight: 700; color: var(--text);">' +
+                             '当前按「' + _esc(t.name) + '」生成</div>';
                         // 来源徽章：官方原文 / 知识库整理 / 建议——学生得知道自己在看什么级别的东西
-                        var sm = { official: ['官方原文', '#0E9F6E', '#E7F7F1'],
-                                   kb: ['知识库整理', '#6B7280', '#F3F4F6'],
-                                   derived: ['建议', '#B45309', '#FEF3C7'] }[t.src || 'kb'];
+                        // 用主题变量而不是写死浅色：原来 #E7F7F1/#F3F4F6 的浅底在夜间是白噪声
+                        var sm = { official: ['官方原文', 'var(--c-b)', 'var(--surface-2)'],
+                                   kb: ['知识库整理', 'var(--text-dim)', 'var(--surface-2)'],
+                                   derived: ['建议', 'var(--warn-text)', 'var(--warn-bg)'] }[t.src || 'kb'];
                         h += '<div style="margin-bottom: 4px;">' +
                              '<span style="display:inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; ' +
                              'background: ' + sm[2] + '; color: ' + sm[1] + '; font-weight: 600;">' +
@@ -4598,6 +4731,23 @@
                     _ie.classList.add('wb-shake-hl');
                     setTimeout(function () { _ie.classList.remove('wb-shake-hl'); }, 1600);
                 }
+                return;
+            }
+
+            // 赛道必选（2026-10-31 用户要求「没选赛道提醒一下」）。
+            // 不选也能生成，但线上 evCurrent 没有默认赛道兜底 → track 为空 → 后端收不到
+            // 赛道规则，整套「禁忌/侧重/章节结构」都不生效，写出来必然偏题。
+            // 这一步放在创意检查之后：先把「填什么」讲完，再讲「选哪个」。
+            var _tp = null;
+            try { _tp = evTrackPending(); } catch (e) {}
+            if (_tp) {
+                window._wbGenerating = false;
+                wbToast('先选一条赛道再生成', {
+                    type: 'warn',
+                    sub: '「' + _tp._tracks[0].name + '」这类赛事分 ' + _tp._tracks.length +
+                         ' 条赛道，评分侧重和禁忌都不一样；不选会按通用规则写，容易偏题'
+                });
+                evNudgeTrack();
                 return;
             }
 
