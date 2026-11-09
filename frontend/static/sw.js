@@ -75,7 +75,6 @@ var API_CACHEABLE = [
   '/api/competition/index',
   '/api/competition_profiles',
   '/api/ppt_themes',
-  '/api/kb/list',
   '/api/notice'
 ];
 

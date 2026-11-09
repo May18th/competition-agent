@@ -5908,6 +5908,44 @@
         }
 
         /* ---------- 范文库 ---------- */
+        /* 入口门禁：/api/kb/* 全部在 backend _admin_guard 的管理员门槛后面（范文库是团队素材
+           资产，不能给访客读写）。旧版把这个 tab 无条件摆给所有人，访客点开就弹两条
+           「请求失败（401）」——界面承诺了接口不给的东西。现在先探一次 /api/whoami：
+           不是管理员就不放入口；会话中途失效时给登录提示，而不是空列表 + 报错弹窗。 */
+        var _kbRole = null;      // null = 未探测；'admin'/'readonly' = 可用；false = 不可用
+        // 只有「明确探到不是管理员」才拦；未探测时按老行为放行，
+        // 这样门禁本身不会变成新的失败点（探测失败也只影响入口显不显示）。
+        function kbAllowed() { return _kbRole !== false; }
+        function kbLoginHtml(msg) {
+            return '<div style="padding:16px;background:var(--surface-2);border-radius:8px;line-height:1.85;color:var(--text-dim);">'
+                + (msg || '范文库是团队内部素材库，需要管理员登录后使用。')
+                + '<a href="/admin/login" style="color:var(--c-a);margin-left:6px;white-space:nowrap;">去登录 →</a>'
+                + '</div>';
+        }
+        function kbMarkDenied() {
+            _kbRole = false;
+            var t = document.getElementById('kbTab');
+            if (t) t.style.display = 'none';
+        }
+        function wbKbGate() {
+            fetch('/api/whoami')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    _kbRole = (d && d.kb) ? (d.role || 'admin') : false;
+                    var tab = document.getElementById('kbTab');
+                    if (tab) tab.style.display = kbAllowed() ? '' : 'none';
+                    // 刷新前就停在这一栏的用户：入口撤掉后补一句登录提示，别留下空白面板
+                    var pane = document.getElementById('tab-kb');
+                    if (!kbAllowed() && pane && pane.classList.contains('active')) {
+                        var box = document.getElementById('kbList');
+                        if (box) box.innerHTML = kbLoginHtml();
+                    }
+                })
+                .catch(function () { _kbRole = false; });
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wbKbGate);
+        else wbKbGate();
+
         // 标签词表：后端 /api/kb/tags 本来就按 module/track/feature 分好维度，
         // 但旧代码把三组摊平进一个 flex 容器，上百个标签全混在一起（第三十五轮刺）。
         // 现在按维度分块渲染，并支持搜索过滤。
@@ -5943,7 +5981,15 @@
             kbRenderTags(el ? el.value : '');
         }
         window.kbFilterTags = kbFilterTags;
+        // 面板上的 onclick 走全局作用域：漏导出就是「点了没反应 / 控制台 ReferenceError」。
+        // kbAddTag 由标签 chip 的 onclick 调、kbAdd/kbDelete/kbSearch 由按钮调，统一补上导出（重复导出无害）。
+        window.kbAddTag = kbAddTag;
+        window.kbAdd = kbAdd;
+        window.kbList = kbList;
+        window.kbDelete = kbDelete;
+        window.kbSearch = kbSearch;
         function kbLoadTags() {
+            if (!kbAllowed()) return;   // 非管理员会话：入口已隐藏，不再去撞 401
             fetch('/api/kb/tags')
                 .then(function (r) { return r.json(); })
                 .then(function (d) {
@@ -6033,6 +6079,7 @@
                 .then(function () { try { input.value = ''; } catch (e) {} });
         };
         function kbAdd() {
+            if (!kbAllowed()) { wbToast('范文库需要管理员登录后使用', { type: 'warn' }); return; }
             var content = (document.getElementById('kbContent') || {}).value || '';
             var tagsRaw = (document.getElementById('kbTags') || {}).value || '';
             content = content.trim();
@@ -6075,12 +6122,20 @@
         }
 
         function kbList() {
+            var box0 = document.getElementById('kbList');
+            if (!kbAllowed()) { if (box0) box0.innerHTML = kbLoginHtml(); return; }
             fetch('/api/kb/list')
-                .then(function (r) { return r.json(); })
+                .then(function (r) {
+                    // 会话过期（8 小时 cookie 到期 / 换浏览器）：收掉入口 + 给登录提示，
+                    // 不让空列表冒充「范文库是空的」
+                    if (r.status === 401 || r.status === 403) { kbMarkDenied(); return { __denied: true }; }
+                    return r.json();
+                })
                 .then(function (d) {
                     var box = document.getElementById('kbList');
                     var cnt = document.getElementById('kbCount');
                     if (!box) return;
+                    if (!d || d.__denied) { box.innerHTML = kbLoginHtml('登录状态已失效，范文库需要重新登录。'); return; }
                     var items = (d && d.items) || [];
                     if (cnt) cnt.innerText = items.length;
                     if (!items.length) {
@@ -6126,6 +6181,7 @@
         }
 
         function kbDelete(id) {
+            if (!kbAllowed()) { wbToast('范文库需要管理员登录后使用', { type: 'warn' }); return; }
             if (!confirm('确定删除这条范文？')) return;
             fetch('/api/kb/delete/' + id, { method: 'DELETE' })
                 .then(function (r) { return r.json(); })
@@ -6141,6 +6197,7 @@
             var out = document.getElementById('kbSearchResult');
             if (!out) return;
             if (!q.trim()) { out.innerHTML = '<span style="color:var(--text-mute);">请输入关键词</span>'; return; }
+            if (!kbAllowed()) { out.innerHTML = kbLoginHtml(); return; }
             out.innerHTML = '检索中…';
             fetch('/api/kb/search?keywords=' + encodeURIComponent(q))
                 .then(function (r) { return r.json(); })

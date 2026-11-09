@@ -927,7 +927,10 @@
                 <button class="tab active" id="proposalTab" onclick="switchTab(event, 'proposal')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-pencil"/></svg> 申报与评审</button>
                 <button class="tab" id="chartsTab" style="display:none;" onclick="switchTab(event, 'charts')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-linechart"/></svg> 可视化图表</button>
                 <button class="tab" id="defenseTab" style="display:none;" onclick="switchTab(event, 'defense')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-mic"/></svg> 答辩准备</button>
-                <button class="tab" id="kbTab" onclick="switchTab(event, 'kb')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</button>
+                <!-- 范文库是团队内部素材库：/api/kb/* 全部在管理员门槛后面（backend _admin_guard）。
+                     默认隐藏，页面加载后探 /api/whoami，管理员会话才把入口放出来（见 app.js wbKbGate）。
+                     旧版无条件摆出来，访客一点就是「请求失败（401）」两条弹窗。 -->
+                <button class="tab" id="kbTab" style="display:none;" onclick="switchTab(event, 'kb')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-book"/></svg> 范文库</button>
                 <!-- 运行日志是排查用的，普通用户用不上，默认藏起来；加 ?debug=1 才显示 -->
                 <button class="tab" id="logsTab" style="display: none;" onclick="switchTab(event, 'logs')"><svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-clipboard"/></svg> 运行日志</button>
             </div>
@@ -1672,7 +1675,7 @@
     })();
     </script>
     <script src="/static/ui-const.js?v=20260930d"></script>
-    <script src="/static/app.js?v=20261031b"></script>
+    <script src="/static/app.js?v=20261109a"></script>
     <!-- 242 轮：长结果页导航（一键到底部 + 深度版章节折叠）。必须排在 app.js 之后，
          它要包一层 app.js 里的 wbGoAnchor（点锚点跳转时先展开目标章节）。 -->
     <script src="/static/section-nav.js?v=20260930d"></script>

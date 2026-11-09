@@ -656,6 +656,25 @@ def _require_admin():
     return resp
 
 
+@app.route('/api/whoami')
+def whoami():
+    """当前会话角色探测（公开、只读、不查库）。
+
+    用途：主页面「范文库」等入口挂在 /api/kb/ 管理员门槛后面，非管理员点开就是 401。
+    前端先探一次这个接口，决定入口摆不摆出来——把「用不了的按钮」藏掉，
+    而不是让用户点出一个报错弹窗。这里只回角色，不返回任何后台数据。
+    """
+    role = _admin_session_role()
+    if role is None and ADMIN_TOKEN:
+        tok = (request.headers.get("X-Admin-Token") or "").strip()
+        if tok in {t.strip() for t in ADMIN_TOKEN.split(",") if t.strip()}:
+            role = 'admin'
+    resp = jsonify({"success": True, "role": role, "kb": role is not None})
+    # 会话状态随 cookie/口令变化，别让浏览器或中间层缓存成别人的身份
+    resp.headers['Cache-Control'] = 'no-store, private'
+    return resp
+
+
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
     """后台登录（198 轮）：用户名+密码（bcrypt）校验，成功写 HttpOnly 会话 cookie；连续失败锁定。"""
