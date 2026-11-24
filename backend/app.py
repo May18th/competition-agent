@@ -4098,7 +4098,7 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts, _strip_cliches, _strip_pending_sections
+        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts, _strip_cliches, _strip_pending_sections, _strip_revision_note
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
@@ -4108,7 +4108,7 @@ def _run_generation(data):
                 # ① 先删「待替换数据清单」整节（模型自造的待办），否则后面只会把它的
                 #    条目改写成句子留在正文里；②→⑤ 依次折叠复读、清占位符、降级虚构
                 #    表述、清 AI 半成品痕迹；⑥ 最后统一换掉套话。
-                payload[_k] = _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(_strip_pending_sections(payload[_k]))))))))
+                payload[_k] = _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(_strip_pending_sections(_strip_revision_note(payload[_k])))))))))
     except Exception:
         pass
     # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
@@ -6359,6 +6359,34 @@ def judge_preview():
         return jsonify({"success": True, "report": preview_report(proposal, mode, title)})
     except Exception as e:
         return jsonify({"success": False, "error": _friendly_error(e), "error_code": _error_code(e)}), 500
+
+
+@app.route('/api/scorecard', methods=['POST'])
+def scorecard():
+    """评分项诊断台：按赛事官方评分维度逐项给分、给原文证据、给缺口动作（纯规则，不调 LLM）。
+
+    两种用法：传 history_id 直接诊断一次生成结果；或传 proposal + competition_name。
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        from backend.scorecard import diagnose, diagnose_history
+        track = (data.get('track') or '').strip() or None
+        hid = data.get('history_id')
+        if hid:
+            return jsonify({"success": True,
+                            "diag": diagnose_history(DB_PATH, hid, track)})
+        proposal = (data.get('proposal') or '').strip()
+        comp = (data.get('competition_name') or '').strip()
+        if not proposal or not comp:
+            return jsonify({"success": False,
+                            "error": "需要 history_id，或 proposal + competition_name"}), 400
+        payload = dict(data)
+        payload["proposal"] = proposal
+        return jsonify({"success": True,
+                        "diag": diagnose(payload, comp, track, data.get('mode') or 'fast')})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e),
+                        "error_code": _error_code(e)}), 500
 
 
 @app.route('/api/demo_script', methods=['POST'])

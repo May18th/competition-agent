@@ -1050,6 +1050,41 @@ _PENDING_HEADING = re.compile(
     r'^#{1,6}\s+.*(?:待(?:替换|补充|核实|完善|确认|填写)|TODO|占位|需替换)')
 
 
+# 修订说明的开头：`# 修订说明` / `## 修改说明` / 无标题直接「本次修订…」
+_REVISION_HEAD = re.compile(
+    r'^\s*(?:#{1,3}\s*)?(?:修订说明|修改说明|修回说明|变更说明|本次修订|本次修改|修订内容)\b')
+# 正式章节开头：`## 一、` / `# 第一章` / `## （一）` 前必有章号
+_OFFICIAL_HEAD = re.compile(
+    r'^#{1,2}\s*(?:[一二三四五六七八九十]+\s*[、.．]|第\s*[一二三四五六七八九十]+\s*[章节])')
+
+
+def _strip_revision_note(text):
+    """删掉 revision 节点写在正文最前面的「修订说明」块。
+
+    实测（hid 24，深度版）：targeted_revise_agent 的输出是「修订说明 + 正文」，
+    被整篇替换成新 proposal 后，申报书第一页变成
+    「# 修订说明 / 本次修订严格对应评委意见的六条」+ 逐条「针对意见（1）：新增…」。
+    交到评委手里等于自述这是按意见改的稿子，且占了正文篇幅。
+
+    处理：从开头截到第一个正式章节（`## 一、` 或 `# 第一章`）。
+    截完不足原文一半，说明没有正文可留，保留原样——宁可留着说明，也不能把正文删空。
+    """
+    if not text:
+        return text
+    s = str(text).lstrip('\ufeff \t\r\n')
+    if not _REVISION_HEAD.match(s.split('\n', 1)[0] if s else ""):
+        return text
+    lines = s.split('\n')
+    for i, line in enumerate(lines):
+        if _OFFICIAL_HEAD.match(line.strip()):
+            body = '\n'.join(lines[i:]).strip()
+            if len(body) >= len(s) * 0.5:
+                print("🧹 清掉开头修订说明 %d 字" % (len(s) - len(body)))
+                return body
+            break
+    return text
+
+
 def _strip_pending_sections(text):
     """删掉模型自己追加到正文里的「待替换数据清单」类内部待办章节。
 
@@ -1969,6 +2004,75 @@ def _competition_focus(state: dict) -> str:
     return "\n【本赛事写作侧重 —— 必须优先体现】\n" + focus + "\n"
 
 
+# 判据族 → 正文落点提示（写给人看的一句话动作，不是分数口径）
+_SCORING_HINT = {
+    "innovation": "明确写出 2～3 条创新点，并说清与现有做法差在哪；只说「有创新」等于没写",
+    "business": "给出成本、定价、收入模型与客户规模的具体数字",
+    "feasibility": "给出阶段计划（谁、多久、交什么）、资源投入与风险应对",
+    "social": "写明受益群体，以及社会效益的量化数字",
+    "presentation": "章节齐全、标题层级规整，该有的图表与附件说明到位",
+    "team": "写到成员分工、协作机制，以及成员在项目里的具体成长",
+    "tech": "写明技术构成、可核对的性能指标与测试方式",
+    "value": "写明使用场景，以及它替代了什么现有做法",
+    "general": "按该项要求覆盖，缺什么补什么",
+}
+
+# 维度名命中这些词时改用更贴的提示——同一判据族在不同赛事里差别很大：
+# 数学建模的「模型假设合理性」归 feasibility 族，但提示不能是「阶段计划」。
+_DIM_SPECIFIC_HINT = (
+    ("假设", "写清模型或方案的前提假设，并给每条假设的现实依据"),
+    ("灵敏度", "给出关键参数的灵敏度分析：参数变多少，结论变多少"),
+    ("检验", "给出结果检验方式：误差范围、与实测或解析解的对比"),
+    ("稳定", "给出稳定性与可靠性测试：连续运行、极端输入下的表现"),
+    ("实践过程", "写清实际推进过程：做了几轮、每轮产出与结论"),
+    ("机考", "该项由机考或客观题评分，正文只需不与规则冲突"),
+    ("答辩", "预判评委质询点，并把最容易被追问的数据讲清楚"),
+)
+
+
+def _dim_hint(name, family):
+    for kw, hint in _DIM_SPECIFIC_HINT:
+        if kw in str(name or ""):
+            return hint
+    return _SCORING_HINT.get(family, _SCORING_HINT["general"])
+
+
+def _scoring_cover_block(state: dict) -> str:
+    """把赛事官方评分维度作为「逐项落点清单」注入 writer prompt。
+
+    实测缺口：互联网+ 的评分表里「项目创新」占 30 分，而简洁版生成的 12 章正文
+    里「创新」二字出现 0 次——维度只传给了前端展示，从没进过写作 prompt。
+
+    只给维度名、权重和一句话落点，不给打分口径，并显式禁止把维度名写成小标题：
+    目的是让正文覆盖评审关心的方面，不是让模型自评得分。
+    同族维度合并成一行（「个人成长 + 团队协作」共用同一套落点），免得占篇幅。
+    """
+    try:
+        from backend.scorecard import classify_dim
+        dims = _official_scoring_dims(state.get("competition_name", ""), state.get("track"))
+        if not dims:
+            return ""
+        merged, order = {}, []
+        for d in dims:
+            family = classify_dim(d["name"])
+            slot = merged.get(family)
+            if slot is None:
+                slot = merged[family] = {"names": [], "weight": 0.0}
+                order.append(family)
+            slot["names"].append(d["name"])
+            slot["weight"] += float(d["weight"] or 0)
+        lines = ["", "【评分维度覆盖清单 —— 本赛事官方口径，写完后逐项自检】"]
+        for family in order:
+            slot = merged[family]
+            lines.append("- %s（%g 分）：%s" % (
+                " + ".join(slot["names"]), slot["weight"], _dim_hint(slot["names"][0], family)))
+        lines.append("禁止把维度名写成小标题，也不要出现「本项得分」「创新性维度突出」这类自评话术；"
+                     "用一个具体句子的内容去覆盖它，而不是点一遍名字。")
+        return "\n".join(lines) + "\n"
+    except Exception:
+        return ""
+
+
 def _defense_focus(state: dict) -> str:
     """按比赛类型生成答辩必问方向（工科问技术、经管问商业、建模问假设等）。"""
     profile = get_competition_profile(state.get("competition_name", ""))
@@ -2476,7 +2580,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_SELF_TECH_HIGHLIGHTS}
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}
-{_competition_focus(state)}
+{_scoring_cover_block(state)}{_competition_focus(state)}
 """
     proposal, n = _expand_to_length(
         _stream_llm_guarded(prompt, "proposal"), 1100,
