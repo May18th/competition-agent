@@ -79,6 +79,22 @@ class TestPlanPatches(unittest.TestCase):
         lost = [p["lost"] for p in info]
         self.assertEqual(lost, sorted(lost, reverse=True))
 
+    def test_force_label_pulls_gap_outside_top_gaps(self):
+        """「创新点可数」掉出 top_gaps 前三条时，指定后仍要能补到它。
+
+        top_gaps 只留三条，实测有整轮创新点掉出榜单 → 兜底永远不触发。
+        """
+        diag = self._diag()
+        # 人为把 top_gaps 换成不含创新点的三条，模拟线上那种轮次
+        diag["top_gaps"] = [g for g in diag["top_gaps"]
+                            if "创新点" not in g["gap"]][:3]
+        plain = sp.plan_patches(diag, _BASE, limit=2)
+        self.assertFalse(any("创新点" in p["label"] for p in plain), plain)
+
+        forced = sp.plan_patches(diag, _BASE, limit=2, force_labels=("创新点可数",))
+        self.assertTrue(any("创新点" in p["label"] for p in forced), forced)
+        self.assertIn("创新点", forced[0]["label"])      # 指定项排在最前
+
 
 class TestRewriteChapter(unittest.TestCase):
     def test_other_chapters_untouched(self):
@@ -155,6 +171,29 @@ class TestPatchUntilClean(unittest.TestCase):
                                    None, "fast", llm=_FakeLLM([]))
         self.assertEqual(rep["applied"], [])
         self.assertEqual(rep["after"], rep["before"])
+
+
+class TestInnovationTrigger(unittest.TestCase):
+    """生成流程的兜底触发条件：按判据看，不按 top_gaps 榜单看。"""
+
+    def _diag(self, text):
+        from backend.scorecard import diagnose
+        return diagnose({"proposal": text}, _PROFILE_COMP, None, "fast")
+
+    def test_missing_when_no_numbered_points(self):
+        self.assertTrue(sp.innovation_missing(self._diag(_BASE)))
+
+    def test_not_missing_when_numbered(self):
+        text = _BASE.replace("## 三、产品/技术方案\n",
+                             "## 三、产品/技术方案\n创新有三：①称重与视觉双校验；"
+                             "②领用即记账；③自动对账报告。\n")
+        self.assertFalse(sp.innovation_missing(self._diag(text)))
+
+    def test_ignores_top_gaps_ranking(self):
+        """即使创新点掉出 top_gaps，触发条件也必须成立。"""
+        diag = self._diag(_BASE)
+        diag["top_gaps"] = [g for g in diag["top_gaps"] if "创新点" not in g["gap"]][:1]
+        self.assertTrue(sp.innovation_missing(diag))
 
 
 if __name__ == "__main__":

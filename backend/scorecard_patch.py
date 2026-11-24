@@ -126,16 +126,34 @@ def locate_chapter(proposal, gap_label, dim_name=""):
     return {"title": title, "start": start, "end": end, "fallback": True}
 
 
-def plan_patches(diag, proposal, limit=2):
+def plan_patches(diag, proposal, limit=2, force_labels=()):
     """把诊断缺口转成补写任务。只取丢分最大的几章，避免无限加长。
 
     同一章的多条缺口合并成一次补写：连补两次同一章会重复调用模型，
     第二次还得在第一次的改写结果上再改，容易把第一次补好的内容覆盖掉。
+
+    force_labels：指定必须优先处理的缺口。top_gaps 只留前三条，像「创新点可数」
+    这种本轮丢分不算最高、但属于硬伤的缺口会掉出榜单，于是永远轮不到补
+    （实测线上就有这种轮次）。指定后会从各维度的 gap_items 里把它捞回来。
     """
     if not diag.get("available"):
         return []
+    gaps_src = list(diag.get("top_gaps") or [])
+    forced = set(force_labels or ())
+    if forced:
+        have = {g["gap"].split("：")[0] for g in gaps_src}
+        for d in diag.get("dims") or []:
+            for gi in d.get("gap_items") or []:
+                label = gi.get("label")
+                if label in forced and label not in have:
+                    gaps_src.insert(0, {
+                        "dim": d.get("name", ""),
+                        "gap": label + "：" + str(gi.get("note") or ""),
+                        "lost": gi.get("lost", 0),
+                    })
+                    have.add(label)
     by_chapter, order = {}, []
-    for gap in diag.get("top_gaps") or []:
+    for gap in gaps_src:
         label = gap["gap"].split("：")[0]
         if label in _FACT_GAPS:
             continue                      # 事实缺口不代补，也不提醒
@@ -161,6 +179,9 @@ def plan_patches(diag, proposal, limit=2):
                 slot["dims"].append(dn)
     plan = [by_chapter[k] for k in order]
     plan.sort(key=lambda s: -s["lost"])
+    if forced:
+        # 指定缺口排在前面：否则按丢分排序时它仍可能被 limit 截掉
+        plan.sort(key=lambda s: 0 if set(s["labels"]) & forced else 1)
     for p in plan:
         p["label"] = " + ".join(p["labels"])
         p["dim"] = "、".join(p["dims"])
@@ -258,8 +279,18 @@ def _sanitize(text):
         return text
 
 
+def innovation_missing(diag):
+    """诊断结果里「创新点可数」是否没过。
+
+    直接看该维度下的判据，不看 top_gaps——top_gaps 只留前三条，创新点丢分不高时
+    会掉出榜单，于是「按榜单兜底」永远轮不到它（实测线上就有这种轮次）。
+    """
+    return any(c.get("key") == "innovation_points" and c.get("status") != "pass"
+               for d in (diag.get("dims") or []) for c in (d.get("checks") or []))
+
+
 def patch_until_clean(result, competition_name, track=None, mode="fast",
-                      limit=2, llm=None, min_gain=0.5):
+                      limit=2, llm=None, min_gain=0.5, force_labels=()):
     """诊断 → 补写 → 复检。分数没涨就回退，只保留真正改好的那几处。
 
     返回 {"before", "after", "applied": [...], "reverted": [...], "proposal"}
@@ -274,7 +305,7 @@ def patch_until_clean(result, competition_name, track=None, mode="fast",
     proposal = _sanitize(result.get("proposal") or "")
     result["proposal"] = proposal
     before = diagnose(result, competition_name, track, mode)
-    plan = plan_patches(before, proposal, limit=limit)
+    plan = plan_patches(before, proposal, limit=limit, force_labels=force_labels)
     report = {"before": before.get("total"), "after": before.get("total"),
               "applied": [], "reverted": [], "proposal": proposal}
     if not plan:

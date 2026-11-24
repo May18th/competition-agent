@@ -108,6 +108,29 @@ def main():
         print("质检调用失败（不影响判定）:", e)
 
     ok = not hit and not pend and not rev
+
+    # 创新点必须可数：编号句式（三处创新 / 创新有三 / 创新点：）
+    inn = re.search(r"(?:[二三三四五]\s*[处项个条]\s*创新|创新(?:点)?\s*(?:有|共)\s*[二三三四五])",
+                    rec.get("proposal") or "")
+    print("创新点编号句:", (inn.group(0) if inn else "未找到"))
+    if not inn:
+        ok = False
+
+    # 指向已删待办节的悬空引用
+    dangling = re.findall(r"见\s*待(?:替换|补充|办)[^。；\n]{0,6}清单", rec.get("proposal") or "")
+    print("悬空引用:", dangling or "无")
+    if dangling:
+        ok = False
+
+    try:
+        sys.path.insert(0, "/opt/comp-agent")
+        from scorecard import diagnose_history
+        d = diagnose_history(DB, hid)
+        print("自查总分:", d.get("total"),
+              "| 项目创新:", [x["score"] for x in d["dims"] if "创新" in x["name"]])
+    except Exception as e:
+        print("诊断失败（不影响判定）:", e)
+
     print("\n判定:", "PASS" if ok else "FAIL")
 
     conn.execute("DELETE FROM history WHERE id=?", (hid,))

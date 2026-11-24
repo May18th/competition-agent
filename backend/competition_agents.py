@@ -1105,7 +1105,17 @@ def _strip_pending_sections(text):
         if skipping:
             continue
         kept.append(line)
-    return '\n'.join(kept).rstrip() + '\n'
+    t = '\n'.join(kept).rstrip()
+    # 章节删掉后，正文里还留着指向它的引用（实测：「替换口径见待替换数据清单」
+    # 「（详见待补充清单）」）。留着就是指向不存在的内容，评委一翻就露。
+    # 分三种形态：括号内整块删；句中连同前导标点删；裸引用原地删。
+    _pending_ref = r'待(?:替换|补充|办)[^。；，\n）)]{0,8}清单'
+    t = re.sub(r'[（(]\s*(?:具体|详细|替换口径|口径|详见|见)?\s*[^（()）]{0,8}?' + _pending_ref + r'\s*[）)]',
+               '', t)
+    t = re.sub(r'[，,；;]\s*(?:具体|详细|替换口径|口径)?\s*(?:详见|见)\s*(?:文末|后文|下)?\s*' + _pending_ref,
+               '', t)
+    t = re.sub(r'\s*(?:详见|见)\s*(?:文末|后文|下)?\s*' + _pending_ref, '', t)
+    return t + '\n'
 
 
 _CLICHE_REPLACE = (
@@ -2048,7 +2058,12 @@ def _scoring_cover_block(state: dict) -> str:
     同族维度合并成一行（「个人成长 + 团队协作」共用同一套落点），免得占篇幅。
     """
     try:
-        from backend.scorecard import classify_dim
+        # 本地是 backend/ 包、线上 /opt/comp-agent 是扁平目录：写死一种导入会让
+        # 另一侧静默返回空串（线上就一直没收到过这份覆盖清单，等于没注入）。
+        try:
+            from backend.scorecard import classify_dim
+        except ImportError:
+            from scorecard import classify_dim
         dims = _official_scoring_dims(state.get("competition_name", ""), state.get("track"))
         if not dims:
             return ""
@@ -2071,6 +2086,36 @@ def _scoring_cover_block(state: dict) -> str:
         return "\n".join(lines) + "\n"
     except Exception:
         return ""
+
+
+def _innovation_slot(titles):
+    """挑出最适合放创新点陈述的章节（优先含「创新」，「技术」「产品」「方案」次之）。"""
+    clean = [re.sub(r'^#{1,6}\s*', '', str(t)).strip() for t in (titles or [])]
+    clean = [t for t in clean if t]
+    for key in ("创新", "技术", "产品", "方案", "解决"):
+        for t in clean:
+            if key in t:
+                return t
+    return clean[0] if clean else ""
+
+
+def _innovation_ask(titles):
+    """要求把创新点写成可数的编号句。
+
+    实测：线上 60% 的历史记录判「创新点可数」不通过，而创新类维度占 25~35 分。
+    根因不是模型不会写创新，是没人要求它「写成能被数出来的样子」——通篇论述创新，
+    评委扫过去仍然数不出几条。这里指定章节 + 指定句式，且允许其余章节回指。
+    """
+    slot = _innovation_slot(titles)
+    if not slot:
+        return ""
+    return ("\n【创新点必须可数 —— 评委按条数给分，缺这项通常直接丢 20~30 分】\n"
+            "在「%s」这一章里，用一句话把创新点编号列出，句式照此写：\n"
+            "「本项目有三处创新：①……②……③……」，每条一句话、各自能独立成立，"
+            "写明具体做法和它带来的效果。\n"
+            "这一句允许让该章比其他章多写 60 字，但全文字数上限不变。\n"
+            "其余章节提到创新时用「上述第②处创新」这类回指，不要重复编号，"
+            "也不要只写「具有较强的创新性」。" % slot)
 
 
 def _defense_focus(state: dict) -> str:
@@ -2430,6 +2475,9 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     outline = _build_outline(state)
     state["proposal_outline"] = outline
 
+    # 章节先算出来：创新点要求要指名落在哪一章，而两段写是按 chapters 对半切的
+    chapters = _chapter_list(state)
+
     common = f"""你是资深科创赛事申报书写作专家。
 
 【质量标杆——必须遵守 —— 评审权重按本赛事官方口径】
@@ -2463,6 +2511,7 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
 {_paradigm_ref()}
 {_score_diagnosis_ref()}
 {_scoring_cover_block(state)}
+{_innovation_ask(chapters)}
 注意：
 1. 保留用户原来的核心内容和结构，不要全部推翻重写
 2. 把写得太简略的地方补充完整
@@ -2484,7 +2533,6 @@ def deep_writer_agent(state: CompetitionState) -> CompetitionState:
     # 按当前赛事章节拆成两段写，避免单次输出撑爆 max_tokens 导致后半截被截断
     # 第一百六十七轮提速：前半/后半互相独立（后半 prompt 不引用前半正文），并行写省一次串行等待；
     # 并行失败自动退回串行，不牺牲正确性。
-    chapters = _chapter_list(state)
     if len(chapters) >= 4:
         mid = (len(chapters) + 1) // 2
         try:
@@ -2537,7 +2585,10 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     # 必然突破 1800 上限，然后被迫再花一次压缩调用（实测压缩成本 ≈ 写正文的一半）。
     _chapter_md = _fast_chapter_block(state)
     _n_chapters = max(1, _chapter_md.count("## "))
-    _per_chapter = max(120, 1700 // _n_chapters)
+    # 留 80 字余量给创新点编号句（它要挤进某一章，模型会因此整段省略），
+    _per_chapter = max(120, (1700 - 80) // _n_chapters)
+    _quick_titles = [ln.strip()[3:] for ln in _chapter_md.split("\n")
+                     if ln.strip().startswith("## ")]
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
 
 这一档的定位是「短而实」：篇幅比深度版短，但内容不能薄——每章都要写满具体数字、
@@ -2574,6 +2625,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 4. 必须回应规则解析里的评分点，必须回应同质化分析里的差异点。
 5. 中文标点用全角。
 6. 全文禁止出现任何【】方括号占位符，段落必须完整写完，需要估算的数字直接用「测算值/示例值/预计约 X」写出。
+{_innovation_ask(_quick_titles)}
 {_SELF_TECH_HIGHLIGHTS}
 {_CONCRETE_SPEC}
 {_humanize_spec(state)}

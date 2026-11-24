@@ -126,6 +126,16 @@ class TestPositiveEvidence(unittest.TestCase):
         check = next(c for c in dim["checks"] if c["key"] == "innovation_points")
         self.assertEqual(check["status"], "pass", check)
 
+    def test_inverted_innovation_phrasing_counts(self):
+        """「创新有三：①②③」是倒装语序，也是简洁版在字数压力下最常见的写法。"""
+        text = ("## 三、产品/技术方案\n柜体称重与视觉双校验。创新有三："
+                "①领用即记账，数据直接绑定经费号；②低值耗材细粒度识别，误差≤2%；"
+                "③每日自动对账，月底输出差异清单。")
+        diag = sc.diagnose(_payload(text), "互联网+")
+        dim = next(d for d in diag["dims"] if d["name"] == "项目创新")
+        check = next(c for c in dim["checks"] if c["key"] == "innovation_points")
+        self.assertEqual(check["status"], "pass", check)
+
     def test_named_innovation_counts_as_partial(self):
         """「双校验」这类命名式创新算部分覆盖，但不算集中列出创新点。"""
         diag = sc.diagnose(_payload("## 一、执行摘要\n做称重+视觉双校验的智能盘点柜。"), "互联网+")

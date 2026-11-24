@@ -171,6 +171,23 @@ class TestPendingSection(unittest.TestCase):
         src = "## 一、项目背景\n## 二、风险分析与应对\n## 三、佐证材料清单\n"
         self.assertEqual(ca._strip_pending_sections(src), src)
 
+    def test_dangling_reference_removed(self):
+        """章节删了，正文里指向它的引用也得删——留着就是指向不存在的内容。
+
+        实测（深度版）：正文写「替换口径见待替换数据清单」，而那一节已被清理掉。
+        """
+        src = ("## 十一、发展规划\n阶段目标以季度复盘为准，替换口径见待替换数据清单。\n\n"
+               "## 待替换数据清单\n- 95% → 替换为实测\n")
+        out = ca._strip_pending_sections(src)
+        self.assertNotIn("清单", out)
+        self.assertIn("阶段目标以季度复盘为准。", out)
+
+    def test_parenthesized_reference_removed(self):
+        out = ca._strip_pending_sections("## 一、摘要\n按季度复盘调整（详见待补充清单）。")
+        self.assertNotIn("清单", out)
+        self.assertNotIn("（）", out)
+        self.assertIn("按季度复盘调整。", out)
+
 
 class TestQualityGateMode(unittest.TestCase):
     """简洁版不能被深度版口径判不合格：否则每次生成都刷三条固定噪声。"""

@@ -3820,6 +3820,36 @@ def _strip_identifying_info(obj):
     return obj
 
 
+def _auto_patch_innovation(result, data):
+    """创新点兜底：诊断发现「创新点可数」缺失时，定向补一次。
+
+    线上 60% 的历史记录缺这一项，而创新类维度占 25~35 分。prompt 里已经写明
+    「在技术方案章用一句话编号列出」，但模型在 1800 字配额压力下经常把这一句省掉
+    （实测同题两次：一次写了「创新有三：①②③」，一次完全没写）。
+    prompt 属于概率约束，这里做确定性兜底——补在篇幅闸门之前，超长会被闸门压回去。
+
+    只补表达类缺口：事实类（专利/查新/实测）在 scorecard_patch 里已被排除，
+    不会代写。分数没涨就回退，等于没改。
+    """
+    from backend.scorecard import diagnose
+    from backend.scorecard_patch import innovation_missing, patch_until_clean
+    mode = "deep" if str(data.get("mode") or "fast").lower() == "deep" else "fast"
+    comp = data.get("competition_name", "")
+    track = (data.get("track") or "").strip() or None
+    diag = diagnose(result, comp, track, mode)
+    if not diag.get("available"):
+        return ""
+    if not innovation_missing(diag):
+        return ""
+    rep = patch_until_clean(result, comp, track, mode, limit=1,
+                            force_labels=("创新点可数",))
+    if (rep.get("after") or 0) <= (rep.get("before") or 0):
+        return ""
+    result["proposal"] = rep["proposal"]
+    return "%s -> %s（%s）" % (rep.get("before"), rep.get("after"),
+                              (rep.get("applied") or [{}])[0].get("chapter", ""))
+
+
 def _run_generation(data):
     """执行生成流水线（加锁、存历史），返回结果 data dict；出错抛异常"""
     with lock:
@@ -3983,6 +4013,14 @@ def _run_generation(data):
             _new_hid = save_history_item(history_item)
         except Exception:
             _new_hid = None
+
+    # 创新点兜底补写：必须在篇幅闸门之前——补进来的字若超长，会被闸门一起压回去。
+    try:
+        _innov = _auto_patch_innovation(result, data)
+        if _innov:
+            print(f"🧩 创新点兜底补写：{_innov}")
+    except Exception as _e:
+        print(f"[innovation-autopatch] 跳过，保留原文：{_e}")
 
     # 最终篇幅闸门（简洁版）：writer 出口的压缩管不到 revise 节点——
     # targeted_revise_agent 会用 LLM 输出整篇替换 proposal，字数会回弹。
