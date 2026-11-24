@@ -62,6 +62,7 @@ competition-agent
 │  └─ .data/                 运行产物（数据库、上传、生成物，不入库）
 ├─ frontend/                 前端源码（index.html + static/）
 ├─ docs/                     设计文档与交付样例（assets/）
+├─ benchmarks/               评测基准（三组对照 + 盲评包，说明见其 README）
 ├─ scripts/                  索引构建等维护脚本
 ├─ tests/                    自动化测试与手工探针
 ├─ app.py / run.py / wsgi.py 入口（根目录同名模块为兼容转发壳）
@@ -88,9 +89,12 @@ gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 600
 
 ```bash
 python -m unittest tests.test_repository_layout   # 目录布局与静态资源可访问
-python -m unittest tests.test_backend             # 纯函数单元测试（17 项）
+python -m unittest tests.test_backend             # 纯函数单元测试（33 项）
+python -m unittest tests.test_usage_tracking      # 用量归属与单次成本口径（9 项）
 python tests/probes/_check_startup.py             # 启动块位置防回归
 ```
+
+评测基准（三组对照：通用模型裸写 / 简洁版 / 深度版）见 [`benchmarks/README.md`](benchmarks/README.md)。
 
 ## 文档
 

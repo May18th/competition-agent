@@ -24,6 +24,7 @@ _theme_demo/
 *.bak
 *.bak.*
 运行日志.md
+benchmarks/runs/
 *.pptx
 *.orig
 *.rej

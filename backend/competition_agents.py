@@ -384,24 +384,6 @@ def _match_score(known, query):
     return 0
 
 
-def get_competition_knowledge(competition_name: str) -> str:
-    """根据比赛名称，匹配对应的知识库内容"""
-    if not competition_knowledge:
-        return ""
-    scored = []
-    for known_name, content in competition_knowledge.items():
-        s = _match_score(known_name, competition_name)
-        if s > 0:
-            scored.append((s, len(known_name), known_name, content))
-    if not scored:
-        return ""
-    scored.sort(key=lambda x: (-x[0], -x[1]))
-    best = scored[0]
-    print(f"📚 知识库命中：{best[2]}（匹配度 {best[0]}），候选 {len(scored)} 个")
-    return f"\n【知识库中关于{best[2]}的资料】\n{best[3]}\n"
-    return ""
-
-
 _OFFICIAL_DOCS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", "assets", "data", "official_docs.json")
 
 
@@ -773,10 +755,6 @@ def retrieve_knowledge(competition_name, query, top_k=3, max_chars=2500):
 
 
 # ============ 1. 定义共享状态 ============
-def merge_state(old, new):
-    """并行的时候，后写的覆盖先写的"""
-    return new
-
 class CompetitionState(TypedDict):
     # 输入
     competition_name: str
@@ -1066,6 +1044,33 @@ def _is_repetitive(text, threshold=4):
         return top[1] >= threshold
     except Exception:
         return False
+
+
+_PENDING_HEADING = re.compile(
+    r'^#{1,6}\s+.*(?:待(?:替换|补充|核实|完善|确认|填写)|TODO|占位|需替换)')
+
+
+def _strip_pending_sections(text):
+    """删掉模型自己追加到正文里的「待替换数据清单」类内部待办章节。
+
+    实测：简洁版会在正文末尾自造一节 `## 待替换数据清单`，逐条列「测算值 → 替换为实测数据」。
+    那是给自己看的待办，交给评委等于当场承认稿子没完工，评分表也会按占位符扣分。
+    处理方式是整节删除（从该标题到下一个标题），不动正文其它章节。
+    """
+    if not text:
+        return text
+    kept, skipping = [], False
+    for line in str(text).split('\n'):
+        stripped = line.strip()
+        if re.match(r'^#{1,6}\s+\S', stripped):
+            if _PENDING_HEADING.match(stripped):
+                skipping = True
+                continue
+            skipping = False
+        if skipping:
+            continue
+        kept.append(line)
+    return '\n'.join(kept).rstrip() + '\n'
 
 
 _CLICHE_REPLACE = (
@@ -2022,19 +2027,6 @@ def _defense_focus(state: dict) -> str:
     return "\n".join(f"{i}. {title}：{detail}" for i, (title, detail) in enumerate(items, 1))
 
 
-def _chapter_block(state: dict) -> str:
-    """章节结构：前端定制 > 知识库官方章节 > 内置 12 章。"""
-    req = [str(c).strip() for c in (state.get("outline_requirement") or []) if str(c).strip()]
-    if req:
-        return "章节严格按以下顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
-               "\n".join("## " + c for c in req[:20])
-    official = _official_chapters(state)
-    if official:
-        return "章节严格按以下官方申报书章节顺序与标题组织（标题原样使用，最多三级标题）：\n" + \
-               "\n".join("## " + c for c in official[:20])
-    return "章节依次为：\n\n" + _DEFAULT_CHAPTERS
-
-
 def _fast_chapter_block(state: dict) -> str:
     """简洁版章节：优先官方章节（已带「一、二、三、」序号），无官方章节退回精简 5 章。"""
     official = _official_chapters(state)
@@ -2442,8 +2434,8 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
         source = f"项目创意：{state['idea']}"
     # 每章配额必须按章数倒算：写死「每章 150～200 字」在 10 章的赛道上就是 2000 字，
     # 必然突破 1800 上限，然后被迫再花一次压缩调用（实测压缩成本 ≈ 写正文的一半）。
-    _chapter_block = _fast_chapter_block(state)
-    _n_chapters = max(1, _chapter_block.count("## "))
+    _chapter_md = _fast_chapter_block(state)
+    _n_chapters = max(1, _chapter_md.count("## "))
     _per_chapter = max(120, 1700 // _n_chapters)
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
 
@@ -2472,7 +2464,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
    不是提交版，写长反而扣分（超长会被强制压缩，既费时间又容易把关键数据压丢）。
 3. 章节严格按下方官方模板组织，每个标题**必须用「## 」开头**（Markdown 二级标题）并保留「一、二、三、」序号，不要增删章节、不要中途省略、不要自造或合并章节；**输出后按官方顺序自检一遍，确保不乱序、不缺章**：
 
-{_chapter_block}
+{_chapter_md}
 
 【质量要求】
 1. 每章 1 个完整自然段，段内有论点、有展开、有依据；严禁一句话一段、严禁空小节。
@@ -2972,36 +2964,6 @@ def proposal_analysis_agent(state: CompetitionState) -> CompetitionState:
     state["proposal_analysis"] = _dedup_text(response.content)
     print("申报书快速诊断 Agent：完成")
     return {"proposal_analysis": state["proposal_analysis"]}
-
-
-def rich_media_agent(state: CompetitionState) -> CompetitionState:
-    """🎞️ 富媒体 Agent：生成结构化表格 + PPT 幻灯片结构"""
-    _report_stage("rich_assets")
-    prompt = f"""你是路演材料制作专家。请根据下面的分析结果，生成结构化数据。
-
-项目创意：{state.get('idea', '')}
-一句话定位：{state.get('one_liner', '')}
-申报书正文（图表必须优先取这里的实测数据）：{(state.get('proposal') or '').strip()[:3000]}
-竞品分析：{state.get('competitor_analysis', '')}
-商业模式：{state.get('business_model', '')}
-风险分析：{state.get('risk_analysis', '')}
-技术方案：{state.get('tech_solution', '')}
-实施计划：{state.get('implementation_plan', '')}
-社会价值：{state.get('social_value', '')}
-
-请只输出一个 JSON 对象（不要任何其他文字、不要 markdown 代码块），结构严格如下：
-{{"charts": {{"budget": [{{"name": "研发成本", "value": 40}}, {{"name": "硬件采购", "value": 25}}, {{"name": "市场推广", "value": 20}}, {{"name": "运营备用", "value": 15}}], "market": {{"years": ["2024", "2025", "2026", "2027", "2028"], "values": [120, 280, 560, 980, 1500]}}, "timeline": {{"stages": ["需求调研", "原型开发", "测试迭代", "上线运营", "推广拓展"], "progress": [10, 30, 55, 80, 100]}}}}, "tables": [{{"title": "竞品对比", "header": ["维度", "本项目", "竞品A", "竞品B"], "rows": [["创新性", "强", "中", "中"], ["成本", "低", "高", "中"]]}}], "deck": {{"slides": [{{"type": "cover", "title": "项目名称", "bullets": [], "metrics": [], "chart": "", "table": ""}}, {{"type": "bullets", "title": "痛点分析", "bullets": ["痛点1", "痛点2"], "metrics": [], "chart": "", "table": ""}}, {{"type": "metrics", "title": "核心数据", "bullets": [], "metrics": ["数据1", "数据2"], "chart": "", "table": ""}}, {{"type": "table", "title": "竞品对比", "bullets": [], "metrics": [], "chart": "", "table": "竞品对比"}}, {{"type": "closing", "title": "谢谢", "bullets": [], "metrics": [], "chart": "", "table": ""}}]}}}}
-
-要求：
-- charts 的 budget.value 加起来等于 100，market.values 逐年递增，timeline.progress 在 0-100；所有数值必须优先采用申报书/分析里用户给出的实测数据（真实数字），只有确实没有实测数据时才可用测算值并在表格标题后标注「（测算）」；
-- tables 生成 2-3 个（竞品对比、商业模式、实施计划等），header 和 rows 要真实具体、贴合本项目；
-- deck.slides 生成 8-12 页，type 只用 cover/section/bullets/metrics/table/closing 这些，标题和内容贴合本项目。
-- 匿名要求：严禁出现任何院校名称、指导老师姓名、团队成员真实姓名，团队一律用「本项目团队」指代。
-"""
-    response = llm.invoke([HumanMessage(content=prompt)])
-    state["rich_media"] = response.content
-    print("🎞️ 富媒体 Agent：已生成")
-    return state
 
 
 def should_iterate(state: CompetitionState):

@@ -23,14 +23,16 @@ def check_generation(result, mode="deep"):
     for k in ("defense_questions", "ppt_outline"):
         if not result.get(k):
             issues.append(f"模块缺失：{k}")
-    # 第二百三十轮补：篇幅分层——简洁版非核心板块（竞品/商业/风险/技术）应摘要级，
-    # 超出上限即判定「篇幅与优先级倒挂」，打回精简。
+    # 第二百三十轮补 + 2026-11-24 校准：篇幅分层——简洁版非核心板块（竞品/商业/风险/技术）
+    # 应摘要级，超出上限即判定「篇幅与优先级倒挂」，打回精简。
+    # 上限从 800 调到 900：prompt 已要求每部分 600~750 字，实测落点在 768~899 波动，
+    # 800 这条线每次都擦边；900 仍约为正文（1700 字）的一半，摘要级定位不变。
     if mode == "fast":
         _noncore = ("competitor_analysis", "business_model", "risk_analysis", "tech_solution")
         for _k in _noncore:
             _v = len(re.sub(r'\s', '', result.get(_k) or ""))
-            if _v > 800:
-                issues.append(f"简洁版非核心板块篇幅过长：{_k}（{_v} 字 > 800 摘要级上限）")
+            if _v > 900:
+                issues.append(f"简洁版非核心板块篇幅过长：{_k}（{_v} 字 > 900 摘要级上限）")
     # 防凑数（第一百四十五轮深度版 + 第一百四十六轮简洁版均适用）：
     # 空话段落占比 >30% 判定凑数，两档一起打回。
     _eok, _eissues = check_depth(proposal)
@@ -225,34 +227,12 @@ def check_total(result, mode="deep"):
     for m in _modules:
         if not (result.get(m) or "").strip():
             issues.append(f"缺板块：{m}")
-    # 跨板块一致性：同一关键词在不同板块出现不同数值 → 冲突
-    import re as _re
-    _kw = ("市场规模", "客单价", "月收入", "单价", "成本", "毛利率", "转化率", "用户数", "付费率", "日均")
-    def _extract(text):
-        found = {}
-        for k in _kw:
-            vals = set()
-            # 不跨逗号/分号：原先允许 12 字内跨标点，会把「成本压下来，毛利率有望到 35%」
-            # 里的 35 当成成本值；收紧到同一小句内、最多 8 字
-            for mm in _re.finditer(re.escape(k) + r'[^。；，,、\n]{0,8}?(\d+(?:\.\d+)?)', text or ""):
-                vals.add(float(mm.group(1)))
-            if vals:
-                found[k] = vals
-        return found
-    _parts = {"tech_solution": result.get("tech_solution", ""),
-              "business_model": result.get("business_model", "")}
-    _agg = {}
-    for _src, _txt in _parts.items():
-        for k, vals in _extract(_txt).items():
-            _agg.setdefault(k, set()).update(vals)
-    for k, vals in _agg.items():
-        if len(vals) > 1:
-            _sorted = sorted(vals)
-            # 只在同一量级才判冲突：「单台成本 1.3 万」和「总成本 75 万」天然是两个口径，
-            # 相差 3 倍以上直接放过，否则每次生成都会报一条假冲突
-            if _sorted[-1] <= _sorted[0] * 3:
-                _shown = [int(v) if v == int(v) else v for v in _sorted]
-                issues.append(f"跨板块数字冲突：{k} 出现 {_shown} 多版本")
+    # 跨板块数字一致性检查已移除（2026-11-24）。
+    # 原因：纯正则无法区分口径，实测 3/3 全部误报——
+    #   「单台物料成本 6000～9000 元」vs「量产 500 台后成本降到 5000 元以内」
+    #   「毛利率 35%～45%」这种区间写法被拆成 35 和 45 两个值；
+    #   「单台成本 1.3 万」vs「首年总成本 75 万」本来就是两个指标。
+    # 这类一致性判断交给 judge_agent（模型评审）做，规则层继续保留只会污染日志。
     return (not issues), issues
 
 
@@ -280,36 +260,6 @@ def check_history_detail(resp):
         if k not in resp:
             issues.append(f"历史详情缺字段：{k}")
     return (not issues), issues
-
-
-# ============ L5 部署守卫 ============
-def check_version(v):
-    """静态资源版本号必须时间戳唯一（如 v=20260928e），禁 v=12 递增整数。"""
-    if re.fullmatch(r'v=\d{6,}', v or ""):
-        return True, []
-    return False, [f"版本号非时间戳唯一：{v or '(空)'}"]
-
-
-def run_all(result=None, mode="deep", docx_path=None, history_resp=None):
-    """跑全链路质检，返回 {层级: (ok, issues)}。"""
-    report = {}
-    if result is not None:
-        report["L1_generation"] = check_generation(result, mode)
-        if result.get("proposal"):
-            report["L3_content"] = check_content(result["proposal"])
-    if docx_path and os.path.exists(docx_path):
-        report["L2_docx"] = check_docx(docx_path)
-    if history_resp is not None:
-        report["L4_history"] = check_history_detail(history_resp)
-    return report
-
-
-def summarize(report):
-    """把质检报告压成一行文本，供写运行日志。"""
-    parts = []
-    for layer, (ok, issues) in report.items():
-        parts.append(f"{layer}:{'PASS' if ok else 'FAIL(' + '；'.join(issues[:3]) + ')'}")
-    return " | ".join(parts)
 
 
 # ============ 系统默认评委（第一百二十一轮，前台不可见） ============

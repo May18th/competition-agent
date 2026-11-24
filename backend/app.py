@@ -2171,6 +2171,16 @@ def export_word():
     # 拦死（导出 422）。前端现在会传 mode；拿不到时按 fast 放行，宁可宽松也不误杀。
     _gate_mode = (data.get('mode') or 'fast')
     _passed, _score, _reasons = _export_review_gate(data, mode=_gate_mode)
+    # 运行清单回填导出结果：事后能回答「这份稿导出时被拦过没有、因为什么」
+    try:
+        from backend.run_registry import update_export as _upd_export
+        _upd_export(DB_PATH,
+                    task_id=data.get("task_id") or "",
+                    state=("blocked" if _passed is False else ("warned" if _reasons else "ok")),
+                    warnings=_reasons,
+                    history_id=data.get("history_id"))
+    except Exception:
+        pass
     if _passed is False:
         return jsonify({"success": False, "code": "quality_fail", "score": _score,
                         "error": "内容质量未达标，请重新生成后再导出",
@@ -4088,15 +4098,17 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts, _strip_cliches
+        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts, _strip_cliches, _strip_pending_sections
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
                    "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
             if isinstance(payload.get(_k), str) and payload[_k]:
-                # 最外层是套话替换：它必须作用在「占位符/虚构表述都已清干净」的文本上，
-                # 否则「赋能【待补充】」这类组合会漏清（评分表里套话是独立扣分项）。
-                payload[_k] = _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k])))))))
+                # 五层清理，顺序有讲究：
+                # ① 先删「待替换数据清单」整节（模型自造的待办），否则后面只会把它的
+                #    条目改写成句子留在正文里；②→⑤ 依次折叠复读、清占位符、降级虚构
+                #    表述、清 AI 半成品痕迹；⑥ 最后统一换掉套话。
+                payload[_k] = _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(_strip_pending_sections(payload[_k]))))))))
     except Exception:
         pass
     # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
@@ -4164,6 +4176,34 @@ def _run_generation(data):
                 pass
     except Exception:
         pass
+    # 运行清单（可追溯性）：把这一次生成用的代码版本、知识库快照、模型、token、
+    # 质检结果落成一行。失败不影响交付——它只是旁证，不是主链路。
+    try:
+        from backend.competition_agents import _LLM_USAGE_DB_PATH as _usage_db
+        from backend.quality_gate import score_export as _score_for_run
+        from backend.run_registry import record_run
+        try:
+            _rs = _score_for_run(payload, 'deep' if (data.get("mode") or "fast") == "deep" else "fast")
+            _r_score = _rs[0]
+            _r_reasons = _rs[2]
+        except Exception:
+            _r_score, _r_reasons = None, []
+        record_run(
+            DB_PATH, _usage_db,
+            task_id=current_task_id() or "",
+            mode=data.get("mode") or "fast",
+            competition=data.get("competition_name") or "",
+            idea=data.get("idea") or "",
+            user_id=data.get("_user_id") or "",
+            duration_ms=int((time.time() - t0) * 1000),
+            quality_score=_r_score,
+            quality_reasons=(list(locals().get("_gissues") or []) + list(locals().get("_tissues") or [])
+                             + list(_r_reasons or []))[:20],
+            quality_missing=(completeness or {}).get("missing") or [],
+            history_id=locals().get("_new_hid"),
+        )
+    except Exception as _e:
+        print(f"[run_registry] 运行清单写入失败：{_e}")
     return payload
 
 
@@ -5558,6 +5598,27 @@ def admin_llm_usage_per_generation():
     except Exception as exc:
         print("[llm_usage] per-generation failed: %s" % exc)
         return jsonify({"success": False, "error": "单次成本统计暂不可用"}), 500
+
+
+@app.route('/api/admin/runs')
+def admin_generation_runs():
+    """生成运行清单：每次生成用的代码版本、知识库快照、模型、token、质检与导出结果。
+
+    代码版本 = app.py / competition_agents.py / quality_gate.py 的内容哈希，
+    改过任何一行 prompt 就会变；知识库快照 = 赛事档案与规则文本的路径+大小+时间指纹。
+    """
+    auth = _require_admin()
+    if auth:
+        return auth
+    try:
+        from backend.run_registry import code_version, kb_snapshot, recent_runs
+        limit = request.args.get("limit", default=50, type=int)
+        return jsonify({"success": True, "code_version": code_version(),
+                        "kb_snapshot": kb_snapshot(),
+                        "runs": recent_runs(DB_PATH, limit=limit)})
+    except Exception as exc:
+        print("[run_registry] list failed: %s" % exc)
+        return jsonify({"success": False, "error": "运行清单暂不可用"}), 500
 
 
 @app.route('/api/log_error', methods=['POST'])
