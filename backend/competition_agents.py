@@ -6,10 +6,12 @@ from typing import TypedDict, Literal, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_deepseek import ChatDeepSeek
 from langchain_core.messages import HumanMessage
-from backend.stage_reporter import report_stage as _report_stage, set_partial_field, set_stage_meta
+from backend.stage_reporter import (report_stage as _report_stage, set_partial_field,
+                                    set_stage_meta, set_current_task)
 
 
 # ============ 配置 ============
+import functools
 import os
 import re
 import math
@@ -118,7 +120,12 @@ _llm_fail_count = 0            # 第二百一十一轮 E：主通道连续失败
 _llm_fail_lock = threading.Lock()
 
 
-def _llm_invoke_with_quota(*args, **kwargs):
+def _llm_invoke_with_quota(original_invoke, *args, **kwargs):
+    """配额闸门 + 失败降级 + 用量记账的统一包装。
+
+    original_invoke 由 _wrap_llm 按实例注入（llm 与 _score_llm 各包一次），
+    不能写死成全局的 llm.invoke——否则评分实例的调用会被换成正文实例的温度。
+    """
     global _llm_fail_count
     # ⚠️ 读-改-写必须加锁：16 路生成并发时无锁的「load→+1→save」会互相覆盖
     # 丢计数（配额被低估）。锁只包文件操作，不包 LLM 调用本身，不串行化。
@@ -129,7 +136,8 @@ def _llm_invoke_with_quota(*args, **kwargs):
     # 第二百一十一轮 E：主通道连续失败 ≥3 次且已配备用 → 本次改用备用通道兜底
     with _llm_fail_lock:
         _use_backup = (_backup_llm is not None) and (_llm_fail_count >= 3)
-    _target = _backup_llm if _use_backup else _llm_invoke_original
+    # 取备用实例的绑定 invoke：Runnable 实例本身不可调用，直接传实例会报 not callable
+    _target = _backup_llm.invoke if _use_backup else original_invoke
     try:
         _started = time.monotonic()
         with _LLM_GATE:
@@ -149,12 +157,12 @@ def _llm_invoke_with_quota(*args, **kwargs):
     return result
 
 
-def _llm_stream_with_usage(*args, **kwargs):
+def _llm_stream_with_usage(original_stream, *args, **kwargs):
     """Record the cumulative token usage exposed by the final streamed chunk."""
     started = time.monotonic()
     usage_chunk = None
     try:
-        for chunk in _llm_stream_original(*args, **kwargs):
+        for chunk in original_stream(*args, **kwargs):
             usage = getattr(chunk, "usage_metadata", None) or {}
             response_meta = getattr(chunk, "response_metadata", None) or {}
             token_usage = response_meta.get("token_usage") or response_meta.get("usage") or {}
@@ -165,7 +173,17 @@ def _llm_stream_with_usage(*args, **kwargs):
     finally:
         if usage_chunk is not None:
             _record_llm_usage(usage_chunk, int((time.monotonic() - started) * 1000),
-                              _llm_stream_original)
+                              original_stream)
+
+
+def _wrap_llm(instance):
+    """给模型实例挂上计量/配额包装。所有实例都要挂：
+    漏掉一个，走它的那个节点就完全不进用量表（实测 judge 用的是 _score_llm）。"""
+    object.__setattr__(instance, "invoke",
+                       functools.partial(_llm_invoke_with_quota, instance.invoke))
+    object.__setattr__(instance, "stream",
+                       functools.partial(_llm_stream_with_usage, instance.stream))
+    return instance
 
 
 def _record_llm_usage(result, duration_ms=0, target=None):
@@ -199,6 +217,18 @@ def _record_llm_usage(result, duration_ms=0, target=None):
                     mode = str(payload.get("mode") or "")
         except Exception:
             pass
+        # 生成跑在后台 worker 线程里，没有请求上下文：上面这一段全部取空，
+        # 正是历史上 usage 表 task_id 全空、user_key 全是 anonymous、mode 全空的原因。
+        # 用 worker 线程写入的线程本地上下文兜底补齐（请求内调用时仍以请求为准）。
+        if not (task_id and user_id):
+            try:
+                from backend import stage_reporter as _sr
+                task_id = task_id or str(_sr.current_task_id() or "")
+                user_id = user_id or str(_sr.current_user_id() or "")
+                mode = mode or str(_sr.current_mode() or "")
+                stage = stage or str(_sr.current_stage() or "")
+            except Exception:
+                pass
         model_obj = getattr(target, "__self__", None) if target else None
         model_name = getattr(model_obj, "model", "") or getattr(model_obj, "model_name", "")
         from backend.llm_usage_store import record_usage
@@ -211,8 +241,11 @@ def _record_llm_usage(result, duration_ms=0, target=None):
 
 
 # ChatDeepSeek 是 pydantic 模型，需用 object.__setattr__ 绕过字段校验来 monkey-patch
-object.__setattr__(llm, "invoke", _llm_invoke_with_quota)
-object.__setattr__(llm, "stream", _llm_stream_with_usage)
+_wrap_llm(llm)
+# 评分实例（judge / expert_review / idea_evaluator 用它）必须一并挂：
+# 只包 llm 的话，每轮生成的评委打分环节完全不进用量表。
+if _score_llm is not llm:
+    _wrap_llm(_score_llm)
 
 # 第二百一十一轮 E：备用通道（火山引擎 Claude）。配置了 CLAUDE_API_KEY 才启用；
 # DeepSeek 连续失败 ≥3 次自动切到这里降档兜底，仍失败才向用户报错。
@@ -795,6 +828,13 @@ class CompetitionState(TypedDict):
     # 由 app.py 的 _run_generation() 按 mode 写入；缺省按 deep 处理（宁详勿略）。
     tier: str
 
+    # 任务归属（不参与写作）：并行节点被 LangGraph 分发到线程池执行时，
+    # 子线程看不到 worker 主线程的线程本地上下文，靠这三个字段把 task_id / 用户 / 版本
+    # 带进节点，LLM 用量才能正确归户（否则单次生成成本被系统性低估）。
+    _task_id: str
+    _user_id: str
+    _mode: str
+
 
 # ============ 内容层：输出规格约束（统一提升各 Agent 输出质量）============
 
@@ -1028,6 +1068,43 @@ def _is_repetitive(text, threshold=4):
         return False
 
 
+_CLICHE_REPLACE = (
+    # 先长后短：否则「形成闭环」会先被拆成「形成完整流程」，留下更别扭的组合
+    ("形成闭环", "形成完整流程"),
+    ("商业闭环", "商业流程"),
+    ("业务闭环", "业务流程"),
+    ("产业闭环", "产业配套"),
+    ("闭环", "完整流程"),
+    ("赋能", "支撑"),
+    ("抓手", "切入点"),
+    ("进一步提升", "提升"),
+    ("进一步完善", "完善"),
+    ("不断优化", "持续优化"),
+    ("不断完善", "持续完善"),
+    ("积极探索", "探索"),
+    ("高度重视", "重视"),
+    ("显著提高", "提高"),
+    ("扎实推进", "稳步推进"),
+    ("深入贯彻", "落实"),
+)
+
+
+def _strip_cliches(text):
+    """清掉评分表里的套话词（赋能/闭环/抓手…）。
+
+    这些词在前端 prompt 里已经明令禁止，但模型仍会写；导出评分时它们每条都算
+    扣分项（「套话：闭环」是线上出现频率最高的警告）。与其导出时警告用户自己改，
+    不如生成收尾就换成自然表述——替换是确定性的，不额外花钱、不改语义。
+    """
+    if not text:
+        return text
+    t = str(text)
+    for bad, good in _CLICHE_REPLACE:
+        if bad in t:
+            t = t.replace(bad, good)
+    return t
+
+
 def _dedupe_consecutive(text):
     """确定性折叠连续重复的句子（模型复读时的终极兜底，不依赖模型配合）。"""
     # 注意：不能把句末标点后的空白（换行）吃掉，否则会把「## 痛点分析」这类
@@ -1091,14 +1168,28 @@ def _strip_ai_artifacts(text):
     t = str(text)
     # ① （测算值，待实测替换）/（示例值，需替换）→ （示例值）
     t = re.sub(r'[（(]\s*[^）)]*(?:待实测替换|待替换|需替换|需实测)[^）)]*[）)]', '（示例值）', t)
-    # ② （某老师）→ 删；裸「某老师」→ 指导老师
+    # ② 「指导教师（某老师）」这类脱敏残留 → 「指导人员」；孤立的「（某老师）」直接删。
+    #    只删括号会留下「项目指导教师路线与答辩」，正好撞上评分器的双盲正则
+    #    （指导教师 + 后 2~4 汉字 = 姓名泄露），清理器反而把稿子判成不合格。
+    t = re.sub(r'(指导老师|指导教师|导师)\s*[（(]\s*某老师\s*[）)]', '指导人员', t)
     t = re.sub(r'[（(]某老师[）)]', '', t)
-    t = re.sub(r'某老师', '指导老师', t)
+    t = re.sub(r'某老师', '指导人员', t)
     # ③ 裸「待补/待补充/待实测」括号 → 删除
     t = re.sub(r'[（(]待(?:补|补充|实测)[）)]', '', t)
     t = re.sub(r'（占位）|\(占位\)', '', t)
     # ④ 测算值（无口径）→ 示例值
     t = re.sub(r'测算值[（(]无口径[）)]', '示例值', t)
+    # ⑤ 半成品引用 → 丢掉不可核实的那一段。
+    # 模型常写「（行业公开数据，2023，具体出处待补充核实）」，评委看到「待补充」
+    # 等于承认没查证，评分表里直接算占位符打回。按逗号分段丢掉含待办字样的部分，
+    # 保留能核实的信息（「行业公开数据，2023」）；全段不可核实就整块删掉。
+    def _fix_pending_cite(m):
+        inner = m.group(1)
+        parts = [p.strip() for p in re.split(r'[，,、;；]', inner) if p.strip()]
+        kept = [p for p in parts if not re.search(r'待补充|待核实|待确认|待落实|待查', p)]
+        return '（' + '，'.join(kept) + '）' if kept else ''
+
+    t = re.sub(r'[（(]([^）)]*?(?:待补充|待核实|待确认|待落实)[^）)]*?)[）)]', _fix_pending_cite, t)
     return t
 
 
@@ -2163,6 +2254,8 @@ def _fill_missing_chapters(proposal, chapters):
             missing.append(str(c).strip())
     if not missing:
         return proposal
+    # 这是一次独立的大额模型调用（补整章），单独归阶段，别算到上一步头上
+    _report_stage("fill_missing")
     miss_block = "\n".join("## " + c for c in missing)
     prompt = (
         "下面这份申报书漏了这几个章节，请补齐。\n\n"
@@ -2917,21 +3010,39 @@ def should_iterate_fast(state: CompetitionState):
 
 
 # ============ 4. 构建工作流 ============
+def _bind_task_ctx(agent_fn):
+    """给节点补回任务上下文（LangGraph 并发 superstep 会丢线程本地状态）。
+
+    同一 superstep 的多个节点由线程池并发执行，池线程看不到 worker 主线程写入的
+    thread-local task_id / user_id，节点内的 LLM 调用就记不到任务与用户，
+    单次生成成本会被系统性低估。节点入口从 state 取回字段重新绑定，不动节点本体。
+    """
+    @functools.wraps(agent_fn)
+    def wrapper(state, *args, **kwargs):
+        if isinstance(state, dict):
+            tid = state.get("_task_id")
+            if tid:
+                set_current_task(tid, state.get("_user_id") or "", state.get("_mode") or "")
+        return agent_fn(state, *args, **kwargs)
+
+    return wrapper
+
+
 # 简洁版默认不做迭代（保持快速出稿）；用户传 iterate=true 时，低分自动返工一轮
 workflow = StateGraph(CompetitionState)
 
-workflow.add_node("rule_parser", rule_parser_agent)
-workflow.add_node("similarity_checker", similarity_checker_agent)
-workflow.add_node("idea_evaluator", idea_evaluator)
-workflow.add_node("one_liner", one_liner_agent)
-workflow.add_node("analysis", comprehensive_analysis_agent)
-workflow.add_node("writer", proposal_writer_agent)
-workflow.add_node("judge", judge_agent)
-workflow.add_node("proposal_analysis", proposal_analysis_agent)
-workflow.add_node("defense", defense_questions_agent)
-workflow.add_node("ppt", ppt_outline_agent)
-workflow.add_node("speech", speech_agent)
-workflow.add_node("revise", targeted_revise_agent)
+workflow.add_node("rule_parser", _bind_task_ctx(rule_parser_agent))
+workflow.add_node("similarity_checker", _bind_task_ctx(similarity_checker_agent))
+workflow.add_node("idea_evaluator", _bind_task_ctx(idea_evaluator))
+workflow.add_node("one_liner", _bind_task_ctx(one_liner_agent))
+workflow.add_node("analysis", _bind_task_ctx(comprehensive_analysis_agent))
+workflow.add_node("writer", _bind_task_ctx(proposal_writer_agent))
+workflow.add_node("judge", _bind_task_ctx(judge_agent))
+workflow.add_node("proposal_analysis", _bind_task_ctx(proposal_analysis_agent))
+workflow.add_node("defense", _bind_task_ctx(defense_questions_agent))
+workflow.add_node("ppt", _bind_task_ctx(ppt_outline_agent))
+workflow.add_node("speech", _bind_task_ctx(speech_agent))
+workflow.add_node("revise", _bind_task_ctx(targeted_revise_agent))
 
 workflow.add_edge(START, "rule_parser")
 workflow.add_edge(START, "similarity_checker")
@@ -2956,25 +3067,25 @@ fast_app = workflow.compile()
 
 # 建深度版工作流：四个分析Agent分开跑
 deep_workflow = StateGraph(CompetitionState)
-deep_workflow.add_node("rule_parser", rule_parser_agent)
-deep_workflow.add_node("similarity_checker", similarity_checker_agent)
-deep_workflow.add_node("idea_evaluator", idea_evaluator)
-deep_workflow.add_node("one_liner", one_liner_agent)
-deep_workflow.add_node("competitor", deep_competitor_agent)
-deep_workflow.add_node("business", deep_business_agent)
-deep_workflow.add_node("risk", deep_risk_agent)
-deep_workflow.add_node("tech", deep_tech_agent)
-deep_workflow.add_node("revise", targeted_revise_agent)
-deep_workflow.add_node("plan", plan_agent)
-deep_workflow.add_node("social", social_value_agent)
-deep_workflow.add_node("summary", summary_agent)
-deep_workflow.add_node("writer", deep_writer_agent)
-deep_workflow.add_node("judge", judge_agent)
-deep_workflow.add_node("expert_review", expert_review_agent)
-deep_workflow.add_node("proposal_analysis", proposal_analysis_agent)
-deep_workflow.add_node("defense", defense_questions_agent)
-deep_workflow.add_node("ppt", ppt_outline_agent)
-deep_workflow.add_node("speech", speech_agent)
+deep_workflow.add_node("rule_parser", _bind_task_ctx(rule_parser_agent))
+deep_workflow.add_node("similarity_checker", _bind_task_ctx(similarity_checker_agent))
+deep_workflow.add_node("idea_evaluator", _bind_task_ctx(idea_evaluator))
+deep_workflow.add_node("one_liner", _bind_task_ctx(one_liner_agent))
+deep_workflow.add_node("competitor", _bind_task_ctx(deep_competitor_agent))
+deep_workflow.add_node("business", _bind_task_ctx(deep_business_agent))
+deep_workflow.add_node("risk", _bind_task_ctx(deep_risk_agent))
+deep_workflow.add_node("tech", _bind_task_ctx(deep_tech_agent))
+deep_workflow.add_node("revise", _bind_task_ctx(targeted_revise_agent))
+deep_workflow.add_node("plan", _bind_task_ctx(plan_agent))
+deep_workflow.add_node("social", _bind_task_ctx(social_value_agent))
+deep_workflow.add_node("summary", _bind_task_ctx(summary_agent))
+deep_workflow.add_node("writer", _bind_task_ctx(deep_writer_agent))
+deep_workflow.add_node("judge", _bind_task_ctx(judge_agent))
+deep_workflow.add_node("expert_review", _bind_task_ctx(expert_review_agent))
+deep_workflow.add_node("proposal_analysis", _bind_task_ctx(proposal_analysis_agent))
+deep_workflow.add_node("defense", _bind_task_ctx(defense_questions_agent))
+deep_workflow.add_node("ppt", _bind_task_ctx(ppt_outline_agent))
+deep_workflow.add_node("speech", _bind_task_ctx(speech_agent))
 
 deep_workflow.add_edge(START, "rule_parser")
 deep_workflow.add_edge(START, "similarity_checker")

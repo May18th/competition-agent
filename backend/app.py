@@ -28,7 +28,8 @@ from docx import Document
 from backend.competition_agents import fast_app, deep_app, CompetitionState
 from backend.stage_reporter import (tasks, set_current_task, clear_current_task,
                             report_stage as _report_stage, stage_meta, TaskCancelled,
-                            get_speech_stream, clear_speech_stream, set_partial)
+                            get_speech_stream, clear_speech_stream, set_partial,
+                            current_task_id)
 import backend.progress as progress
 import backend.app_log as app_log
 
@@ -3774,9 +3775,12 @@ def _strip_identifying_text(t):
     # 身份证号（18 位）
     t = re.sub(r'\b\d{17}[\dXx]\b', '（身份证号隐去）', t)
     # 指导教师 / 负责人 + 姓名（含职称）
+    # 替换成「指导人员」而不是「指导教师（某老师）」：后者会被后续 _strip_ai_artifacts
+    # 删成「指导教师」，而评分器把「指导教师 + 后 2~4 汉字」判为姓名泄露——
+    # 脱敏器自己造出违规表述，比不脱敏还糟。
     t = re.sub(
         r'(指导老师|指导教师|负责人|队长|联系人)\s*[:：]?\s*[\u4e00-\u9fa5]{2,4}(?:教授|副教授|讲师|博士|主任|老师)?',
-        '指导教师（某老师）', t)
+        '指导人员', t)
     # 院校全称（高置信度）：只隐「XX大学」，不再隐「XX学校」——
     # 「学校」在正文里几乎总是泛化词（不同学校/各个学校/学校名称），不是具体校名，
     # 之前把「不同学校柜体」删成「（隐去）柜体」就是这条误伤的。
@@ -3864,7 +3868,12 @@ def _run_generation(data):
             "idea_feedback": "",
             "score": 0,
             "approved": False,
-            "iterate": bool(data.get("iterate", False))
+            "iterate": bool(data.get("iterate", False)),
+            # 任务归属：并行节点由线程池执行，拿不到 worker 线程的本地上下文，
+            # 靠这三个字段在节点入口重建（见 competition_agents._bind_task_ctx）。
+            "_task_id": data.get("_task_id") or (current_task_id() or ""),
+            "_user_id": data.get("_user_id") or "",
+            "_mode": mode,
         }
 
         if mode == "deep":
@@ -3977,6 +3986,9 @@ def _run_generation(data):
             # 别用 len()——它把 # * 空格也算字，会虚高 15%~20%，导致误判超标。
             _gate_before = _gate_len(result.get("proposal", ""))
             if _gate_before > 1800:
+                # 压缩是真正的 LLM 调用，必须换阶段名：否则这几个调用的用量会挂在
+                # 上一步 speech 名下，路演演讲稿的成本被虚高、压缩本身被算成 0。
+                _report_stage("compress")
                 try:
                     _gate_log = open('/tmp/wb_len_gate.log', 'a', encoding='utf-8')
                     _gate_log.write("[%s] 压缩前 %d 字 " % (
@@ -4027,7 +4039,9 @@ def _run_generation(data):
     except Exception:
         proposal_chars = len(re.sub(r'\s', '', result.get("proposal", "") or ""))
     similarity = _similarity_check(result.get("proposal", ""))
-    # 从创意提取关键词，自动填申报书关键词栏
+    # 从创意提取关键词，自动填申报书关键词栏（也是一次真实模型调用，单独立阶段，
+    # 否则会挂在 compress/speech 名下，把篇幅闸门的成本算虚）
+    _report_stage("keywords")
     keywords = _extract_keywords_llm(result.get("idea") or data.get("idea") or "")
 
     payload = {
@@ -4073,13 +4087,15 @@ def _run_generation(data):
     # 终极防复读：对所有正文类字段做确定性「连续重复句折叠」，
     # 保证任何节点的循环复读都不会交付给前端（纯文本去重，不依赖模型配合）。
     try:
-        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts
+        from backend.competition_agents import _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication, _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts, _strip_cliches
         for _k in ("proposal", "proposal_outline", "judge_feedback", "proposal_analysis",
                    "project_summary", "social_value", "tech_solution", "competitor_analysis",
                    "business_model", "risk_analysis", "implementation_plan", "defense_questions",
                    "ppt_outline", "speech_script", "parsed_rules", "similarity_report", "one_liner"):
             if isinstance(payload.get(_k), str) and payload[_k]:
-                payload[_k] = _strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k]))))))
+                # 最外层是套话替换：它必须作用在「占位符/虚构表述都已清干净」的文本上，
+                # 否则「赋能【待补充】」这类组合会漏清（评分表里套话是独立扣分项）。
+                payload[_k] = _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(_strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(_dedupe_consecutive(payload[_k])))))))
     except Exception:
         pass
     # 第二百一十八/二百一十九轮：主题一致性硬校验——确定性检测正文是否跑偏到异赛道，
@@ -4400,7 +4416,9 @@ def _launch_worker(task_id):
         # 必须声明 global：finally 里对 _active_gen_count 赋值，没有这句它会被当成局部变量，
         # 触发 UnboundLocalError 且计数永远不回落——泄漏 4 次后所有人被「当前生成人数较多」焊死
         global _active_gen_count
-        set_current_task(task_id)          # 让 report_stage 知道往哪个任务写
+        set_current_task(task_id,                     # 让 report_stage 知道往哪个任务写
+                         data.get("_user_id") or "",  # 后台线程无请求上下文，用量记录靠它归户
+                         data.get("mode") or "")
         attempts = 3                       # 1 次主尝试 + 2 次自动重试
         last_err = None
         last_code = "internal_error"
@@ -5517,6 +5535,30 @@ def admin_llm_usage():
         return jsonify({"success": False, "error": "Token 统计暂不可用"}), 500
 
 
+@app.route('/api/admin/llm-usage/per-generation')
+def admin_llm_usage_per_generation():
+    """单次生成口径：一次生成到底调了几次模型、烧了多少 token。
+
+    与 /api/admin/llm-usage（总量口径）互补：总量说明规模，分布说明单次成本。
+    只统计带 task_id 的记录，样本量见 summary.task_count。
+    """
+    auth = _require_admin()
+    if auth:
+        return auth
+    try:
+        import backend.competition_agents as _agents
+        from backend.llm_usage_store import aggregate_tasks, per_generation_summary
+        days = request.args.get("days", default=30, type=int)
+        return jsonify({
+            "success": True,
+            "summary": per_generation_summary(_agents._LLM_USAGE_DB_PATH, days=days),
+            "tasks": aggregate_tasks(_agents._LLM_USAGE_DB_PATH, days=days, limit=50),
+        })
+    except Exception as exc:
+        print("[llm_usage] per-generation failed: %s" % exc)
+        return jsonify({"success": False, "error": "单次成本统计暂不可用"}), 500
+
+
 @app.route('/api/log_error', methods=['POST'])
 def log_error():
     """前端/接口异常上报（第八十一轮）：白屏/JS错误/下载失败/导出失败统一落库。
@@ -5869,14 +5911,19 @@ _health_cache = {"data": None, "checked_at": 0.0}
 
 
 def _probe_deepseek():
-    """非阻塞探测 DeepSeek 上游：60 秒内缓存直接返回；否则后台探测，本次立即返回，
-    绝不阻塞 /api/health。避免首屏健康检查被 2~3 秒的 LLM 探测拖住（147 轮）。"""
+    """非阻塞探测 DeepSeek 上游：300 秒内缓存直接返回；否则后台探测，本次立即返回，
+    绝不阻塞 /api/health。避免首屏健康检查被 2~3 秒的 LLM 探测拖住（147 轮）。
+
+    频率从 60s 放宽到 300s、并绕过配额包装：探测本身是一次真实模型调用，
+    每 60 秒一次等于一天最多 1440 次，足以把 500 次/天的额度吃光（用户生成被拦），
+    而且它没有任务归属，只会在用量表里留下匿名噪声行。
+    """
     now = time.time()
-    if now - _upstream_cache["checked_at"] < 60:
+    if now - _upstream_cache["checked_at"] < 300:
         return _upstream_cache["deepseek"]
     with _probe_lock:
         # 双检：拿到锁后再确认一次，避免并发请求重复触发探测
-        if now - _upstream_cache["checked_at"] < 60:
+        if now - _upstream_cache["checked_at"] < 300:
             return _upstream_cache["deepseek"]
         _upstream_cache["checked_at"] = now
         _upstream_cache["deepseek"] = "checking"
@@ -5884,9 +5931,10 @@ def _probe_deepseek():
         def _bg_probe():
             result = "down"
             try:
-                from backend.competition_agents import llm
+                # 用未经包装的原始 invoke：探活不占用户配额、不写用量表
+                from backend.competition_agents import _llm_invoke_original
                 from langchain_core.messages import HumanMessage
-                r = llm.invoke([HumanMessage(content="回复两个字：OK")])
+                r = _llm_invoke_original([HumanMessage(content="回复两个字：OK")])
                 if bool(getattr(r, "content", "").strip()):
                     result = "ok"
             except Exception:

@@ -25,6 +25,9 @@ STAGE_META = {
     "defense":        ("答辩智能体·预测答辩问题",        90),
     "ppt":            ("PPT智能体·生成PPT大纲",         95),
     "speech":         ("路演智能体·撰写路演演讲稿",      98),
+    "compress":       ("篇幅闸门·按赛事字数上限裁剪",     99),
+    "keywords":       ("收尾·提取关键词与摘要",           99),
+    "fill_missing":   ("收尾·补写缺失章节",               99),
     "done":           ("全部完成",                      100),
     "error":          ("生成中断",                       -1),
 }
@@ -54,19 +57,46 @@ class TaskCancelled(Exception):
     """生成被用户取消，用于中断 langgraph 节点循环。"""
 
 
-def set_current_task(task_id):
-    """标记当前正在执行的任务（app.py 的 worker 线程调用）。"""
+def set_current_task(task_id, user_id=None, mode=None):
+    """标记当前正在执行的任务（app.py 的 worker 线程调用）。
+
+    user_id / mode 一并记在线程本地：生成跑在后台线程里，没有 Flask 请求上下文，
+    LLM 用量记录拿不到 g.uid 和请求体，只能从这里取（否则用量表 user_key 恒为
+    anonymous、mode 恒为空，按用户/按版本的成本无法聚合）。
+    """
     _tls.task_id = task_id
+    if user_id is not None:
+        _tls.user_id = user_id
+    if mode is not None:
+        _tls.mode = mode
 
 
 def clear_current_task():
     """清除当前任务标记（worker 线程结束时调用）。"""
     _tls.task_id = None
+    _tls.user_id = None
+    _tls.mode = None
+    _tls.stage = None
 
 
 def current_task_id():
     """返回当前正在执行的任务 id（供 Agent 内部读取，用于流式缓冲区）。"""
     return getattr(_tls, "task_id", None)
+
+
+def current_user_id():
+    """返回当前任务的用户 id（后台线程无请求上下文时，供 LLM 用量记录归属）。"""
+    return getattr(_tls, "user_id", None)
+
+
+def current_mode():
+    """返回当前任务的生成版本（fast / deep）。"""
+    return getattr(_tls, "mode", None)
+
+
+def current_stage():
+    """返回当前任务最近一次上报的阶段代号（中间产物，用于按环节归集用量）。"""
+    return getattr(_tls, "stage", None)
 
 
 def set_partial(partial):
@@ -150,6 +180,9 @@ def report_stage(stage):
     tid = current_task_id()
     if tid and tid in _cancelled:
         raise TaskCancelled()
+    # 顺带把阶段记在线程本地：每个 Agent 节点开头都会调本函数，
+    # LLM 用量记录据此把 token 归到「哪个智能体/环节」消耗的。
+    _tls.stage = stage
     t = tasks.get(tid) if tid else None
     if isinstance(t, dict):
         t["stage"] = stage

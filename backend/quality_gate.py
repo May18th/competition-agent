@@ -15,7 +15,8 @@ def check_generation(result, mode="deep"):
     n = len(re.sub(r'[#*`\-|>\[\]（）()\s]', '', proposal))
     if mode == "deep" and n < 6000:
         issues.append(f"深度版正文 {n} 字 < 6000 下限")
-    if not (result.get("rich_charts") or result.get("rich_tables")):
+    # 富媒体只在深度版要求：fast 链路没有图表/表格管线（见 271 号记录误杀复盘）
+    if mode == "deep" and not (result.get("rich_charts") or result.get("rich_tables")):
         issues.append("富媒体（图表/表格）为空")
     if mode == "deep" and not result.get("rich_deck"):
         issues.append("rich_deck（路演PPT）为空")
@@ -215,6 +216,12 @@ def check_total(result, mode="deep"):
                 "risk_analysis", "tech_solution", "implementation_plan", "social_value",
                 "project_summary", "proposal", "judge_feedback", "defense_questions",
                 "ppt_outline", "speech_script"]
+    # 简洁版不产出这三块：plan_agent / social_value_agent / summary_agent 只挂在
+    # deep_workflow 上。拿 deep 的清单判 fast，每次生成必报三条「缺板块」，
+    # 真正的缺陷会被这三条固定噪声盖掉（本地运行日志里 30 次生成 30 次报同三条）。
+    if str(mode).strip().lower() != "deep":
+        _deep_only = ("implementation_plan", "social_value", "project_summary")
+        _modules = [m for m in _modules if m not in _deep_only]
     for m in _modules:
         if not (result.get(m) or "").strip():
             issues.append(f"缺板块：{m}")
@@ -324,7 +331,7 @@ def score_export(result, mode="deep"):
         veto.append("导出内容为空")
     elif proposal.count("?") > max(3, len(proposal) * 0.3) or "？？" in proposal:
         veto.append("中文乱码（? 占比过高）")
-    if re.search(r'【[^】]*】|待你填写|待补充|TBD|TODO', proposal):
+    # TBD/TODO 加左边界：JTBD（Jobs To Be Done）这类方法论缩写不能算占位符\n    if re.search(r'【[^】]*】|待你填写|待补充|(?<![A-Za-z])TBD|(?<![A-Za-z])TODO', proposal):
         veto.append("存在【】占位符/待补提示")
     if re.search(r'据《.{0,30}202\d.{0,20}》', proposal):
         veto.append("无来源的机构+年份数据（编造嫌疑）")
@@ -362,7 +369,7 @@ def score_export(result, mode="deep"):
             break
     if re.search(r'据《.{0,30}202\d.{0,20}》', proposal):
         dims["数据真实性"] -= 6; reasons.append("疑似编造「机构+年份」引用")
-    if re.search(r'【|待你填写|待补充|TBD|TODO', proposal):
+    if re.search(r'【|待你填写|待补充|(?<![A-Za-z])TBD|(?<![A-Za-z])TODO', proposal):
         dims["数据真实性"] -= 5; reasons.append("存在占位符")
     if re.search(r'[\u4e00-\u9fa5]{2,4}大学(?!生|城)', proposal):
         dims["数据真实性"] -= 4; reasons.append("疑似泄露院校名（双盲）")
@@ -468,7 +475,7 @@ def preview_report(proposal="", mode="deep", title=""):
 
     # 9 格式规范
     h2 = len(re.findall(r'^#{1,3}\s+\S', txt, re.M))
-    placeholder = re.search(r'(待填写|待补充|TBD|TODO)', txt)
+    placeholder = re.search(r'(待填写|待补充|(?<![A-Za-z])TBD|(?<![A-Za-z])TODO)', txt)
     fmt_ok = h2 >= 3 and not placeholder
     items.append({
         "key": "format", "label": "格式规范",

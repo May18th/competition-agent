@@ -23,6 +23,7 @@ _chart_test/
 _theme_demo/
 *.bak
 *.bak.*
+运行日志.md
 *.pptx
 *.orig
 *.rej
