@@ -188,6 +188,11 @@ def _innovation_points(t):
     explicit = _hits(t, r"(?:创新点|技术创新|亮点|核心突破|独创|首创之处)[^。；\n]{0,60}")
     if explicit:
         return _PASS, explicit[0][1], "有独立创新点陈述"
+    # 「本项目有三处创新：①②③」是最自然的写法，但「处」原来不在量词表里，
+    # 判据把它判成没写（实测模型按提示写出来的正是这种句式）。
+    counted = _hits(t, r"(?:[二三三四五]|本项目的?多条|若干)[处项个条]\s*创新[^。；\n]{0,60}")
+    if counted:
+        return _PASS, counted[0][1], "有编号的创新点陈述"
     named = _hits(t, r"(?:双|两|三|四|五)[项个层道重]?(?:校验|验证|架构|机制|模块|防线|融合)")
     if named:
         return _PARTIAL, named[0][1], "有命名式创新（如「双校验」），但没集中列出创新点，评委不易数"
@@ -539,12 +544,18 @@ def diagnose_history(db_path, history_id, track=None):
         result = json.loads(row[0] or "{}")
     except Exception:
         result = {}
-    # 按用户实际看到的样子诊断：修订说明与外造待办节在展示前就被清掉了，
-    # 拿未清理的原稿判分会把「针对意见（1）」这类痕迹当成正文内容。
+    # 按用户实际看到的样子诊断：修订说明、外造待办节、套话在展示/交付前就被清掉了，
+    # 拿未清理的原稿判分会把「针对意见（1）」这类痕迹和「赋能闭环」当成正文内容。
+    # 必须与 scorecard_patch 的清理链完全一致，否则面板显示 66.2、点补强却报
+    # 「74.5 → 91.0」，用户会以为工具在乱跳数字（线上 hid 323 实测踩到）。
     try:
         _ca = peer("competition_agents")
         if isinstance(result, dict) and result.get("proposal"):
-            result["proposal"] = _ca._strip_pending_sections(_ca._strip_revision_note(result["proposal"]))
+            result["proposal"] = _ca._strip_cliches(_ca._strip_ai_artifacts(
+                _ca._fix_mislabeled_measured(_ca._strip_fabricated_times(
+                    _ca._downgrade_fabrication(_ca._strip_placeholders(
+                        _ca._dedupe_consecutive(_ca._strip_pending_sections(
+                            _ca._strip_revision_note(result["proposal"])))))))))
     except Exception:
         pass
     return diagnose(result, row[2] or "", track, row[1] or "fast")

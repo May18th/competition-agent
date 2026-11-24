@@ -156,3 +156,87 @@
     line-height: 1.7;
     color: var(--text-mute);
 }
+
+/* ---------- 补强（POST /api/scorecard/patch） ---------- */
+.wbsc-act {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.wbsc-go {
+    padding: 5px 14px;
+    border: 1px solid var(--c-a);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--c-a);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.wbsc-go:hover { background: var(--c-a-soft); }
+
+.wbsc-go[disabled] {
+    opacity: .55;
+    cursor: default;
+    background: transparent;
+}
+
+.wbsc-hint {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-mute);
+}
+
+.wbsc-out:empty { display: none; }
+
+.wbsc-out { margin-top: 10px; }
+
+.wbsc-done {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+
+.wbsc-delta {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.wbsc-line {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+}
+
+.wbsc-line.is-muted { color: var(--text-mute); }
+
+.wbsc-full { margin-top: 8px; }
+
+.wbsc-full > summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--c-a);
+    padding: 2px 0;
+}
+
+.wbsc-text {
+    width: 100%;
+    min-height: 220px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.7;
+    resize: vertical;
+}

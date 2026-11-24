@@ -16,7 +16,8 @@
 (function (g) {
     'use strict';
 
-    var S = { root: null, obs: null, loadedHid: null, raf: 0, locked: false, started: false };
+    var S = { root: null, obs: null, loadedHid: null, raf: 0, locked: false, started: false,
+              busy: false };
 
     function esc(s) {
         return String(s == null ? '' : s)
@@ -77,6 +78,11 @@
         } else {
             h += '<div class="wbsc-empty">按官方评分项没检出明显缺口。</div>';
         }
+        h += '<div class="wbsc-act">'
+            + '<button type="button" class="wbsc-go">按评分项补强</button>'
+            + '<span class="wbsc-hint">只改缺分最多的那一章，补完自动复检；原稿不会被覆盖</span>'
+            + '</div>'
+            + '<div class="wbsc-out"></div>';
         h += '<div class="wbsc-foot">按赛事官方评分项逐项核对，只在找得到原文证据时给分；点维度看证据</div>';
         h += '</div>';
         return h;
@@ -109,6 +115,63 @@
         });
     }
 
+    function cleanTitle(s) {
+        return String(s || '').replace(/^#{1,6}\s*/, '').trim();
+    }
+
+    function bindPatch() {
+        var btn = S.root.querySelector('.wbsc-go');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            var hid = curHid();
+            if (!hid || S.busy) return;
+            var out = S.root.querySelector('.wbsc-out');
+            var label = btn.textContent;
+            S.busy = true;
+            btn.disabled = true;
+            btn.textContent = '正在补写…';
+            if (out) out.innerHTML = '<div class="wbsc-hint">只改缺分章节，通常 20~40 秒；原稿不会被覆盖</div>';
+            fetch('/api/scorecard/patch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ history_id: hid, limit: 2 })
+            }).then(function (r) { return r.json(); })
+                .then(function (j) {
+                    if (!j || !j.success) throw new Error((j && j.error) || '接口无响应');
+                    var res = j.result || {};
+                    var h = '<div class="wbsc-done">'
+                        + '<div class="wbsc-delta">' + fmt(res.before) + ' → ' + fmt(res.after) + ' 分</div>';
+                    (res.applied || []).forEach(function (a) {
+                        h += '<div class="wbsc-line">补了 ' + esc(cleanTitle(a.chapter))
+                            + '（+' + fmt(a.gain) + ' 分）</div>';
+                    });
+                    (res.reverted || []).forEach(function (x) {
+                        h += '<div class="wbsc-line is-muted">' + esc(x.label) + '：' + esc(x.reason) + '</div>';
+                    });
+                    if (!(res.applied || []).length) {
+                        h += '<div class="wbsc-hint">这一轮没找到能靠改写补上的缺口。缺专利、查新、实测数据这类材料，'
+                            + '需要团队自己补，系统不会代写。</div>';
+                    }
+                    h += '<details class="wbsc-full"><summary>查看补强后正文</summary>'
+                        + '<textarea class="wbsc-text" readonly></textarea></details></div>';
+                    out.innerHTML = h;
+                    var ta = out.querySelector('.wbsc-text');
+                    if (ta) ta.value = res.proposal || '';
+                })
+                .catch(function (e) {
+                    if (out) {
+                        out.innerHTML = '<div class="wbsc-hint">补强没成功：'
+                            + esc(String((e && e.message) || e)) + '；正文与导出不受影响</div>';
+                    }
+                })
+                .then(function () {
+                    S.busy = false;
+                    btn.disabled = false;
+                    btn.textContent = label;
+                });
+        });
+    }
+
     function load() {
         var hid = curHid();
         S.loadedHid = hid;
@@ -132,6 +195,7 @@
                 }
                 S.root.innerHTML = renderDiag(dd);
                 bindDims(dd);
+                bindPatch();
             })
             .catch(function () {
                 S.root.innerHTML = emptyState('评分项自查暂时取不到数据，正文与导出不受影响');

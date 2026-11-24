@@ -135,6 +135,21 @@ class TestPatchUntilClean(unittest.TestCase):
         self.assertTrue(rep["applied"], rep)
         self.assertIn("掌握了传感器标定方法", rep["proposal"])
 
+    def test_dirty_input_is_cleaned_before_patch(self):
+        """原文里的待办章节与套话必须先清掉再定位。
+
+        线上 hid 323 实测：诊断读到的是清理后正文，补写却按原文定位，缺口落到
+        「## 待替换数据清单」这一章上——补完正文里仍留着给评委看的待办清单。
+        """
+        dirty = _BASE + ("\n## 待替换数据清单\n- 成本 1.2 万 → 替换为实测数据\n"
+                         "- 本方案可赋能产业链，形成闭环\n")
+        rep = sp.patch_until_clean({"proposal": dirty}, _PROFILE_COMP, None, "fast",
+                                   limit=1, llm=_FakeLLM([]))
+        self.assertNotIn("待替换数据清单", rep["proposal"])
+        self.assertNotIn("赋能", rep["proposal"])
+        self.assertNotIn("闭环", rep["proposal"])
+        self.assertIn("## 七、创业团队", rep["proposal"])
+
     def test_no_patch_plan_returns_original(self):
         rep = sp.patch_until_clean({"proposal": "## 一、执行摘要\n空"}, "蓝桥杯全国软件和信息技术专业人才大赛",
                                    None, "fast", llm=_FakeLLM([]))

@@ -56,6 +56,34 @@ _GAP_TARGET = {
     "版面合规": ("执行摘要",),
 }
 
+# 缺口标签 → 具体写法要求。判据认的是「读者能数出来」的表述：只说「补齐创新点」，
+# 模型会写一段论述却不点明条数，复检照样判缺（线上 hid 323 实测两次都没过）。
+_WRITE_HINTS = {
+    "创新点可数": "用一句话把创新点编号列出，形如「本项目有三处创新：①……②……③……」，"
+                 "每条一句话、各自能独立成立；不要只写「具有创新性」。",
+    "差异化对比陈述": "明确指出对标对象（传统方案或某类现有产品）与差别，"
+                    "用「相较……，本方案……」把不同点说具体。",
+    "与现有方案对比": "指出对标对象与具体差别，能用数字就用数字（误差、时延、成本）。",
+    "成长与收获": "落到具体的人与具体的收获：谁掌握了哪种方法、谁积累了哪类经验、"
+                "谁熟悉了什么流程。",
+    "协作机制": "写清协作方式与频次（如每周一次联调会、交叉评审），不要只列人名。",
+    "角色分工": "写清每人负责的模块与交付物，避免「共同完成」这类笼统表述。",
+    "市场与客户规模": "给出可核对的客户数量与市场规模数字，并注明口径。",
+    "成本与定价": "给出单台成本、定价与毛利的具体数字，注明是测算值。",
+    "收入模型": "写清收费方式与单价，给出年度收入测算。",
+    "推广路径": "写清先打哪类客户、通过什么渠道、分几个阶段。",
+    "阶段计划": "给出阶段、时间与交付物（谁、多久、交什么），不要写「逐步推进」。",
+    "风险与应对": "每条风险配一条可执行的应对动作，不要只描述风险。",
+    "受益群体": "写明具体受益群体与人数口径。",
+    "社会效益量化": "给出可核算的社会效益数字，并注明口径。",
+    "技术构成": "写清模块划分与各模块职责，避免堆名词。",
+    "性能指标": "给出指标名称、目标值与测试方式。",
+    "结构说明": "写清结构组成与装配关系。",
+    "使用场景": "写清谁在什么场景下怎么用，给出一个具体流程。",
+    "价值量化": "给出替代人工后的量化收益（省时或省钱），注明口径。",
+    "章节结构": "按官方章节补齐缺失小节。",
+}
+
 # 事实类缺口一律跳过，不代补、也不提醒：专利/查新/实测/试点订单这些本来就该
 # 项目团队自己提供，系统不替用户操心。这里排除它们只有技术目的——让模型不碰，
 # 碰了就会编（实测：让它补「新颖性」，它写出「已申请专利并经查新确认」）。
@@ -154,7 +182,7 @@ _PATCH_PROMPT = """你是申报书编辑。下面是申报书的某一章，需�
 
 【必须补齐的内容】
 {instruction}
-
+{write_hint}
 【硬性要求】
 1. 原文里已有的具体数字、场景、技术名词、机构名，全部逐字保留，不要删改事实
 2. 只在合适位置增补，改动幅度不超过原文的三成，不要整章换一种写法
@@ -167,6 +195,20 @@ _PATCH_PROMPT = """你是申报书编辑。下面是申报书的某一章，需�
    （例：不写「已申请专利」，写「该结构差异可作为专利与查新材料的申报基础」）
 7. 直接输出修改后的完整章节（从原标题那一行开始），不要任何解释、前言或后记
 """
+
+
+def _hints_for(patch):
+    """按缺口标签取具体写法要求。多条缺口合并时逐条列出，无对应提示则返回空串。"""
+    labels = patch.get("labels") or [str(patch.get("label") or "").split(" + ")[0]]
+    tips = []
+    for lb in labels:
+        tip = _WRITE_HINTS.get(lb)
+        if tip and tip not in tips:
+            tips.append(tip)
+    if not tips:
+        return ""
+    return ("\n【写法要求 —— 按这些表述写，评审和判据都认】\n"
+            + "\n".join("- " + t for t in tips) + "\n")
 
 
 def rewrite_chapter(proposal, patch, llm=None, budget=None):
@@ -185,6 +227,7 @@ def rewrite_chapter(proposal, patch, llm=None, budget=None):
     _, start, end = match
     chapter = "\n".join(lines[start:end]).strip()
     prompt = _PATCH_PROMPT.format(chapter=chapter, instruction=patch["instruction"],
+                                  write_hint=_hints_for(patch),
                                   budget=budget or _BUDGET["fast"])
     try:
         resp = llm.invoke(prompt)
@@ -225,7 +268,11 @@ def patch_until_clean(result, competition_name, track=None, mode="fast",
 
     mode = "deep" if str(mode).strip().lower() == "deep" else "fast"
     result = dict(result or {})
-    proposal = result.get("proposal") or ""
+    # 先清洗再规划：诊断读到的是清理后的正文（scorecard 内部会清），而补写是按
+    # 原文定位章节。两边不一致时，缺口会落到「## 待替换数据清单」这种马上要被
+    # 删掉的章节上，补完仍留着待办节（线上 hid 323 实测就是这样）。
+    proposal = _sanitize(result.get("proposal") or "")
+    result["proposal"] = proposal
     before = diagnose(result, competition_name, track, mode)
     plan = plan_patches(before, proposal, limit=limit)
     report = {"before": before.get("total"), "after": before.get("total"),
@@ -285,7 +332,9 @@ if __name__ == "__main__":
     _sc = peer("scorecard")
     diagnose, render_text = _sc.diagnose, _sc.render_text
     if not apply_it:
-        plan = plan_patches(diagnose(rec, row[2], None, row[1]), rec.get("proposal") or "")
+        # 与 patch_until_clean 同口径：先清洗再定位，否则待办章节会被当成补写目标
+        clean = _sanitize(rec.get("proposal") or "")
+        plan = plan_patches(diagnose(dict(rec, proposal=clean), row[2], None, row[1]), clean)
         print("补写计划（%d 章）：" % len(plan))
         for p in plan:
             print("  [%s] → %s\n     补：%s" % (p["label"], p["chapter"],

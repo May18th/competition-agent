@@ -113,6 +113,19 @@ class TestPositiveEvidence(unittest.TestCase):
         self.assertEqual(check["status"], "partial", check)
         self.assertTrue(check["snippet"])
 
+    def test_counted_innovation_phrasing_counts(self):
+        """「本项目有三处创新：①②③」是最自然的写法，必须算通过。
+
+        实测：定向补写被提示按这个句式写，而判据量词表只有「项/个/条」，
+        于是模型写对了、判据判成没写——复检不认账，补写被回退。
+        """
+        text = ("## 三、技术方案\n本项目有三处创新：①稳定态判定与时序对齐的重量差分结算；"
+                "②克级称重与图像识别的融合决策；③异常复核在取件当次完成判责取证。")
+        diag = sc.diagnose(_payload(text), "互联网+")
+        dim = next(d for d in diag["dims"] if d["name"] == "项目创新")
+        check = next(c for c in dim["checks"] if c["key"] == "innovation_points")
+        self.assertEqual(check["status"], "pass", check)
+
     def test_named_innovation_counts_as_partial(self):
         """「双校验」这类命名式创新算部分覆盖，但不算集中列出创新点。"""
         diag = sc.diagnose(_payload("## 一、执行摘要\n做称重+视觉双校验的智能盘点柜。"), "互联网+")
