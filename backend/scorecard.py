@@ -77,14 +77,19 @@ def _snippet(text, start, end, width=32):
     return seg
 
 
-_NEG_PREFIX = re.compile(r"(?:不存在|没有|尚无|缺乏|未申请|未取得|不构成|无高门槛|无相关|不具备)")
+_NEG_PREFIX = re.compile(
+    r"(?:不存在|没有|尚无|缺乏|未申请|未取得|不构成|无高门槛|无相关|不具备|"
+    r"可作为|可以作|拟申请|计划申请|待申请|申报基础|尚未)")
 
 
 def _drop_negated(text, hits, window=14):
-    """去掉命中点前面带否定词的假阳性。
+    """去掉命中点前面带否定词或未来时表述的假阳性。
 
-    实测：「柜体方案不存在高门槛专利壁垒」会被朴素正则读成「有专利」，
-    这直接把「没有专利」夸成了「有专利」。命中点前 14 字内出现否定词即丢弃。
+    实测两类陷阱：
+    - 「柜体方案不存在高门槛专利壁垒」会被读成「有专利」，把「没有」夸成「有」
+    - 「相关结构差异可作为专利与查新材料的申报基础」是条件式表述，
+      实际还没申请；按字面会判成已有专利支撑
+    命中点前 14 字内出现否定词或条件式表述即丢弃。
     """
     out = []
     for m, snip in hits:
@@ -300,8 +305,8 @@ def _check_team(ctx):
                     r"交叉(?:评审|验证)|共同(?:完成|推进)|协同)"),
             "有协作机制", "只列了人，没写怎么协作")),
         ("growth", "成长与收获", 0.30, lambda: _pick(
-            _hits(t, r"(?:成长|收获|提升[^。；\n]{0,12}(?:能力|水平)|学会了|掌握了|培养了|"
-                    r"锻炼[^。；\n]{0,10}能力|训练价值|育人价值)"),
+            _hits(t, r"(?:成长|收获|提升[^。；\n]{0,12}(?:能力|水平)|学会了|掌握了?|培养了|"
+                    r"积累[^。；\n]{0,12}经验|锻炼[^。；\n]{0,10}能力|训练价值|育人价值|能力沉淀)"),
             "有成长叙述", "缺「成员在项目里获得了什么」的叙述")),
     ]
 
@@ -429,13 +434,14 @@ def diagnose(result, competition_name, track=None, mode="fast"):
         name, weight = str(d.get("name") or ""), float(d.get("weight") or 0)
         family = classify_dim(name)
         checks_raw = _FAMILY_CHECKS[family](ctx)
-        checks, gaps = [], []
+        checks, gaps, gap_items = [], [], []
         dim_ratio = 0.0
         for key, label, w, fn in checks_raw:
             try:
                 status, snippet, note = fn()
             except Exception as e:                                # 判据本身坏掉不能拖垮整张表
                 status, snippet, note = _FAIL, "", "判据执行异常：%s" % e
+            lost_ratio = 1.0 - _STATUS_SCORE.get(status, 0.0)
             dim_ratio += w * _STATUS_SCORE.get(status, 0.0)
             checks.append({
                 "key": key, "label": label, "status": status,
@@ -443,6 +449,10 @@ def diagnose(result, competition_name, track=None, mode="fast"):
             })
             if status != _PASS:
                 gaps.append(label + "：" + note)
+                # 丢分按「该检查项的权重 × 未得分比例」拆，不能把整个维度的丢分
+                # 复制给每一条缺口——那样 3 条缺口会把 30 分算成 49.5 分。
+                gap_items.append({"key": key, "label": label, "note": note,
+                                  "lost": round(weight * w * lost_ratio, 2)})
         dim_score = round(weight * min(1.0, dim_ratio), 1)
         items.append({
             "name": name,
@@ -454,6 +464,7 @@ def diagnose(result, competition_name, track=None, mode="fast"):
             "judged": family != "general",
             "checks": checks,
             "gaps": gaps,
+            "gap_items": gap_items,
         })
         if family != "general":
             scored_w += weight
@@ -483,19 +494,21 @@ def _top_gaps(items, n=3):
 
     同一处缺口会被同族维度重复报（创新性 35 与原创性 20 共用一套判据），
     按缺口文案合并、把两个维度的丢分累加，只报一次。
+    丢分按检查项拆算，不按维度整块复制（否则 3 条缺口会算出 49.5 分 > 维度满分 30）。
     """
     agg = {}
     for d in items:
         if not d.get("judged"):
             continue
-        lost = d["weight"] * (1 - d["ratio"])
-        for g in d["gaps"]:
-            slot = agg.setdefault(g, {"dims": [], "lost": 0.0})
-            slot["dims"].append(d["name"])
-            slot["lost"] += lost
+        for gi in d.get("gap_items") or []:
+            slot = agg.setdefault(gi["label"], {"dims": [], "lost": 0.0, "note": gi["note"]})
+            if d["name"] not in slot["dims"]:
+                slot["dims"].append(d["name"])
+            slot["lost"] += gi["lost"]
     ranked = sorted(agg.items(), key=lambda kv: -kv[1]["lost"])
-    return [{"dim": "、".join(v["dims"]), "gap": g, "lost": round(v["lost"], 1)}
-            for g, v in ranked[:n]]
+    return [{"dim": "、".join(v["dims"]), "gap": "%s：%s" % (k, v["note"]),
+             "lost": round(v["lost"], 1)}
+            for k, v in ranked[:n]]
 
 
 def diagnose_history(db_path, history_id, track=None):

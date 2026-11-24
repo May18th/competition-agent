@@ -6389,6 +6389,50 @@ def scorecard():
                         "error_code": _error_code(e)}), 500
 
 
+@app.route('/api/scorecard/patch', methods=['POST'])
+def scorecard_patch_api():
+    """按评分缺口定向补写：只改缺分的那一两章，补完自动复检（会调用模型，10~40 秒）。
+
+    不写历史库、不覆盖原稿，只把「补写前后对比 + 补写后正文」返回给调用方。
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        from backend.scorecard_patch import patch_until_clean
+        track = (data.get('track') or '').strip() or None
+        mode = (data.get('mode') or '').strip() or None
+        comp = (data.get('competition_name') or '').strip()
+        rec, hid = None, data.get('history_id')
+        if hid:
+            _conn = get_db()
+            try:
+                row = _conn.execute(
+                    "SELECT result_data, mode, competition_name FROM history WHERE id=?",
+                    (hid,)).fetchone()
+            finally:
+                _conn.close()
+            if not row:
+                return jsonify({"success": False, "error": "记录不存在"}), 404
+            import json as _json
+            try:
+                rec = _json.loads(row[0] or "{}")
+            except Exception:
+                rec = {}
+            mode = mode or row[1]
+            comp = comp or row[2] or ""
+        else:
+            rec = dict(data)
+            rec["proposal"] = (data.get('proposal') or '').strip()
+            if not rec["proposal"] or not comp:
+                return jsonify({"success": False,
+                                "error": "需要 history_id，或 proposal + competition_name"}), 400
+        limit = max(1, min(4, int(data.get('limit') or 2)))
+        rep = patch_until_clean(rec, comp, track, mode or "fast", limit=limit)
+        return jsonify({"success": True, "result": rep})
+    except Exception as e:
+        return jsonify({"success": False, "error": _friendly_error(e),
+                        "error_code": _error_code(e)}), 500
+
+
 @app.route('/api/demo_script', methods=['POST'])
 def demo_script():
     """第三百六十轮：5 分钟演示视频方案——分镜脚本 + 讲稿 + 操作步骤 + 预计秒数。"""
