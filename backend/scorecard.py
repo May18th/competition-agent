@@ -20,7 +20,20 @@
   避免把猜出来的分混进总分。
 """
 
+import importlib
 import re
+
+
+def peer(name):
+    """按部署布局取同级模块：本地是 backend/ 子目录，线上是扁平目录。
+
+    线上 /opt/comp-agent 没有 backend/ 包，app.py、competition_agents.py 都在根下；
+    本地是 backend/ 包。同一份文件要两边都能跑，所以不能写死一种导入路径。
+    """
+    try:
+        return importlib.import_module("backend." + name)
+    except ImportError:
+        return importlib.import_module(name)
 
 # ============ 维度名 → 判据族 ============
 # 顺序即优先级：越具体的族越靠前，value 放最后吃「价值/效果/前景」这类宽泛词。
@@ -380,7 +393,7 @@ def _pick(hits, ok_note, miss_note):
 
 
 def _generic_check(text):
-    from backend.quality_gate import _CLICHE
+    _CLICHE = peer("quality_gate")._CLICHE
     bad = [c for c in _CLICHE if c in (text or "")]
     if bad:
         return _FAIL, "命中套话：%s" % "、".join(bad[:3]), "开头出现套话，创新性的第一印象被拉低"
@@ -397,11 +410,11 @@ def diagnose(result, competition_name, track=None, mode="fast"):
 
     返回 dict；赛事无官方权重时 available=False，dims 为空，不猜分数。
     """
-    from backend.competition_agents import _official_scoring_dims, _official_chapters
+    ca = peer("competition_agents")
 
     result = result or {}
     mode = "deep" if str(mode).strip().lower() == "deep" else "fast"
-    dims = _official_scoring_dims(competition_name, track)
+    dims = ca._official_scoring_dims(competition_name, track)
     proposal = result.get("proposal") or ""
     if not dims:
         return {
@@ -414,7 +427,7 @@ def diagnose(result, competition_name, track=None, mode="fast"):
         }
 
     try:
-        official = len(_official_chapters({"competition_name": competition_name or "", "track": track}) or [])
+        official = len(ca._official_chapters({"competition_name": competition_name or "", "track": track}) or [])
     except Exception:
         official = 0
 
@@ -529,9 +542,9 @@ def diagnose_history(db_path, history_id, track=None):
     # 按用户实际看到的样子诊断：修订说明与外造待办节在展示前就被清掉了，
     # 拿未清理的原稿判分会把「针对意见（1）」这类痕迹当成正文内容。
     try:
-        from backend.competition_agents import _strip_revision_note, _strip_pending_sections
+        _ca = peer("competition_agents")
         if isinstance(result, dict) and result.get("proposal"):
-            result["proposal"] = _strip_pending_sections(_strip_revision_note(result["proposal"]))
+            result["proposal"] = _ca._strip_pending_sections(_ca._strip_revision_note(result["proposal"]))
     except Exception:
         pass
     return diagnose(result, row[2] or "", track, row[1] or "fast")

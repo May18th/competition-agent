@@ -14,7 +14,16 @@
 3. 补完必须复检：分数没升或缺口没消，就回退到原文——绝不接受「改完更差」
 """
 
+import importlib
 import re
+
+
+def peer(name):
+    """按部署布局取同级模块：本地是 backend/ 子目录，线上是扁平目录。"""
+    try:
+        return importlib.import_module("backend." + name)
+    except ImportError:
+        return importlib.import_module(name)
 
 # 缺口标签 → 优先落点章节（按顺序取第一个命中的章节标题）
 _GAP_TARGET = {
@@ -167,8 +176,7 @@ def rewrite_chapter(proposal, patch, llm=None, budget=None):
     按旧行号切片会把别的章节切一半，表现为「上一处补好的内容被覆盖」。
     """
     if llm is None:
-        from backend.competition_agents import llm as _llm
-        llm = _llm
+        llm = peer("competition_agents").llm
     spans, lines = _chapter_spans(proposal)
     match = next(((t, s, e) for t, s, e in spans if t == patch["chapter"]), None)
     if not match:
@@ -198,14 +206,11 @@ def rewrite_chapter(proposal, patch, llm=None, budget=None):
 def _sanitize(text):
     """补写后重跑清理链，防止补出占位符、套话、内部待办。"""
     try:
-        from backend.competition_agents import (
-            _dedupe_consecutive, _strip_placeholders, _downgrade_fabrication,
-            _strip_fabricated_times, _fix_mislabeled_measured, _strip_ai_artifacts,
-            _strip_cliches, _strip_pending_sections, _strip_revision_note)
-        return _strip_cliches(_strip_ai_artifacts(_fix_mislabeled_measured(
-            _strip_fabricated_times(_downgrade_fabrication(_strip_placeholders(
-                _dedupe_consecutive(_strip_pending_sections(
-                    _strip_revision_note(text)))))))))
+        ca = peer("competition_agents")
+        return ca._strip_cliches(ca._strip_ai_artifacts(ca._fix_mislabeled_measured(
+            ca._strip_fabricated_times(ca._downgrade_fabrication(ca._strip_placeholders(
+                ca._dedupe_consecutive(ca._strip_pending_sections(
+                    ca._strip_revision_note(text)))))))))
     except Exception:
         return text
 
@@ -216,7 +221,7 @@ def patch_until_clean(result, competition_name, track=None, mode="fast",
 
     返回 {"before", "after", "applied": [...], "reverted": [...], "proposal"}
     """
-    from backend.scorecard import diagnose
+    diagnose = peer("scorecard").diagnose
 
     mode = "deep" if str(mode).strip().lower() == "deep" else "fast"
     result = dict(result or {})
@@ -277,7 +282,8 @@ if __name__ == "__main__":
         row = c.execute("SELECT result_data, mode, competition_name FROM history WHERE id=?",
                         (hid,)).fetchone()
     rec = json.loads(row[0] or "{}")
-    from backend.scorecard import diagnose, render_text
+    _sc = peer("scorecard")
+    diagnose, render_text = _sc.diagnose, _sc.render_text
     if not apply_it:
         plan = plan_patches(diagnose(rec, row[2], None, row[1]), rec.get("proposal") or "")
         print("补写计划（%d 章）：" % len(plan))

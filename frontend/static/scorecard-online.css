@@ -1,0 +1,158 @@
+/* =============================================================================
+   scorecard-online.css —— 「官方评分项自查」线上版样式
+   ---------------------------------------------------------------------------
+   只挂在 #wbSubPanel-score 内部，变量全用 style.css 的 --text/--line/--c-a 等，
+   不写死任何色值，夜间/日间两套主题自动跟随。
+   ============================================================================= */
+
+.wbsc {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+.wbsc-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.wbsc-title {
+    font-size: 14px;
+    color: var(--text);
+}
+
+.wbsc-sub {
+    font-size: 12px;
+    color: var(--text-mute);
+}
+
+.wbsc-total {
+    margin-left: auto;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.wbsc-total i {
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-mute);
+}
+
+.wbsc-dims {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 6px 18px;
+}
+
+.wbsc-dim {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.wbsc-dim.is-click { cursor: pointer; }
+.wbsc-dim.is-click:hover,
+.wbsc-dim.is-click:focus {
+    border-color: var(--line);
+    background: var(--surface-2);
+}
+
+.wbsc-dim.is-muted { opacity: .6; }
+
+.wbsc-dim-val {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.wbsc-gaps {
+    margin-top: 10px;
+    display: grid;
+    gap: 6px;
+}
+
+.wbsc-gap {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+}
+
+.wbsc-gap-no {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    border-radius: 50%;
+    background: var(--c-a-soft);
+    color: var(--c-a);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
+.wbsc-gap-txt { flex: 1 1 auto; }
+
+.wbsc-gap-txt em {
+    font-style: normal;
+    color: var(--text-mute);
+    margin-left: 6px;
+    white-space: nowrap;
+}
+
+.wbsc-evbox {
+    margin: 2px 0 6px 26px;
+    padding: 8px 10px;
+    border-left: 2px solid var(--line-strong);
+}
+
+.wbsc-ev-gap {
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--warn-text, var(--text-dim));
+}
+
+.wbsc-ev {
+    margin-top: 6px;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text-mute);
+}
+
+.wbsc-ev b {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-3);
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.wbsc-empty,
+.wbsc-foot {
+    margin-top: 8px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-mute);
+}
