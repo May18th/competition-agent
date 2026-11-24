@@ -63,22 +63,20 @@ class TestPlanPatches(unittest.TestCase):
         return diagnose({"proposal": _BASE}, _PROFILE_COMP, None, "fast")
 
     def test_fact_gaps_are_not_delegated(self):
-        """新颖性要的是真实专利/查新，模型补只会编，必须留给人。"""
+        """新颖性要的是真实专利/查新，模型补只会编，直接跳过（也不提醒用户）。"""
         info = sp.plan_patches(self._diag(), _BASE)
-        labels = [p["label"] for p in info["patches"]]
+        labels = [p["label"] for p in info]
         self.assertFalse(any("新颖性" in l for l in labels), labels)
-        self.assertTrue(any("新颖性" in n["label"] for n in info["needs_user"]),
-                        info["needs_user"])
 
     def test_same_chapter_merged_into_one_task(self):
         """成长与收获/协作机制同属团队章，只能安排一次补写。"""
         info = sp.plan_patches(self._diag(), _BASE)
-        chapters = [p["chapter"] for p in info["patches"]]
+        chapters = [p["chapter"] for p in info]
         self.assertEqual(len(chapters), len(set(chapters)), chapters)
 
     def test_plan_sorted_by_loss(self):
         info = sp.plan_patches(self._diag(), _BASE, limit=3)
-        lost = [p["lost"] for p in info["patches"]]
+        lost = [p["lost"] for p in info]
         self.assertEqual(lost, sorted(lost, reverse=True))
 
 

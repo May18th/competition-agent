@@ -499,3 +499,123 @@
 @media (prefers-reduced-motion: reduce) {
     .wb339-toc-btn, .wb339-lamp, .wb339-issue-jump { transition: none; }
 }
+
+/* ==================== ⑥ 评分项自查（scorecard-panel.js） ====================
+   与 ① 关键结论同款卡片，只是内容换成「按官方评分项逐项核对」。
+   新增类一律 wb339-sc-* 前缀，颜色只走上面的 --w339-* token。 */
+.wb339-sc-muted { opacity: .62; }
+
+.wb339-sc-lost {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--w339-text-mute);
+    white-space: nowrap;
+}
+
+.wb339-sc-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.wb339-sc-hint {
+    font-size: 12px;
+    color: var(--w339-text-mute);
+    line-height: 1.5;
+}
+
+.wb339-sc-out { margin-top: 10px; }
+.wb339-sc-out:empty { margin-top: 0; }
+
+.wb339-sc-done {
+    border: 1px solid var(--w339-border);
+    border-radius: 8px;
+    background: var(--w339-surface);
+    padding: 10px 12px;
+}
+
+.wb339-sc-delta {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--w339-text);
+}
+
+.wb339-sc-line {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--w339-text-sub);
+}
+
+.wb339-sc-full { margin-top: 8px; }
+.wb339-sc-full > summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--w339-accent);
+    padding: 2px 0;
+}
+
+.wb339-sc-text {
+    width: 100%;
+    min-height: 220px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--w339-border);
+    border-radius: 8px;
+    background: var(--w339-card);
+    color: var(--w339-text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.7;
+    resize: vertical;
+}
+
+/* 维度行可点开看证据 */
+.wb339-sc-click { cursor: pointer; }
+.wb339-sc-click:hover { background: var(--w339-surface); border-radius: 6px; }
+.wb339-sc-open { background: var(--w339-surface); border-radius: 6px; }
+
+.wb339-sc-evbox {
+    grid-column: 1 / -1;
+    margin: 4px 0 2px 0;
+    padding: 8px 10px;
+    border-left: 2px solid var(--w339-border-strong);
+}
+
+.wb339-sc-gap {
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--w339-warn);
+}
+
+.wb339-sc-ev {
+    margin-top: 6px;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--w339-text-sub);
+}
+
+.wb339-sc-ev-lab {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--w339-surface-3);
+    color: var(--w339-text-mute);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* 主操作按钮：与「跳转」小按钮区分开，实线而非虚线，字重略加 */
+.wb339-sc-go {
+    border-style: solid;
+    font-weight: 600;
+    padding: 5px 14px;
+}
+.wb339-sc-go[disabled] {
+    opacity: .55;
+    cursor: default;
+}

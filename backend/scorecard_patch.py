@@ -47,9 +47,9 @@ _GAP_TARGET = {
     "版面合规": ("执行摘要",),
 }
 
-# 不可代补的缺口：这些要的是「真实外部事实」，模型补只会编造。
-# 实测踩到过：让它补「新颖性有外部支撑」，它写出「已就双校验结构申请专利，
-# 并经查新确认该组合未见公开」——用户并没有专利。这类必须留给用户提供材料。
+# 事实类缺口一律跳过，不代补、也不提醒：专利/查新/实测/试点订单这些本来就该
+# 项目团队自己提供，系统不替用户操心。这里排除它们只有技术目的——让模型不碰，
+# 碰了就会编（实测：让它补「新颖性」，它写出「已申请专利并经查新确认」）。
 _FACT_GAPS = {
     "新颖性有外部支撑",   # 专利 / 软著 / 查新报告
     "测试与对比",         # 实测数据集、对比实验
@@ -96,16 +96,12 @@ def plan_patches(diag, proposal, limit=2):
     第二次还得在第一次的改写结果上再改，容易把第一次补好的内容覆盖掉。
     """
     if not diag.get("available"):
-        return {"patches": [], "needs_user": []}
-    by_chapter, order, needs_user = {}, [], []
+        return []
+    by_chapter, order = {}, []
     for gap in diag.get("top_gaps") or []:
         label = gap["gap"].split("：")[0]
         if label in _FACT_GAPS:
-            # 事实类缺口不交给模型补——补出来就是编的
-            needs_user.append({"label": label, "dim": gap.get("dim", ""),
-                               "note": gap["gap"].split("：", 1)[-1],
-                               "lost": gap.get("lost", 0)})
-            continue
+            continue                      # 事实缺口不代补，也不提醒
         target = locate_chapter(proposal, label, gap.get("dim", ""))
         if not target:
             continue
@@ -134,7 +130,7 @@ def plan_patches(diag, proposal, limit=2):
         p["instruction"] = (
             p["instructions"][0] if len(p["instructions"]) == 1
             else "\n".join("%d. %s" % (i, t) for i, t in enumerate(p["instructions"], 1)))
-    return {"patches": plan[:limit], "needs_user": needs_user}
+    return plan[:limit]
 
 
 _RETRY_HINT = """
@@ -226,11 +222,9 @@ def patch_until_clean(result, competition_name, track=None, mode="fast",
     result = dict(result or {})
     proposal = result.get("proposal") or ""
     before = diagnose(result, competition_name, track, mode)
-    plan_info = plan_patches(before, proposal, limit=limit)
-    plan, needs_user = plan_info["patches"], plan_info["needs_user"]
+    plan = plan_patches(before, proposal, limit=limit)
     report = {"before": before.get("total"), "after": before.get("total"),
-              "applied": [], "reverted": [], "needs_user": needs_user,
-              "proposal": proposal}
+              "applied": [], "reverted": [], "proposal": proposal}
     if not plan:
         return report
 
@@ -285,16 +279,11 @@ if __name__ == "__main__":
     rec = json.loads(row[0] or "{}")
     from backend.scorecard import diagnose, render_text
     if not apply_it:
-        plan_info = plan_patches(diagnose(rec, row[2], None, row[1]), rec.get("proposal") or "")
-        plan = plan_info["patches"]
+        plan = plan_patches(diagnose(rec, row[2], None, row[1]), rec.get("proposal") or "")
         print("补写计划（%d 章）：" % len(plan))
         for p in plan:
             print("  [%s] → %s\n     补：%s" % (p["label"], p["chapter"],
                                              p["instruction"].replace("\n", "\n         ")))
-        if plan_info["needs_user"]:
-            print("\n需你提供真实材料（模型不能代补，补了就是编的）：")
-            for n in plan_info["needs_user"]:
-                print("  - %s（丢约 %s 分）：%s" % (n["label"], n["lost"], n["note"]))
         print("\n加 --apply 实际执行（会调用模型，fast 约 10 秒/条）")
         sys.exit(0)
 
