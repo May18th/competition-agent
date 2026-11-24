@@ -232,8 +232,10 @@ def check_total(result, mode="deep"):
         found = {}
         for k in _kw:
             vals = set()
-            for mm in _re.finditer(re.escape(k) + r'[^。；\n]{0,12}?(\d+(?:\.\d+)?)', text or ""):
-                vals.add(mm.group(1))
+            # 不跨逗号/分号：原先允许 12 字内跨标点，会把「成本压下来，毛利率有望到 35%」
+            # 里的 35 当成成本值；收紧到同一小句内、最多 8 字
+            for mm in _re.finditer(re.escape(k) + r'[^。；，,、\n]{0,8}?(\d+(?:\.\d+)?)', text or ""):
+                vals.add(float(mm.group(1)))
             if vals:
                 found[k] = vals
         return found
@@ -245,7 +247,12 @@ def check_total(result, mode="deep"):
             _agg.setdefault(k, set()).update(vals)
     for k, vals in _agg.items():
         if len(vals) > 1:
-            issues.append(f"跨板块数字冲突：{k} 出现 {sorted(vals)} 多版本")
+            _sorted = sorted(vals)
+            # 只在同一量级才判冲突：「单台成本 1.3 万」和「总成本 75 万」天然是两个口径，
+            # 相差 3 倍以上直接放过，否则每次生成都会报一条假冲突
+            if _sorted[-1] <= _sorted[0] * 3:
+                _shown = [int(v) if v == int(v) else v for v in _sorted]
+                issues.append(f"跨板块数字冲突：{k} 出现 {_shown} 多版本")
     return (not issues), issues
 
 

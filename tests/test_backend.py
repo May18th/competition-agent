@@ -183,6 +183,23 @@ class TestQualityGateMode(unittest.TestCase):
         _, issues = quality_gate.check_generation(self._fast_payload(), "deep")
         self.assertTrue(any("富媒体" in i for i in issues), issues)
 
+    def test_unit_cost_vs_total_cost_not_conflict(self):
+        """单台成本 1.3 万 vs 总成本 75 万是两个口径，不该判数字打架。"""
+        import quality_gate
+        rec = self._fast_payload()
+        rec["business_model"] = ("单台综合成本约1.3至1.6万元。按30个实验室计合计约109万元，"
+                                 "对应成本约75至85万元。成本压下来，毛利率有望到35%至45%。")
+        _, issues = quality_gate.check_total(rec, "fast")
+        self.assertFalse(any("成本" in i for i in issues), issues)
+
+    def test_same_magnitude_conflict_still_caught(self):
+        import quality_gate
+        rec = self._fast_payload()
+        rec["tech_solution"] = "客单价 3.5 万元，按年付。"
+        rec["business_model"] = "客单价 4.2 万元，续费同价。"
+        _, issues = quality_gate.check_total(rec, "fast")
+        self.assertTrue(any("客单价" in i and "冲突" in i for i in issues), issues)
+
 
 class TestDeidentChainSafety(unittest.TestCase):
     """清理链不能自己造出违规表述（实测踩过：删括号残留「指导教师+后文」被判双盲）。"""
