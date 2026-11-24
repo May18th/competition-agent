@@ -4025,6 +4025,7 @@ def _run_generation(data):
     # 最终篇幅闸门（简洁版）：writer 出口的压缩管不到 revise 节点——
     # targeted_revise_agent 会用 LLM 输出整篇替换 proposal，字数会回弹。
     # 装在这里才能真正覆盖所有出口（writer / revise / 以后新增的任何节点）。
+    _gate_clipped = False
     try:
         _gate_mode = data.get("mode") or "fast"
         _gate_log = None
@@ -4053,6 +4054,7 @@ def _run_generation(data):
                     rounds=2)
                 if _fixed:
                     result["proposal"] = _fixed
+                    _gate_clipped = True
                     print(f"📏 最终篇幅闸门：{_gate_before} -> {_n} 字")
                 if _gate_log:
                     _gate_log.write("   压缩后 %s 字\n" % _n)
@@ -4060,6 +4062,17 @@ def _run_generation(data):
             _gate_log.close()
     except Exception as _e:
         print(f"[final-length-gate] 跳过，保留原文：{_e}")
+
+    # 压缩后再兜一次创新点：压缩指令是「每章只留两句话」，编号列出的创新点经常被
+    # 一起砍掉（实测评测基准 c01/c02 简洁版全文连「创新」二字都没有）。这里宁可超出
+    # 上限百来字，也不能丢掉占 16~30 分的创新点陈述；复检不升分会自动回退。
+    if _gate_clipped:
+        try:
+            _innov2 = _auto_patch_innovation(result, data)
+            if _innov2:
+                print(f"🧩 压缩后创新点复补：{_innov2}")
+        except Exception as _e:
+            print(f"[innovation-autopatch-2] 跳过，保留原文：{_e}")
 
     try:
         from backend.competition_agents import check_proposal_completeness

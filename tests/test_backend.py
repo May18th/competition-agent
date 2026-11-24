@@ -259,5 +259,54 @@ class TestDeidentChainSafety(unittest.TestCase):
         self.assertFalse(any("占位符" in r for r in reasons), reasons)
 
 
+class TestBlindLeakDetection(unittest.TestCase):
+    """双盲否决要认人名，不能把职位描述当成姓名（实测误杀整批评测）。
+
+    旧判据是「职位词 + 任意 2~4 字」，于是
+    `负责人为材料科学与工程学院本科生`、`指导教师为…高级工程师`、`导师经费出钱`
+    全被判成泄露——评测基准 3 份裸写稿 3/3 误杀，深度版 1 份同样，导出会被 422 拒。
+    """
+
+    def test_role_description_not_leak(self):
+        from quality_gate import _name_leak
+        for text in ("项目负责人为材料科学与工程学院本科生",
+                     "指导教师为实验室与设备管理处高级工程师",
+                     "技术负责人具备计算机视觉与嵌入式开发经验",
+                     "硬件负责人熟悉AR光学模组与电路设计",
+                     "试剂耗材由导师经费出钱",
+                     "负责人为公司法定代表人"):
+            self.assertFalse(_name_leak(text), text)
+
+    def test_real_name_is_leak(self):
+        from quality_gate import _name_leak
+        for text in ("指导教师：张伟", "项目负责人：本项目由三人完成".replace("本项目由三人完成", "李明"),
+                     "指导教师张伟，负责算法联调", "队长王小明负责统筹"):
+            self.assertTrue(_name_leak(text), text)
+
+    def test_university_name_still_leak(self):
+        import quality_gate
+        score, _, reasons = quality_gate.score_export(
+            {"proposal": "## 一、背景\n本项目来自某某科技大学实验室。"}, "fast")
+        self.assertEqual(score, 0)
+        self.assertTrue(any("双盲" in r for r in reasons), reasons)
+
+    def test_strict_false_keeps_reason_but_scores(self):
+        """评测口径：否决原因照记，但不归零——否则裸写组全部 0 分，对照列没有区分度。"""
+        import quality_gate
+        rec = {"proposal": "## 一、背景\n" + "本项目的痛点是实验室耗材盘点耗时约4小时。" * 12}
+        strict_score, _, strict_reasons = quality_gate.score_export(rec, "fast")
+        soft_score, dims, soft_reasons = quality_gate.score_export(rec, "fast", strict=False)
+        self.assertEqual(strict_score, soft_score)          # 没有否决项时两者一致
+        self.assertEqual(strict_reasons, soft_reasons)
+
+        leaky = {"proposal": rec["proposal"] + "\n指导教师：张伟"}
+        s1, _, r1 = quality_gate.score_export(leaky, "fast")
+        s2, _, r2 = quality_gate.score_export(leaky, "fast", strict=False)
+        self.assertEqual(s1, 0)
+        self.assertGreater(s2, 0)
+        self.assertTrue(any("双盲" in x for x in r1))
+        self.assertTrue(any("双盲" in x for x in r2))
+
+
 if __name__ == "__main__":
     unittest.main()

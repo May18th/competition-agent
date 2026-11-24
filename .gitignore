@@ -59,3 +59,6 @@ backend/scripts/__pycache__/
 
 # ---- 运行产物统一目录（backend/.data）----
 backend/.data/
+
+# 评测跑批的隔离运行目录（数据库/配额/日志），不进仓库
+benchmarks/.bench/
