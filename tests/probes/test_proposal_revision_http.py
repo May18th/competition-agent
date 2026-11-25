@@ -30,6 +30,12 @@ class ProposalRevisionHttpTests(unittest.TestCase):
             import sys
             if hasattr(sys.stdout, "reconfigure"):
                 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            # 源码在 backend/ 下（扁平化之前从仓库根裸导入）。只补仓库根：根下的
+            # app.py / competition_agents.py 是转发到 backend.* 的 shim，走它能保证
+            # 全程只有一个模块对象。把 backend/ 也塞进 path 会造出第二份实例，
+            # 测试里 patch 的 llm 与配额锁就跟被测代码不是同一个了。
+            _root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            sys.path.insert(0, _root)
             import app as app_module
             from werkzeug.serving import make_server
 

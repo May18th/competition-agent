@@ -92,7 +92,7 @@ def render_recovery_pdf(title, text, out_path):
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from pdf_render import _FONT, _escape_html
+    from backend.pdf_render import _FONT, _escape_html
 
     title_style = ParagraphStyle("recovery-title", fontName=_FONT, fontSize=18,
                                  leading=25, alignment=TA_CENTER, spaceAfter=18)

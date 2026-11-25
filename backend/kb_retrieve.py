@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """范文检索层：从用户描述抽关键词 + 按标签交集打分检索范文。"""
-from kb_samples import list_samples, MODULE_TAGS, TRACK_TAGS, FEATURE_TAGS
+from backend.kb_samples import list_samples, MODULE_TAGS, TRACK_TAGS, FEATURE_TAGS
 
 
 # 别名映射：标签 -> 常见表述（含标签本身）。全部小写后做字符串包含匹配。

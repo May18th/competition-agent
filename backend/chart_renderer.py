@@ -432,7 +432,7 @@ def render(chart, out_dir, theme=None):
 # 避免整条富媒体链路因 ImportError 静默失效（表现是 rich_* 全空）。
 if "render" not in dir():
     try:
-        from chart_render_wb import render  # noqa: F401
+        from backend.chart_render_wb import render
         print("[chart_renderer] render 缺失，已从 chart_render_wb 补回")
     except Exception as _e:
         print("[chart_renderer] render 兜底导入失败：", _e)

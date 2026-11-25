@@ -1755,7 +1755,7 @@ def summary_agent(state: CompetitionState) -> CompetitionState:
 def _ref_block(state: dict, module_tag: str) -> str:
     """取该模块的范文参考块；检索失败或为空返回空串，绝不抛异常。"""
     try:
-        from kb_retrieve import extract_keywords, search_samples
+        from backend.kb_retrieve import extract_keywords, search_samples
         kws = extract_keywords(state.get("idea", "") + " " + state.get("user_keywords", ""))
         # 按档位决定注入量：简洁版轻量参考，深度版完整参考；只取「范文」不取「材料」
         if (state or {}).get("tier") == "fast":
@@ -1885,7 +1885,7 @@ def _industry_ref() -> str:
 def _paradigm_ref(module_tag: str = None) -> str:
     """注入从范文库蒸馏出的「写作范式」；读不到则空串，绝不抛异常。"""
     try:
-        from kb_distill import paradigm_ref
+        from backend.kb_distill import paradigm_ref
         return paradigm_ref(module_tag) + "\n" if paradigm_ref(module_tag) else ""
     except Exception:
         return ""
@@ -1894,7 +1894,7 @@ def _paradigm_ref(module_tag: str = None) -> str:
 def _defense_paradigm_ref() -> str:
     """注入从答辩题库蒸馏出的「答辩范式」；读不到则空串。"""
     try:
-        from kb_distill import defense_paradigm_ref
+        from backend.kb_distill import defense_paradigm_ref
         return defense_paradigm_ref()
     except Exception:
         return ""
@@ -1903,7 +1903,7 @@ def _defense_paradigm_ref() -> str:
 def _judge_paradigm_ref() -> str:
     """注入从历史评审蒸馏出的「评委评分范式」；读不到则空串。"""
     try:
-        from kb_distill import judge_paradigm_ref
+        from backend.kb_distill import judge_paradigm_ref
         return judge_paradigm_ref()
     except Exception:
         return ""
@@ -1912,7 +1912,7 @@ def _judge_paradigm_ref() -> str:
 def _analysis_paradigm_ref(module_tag: str = None) -> str:
     """注入竞品/商业/风险/技术分析范式；读不到则空串。"""
     try:
-        from kb_distill import analysis_paradigm_ref
+        from backend.kb_distill import analysis_paradigm_ref
         return analysis_paradigm_ref(module_tag)
     except Exception:
         return ""
@@ -1921,7 +1921,7 @@ def _analysis_paradigm_ref(module_tag: str = None) -> str:
 def _deck_speech_paradigm_ref() -> str:
     """注入 PPT·演讲稿范式；读不到则空串。"""
     try:
-        from kb_distill import deck_speech_paradigm_ref
+        from backend.kb_distill import deck_speech_paradigm_ref
         return deck_speech_paradigm_ref()
     except Exception:
         return ""
@@ -1930,7 +1930,7 @@ def _deck_speech_paradigm_ref() -> str:
 def _similarity_paradigm_ref() -> str:
     """注入同质化检测范式；读不到则空串。"""
     try:
-        from kb_distill import similarity_paradigm_ref
+        from backend.kb_distill import similarity_paradigm_ref
         return similarity_paradigm_ref()
     except Exception:
         return ""
@@ -1939,7 +1939,7 @@ def _similarity_paradigm_ref() -> str:
 def _score_diagnosis_ref() -> str:
     """注入历史评委评分诊断（重点补强弱维度）；无数据则空串。"""
     try:
-        from insights import score_diagnosis
+        from backend.insights import score_diagnosis
         txt = score_diagnosis().get("diagnosis_text", "")
         return ("【历史评委评分诊断（据此重点补强）】\n" + txt + "\n") if txt else ""
     except Exception:
@@ -2071,7 +2071,7 @@ def _scoring_cover_block(state: dict) -> str:
         try:
             from backend.scorecard import classify_dim
         except ImportError:
-            from scorecard import classify_dim
+            from backend.scorecard import classify_dim
         dims = _official_scoring_dims(state.get("competition_name", ""), state.get("track"))
         if not dims:
             return ""

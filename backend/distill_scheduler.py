@@ -104,10 +104,7 @@ def _count(kind):
 def _run(kind):
     """后台实际执行蒸馏（在子线程里跑，失败只记录不抛出）。"""
     try:
-        from kb_distill import (
-            distill_from_samples, distill_judge, distill_analysis,
-            distill_deck_speech, distill_similarity,
-        )
+        from backend.kb_distill import distill_from_samples, distill_judge, distill_analysis, distill_deck_speech, distill_similarity
         if kind == "writing":
             distill_from_samples()
         elif kind == "judge":

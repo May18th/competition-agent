@@ -1193,7 +1193,7 @@ def build_docx(title, text, subtitle=None, org=None, toc=None,
         if cover:
             if cover_image:
                 try:
-                    from cover_style import get_cover
+                    from backend.cover_style import get_cover
                     path, _sk, _ink = get_cover(topic or subtitle or title or '')
                     _cover_background(doc, path)
                 except Exception as e:

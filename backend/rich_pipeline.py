@@ -17,9 +17,9 @@ from langchain_core.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 
 try:
-    from chart_renderer_pro import render as render_chart
+    from backend.chart_renderer_pro import render as render_chart
 except Exception:
-    from chart_renderer import render as render_chart
+    from backend.chart_renderer import render as render_chart
 
 GEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".data", "generated")
 

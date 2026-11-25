@@ -23,7 +23,7 @@ def main():
     with open(SEED, encoding="utf-8") as f:
         items = json.load(f)
 
-    import kb_samples as k
+    import backend.kb_samples as k
     added, skipped = 0, 0
     for it in items:
         content = (it.get("content") or "").strip()

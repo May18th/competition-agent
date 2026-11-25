@@ -117,7 +117,7 @@ def distill_from_samples(max_samples=40, max_chars=16000):
 
     返回 dict：{ok, samples_used, global_count, module_count}；失败抛异常且不覆盖原文件。
     """
-    from kb_samples import list_samples
+    from backend.kb_samples import list_samples
     samples = [s for s in list_samples()
                if s.get("type") == "范文" and (s.get("content") or "").strip()]
     if not samples:

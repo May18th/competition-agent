@@ -1,8 +1,15 @@
 import os
+import sys
 import tempfile
 import unittest
 
-from export_recovery import render_recovery_docx, render_recovery_pdf, sanitize_export_text
+# 源码在 backend/ 下（扁平化之前从仓库根裸导入），单独跑本探针时补搜索路径。
+# 必须补仓库根而非 backend/：模块之间一律用 `backend.xxx` 引用，只有根在
+# path 上时包名才解析得到（曾因只塞 backend/ 报 ModuleNotFoundError: backend）。
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, _ROOT)
+
+from backend.export_recovery import render_recovery_docx, render_recovery_pdf, sanitize_export_text
 from export_quality import (
     hard_artifact_issues,
     hard_content_issues,
@@ -66,7 +73,7 @@ class TestExportRecovery(unittest.TestCase):
     def test_production_renderers_leave_no_markdown_syntax(self):
         from docx import Document
         from docx_render import build_docx
-        from pdf_render import render_markdown_to_pdf
+        from backend.pdf_render import render_markdown_to_pdf
         from pypdf import PdfReader
 
         source = "## 项目概述\n项目**正文**内容和[来源](https://example.invalid)。\n\n|字段|结果|\n|---|---|\n|指标|已验证|\n\n```text\n恢复数据\n```"

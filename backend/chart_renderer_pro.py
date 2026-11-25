@@ -31,7 +31,7 @@ from matplotlib.patches import FancyBboxPatch, Rectangle, FancyArrowPatch
 from matplotlib.colors import LinearSegmentedColormap, to_rgba
 import numpy as np
 
-import chart_renderer as _cr          # 复用其中文字体注册，避免中文变方框
+import backend.chart_renderer as _cr
 
 # ---------------------------------------------------------------- 画布常量
 FIGSIZE = (11.0, 6.2)

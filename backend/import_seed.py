@@ -64,7 +64,7 @@ def main():
 
     use_kb = False
     try:
-        import kb_samples  # noqa: F401
+        import backend.kb_samples
         use_kb = True
         print("导入方式：kb_samples.add_sample（正式接口）")
     except Exception:
@@ -79,7 +79,7 @@ def main():
             continue
         try:
             if use_kb:
-                import kb_samples as k
+                import backend.kb_samples as k
                 exists = any(x.get("content") == content
                              for x in k.list_samples(limit=500))
                 if exists:

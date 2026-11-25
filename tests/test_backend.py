@@ -203,23 +203,23 @@ class TestQualityGateMode(unittest.TestCase):
         }
 
     def test_fast_skips_deep_only_modules(self):
-        import quality_gate
+        from backend import quality_gate
         _, issues = quality_gate.check_total(self._fast_payload(), "fast")
         for m in ("implementation_plan", "social_value", "project_summary"):
             self.assertFalse(any(m in i for i in issues), (m, issues))
 
     def test_deep_still_requires_them(self):
-        import quality_gate
+        from backend import quality_gate
         _, issues = quality_gate.check_total(self._fast_payload(), "deep")
         self.assertTrue(any("implementation_plan" in i for i in issues), issues)
 
     def test_fast_skips_rich_media(self):
-        import quality_gate
+        from backend import quality_gate
         _, issues = quality_gate.check_generation(self._fast_payload(), "fast")
         self.assertFalse(any("富媒体" in i for i in issues), issues)
 
     def test_deep_requires_rich_media(self):
-        import quality_gate
+        from backend import quality_gate
         _, issues = quality_gate.check_generation(self._fast_payload(), "deep")
         self.assertTrue(any("富媒体" in i for i in issues), issues)
 
@@ -229,7 +229,7 @@ class TestQualityGateMode(unittest.TestCase):
         保留这条回归是为了防止有人把这段检查再加回来——它会稳定误报
         「单台成本 6000」vs「量产后 5000」、「毛利率 35%～45%」这类正常表述。
         """
-        import quality_gate
+        from backend import quality_gate
         rec = self._fast_payload()
         rec["business_model"] = ("单台物料成本约6000至9000元。量产500台后成本降到5000元以内，"
                                  "毛利率35%至45%。")
@@ -247,13 +247,13 @@ class TestDeidentChainSafety(unittest.TestCase):
         self.assertNotIn("指导教师", out)
 
     def test_result_not_flagged_as_blind_leak(self):
-        import quality_gate
+        from backend import quality_gate
         out = ca._strip_ai_artifacts("项目指导教师（某老师）路线与答辩")
         _, _, reasons = quality_gate.score_export({"proposal": out}, "fast")[:3]
         self.assertFalse(any("双盲" in r for r in reasons), reasons)
 
     def test_jtbd_not_treated_as_placeholder(self):
-        import quality_gate
+        from backend import quality_gate
         _, _, reasons = quality_gate.score_export(
             {"proposal": "**技术名词**：用户旅程地图、JTBD、角色权限模型 RBAC"}, "fast")[:3]
         self.assertFalse(any("占位符" in r for r in reasons), reasons)
@@ -268,7 +268,7 @@ class TestBlindLeakDetection(unittest.TestCase):
     """
 
     def test_role_description_not_leak(self):
-        from quality_gate import _name_leak
+        from backend.quality_gate import _name_leak
         for text in ("项目负责人为材料科学与工程学院本科生",
                      "指导教师为实验室与设备管理处高级工程师",
                      "技术负责人具备计算机视觉与嵌入式开发经验",
@@ -278,13 +278,13 @@ class TestBlindLeakDetection(unittest.TestCase):
             self.assertFalse(_name_leak(text), text)
 
     def test_real_name_is_leak(self):
-        from quality_gate import _name_leak
+        from backend.quality_gate import _name_leak
         for text in ("指导教师：张伟", "项目负责人：本项目由三人完成".replace("本项目由三人完成", "李明"),
                      "指导教师张伟，负责算法联调", "队长王小明负责统筹"):
             self.assertTrue(_name_leak(text), text)
 
     def test_university_name_still_leak(self):
-        import quality_gate
+        from backend import quality_gate
         score, _, reasons = quality_gate.score_export(
             {"proposal": "## 一、背景\n本项目来自某某科技大学实验室。"}, "fast")
         self.assertEqual(score, 0)
@@ -292,7 +292,7 @@ class TestBlindLeakDetection(unittest.TestCase):
 
     def test_strict_false_keeps_reason_but_scores(self):
         """评测口径：否决原因照记，但不归零——否则裸写组全部 0 分，对照列没有区分度。"""
-        import quality_gate
+        from backend import quality_gate
         rec = {"proposal": "## 一、背景\n" + "本项目的痛点是实验室耗材盘点耗时约4小时。" * 12}
         strict_score, _, strict_reasons = quality_gate.score_export(rec, "fast")
         soft_score, dims, soft_reasons = quality_gate.score_export(rec, "fast", strict=False)
