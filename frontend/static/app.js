@@ -1,4 +1,51 @@
+/* app.js —— 主站交互脚本
+ * ---------------------------------------------------------------------------
+ * 模块作用域：整个文件包在一个 IIFE 里，函数不再泄漏到 window。
+ * 页面需要的符号在文件末尾的导出表里显式挂回 window（见 EXPORTS）。
+ *
+ * 为什么这么做：此前 277 个函数全在全局，任何脚本都能覆写同名函数，
+ * 改错一个名字全站静默失效，且无法判断谁依赖谁。收敛后，新增对外能力
+ * 必须显式加进导出表——多一步，但依赖关系变成可枚举的。
+ * --------------------------------------------------------------------------- */
+(function () {
+'use strict';
 
+/* ===== 类型约定（JSDoc，仅作文档，不参与运行）=====
+ * 这套注释不是装饰：这些结构在 8 个函数之间裸传，字段名写错不会报错，
+ * 只会让页面某块永远空白。下面按「谁生产、谁消费」写清楚。
+ *
+ * @typedef {Object} GenResult  一次生成的完整产物，来自 /api/status 的 result
+ *   或 /api/history 的 result_data。所有文本字段都是 Markdown 原文。
+ * @property {string} proposal       申报书正文（唯一必有的字段）
+ * @property {string} [competitor]   竞品与商业分析
+ * @property {string} [judge]        评委视角点评
+ * @property {string} [defense]      答辩问题清单
+ * @property {string} [ppt]          路演 PPT 大纲（不是 pptx 文件）
+ * @property {string} [speech]       演讲稿
+ * @property {string} [mode]         'fast' = 简洁版，'deep' = 深度版
+ * @property {string} [competition_name] 赛事全称
+ * @property {Array<Object>} [rich_charts] 深度版图表数据（供前端重绘）
+ * @property {Array<Object>} [rich_tables] 深度版表格数据
+ * @property {Object} [rich_deck]    路演 deck 结构
+ *
+ * @typedef {Object} TaskStatus  /api/status/<task_id> 的响应体
+ * @property {boolean} success
+ * @property {'queued'|'running'|'done'|'error'} status
+ * @property {Object<string,string>} [partial]  增量字段（**只含新增后缀**，
+ *   消费方必须按字段累加，直接渲染会只剩最后一段）
+ * @property {GenResult} [result]
+ * @property {number} [queue_position]     queued 时的排位（1 表示下一个）
+ * @property {number} [queue_wait_seconds]
+ * @property {string} [stage_label]        后端 stage_reporter 给出的中文阶段名
+ *
+ * @typedef {Object} FormState  三步表单的当前值，_collectForm 产出
+ * @property {string} competition  赛事名（下拉选中值，可能是简称）
+ * @property {string} idea         一句话创意
+ * @property {'fast'|'deep'} mode
+ * @property {string} [track]      赛道
+ *
+ * 命名习惯：`rd` = result data，`st`/`res2` = status 响应，`_p` = partial。
+ * ================================================= */
 
         /* ---------- 带超时的 fetch（2026-09-30 加） ----------
            背景：上传 / 主题列表 / 赛事索引等请求原先没有超时，网络慢或隧道抖动时
@@ -6,6 +53,13 @@
            - 默认 30s 超时（大文件上传放宽到 120s）
            - 超时后抛错走原有 catch 分支，提示"网络超时，请重试"
            - AbortController 不存在时（极老浏览器）退化为普通 fetch，不影响功能 */
+        /**
+         * 带超时的 fetch。
+         * @param {string} url
+         * @param {RequestInit} [opt]
+         * @param {number} [timeoutMs=30000] 超时后抛 AbortError，由调用方 catch 成提示
+         * @returns {Promise<Response>}
+         */
         function _wbFetch(url, opt, timeoutMs) {
             opt = opt || {};
             var ms = timeoutMs || 30000;
@@ -26,6 +80,14 @@
            直接调 WB.api 会 ReferenceError，整页功能全挂。这里退化为原生 fetch，
            最坏结果是超时/提示这些增强失效，功能照常。 */
         var _wbApiRef = (window.WB && typeof window.WB.api === 'function') ? window.WB.api : null;
+        /**
+         * 统一请求层：走 api.js 的 WB.api，缺失时退化为原生 fetch。
+         * @param {string} url
+         * @param {{method?:string, body?:*, headers?:Object, raw?:boolean,
+         *          cache?:RequestCache, timeoutMs?:number}} [opt]
+         *   raw=true 时返回 Response 本身（下载/流式），否则解析 JSON
+         * @returns {Promise<*>}
+         */
         function wbApi(url, opt) {
             if (_wbApiRef) return _wbApiRef(url, opt);
             var o = opt || {};
@@ -2908,7 +2970,7 @@
             try { wbRoadLabel(); } catch (e) {}
             try { wbApplyCompTheme(); } catch (e) {}
             if (window._lastData && window._lastData.rich_deck) {
-                try { renderRich(window._lastData, true); } catch (e) {}
+                try { (window.renderRich || renderRich)(window._lastData, true); } catch (e) {}
             }
         }
         window.wbSyncFooterComp = wbSyncFooterComp;
@@ -3250,6 +3312,12 @@
         }
 
         // ---- AI 富媒体渲染：图表 / 表格 / PPT 预览 ----
+        /**
+         * 渲染深度版专属块（图表 / 表格 / deck）。简洁版没有这些字段，传 isDeep=false 时直接跳过。
+         * @param {GenResult} rd
+         * @param {boolean} isDeep
+         * @returns {void} 直接写 DOM
+         */
         function renderRich(rd, isDeep) {
             var charts = rd.rich_charts || [];
             var tables = rd.rich_tables || [];
@@ -3919,7 +3987,7 @@
         function wbRoadToggle() {
             var rd = window._lastData;
             if (!rd || !rd.rich_deck) return;
-            try { renderRich(rd, true); } catch (e) {}   // 预览区同步换成新结构，所见即所下载
+            try { (window.renderRich || renderRich)(rd, true); } catch (e) {}   // 预览区同步换成新结构，所见即所下载
         }
 
         // ---- PPT 主题 / 模板选择 ----
@@ -4163,7 +4231,7 @@
             if (window._lastData && window._lastData.rich_deck) {
                 window._lastData.rich_deck.theme = tk;
             }
-            previewDeckStyle();
+            (window.previewDeckStyle || previewDeckStyle)();
         }
         // 版式的中文说明：告诉用户这套"长什么样"，而不是让他自己拼
         function wbLayoutDesc(t) {
@@ -4199,7 +4267,7 @@
         async function exportPptx() {
             var rd = window._lastData || {};
             if (!rd.rich_deck) { wbToast('请先用深度版生成一次，才有自动排版的 PPT', { type: 'warn' }); return; }
-            previewDeckStyle();
+            (window.previewDeckStyle || previewDeckStyle)();
             // 固定路演结构 + 申报书回填：开关开着时导出重排后的 8 页 deck
             var deck = rd.rich_deck;
             if (wbRoadshowOn()) { try { deck = wbRoadshowDeck(rd); } catch (e) { deck = rd.rich_deck; } }
@@ -4428,6 +4496,12 @@
         }
 
         // 把后端返回的 partial 渲染进页面；返回本次是否产出了新内容
+        /**
+         * 流式增量渲染。
+         * @param {Object<string,string>} partial 已**累加完成**的全文（不是单次增量，
+         *   累加由调用方做：`_streamAccum[f] += res.partial[f]`）
+         * @returns {void}
+         */
         function paintPartial(partial) {
             if (!partial || typeof partial !== 'object' || !window.marked) return false;
             var fresh = 0;
@@ -4969,7 +5043,7 @@
             document.getElementById('resultArea').style.display = 'none';
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
             _currentTaskId = null;
-            streamPrepare(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
+            (window.streamPrepare || streamPrepare)(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
 
             // ★ 真实进度：走异步接口 + 轮询 /api/status，百分比来自后端 stage
             // 注意：后端前几个节点是并行跑的，stage 会乱序跳变，所以百分比只涨不跌
@@ -5162,7 +5236,7 @@
                                     Object.keys(_p).forEach(function (f) {
                                         _streamAccum[f] = (_streamAccum[f] || '') + (_p[f] || '');
                                     });
-                                    paintPartial(_streamAccum);
+                                    (window.paintPartial || paintPartial)(_streamAccum);
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
                                     if (res2.stage_label) _curStageLabel = String(res2.stage_label);
                                     if (res2.stage) _curStageCode = String(res2.stage);
@@ -5248,7 +5322,7 @@
                 });
             })
             .then(data => {
-                streamFinish();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
+                (window.streamFinish || streamFinish)();   // 撤掉流式光标与脉冲点，交由最终渲染统一覆盖
                 try { wbAgentFinish(true); } catch (e) {}
                 window._wbGenerating = false;
                 // 整轮跑完才亮出下载条；生成中的局部提示撤掉
@@ -5364,7 +5438,7 @@
                         if (data.data.defense_questions) _P(8, function () { document.getElementById('defenseQuestions').innerHTML = wbRenderMD(data.data.defense_questions); });
                         if (data.data.ppt_outline) _P(8, function () { document.getElementById('pptOutline').innerHTML = wbRenderMD(data.data.ppt_outline); });
                         // ---- 9：富媒体（图表 / 表格 / deck），DOM 最重，放最后 ----
-                        _P(9, function () { renderRich(data.data, isDeep); });
+                        _P(9, function () { (window.renderRich || renderRich)(data.data, isDeep); });
 
                         // ---- 20：以下都要读已渲染的 DOM，必须排在所有渲染任务之后 ----
                         _P(20, function () {
@@ -5589,7 +5663,7 @@
             })
             .catch(err => {
                 // 注意：这里的 timer 变量已随真实进度改造移除，别再清 interval
-                streamFinish();   // 失败/取消也要撤掉流式光标和「生成中」占位
+                (window.streamFinish || streamFinish)();   // 失败/取消也要撤掉流式光标和「生成中」占位
                 try { wbAgentFinish(false); } catch (e) {}
                 document.getElementById('skeletonArea').style.display = 'none';
                 document.getElementById('cancelWrap').style.display = 'none';
@@ -7083,7 +7157,7 @@
                 try { renderIdeaRadar(data.scores, data.idea_score); } catch (e) {}
                 try { wbRefreshPhBar(); } catch (e) {}
                 try { renderCompleteness(data.completeness); } catch (e) {}
-                try { renderRich(data, isDeep); } catch (e) {}
+                try { (window.renderRich || renderRich)(data, isDeep); } catch (e) {}
                 try { initDeckThemeSelect(); } catch (e) {}
                 // 板块显隐：深度版专属块按内容有无显示
                 document.querySelectorAll('.deep-only').forEach(function (el) {
@@ -8179,3 +8253,122 @@
         window.wbRenderMD = wbRenderMD;
 
         })();
+
+/* ===== 导出表：页面（内联 on*="" 与内联 <script>）实际用到的符号 =====
+   只列真正跨边界的。新增对外能力请加进这里，否则页面拿不到。
+   不覆盖已存在的 window 属性：同名的由 index.html 自己定义（如 wbChartOpenFull）。
+
+   注意不能写成字符串名 + eval(name)：本文件在 IIFE + 'use strict' 里，
+   严格模式的 eval 拿不到外层作用域，eval 会找不到函数。这里直接引用标识符。 */
+var EXPORTS = {_esc: _esc,
+    _wbStoreGet: _wbStoreGet,
+    _wbStoreSet: _wbStoreSet,
+    cancelGeneration: cancelGeneration,
+    clearRuleDoc: clearRuleDoc,
+    closeHistory: closeHistory,
+    closeIntro: closeIntro,
+    coachEnd: coachEnd,
+    coachNext: coachNext,
+    copyLogReport: copyLogReport,
+    copyText: copyText,
+    deleteHistory: deleteHistory,
+    evAddSection: evAddSection,
+    evDelSection: evDelSection,
+    evReset: evReset,
+    evSave: evSave,
+    evSetTrack: evSetTrack,
+    evToggleMore: evToggleMore,
+    evToggleSections: evToggleSections,
+    evTrackBadgeClick: evTrackBadgeClick,
+    exportAll: exportAll,
+    exportOne: exportOne,
+    exportOnePDF: exportOnePDF,
+    exportOptimized: exportOptimized,
+    exportPptx: exportPptx,
+    kbAdd: kbAdd,
+    kbAddTag: kbAddTag,
+    kbContentHint: kbContentHint,
+    kbDelete: kbDelete,
+    kbFilterTags: kbFilterTags,
+    kbSearch: kbSearch,
+    loadHistory: loadHistory,
+    openHistory: openHistory,
+    loadLessons: loadLessons,
+    loadLogs: loadLogs,
+    loadThemeLib: loadThemeLib,
+    onCompetitionChange: onCompetitionChange,
+    onThemeChange: onThemeChange,
+    paintPartial: paintPartial,
+    previewDeckStyle: previewDeckStyle,
+    renderRich: renderRich,
+    showHistory: showHistory,
+    showIntro: showIntro,
+    startWork: startWork,
+    streamFinish: streamFinish,
+    streamPrepare: streamPrepare,
+    switchScoreTab: switchScoreTab,
+    switchTab: switchTab,
+    toggleKbDetail: toggleKbDetail,
+    wbBackToResult: wbBackToResult,
+    wbBgPanelToggle: wbBgPanelToggle,
+    wbBgPick: wbBgPick,
+    wbBgReset: wbBgReset,
+    wbBgSetDim: wbBgSetDim,
+    wbBgUpload: wbBgUpload,
+    wbClearFormAsk: wbClearFormAsk,
+    wbCompAll: wbCompAll,
+    wbCompClear: wbCompClear,
+    wbCompFill: wbCompFill,
+    wbCompInput: wbCompInput,
+    wbCompKey: wbCompKey,
+    wbCopyLink: wbCopyLink,
+    wbExpMenuToggle: wbExpMenuToggle,
+    wbFabToggle: wbFabToggle,
+    wbGoAnchor: wbGoAnchor,
+    wbGoExport: wbGoExport,
+    wbMatClose: wbMatClose,
+    wbMatGo: wbMatGo,
+    wbMatOpen: wbMatOpen,
+    wbMoreClose: wbMoreClose,
+    wbMoreToggle: wbMoreToggle,
+    wbPasteDraft: wbPasteDraft,
+    wbPickComp: wbPickComp,
+    wbPickTheme: wbPickTheme,
+    wbPptDownload: wbPptDownload,
+    wbRateSet: wbRateSet,
+    wbRateSubmit: wbRateSubmit,
+    wbRoadToggle: wbRoadToggle,
+    wbSaveForm: wbSaveForm,
+    wbSaveMeta: wbSaveMeta,
+    wbShowTip: wbShowTip,
+    wbSyncBind: wbSyncBind,
+    wbSyncCopy: wbSyncCopy,
+    wbSyncLoad: wbSyncLoad,
+    wbTeamSuggest: wbTeamSuggest,
+    wbThemeColors: wbThemeColors,
+    wbThemeThumb: wbThemeThumb,
+    wbToast: wbToast,
+    wbToastClose: wbToastClose,
+    wbToggleExtraThemes: wbToggleExtraThemes,
+    wbTrainArchive: wbTrainArchive,
+    wbTrainToggle: wbTrainToggle,
+    wbUaClose: wbUaClose,
+    wbUaCopy: wbUaCopy,
+    wbUaOpenBrowser: wbUaOpenBrowser,
+    wbUaPaste: wbUaPaste,
+    WB_BLANK_IMG: WB_BLANK_IMG,
+    WB_COMP_INDEX: WB_COMP_INDEX,
+    _streamShown: _streamShown,
+    _themeLib: _themeLib,
+    _themeManual: _themeManual,
+    wbCompFocus: wbCompFocus,
+    WB_STATS: WB_STATS,
+    _currentTaskId: _currentTaskId};
+for (var _k in EXPORTS) {
+    if (Object.prototype.hasOwnProperty.call(EXPORTS, _k) &&
+            typeof window[_k] === 'undefined') {
+        window[_k] = EXPORTS[_k];
+    }
+}
+
+})();
