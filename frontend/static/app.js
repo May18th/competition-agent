@@ -4583,6 +4583,63 @@
             document.querySelectorAll('.stream-wait').forEach(function (w) { w.remove(); });
         }
 
+        /* ---------- 尺寸变化中心（2026-11-25） ----------
+           为什么不用 window.resize：
+             ① 侧栏折叠、面板展开/收起、字号缩放、Tab 切换后内容变宽变窄，
+                都不会触发 window.resize —— 图表还按旧宽度算，右半边被裁掉；
+             ② 手机地址栏收起只改高度不改宽度，window.resize 会连发好几次，图表被重复 resize。
+           ResizeObserver 直接盯容器本身，谁变盯谁；老内核没有就退回 window.resize。
+           用法：
+             wbOnResize('budgetChart', el, function (w, h) { inst.resize(); });
+           同一 key 重复注册只保留最后一个回调（避免每次生成都叠一层监听）。 */
+        var _wbRO = null;
+        var _wbROMap = (typeof WeakMap === 'function') ? new WeakMap() : null;
+        var _wbROFallback = {};
+        function wbOnResize(key, el, fn) {
+            if (!el || typeof fn !== 'function') return;
+            key = String(key);
+            if (typeof ResizeObserver === 'function') {
+                if (!_wbRO) {
+                    _wbRO = new ResizeObserver(function (entries) {
+                        for (var i = 0; i < entries.length; i++) {
+                            var e = entries[i];
+                            var cb = _wbROMap ? _wbROMap.get(e.target) : e.target.__wbROCB;
+                            if (!cb) continue;
+                            // 尺寸为 0 说明元素在隐藏页签里，此时 resize 出来的图是空白，
+                            // 记下待办，等它可见时 ResizeObserver 会再触发一次
+                            var r = e.contentRect || {};
+                            if (!r.width || !r.height) continue;
+                            try { cb(r.width, r.height); } catch (err) {}
+                        }
+                    });
+                }
+                // 同一元素换绑回调：直接覆盖映射，不重复 observe
+                if (_wbROMap) _wbROMap.set(el, fn);
+                else el.__wbROCB = fn;
+                try { _wbRO.observe(el); } catch (e) {}
+                return;
+            }
+            // 兜底：window.resize 节流，按 key 去重
+            _wbROFallback[key] = { el: el, fn: fn };
+            if (_wbROFallback.__bound) return;
+            _wbROFallback.__bound = true;
+            var t = 0;
+            window.addEventListener('resize', function () {
+                if (t) return;
+                t = setTimeout(function () {
+                    t = 0;
+                    for (var k in _wbROFallback) {
+                        if (k === '__bound') continue;
+                        var it = _wbROFallback[k];
+                        if (!it || !it.el || !it.el.getBoundingClientRect) continue;
+                        var r = it.el.getBoundingClientRect();
+                        if (r.width && r.height) { try { it.fn(r.width, r.height); } catch (e) {} }
+                    }
+                }, 160);
+            });
+        }
+        window.wbOnResize = wbOnResize;
+
         var _currentTaskId = null;
         function cancelGeneration() {
             if (!_currentTaskId) return;
@@ -5198,6 +5255,16 @@
                     const _poll = () => {
                         // 切后台/锁屏时彻底停手：省电、省流量，也不给后端添无意义负载
                         if (document.hidden) return;
+                        // SSE 活着时降频到 6s：正文由 SSE 推，轮询只负责 stage/eta/终态。
+                        // 生成中每 2s 打一次接口纯粹是重复劳动，手机上还是发烫来源之一。
+                        // SSE 一断（_wbSseLive=false）立刻回到 2s，兜底不打折。
+                        if (window._wbSseLive) {
+                            var _nowMs = Date.now();
+                            if (_nowMs - (window.__wbPollLast || 0) < 6000) return;
+                            window.__wbPollLast = _nowMs;
+                        } else {
+                            window.__wbPollLast = Date.now();
+                        }
                         if (Date.now() - t0 > (_queuedSeen ? 15 * 60 * 1000 : WATCHDOG_MS)) {
                             clearInterval(tick);
                             reject(new Error('等待超时（' + (WATCHDOG_MS / 60000) + ' 分钟未完成）。可能是服务重启过或任务被中断，请重新生成'));
@@ -5232,11 +5299,22 @@
                                     const sec = Math.round((Date.now() - t0) / 1000);
                                     // ★ 分块流式：后端每跑完一个节点就返回已产出内容，这里立刻渲染
                                     // cursor 增量：后端只回每个字段「新增后缀」，这里累加成全文再渲染
-                                    var _p = res2.partial || {};
-                                    Object.keys(_p).forEach(function (f) {
-                                        _streamAccum[f] = (_streamAccum[f] || '') + (_p[f] || '');
-                                    });
-                                    (window.paintPartial || paintPartial)(_streamAccum);
+                                    //
+                                    // 2026-11-25：SSE 连着时由它独占正文渲染（index.html sseOpen 的
+                                    // partial 事件走打字机 tw）。这里再 paintPartial 同一批 delta，
+                                    // 就是两条路各渲染一遍 —— 字数跳动、段落重复。所以：
+                                    //   SSE 活着 → 轮询只取 stage/status/eta，不碰 partial，也不再推进 cursor；
+                                    //   SSE 断开 → _wbSseLive 为 false，自动回到这里的增量渲染兜底。
+                                    if (!window._wbSseLive) {
+                                        var _p = res2.partial || {};
+                                        Object.keys(_p).forEach(function (f) {
+                                            _streamAccum[f] = (_streamAccum[f] || '') + (_p[f] || '');
+                                        });
+                                        (window.paintPartial || paintPartial)(_streamAccum);
+                                    } else if (typeof window.__wbSseOpen === 'function') {
+                                        // SSE 半死不活（EventSource 还开着但没事件）时重建一次
+                                        window.__wbSseOpen(start.task_id);
+                                    }
                                     try { wbAgentStage(res2.stage, res2.stage_label); } catch (e) {}
                                     if (res2.stage_label) _curStageLabel = String(res2.stage_label);
                                     if (res2.stage) _curStageCode = String(res2.stage);
@@ -5316,6 +5394,10 @@
                             .catch(e => { clearInterval(tick); reject(e); });
                     };
                     const tick = setInterval(_poll, 2000);
+                    // SSE 兜底节流：SSE 活着时正文由它推送，轮询只需拿 stage/eta，
+                    // 每 6s 一次足够；但完成/失败信号仍靠轮询判定，为避免"最后几秒白等"，
+                    // 把 _poll 挂到全局，SSE 收到 done 时立刻踢一次。
+                    window.__wbSseKickPoll = () => { try { _poll(); } catch (e) {} };
                     document.addEventListener('visibilitychange', function () {
                         if (!document.hidden) { try { _poll(); } catch (e) {} }
                     });
@@ -5617,15 +5699,16 @@
                                     series: [{ type: 'line', data: [10, 30, 55, 80, 100], smooth: true, areaStyle: { color: _T.area }, itemStyle: { color: _T.line } }]
                                 });
                                 // 窗口变化时自动重绘（只注册一次，避免每次生成都叠加监听器）
-                                if (!window.__chartsResizeBound) {
-                                    window.__chartsResizeBound = true;
-                                    window.addEventListener('resize', () => {
-                                        ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
-                                            const inst = echarts.getInstanceByDom(document.getElementById(id));
-                                            if (inst) inst.resize();
-                                        });
+                                // 2026-11-25：改盯容器而不是窗口 —— 侧栏折叠 / 切页签导致图表变窄，
+                                // window.resize 收不到，图会按旧宽度画、右侧被裁掉一截。
+                                ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
+                                    const el = document.getElementById(id);
+                                    if (!el) return;
+                                    wbOnResize('chart:' + id, el, function (w, h) {
+                                        const inst = echarts.getInstanceByDom(el);
+                                        if (inst) inst.resize();
                                     });
-                                }
+                                });
                                 // 示例图表同样支持单击放大：把 echarts 实例导出成高清图再塞进弹窗
                                 const demoChartTitles = {budgetChart: '预算构成', marketChart: '市场规模', timelineChart: '项目实施时间线'};
                                 ['budgetChart', 'marketChart', 'timelineChart'].forEach(id => {
@@ -6972,12 +7055,17 @@
             var q = (document.getElementById('historySearch') || {}).value || '';
             var list = document.getElementById('historyList');
             list.innerHTML = '<p style="color: var(--text-mute); text-align: center;">加载中...</p>';
+            // 竞态守卫：连点分页 / 边打字边搜时，先发的请求可能后到，
+            // 把后发的正确结果覆盖掉。seq 不匹配就直接丢弃。
+            var _seq = (window.WB && WB.api && WB.api.seq) ? WB.api.seq('history') : 0;
             wbApi('/api/history?limit=' + _historyLimit + '&offset=' + offset + '&q=' + encodeURIComponent(q), { silent: true })
                 .then(function (d) {
+                    if (_seq && !WB.api.isLatest('history', _seq)) return;
                     if (!d.success) { throw new Error(d.error || '加载失败'); }
                     renderHistoryList(d);
                 })
                 .catch(function (e) {
+                    if (_seq && !WB.api.isLatest('history', _seq)) return;
                     list.innerHTML = '<p style="color: var(--err-text); text-align: center;">加载失败：' + _esc(_friendlyErr(e)) + '</p>';
                 });
         }
@@ -7084,6 +7172,10 @@
 
         async function openHistory(id) {
             var modal = document.getElementById('historyModal');
+            // 竞态守卫：连点两条记录时，先发的那条若后到会把后点的内容盖掉，
+            // 表现成「点 B 打开的是 A」。seq 只认最后一次点击。
+            var _hseq = (window.WB && WB.api && WB.api.seq) ? WB.api.seq('historyDetail') : 0;
+            var _isLatest = function () { return !_hseq || !window.WB || !WB.api || WB.api.isLatest('historyDetail', _hseq); };
             try {
                 var d = null;
                 if (window.__wbDemoData) {
@@ -7093,6 +7185,7 @@
                         d = await wbApi('/api/history/' + id, { silent: true });
                     } catch (e) { d = null; }
                 }
+                if (!_isLatest()) return;
                 if (!d || !d.success || !d.data) {
                     // 后端按 uid 隔离，手机端 uid 存不住时这条会「记录不存在」。
                     // 用生成时存在本机的那份兜底，历史不至于点了打不开。

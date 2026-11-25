@@ -2019,30 +2019,50 @@ window.addEventListener('resize', function () {
         if (busy) raf = rAF(tick);
     }
 
-    /* ---------- 3. SSE（拿不到就靠轮询兜底） ---------- */
+    /* ---------- 3. SSE（拿不到就靠轮询兜底） ----------
+       双写问题（2026-11-25）：轮询每 2s 把 cursor 增量累加进 _streamAccum 再 paintPartial，
+       SSE 又把同一批 delta 灌进打字机 tw —— 同一段文本走两条路各渲染一次，
+       表现为字数跳动、段落重复出现。现在由 SSE 独占正文渲染：
+       连上后置 window._wbSseLive = true，轮询侧只取 stage/status/eta，不再碰 partial。 */
     var es = null, esId = null;
+    function sseSetLive(v) {
+        window._wbSseLive = v;
+        try { if (window.__wbSseLiveHook) window.__wbSseLiveHook(v); } catch (e) {}
+    }
     function sseOpen(tid) {
         if (!tid || esId === tid || typeof EventSource === 'undefined') return;
         if (es) { try { es.close(); } catch (e) {} }
         esId = tid;
-        try { es = new EventSource('/api/stream/' + tid); } catch (e) { es = null; return; }
+        try { es = new EventSource('/api/stream/' + tid); } catch (e) { es = null; sseSetLive(false); return; }
+        // onopen 才算真连上：EventSource 构造成功不等于链路通，中间可能一直重连
+        es.onopen = function () { sseSetLive(true); };
         es.addEventListener('stage', function (ev) {
             try { var d = JSON.parse(ev.data); stage(d.stage, ''); } catch (e) {}
         });
         es.addEventListener('partial', function (ev) {
             try {
                 var d = JSON.parse(ev.data);
+                if (window._wbSseLive === false) return;   // 已退回轮询，别两边抢
                 var prev = (tw[d.field] && tw[d.field].full) || '';
                 twSet(d.field, prev + (d.delta || ''));
             } catch (e) {}
         });
-        es.addEventListener('done', function () { sseClose(); });
+        // done 只代表 SSE 流结束，真正的终态数据还在 /api/status 的 data 里。
+        // 立刻踢一次轮询，别让用户盯着「还需 1 秒」等下一个 6s tick。
+        es.addEventListener('done', function () {
+            sseClose();
+            try { if (window.__wbSseKickPoll) window.__wbSseKickPoll(); } catch (e) {}
+        });
         es.onerror = function () { sseClose(); };
     }
     function sseClose() {
         if (es) { try { es.close(); } catch (e) {} }
         es = null; esId = null;
+        sseSetLive(false);       // 断开即把正文渲染交还轮询，断网/服务重启时不会停在半截
     }
+    // 出口：让 app.js 的轮询段能主动判断/重建 SSE
+    window.__wbSseOpen = sseOpen;
+    window.__wbSseClose = sseClose;
 
     /* ---------- 4. 挂到现有流程上 ---------- */
     if (typeof window.streamPrepare === 'function') {

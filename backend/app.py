@@ -3100,7 +3100,6 @@ def _run_generation(data):
             "ppt_outline": "",
             "speech_script": "",
             "one_liner": "",
-            "rich_media": "",
             "idea_score": 0,
             "idea_feedback": "",
             "score": 0,
@@ -3127,10 +3126,9 @@ def _run_generation(data):
         else:
             result = _run_graph(fast_app, state)
 
-        # ===== 富媒体解析（表格/图表/PPT）：三种来源统一归一，失败不阻断 =====
-        # 来源1：rich_pipeline 直接写在 result 上的三个字段（当前主链路）
-        # 来源2：result["rich_media"] 的 JSON 字符串（兼容旧写法）
-        # 来源3：已经渲染好的 [{url,title,caption}] 列表（直接透传）
+        # ===== 富媒体解析（表格/图表/PPT）：统一归一，失败不阻断 =====
+        # 三个字段是当前唯一契约：rich_pipeline 产出结构化数据，接口和前端直接消费。
+        # 已移除无生产写入、无历史记录依赖的 rich_media 旧 JSON 协议，避免维护两套格式。
         rich_tables = []
         rich_deck = None
         rich_charts = []
@@ -3138,19 +3136,6 @@ def _run_generation(data):
             _charts_raw = result.get("rich_charts")
             rich_tables = result.get("rich_tables") or []
             rich_deck = result.get("rich_deck")
-
-            if not (rich_tables or rich_deck):
-                import json as _json
-                _rm = (result.get("rich_media") or "").strip()
-                if _rm.startswith("```"):
-                    _rm = _rm.strip("`")
-                    if _rm.lower().startswith("json"):
-                        _rm = _rm[4:]
-                if _rm:
-                    _d = _json.loads(_rm)
-                    rich_tables = _d.get("tables") or []
-                    rich_deck = _d.get("deck")
-                    _charts_raw = _d.get("charts") or _charts_raw
 
             if isinstance(_charts_raw, dict) and _charts_raw:
                 try:

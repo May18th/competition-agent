@@ -789,7 +789,6 @@ class CompetitionState(TypedDict):
     defense_questions: str
     ppt_outline: str
     speech_script: str
-    rich_media: str
     one_liner: str
     idea_score: int
     idea_feedback: str

@@ -76,13 +76,34 @@ def self_mounted(app_src):
     return set(re.findall(r"window\.([A-Za-z_$][\w$]*)\s*=(?!=)", app_src))
 
 
+def strip_comments(src):
+    """去掉 // 行注释、/* */ 块注释和 <!-- --> HTML 注释。
+
+    注释里提到某个名字不构成跨文件依赖。实测：index.html 的一段说明文字里
+    写了 `_streamAccum`，它就被当成「内联脚本依赖 app.js 的 _streamAccum 却
+    没导出」——而 `_streamAccum` 是 app.js 的内部状态，本来就不该导出。
+    """
+    src = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    src = re.sub(r"<!--.*?-->", " ", src, flags=re.S)
+    src = re.sub(r"^\s*//.*$", " ", src, flags=re.M)
+    src = re.sub(r"[ \t]//[^\n]*", " ", src)
+    return src
+
+
 def identifiers(src):
     """提取可能是"变量引用"的标识符。
 
-    必须排除两类噪声，否则会产生大量假依赖：
+    必须排除四类噪声，否则会产生大量假依赖：
       - 属性访问 d.total、obj.total
       - 字符串/CSS 类名片段 wbsc-total
+      - 注释（见 strip_comments）
+      - 字符串字面量内容
     """
+    src = strip_comments(src)
+    # 抹掉字符串字面量内容，保留引号以免把前后标识符粘连
+    src = re.sub(r"'(?:[^'\\\n]|\\.)*'", "''", src)
+    src = re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', src)
+    src = re.sub(r"`(?:[^`\\]|\\.)*`", "``", src, flags=re.S)
     out = set()
     for m in re.finditer(r"(?<![\w$.-])([A-Za-z_$][\w$]*)(?![\w$-])", src):
         name = m.group(1)
