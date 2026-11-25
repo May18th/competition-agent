@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>probe: 日间正文区 #fff 修复验证</title>
+<style>
+    /* 只复刻 style.css 里与本次问题相关的变量，其余全部走真实样式表 */
+    :root {
+        --text: #c9d2ea; --text-soft: #aeb8d8; --text-dim: #a9b7d9; --text-mute: #8b98bd;
+        --surface-3: rgba(255,255,255,.10); --line: rgba(125,211,252,.22);
+        --c-a: #38bdf8; --c-a-soft: rgba(56,189,248,.16); --info-strong: #67e8f9;
+    }
+    body.light {
+        --text: #1a2340; --text-soft: #2a3558; --text-dim: #55618a; --text-mute: #5f6b88;
+        --surface-3: rgba(20,30,70,.10); --line: rgba(40,60,120,.16);
+        --c-a: #0e7490; --c-a-soft: rgba(14,116,144,.12); --info-strong: #0e7490;
+        background: #fff;
+    }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; padding: 24px; }
+    .probe-tag { font-size: 12px; color: #888; margin-bottom: 8px; }
+</style>
+<link rel="stylesheet" href="file:///D:/competition-agent/frontend/static/style.css">
+</head>
+<body class="light">
+<div class="probe-tag">body.light + 真实 style.css —— 修复后</div>
+
+<div class="content-block">
+    <h2>最容易踩的三块</h2>
+    <p>智能取件柜在 iCAN 及同类赛事中出现频率较高，评委容易在三十秒内把它归入已知类别。<strong>同质化风险：中高</strong>，但风险不在选题本身。</p>
+    <p><strong>方向一：把场景钉死在一个具体点位上。</strong>不要写「校园取件」，改写成「某类高校宿舍区晚间九点到十一点、外卖与快递混投场景下的取件冲突」。</p>
+    <p><strong>方向二：补上闭环环节。</strong>常见项目停在「检测到超时即推送提醒」，缺少提醒后的复核。</p>
+    <p><strong>方向三：拿出可量化的实证证据。</strong>哪怕只在一个点位做两周试点。</p>
+    <table>
+        <thead><tr><th>维度</th><th>说明</th></tr></thead>
+        <tbody><tr><td>同比</td><td>格口周转率</td></tr></tbody>
+    </table>
+</div>
+
+<div class="rich-table-wrap" style="margin-top:20px">
+<table class="rich-table">
+    <thead><tr><th>指标</th><th>试点数据</th></tr></thead>
+    <tbody>
+        <tr><td>格口周转率</td><td>2.1 次/日</td></tr>
+        <tr><td>平均取件等待</td><td>38 秒</td></tr>
+    </tbody>
+</table>
+</div>
+</body>
+</html>
