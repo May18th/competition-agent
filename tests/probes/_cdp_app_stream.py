@@ -87,8 +87,9 @@ def main():
         # 用演示样例（零 POST、不动额度），只为把结果页结构与字段节点铺出来。
         c.ev("(function(){ try { window.wbOpenDemo(); } catch(e){ return String(e); } return 'ok'; })()")
         time.sleep(5)
-        # 清掉演示文本，避免干扰"内容是否落到 DOM"的判定
-        c.ev("(function(){ var p=document.getElementById('proposal'); if(p) p.innerHTML=''; return 'cleared'; })()")
+        # 清掉演示文本，避免干扰"内容是否落到 DOM"的判定。
+        # _STREAM_MAP 里 proposal → proposalText，别清错节点。
+        c.ev("(function(){ var p=document.getElementById('proposalText'); if(p) p.innerHTML=''; return 'cleared'; })()")
 
         # 一次性跑完整条链，记录每一步的观测值
         r = c.ev(r"""(async function(){
@@ -121,10 +122,15 @@ def main():
                 if (typeof window.streamFinish === 'function') { window.streamFinish(); log.steps.push('finish'); }
                 else { log.steps.push('finish-missing'); }
 
-                // ⑤ 观测 DOM 上是否真的留了内容
-                await new Promise(function(res){ setTimeout(res, 400); });
-                var anyText = document.body.innerText.indexOf('第一段') >= 0;
+                // ⑤ 等打字机把字逐帧揭示完（rAF 分帧，不是同步写 DOM）
+                var el0 = document.getElementById('proposalText');
+                for (var w = 0; w < 40; w++) {
+                    await new Promise(function(res){ setTimeout(res, 100); });
+                    if (el0 && (el0.innerText || '').indexOf('第一段') >= 0) break;
+                }
+                var anyText = el0 ? (el0.innerText || '').indexOf('第一段') >= 0 : false;
                 log.domHasText = anyText;
+                log.domLen = el0 ? (el0.innerText || '').length : -1;
             } catch(e) {
                 log.err = String(e);
             } finally {
