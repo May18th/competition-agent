@@ -69,21 +69,47 @@ class TestLlmUsageStore(unittest.TestCase):
             competition_agents._LLM_USAGE_DB_PATH = old_path
 
     def test_quota_wrapped_invoke_records_usage_once(self):
+        """包装只记一次账，且调用的就是传进来的那个 invoke。
+
+        2026-11-25 修：包装签名已改为 `_llm_invoke_with_quota(original_invoke, *args)`
+        （`_wrap_llm` 按实例注入，否则评分实例会被换成正文实例的温度）。
+        这里必须传真实 callable —— 旧写法传 `[]`，等于把 list 当函数调用，测的是错误现场。
+        """
         import competition_agents
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         response = SimpleNamespace(usage_metadata={"input_tokens": 5, "output_tokens": 3},
                                    response_metadata={})
-        with patch.object(competition_agents, "_llm_invoke_original", return_value=response), \
-             patch.object(competition_agents, "_backup_llm", None), \
+        fake_invoke = MagicMock(return_value=response)
+        with patch.object(competition_agents, "_backup_llm", None), \
              patch.object(competition_agents, "_quota_load", return_value={"calls": 0}), \
              patch.object(competition_agents, "_quota_save") as save_quota, \
              patch.object(competition_agents, "_record_llm_usage") as record_usage:
-            result = competition_agents._llm_invoke_with_quota([])
+            result = competition_agents._llm_invoke_with_quota(fake_invoke, "prompt-x")
 
         self.assertIs(result, response)
-        save_quota.assert_called_once()
+        fake_invoke.assert_called_once_with("prompt-x")      # 参数原样透传，没被吃掉
+        save_quota.assert_called_once()                      # 配额只 +1 一次
         record_usage.assert_called_once()
+        self.assertIs(record_usage.call_args.args[0], response)
+        self.assertIs(record_usage.call_args.args[2], fake_invoke)   # 记的是真正被调用的实例
+
+    def test_quota_limit_blocks_call_without_recording(self):
+        """达到上限必须当场拒绝，且不记账、不消耗模型——这是包装存在的意义。"""
+        import competition_agents
+        from unittest.mock import MagicMock, patch
+
+        fake_invoke = MagicMock()
+        with patch.object(competition_agents, "_quota_load",
+                          return_value={"calls": competition_agents._QUOTA_DAILY_LIMIT}), \
+             patch.object(competition_agents, "_quota_save") as save_quota, \
+             patch.object(competition_agents, "_record_llm_usage") as record_usage:
+            with self.assertRaises(RuntimeError):
+                competition_agents._llm_invoke_with_quota(fake_invoke, "prompt-x")
+
+        fake_invoke.assert_not_called()
+        save_quota.assert_not_called()
+        record_usage.assert_not_called()
 
     def test_stream_wrapper_records_cumulative_usage_once(self):
         import competition_agents
@@ -95,16 +121,18 @@ class TestLlmUsageStore(unittest.TestCase):
             content="", usage_metadata={"input_tokens": 30, "output_tokens": 9, "total_tokens": 39},
             response_metadata={},
         )
-        with patch.object(competition_agents, "_llm_stream_original",
-                          return_value=iter([first_chunk, final_chunk])) as mock_stream, \
-             patch.object(competition_agents, "_record_llm_usage") as record_usage:
-            chunks = list(competition_agents._llm_stream_with_usage(["prompt"]))
+
+        def fake_stream(*args, **kwargs):
+            return iter([first_chunk, final_chunk])
+
+        with patch.object(competition_agents, "_record_llm_usage") as record_usage:
+            chunks = list(competition_agents._llm_stream_with_usage(fake_stream, "prompt"))
 
         self.assertEqual(chunks, [first_chunk, final_chunk])
         record_usage.assert_called_once()
-        self.assertIs(record_usage.call_args.args[0], final_chunk)
+        self.assertIs(record_usage.call_args.args[0], final_chunk)   # 只认带 usage 的那个块
         self.assertGreaterEqual(record_usage.call_args.args[1], 0)
-        self.assertIs(record_usage.call_args.args[2], mock_stream)
+        self.assertIs(record_usage.call_args.args[2], fake_stream)
 
 
 if __name__ == "__main__":

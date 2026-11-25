@@ -5027,10 +5027,13 @@
                 }, 700);
             }, 60);
 
-            fetch('/api/generate_async', {
+            // 2026-11-25：原来这里裸 fetch 无超时。挂住不返回时 then/catch 都不触发，
+            // _wbGenerating 永久停在 true——按钮卡「生成中」、下载条被抑制、再点也没反应，只能刷新。
+            // 启动接口只是入队（正常 <2s），给 25s 上限；raw 保留下面原有的 res.ok 判读，
+            // silent 是因为本函数自己会给出更具体的错误文案，不要让全局提示再弹一次。
+            wbApi('/api/generate_async', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     competition_name: competition,
                     idea: idea,
                     proposal_draft: draftOut,
@@ -5066,7 +5069,8 @@
                     // 与 Codex 约定：章节定制只对深度版生效，简洁版保持「短而准」的精简五章
                     outline_requirement: (mode === 'deep' ? ((evCurrent() || {}).sections || []) : []),
                     scoring_weights: ((evCurrent() || {}).scoring || []).filter(function (x) { return _wbPctOf(x) !== null; })
-                })
+                },
+                raw: true, timeout: 25000, silent: true
             })
             .then(res => res.json().catch(function () { return {}; }).then(function (j) {
                 // 原来直接 res.json()：后端 400/500 时被当正常响应往下走，错误体里真正的

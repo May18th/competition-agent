@@ -3720,6 +3720,36 @@ def _emit_partial(full_state):
         set_partial(partial)
 
 
+def _wb_len_trim(text, cap):
+    """简洁版篇幅收敛：按句末标点从尾部整句删除，把正文压到 cap 以内。
+
+    为什么需要：压缩走 LLM，模型「压不动」时会停在略超的位置（实测目标 1650、落 1830）。
+    为几十字再花一次调用不划算，硬裁又容易断在半句，所以这里按句号/问号/叹号切句、
+    整句从末尾删除，绝不切断句子。
+
+    口径必须与 competition_agents._cjk_len 完全一致（剥掉 Markdown 符号与空白后计数），
+    否则会出现「这里说达标、那边说超标」。
+    """
+    def _ln(t):
+        return len(re.sub(r'[#*`\-\|>\[\]（）()\s]', '', t or ''))
+
+    n0 = _ln(text)
+    if n0 <= cap:
+        return text, 0
+    # 超出 5% 以上不硬裁：那不是「模型差一点」，硬裁会明显丢内容，应该交给 LLM 压
+    if n0 > int(cap * 1.05):
+        return text, 0
+    parts = re.split(r'(?<=[。！？])', text or '')
+    while len(parts) > 1 and _ln(''.join(parts)) > cap:
+        parts.pop()
+    out = ''.join(parts).rstrip()
+    n1 = _ln(out)
+    # 裁完掉到 cap 的 90% 以下，说明不是「轻微超标」，硬裁会明显丢内容 → 放弃
+    if n1 < cap * 0.9:
+        return text, 0
+    return out, n0 - n1
+
+
 def _run_graph(app, state):
     """逐步执行 LangGraph 工作流，每步把已产出字段写进 partial；返回最终 state。"""
     result = None
@@ -4046,12 +4076,11 @@ def _run_generation(data):
                         datetime.now().strftime("%H:%M:%S"), _gate_before))
                 except Exception:
                     _gate_log = None
-                # 上限取 1720：压缩 prompt 里写着「保持在 1200~1800、不低于 1200」，
-                # 模型会往区间上限贴。之前设 1650，第一轮常落在 1700 左右 → 判定仍超标
-                # → 再压一轮 → 落到 1500（压过头、白花一次调用）。设 1720 后第一轮
-                # 通常就收在区间内，第二轮直接 break（实测可省掉一次压缩调用）。
+                # 目标写 1780，直接对齐「写作区间 1600~1800」的上限：
+                # 闸门触发线本来就是 >1800，目标却设 1650，等于把写作刚写到的 1750 又压回区间下沿，
+                # 写作侧为了达标做的扩写全白费。留 20 字余量给模型贴上限的习惯。
                 _fixed, _n = _gate_comp(
-                    result.get("proposal", ""), 1720,
+                    result.get("proposal", ""), 1780,
                     result.get("one_liner") or (data.get("idea") or "")[:40],
                     rounds=2)
                 if _fixed:
@@ -4060,6 +4089,17 @@ def _run_generation(data):
                     print(f"📏 最终篇幅闸门：{_gate_before} -> {_n} 字")
                 if _gate_log:
                     _gate_log.write("   压缩后 %s 字\n" % _n)
+
+                # 压缩后仍轻微超标（模型压不动时停在 1800~1890）→ 代码整句收敛：
+                # 不为几十字再花一次 LLM 调用，也不把正文断在半句上。
+                _n_after = _gate_len(result.get("proposal", ""))
+                if 1800 < _n_after <= int(1800 * 1.05):
+                    _trimmed, _cut = _wb_len_trim(result.get("proposal", ""), 1800)
+                    if _cut:
+                        result["proposal"] = _trimmed
+                        print(f"📐 篇幅收敛：{_n_after} -> {_n_after - _cut} 字（尾部整句）")
+                        if _gate_log:
+                            _gate_log.write("   收敛后 %d 字\n" % (_n_after - _cut))
         if _gate_log:
             _gate_log.close()
     except Exception as _e:

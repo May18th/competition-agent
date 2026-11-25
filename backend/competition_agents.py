@@ -115,7 +115,6 @@ def get_quota_status():
 _LLM_GATE = threading.Semaphore(16)
 _quota_lock = threading.Lock()
 _llm_invoke_original = llm.invoke
-_llm_stream_original = llm.stream
 _llm_fail_count = 0            # 第二百一十一轮 E：主通道连续失败计数
 _llm_fail_lock = threading.Lock()
 
@@ -1338,6 +1337,12 @@ def _theme_drifted(idea, text):
     return False, []
 
 
+# 简洁版的篇幅区间：写、扩、压三处必须用同一组数，否则会出现
+# 「写 1600 下限 / 扩到 1100 就收手 / 压到 1200 也行」的互相打架。
+# 实测只写「不超过 1800」时 20 题里最短只交 1429 字（原始字符数），官方维度覆盖面不够。
+_FAST_MIN_CHARS = 1600
+
+
 def _compress_to_length(text, max_chars, topic, rounds=1):
     """简洁版篇幅兜底：正文超过 max_chars 时让模型就地压缩，最多 rounds 轮。
 
@@ -1359,13 +1364,14 @@ def _compress_to_length(text, max_chars, topic, rounds=1):
                 "这意味着**你必须删掉至少 %d 字（约 %.0f%% 的内容）**，不是微调，是实打实地砍。\n\n"
                 "硬要求：\n"
                 "1. 每章只保留最核心的 2 句话（约 100～150 字），删掉所有展开说明、举例、铺垫；\n"
-                "2. 全文压到 1200～%d 字之间，不要低于 1200 字；\n"
+                "2. 全文压到 %d～%d 字之间——不能低于 %d 字，压过头同样是内容单薄；\n"
                 "3. 章节结构、标题（## 一、xxx）与序号必须保持不变，核心数字和技术名词保留；\n"
                 "4. **若正文有以 ①②③ 编号列出的创新点或清单，整句原样保留，不得删除、不得改写成"
                 "叙述句**——这是评分点，删了要丢分；\n"
                 "5. 中文标点用全角。\n\n"
                 "直接输出压缩后的完整申报书全文，不要任何说明。\n\n"
-                "当前申报书：\n%s" % (n, max_chars, _cut, _pct, max_chars, cur)
+                "当前申报书：\n%s" % (n, max_chars, _cut, _pct,
+                                   max_chars - 120, max_chars, max_chars - 120, cur)
             )
             new = (llm.invoke([HumanMessage(content=prompt)]).content or '').strip()
             # 护栏：模型回了空/极短内容时不会抛异常，直接采信会把申报书压成空文。
@@ -2589,6 +2595,10 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
     _n_chapters = max(1, _chapter_md.count("## "))
     # 留 80 字余量给创新点编号句（它要挤进某一章，模型会因此整段省略），
     _per_chapter = max(120, (1700 - 80) // _n_chapters)
+    # 下限同样要按章数倒算：只写「不超过 1800」时模型常只交 1400 字（实测 20 题均值
+    # 1852 但离散大，最短 1429），覆盖面不够，官方维度自查直接掉分。
+    _floor_total = _FAST_MIN_CHARS
+    _floor_chapter = max(90, _per_chapter - 40)
     _quick_titles = [ln.strip()[3:] for ln in _chapter_md.split("\n")
                      if ln.strip().startswith("## ")]
     prompt = f"""你是科创赛事申报书写作专家。请写一份**精简版**申报书（对应前端「简洁快速版」）。
@@ -2610,12 +2620,12 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_score_diagnosis_ref()}
 
 【篇幅硬性要求】
-1. 全文**严格不超过 1800 字**（硬上限，超过直接判不合格）。下笔前先算配额：
-   1800 ÷ 本次章节数 = 每章上限字数，写的时候按配额收口，宁可少写一句也不要超标。
-2. 本次共 {_n_chapters} 章，**每章只写 1 个自然段、不超过 {_per_chapter} 字**（约 3～4 句）。
+1. 全文**控制在 {_floor_total}～1800 字**（上限是硬线，超过会被强制压缩；低于 {_floor_total} 
+   判内容单薄，评分点写不全）。下笔前先算配额：1800 ÷ 本次章节数 = 每章上限字数。
+2. 本次共 {_n_chapters} 章，**每章只写 1 个自然段、{_floor_chapter}～{_per_chapter} 字**（约 3～5 句）。
    {_n_chapters} × {_per_chapter} ≈ {_n_chapters * _per_chapter} 字，正好卡在 1800 以内。
-   不要为了「有展开」而追加句子——这一档是给用户快速判断创意用的摘要稿，
-   不是提交版，写长反而扣分（超长会被强制压缩，既费时间又容易把关键数据压丢）。
+   写不满每章下限就是没把这一章的评分点讲完，不要用一句话敷衍收场；
+   但也不要为了「有展开」硬凑到超长——超长会被强制压缩，既费时间又容易把关键数据压丢。
 3. 章节严格按下方官方模板组织，每个标题**必须用「## 」开头**（Markdown 二级标题）并保留「一、二、三、」序号，不要增删章节、不要中途省略、不要自造或合并章节；**输出后按官方顺序自检一遍，确保不乱序、不缺章**：
 
 {_chapter_md}
@@ -2634,7 +2644,7 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 {_scoring_cover_block(state)}{_competition_focus(state)}
 """
     proposal, n = _expand_to_length(
-        _stream_llm_guarded(prompt, "proposal"), 1100,
+        _stream_llm_guarded(prompt, "proposal"), _FAST_MIN_CHARS,
         state.get('one_liner') or state['idea'][:40])
     state["proposal"] = proposal
     state["revision_count"] = state.get("revision_count", 0) + 1
@@ -2645,12 +2655,19 @@ def proposal_writer_agent(state: CompetitionState) -> CompetitionState:
 def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
     """🔧 定向修订 Agent：只改评委指出的问题段落，不整篇重写"""
     _report_stage("revision")
+    # 2026-11-25：修订环节原来对篇幅零约束，只让模型「输出完整全文」。
+    # 实测它会把写作+扩写攒下的字数大幅改动（2339→3602→5040），长度不可控主要来自这里。
+    # 这里给一个「不得缩水」的下限；上限由后面的篇幅压缩闸门统一裁。
+    _before_len = _cjk_len(state.get('proposal') or '')
+    _revise_floor = max(120, _before_len - 100)
     prompt = f"""你是科创赛事申报书修订专家。请根据评委意见，对下面的申报书做**定向修订**。
 
 要求：
 1. 只修改评委明确指出的问题段落，其他没问题的地方保持原文，不要整篇重写。
 2. 保留原申报书的结构和未涉及问题的内容。
 3. 修改后输出完整的申报书全文。
+4. **篇幅不得缩水**：当前正文约 {_before_len} 字，修订后不得少于 {_revise_floor} 字；
+   只改被点名的段落，不要顺手精简没被点名的内容。
 
 当前申报书：
 {state.get('proposal', '')}
@@ -2659,9 +2676,10 @@ def targeted_revise_agent(state: CompetitionState) -> CompetitionState:
 {state.get('judge_feedback', '')}
 """
     response = llm.invoke([HumanMessage(content=prompt)])
-    state["proposal"] = response.content
+    state["proposal"] = response.content or ''
     state["revision_count"] = (state.get("revision_count") or 0) + 1
-    print(f"🔧 定向修订：第 {state['revision_count']} 版")
+    print(f"🔧 定向修订：第 {state['revision_count']} 版，"
+          f"{_cjk_len(state.get('proposal') or '')} 字（修订前 {_before_len} 字）")
     return state
 
 
