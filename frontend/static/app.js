@@ -4550,6 +4550,7 @@
                         _sk.style.opacity = '0';
                         setTimeout(function () { try { _sk.style.display = 'none'; } catch (e) {} }, 280);
                     }
+                    try { document.body.classList.add('wb-has-result'); } catch (e) {}
                     var _ra = document.getElementById('resultArea');
                     if (_ra) {
                         _ra.style.display = 'block';
@@ -4639,6 +4640,77 @@
             });
         }
         window.wbOnResize = wbOnResize;
+
+        /* ---------- 断网态（2026-11-25） ----------
+           没有 navigator.onLine 处理之前，断网的表现是「按钮能点、转圈、然后失败」——
+           用户分不清是自己网断了还是服务挂了，会一直重试。
+           这里把 online/offline 做成一个显式状态：
+             · body.wb-offline 控制提示条与主按钮置灰（纯 CSS，不插节点）；
+             · 恢复联网时若正卡在生成中，立刻补一次轮询，不用等下一个 tick。 */
+        function wbApplyOnlineState() {
+            var off = (typeof navigator !== 'undefined' && navigator.onLine === false);
+            try { document.body.classList.toggle('wb-offline', off); } catch (e) {}
+            if (!off) { try { if (window.__wbSseKickPoll) window.__wbSseKickPoll(); } catch (e) {} }
+            return !off;
+        }
+        window.addEventListener('online', wbApplyOnlineState);
+        window.addEventListener('offline', wbApplyOnlineState);
+        // 首屏不挂条：navigator.onLine 在微信/QQ 冷启动时会短暂误报 false，
+        // 一进页面就顶个红条会让人以为网站坏了。只在事件真的触发后才认这个状态，
+        // 用户在页面里断网时仍是即时提示。
+        window.wbApplyOnlineState = wbApplyOnlineState;
+
+        /* ---------- hash 路由（2026-11-25） ----------
+           现状：整个站点是单页 + 一排弹窗，URL 永远是 https://kechuang2026.cn/。
+           三个真实后果：
+             ① 刷新就丢当前结果 —— 用户看完一篇申报书按 F5，回到空白首页，得重新生成；
+             ② 没法把某篇材料发给别人（「分享链接」走的是另一套 token，跟当前页不是一回事）；
+             ③ 浏览器前进/后退键直接退出站点，用户以为点错了。
+           方案：轻量 hash 路由，不改后端、不动 .htaccess，纯前端：
+             #/                     首页
+             #/result/<history_id>  某条结果（刷新可恢复）
+             #/history              历史面板
+           只做这三条，够用且不会与现有弹窗逻辑打架。
+           注意：不接管 scroll，避免和「锚点条平滑滚动」抢控制权。 */
+        var _wbHashSilent = false;
+        function wbHashGet() {
+            var h = String(location.hash || '').replace(/^#\/?/, '');
+            return h;
+        }
+        function wbHashSet(path, replace) {
+            var target = '#' + (path ? '/' + String(path).replace(/^#?\/?/, '') : '/');
+            if (location.hash === target) return;
+            try {
+                _wbHashSilent = true;
+                if (replace && history.replaceState) history.replaceState(null, '', target);
+                else location.hash = target;
+            } catch (e) {
+                try { location.hash = target; } catch (e2) {}
+            }
+            // hashchange 是异步的，用定时器兜底把标记复位（同值赋值不会触发事件）
+            setTimeout(function () { _wbHashSilent = false; }, 0);
+        }
+        window.wbHashSet = wbHashSet;
+
+        function wbHashApply() {
+            if (_wbHashSilent) return;
+            var h = wbHashGet();
+            var m = h.match(/^result\/(\d+)$/);
+            if (m) {
+                var id = parseInt(m[1], 10);
+                // 同一条已经打开着就不再重复拉（避免刷新时先渲染一遍再重拉）
+                if (window._lastHistoryId === id && window._lastData) return;
+                try { openHistory(id); } catch (e) {}
+                return;
+            }
+            if (h === 'history') {
+                try { showHistory(); } catch (e) {}
+                return;
+            }
+            // 空 hash / #/ ：什么都不做，停在首页（不清结果，免得后退回来内容没了）
+        }
+        window.addEventListener('hashchange', wbHashApply);
+        window.wbHashApply = wbHashApply;
 
         var _currentTaskId = null;
         function cancelGeneration() {
@@ -5031,6 +5103,13 @@
         window.wbPathDialog = wbPathDialog;
 
         function startWork() {
+            // 断网拦截：没有这一步的话，离线点「开始生成」会一路跑到 fetch 失败，
+            // 用户看到的是「生成失败」而不是「你没网」。先拦，省一次 3 分钟的等待。
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                try { document.body.classList.add('wb-offline'); } catch (e) {}
+                wbToast('当前没有网络连接', { type: 'warn', sub: '恢复联网后会自动继续，刚才填的内容都在' });
+                return;
+            }
             const idea = document.getElementById('idea').value.trim();
             const proposal_draft = document.getElementById('proposal_draft').value.trim();
             const competition = document.getElementById('competition').value;
@@ -5098,6 +5177,7 @@
             if (_eb0) { _eb0.style.display = 'inline-block'; _eb0.innerText = '预计 --'; }
             document.getElementById('skeletonArea').style.display = 'block';
             document.getElementById('resultArea').style.display = 'none';
+            try { document.body.classList.remove('wb-has-result'); } catch (e) {}
             wbFabHide();   // 重新生成期间旧结果的导出按钮先收起来
             _currentTaskId = null;
             (window.streamPrepare || streamPrepare)(mode);   // 铺「生成中…」占位，等后端 partial 一到就逐块替换成真内容
@@ -5432,6 +5512,7 @@
                     if (data.success) {
                         document.getElementById('skeletonArea').style.display = 'none';
                         document.getElementById('resultArea').style.display = 'block';
+                        try { document.body.classList.add('wb-has-result'); } catch (e) {}
                         // 默认直接看「申报与评审」（正文），不把规则解析/评委打分糊在用户脸上
                         try { switchTab(null, 'proposal'); } catch (e) {}
                         // ===== 结果渲染：入队分帧，不一把梭 =====
@@ -6922,6 +7003,7 @@
                 if (typeof coachEnd === 'function') coachEnd(); // 无条件收引导：veil 有 380ms 创建延迟，只查 veil 会漏掉窗口期
             } catch (e) {}
             document.getElementById('historyModal').style.display = 'flex';
+            try { wbHashSet('history'); } catch (e) {}
             loadHistory(0);
             try { wbLoadHisTabs(); } catch (e) {}
         }
@@ -6934,6 +7016,8 @@
             // 2026-09-28 修：原实现直接读 event.target，无参调用会抛错，导致 × 和 Esc 全都关不掉。
             if (event && event.target && event.target !== m) return;
             m.style.display = 'none';
+            // 关掉面板就把 hash 退回首页，否则刷新又弹回来，用户以为是 bug
+            try { if (/^#\/?history$/.test(location.hash || '')) wbHashSet(''); } catch (e) {}
         }
 
         var _historyLimit = 10;
@@ -7276,6 +7360,7 @@
                 var area = document.getElementById('resultArea');
                 if (area) {
                     area.style.display = 'block';
+                    try { document.body.classList.add('wb-has-result'); } catch (e) {}
                     area.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
                 // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
@@ -7286,6 +7371,11 @@
                 } else {
                     wbDemoZipGuard(false);
                     wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
+                }
+                // 演示样例没有真实 history_id（是内存里造的），不能写进 hash：
+                // 写成 #/result/0 后用户一刷新就去查 id=0，恢复不了还平白多一次 404。
+                if (!window.__wbDemoData) {
+                    try { wbHashSet('result/' + id); } catch (e) {}
                 }
             } catch (e) {
                 wbToast('打开失败：' + _friendlyErr(e), { type: 'error' });
@@ -8107,8 +8197,33 @@
             ['查看历史记录', function () { showHistory(); }],
             ['使用说明', function () { showIntro(true); }],
             ['清空重写', function () { wbClearFormAsk(); }],
-            ['回到页面顶部', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); }]
+            ['回到页面顶部', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); }],
+            // 结果区深，命令面板要能直达 —— 否则「跳到答辩预测」还是得自己翻页签
+            ['跳到申报书正文', function () { switchTab(null, 'proposal'); wbScrollToResult(); }],
+            ['跳到模拟评委评分', function () { switchTab(null, 'analysis'); wbScrollToResult(); }],
+            ['跳到答辩预测', function () { switchTab(null, 'defense'); wbScrollToResult(); }],
+            ['跳到导出中心', function () { switchTab(null, 'export'); wbScrollToResult(); }],
+            // 这两个定义在 index.html 的内联块里（app.js 先加载），必须走 window 取，
+            // 直接裸调会在点击瞬间 ReferenceError
+            ['切换日间/夜间', function () { if (window.wbToggleTheme) window.wbToggleTheme(); }],
+            ['复制本页链接', function () {
+                var u = location.href;
+                var ok = function () { wbToast('链接已复制', { type: 'ok' }); };
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(u).then(ok, function () { wbToast(u, { ms: 5000 }); });
+                        return;
+                    }
+                } catch (e) {}
+                wbToast(u, { ms: 5000 });   // 老内核没有剪贴板 API：直接把 URL 显示出来让人手选
+            }]
         ];
+        function wbScrollToResult() {
+            var ra = document.getElementById('resultArea');
+            if (ra && ra.style.display !== 'none') {
+                try { ra.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+            }
+        }
         var wbCommand = document.createElement('div');
         wbCommand.id = 'wbCommandDialog';
         wbCommand.className = 'wb-command-overlay';
@@ -8174,7 +8289,10 @@
             wbReadBar.classList.add('visible');
         }
         window.addEventListener('scroll', function () { if (!wbReadTick) { wbReadTick = true; requestAnimationFrame(wbUpdateReadingProgress); } }, { passive: true });
-        window.addEventListener('resize', wbUpdateReadingProgress);
+        // 用尺寸中心替代 window.resize：正文容器变宽变窄（切页签、折叠侧栏）也要重算，
+        // 否则进度条按旧宽度算，读完 100% 时条子还停在一半。
+        if (wbReadTarget) wbOnResize('reading', wbReadTarget, wbUpdateReadingProgress);
+        else window.addEventListener('resize', wbUpdateReadingProgress);
         if (wbReadTarget && window.MutationObserver) new MutationObserver(wbUpdateReadingProgress).observe(wbReadTarget, { childList: true, subtree: true, characterData: true });
         wbUpdateReadingProgress();
         // 色卡预览用 background 简写（最后一层可以带 color），但应用时拆成两条
@@ -8344,6 +8462,15 @@
             return html;
         }
         window.wbRenderMD = wbRenderMD;
+
+        /* 首帧恢复路由：#/result/<id> 直接打开那条记录，#/history 直接开历史面板。
+           必须放在这里 —— openHistory / showHistory 都在本 IIFE 内，
+           放到 IIFE 外就取不到它们（会静默 ReferenceError，刷新照旧回首页）。 */
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () { try { wbHashApply(); } catch (e) {} });
+        } else {
+            setTimeout(function () { try { wbHashApply(); } catch (e) {} }, 0);
+        }
 
         })();
 

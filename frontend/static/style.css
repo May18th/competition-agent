@@ -1109,6 +1109,15 @@ body.light .modal h2{ color: #1f2a44; }
     transition: background .25s, transform .25s;
 }
 .history-item:hover { background: var(--surface-2); transform: translateX(3px); }
+/* 长列表渲染（2026-11-25）：历史一次能翻到上百条，全部 innerHTML 出来后
+   浏览器会把每一行都真算一遍布局 —— 屏幕外那 90% 的计算是纯浪费。
+   content-visibility:auto 让「不在视口内」的行跳过渲染，滚到才补算；
+   contain-intrinsic-size 给个估算高度，避免滚动条长度来回跳。
+   代价接近零：老内核不认识这两条属性就忽略，行为跟原来一致。 */
+.history-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 76px;
+}
 .history-time { font-size: 12px; color: var(--text-mute); }
 .history-title { font-size: 15px; color: var(--text); margin: 4px 0; }
 .history-score { font-size: 13px; color: var(--c-a); font-weight: 600; }
@@ -2249,3 +2258,161 @@ body.light .ev-track-chip[aria-pressed="true"]:hover { color: #fff; }
 #evTrackWarn b { color: var(--warn-text); }
 /* 生成被拦下时整块抖两下：和输入框共用同一套 wbShakeHL，用户已认识这个反馈 */
 #evTrackBox.wb-shake-hl { animation-duration: 1.1s; }
+
+/* ===== 打印样式（2026-11-25） =====
+   用户拿到申报书的第一反应是 Ctrl+P 存 PDF，而不是点「下载 PDF」——
+   之前按下去会连同深色背景、侧栏、按钮、提示条一起打出来，纸面上是一坨黑块。
+   这里只保留「正文可读」这一件事：
+     · 白底黑字（夜间主题也不影响纸面）
+     · 隐掉所有交互件（按钮/页签/进度条/浮层/提示条）
+     · 表格和公式块不被切断（page-break-inside: avoid）
+     · 链接后面补 URL，纸质稿也追得到出处
+   用 !important 是因为原样式大量依赖内联 style 和 CSS 变量，
+   打印态优先级必须压过它们，否则「白色背景」会被夜间变量盖回深色。 */
+@media print {
+    @page { margin: 16mm 14mm; }
+
+    html, body {
+        background: #fff !important;
+        color: #111 !important;
+        font-size: 11.5pt;
+        line-height: 1.75;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* 交互件全部退场：不占纸面、也不留空白 */
+    header, footer, nav, aside,
+    #pageSkeleton, #skeletonArea, #wbPartialNote, #quickExportBar,
+    #wbStyleBar, #wbReadingProgress, #wbFab, #wbFabPanel, #wbExportDock,
+    #wbAnchorBar, #wbCommandDialog, #agentPanel, #wbBg, #pageVeil,
+    #introModal, #historyModal, #chartModal, #wbMoreMenu, #wbExpMenu,
+    .tabs, .tab, .wb-anchor-bar, .wb-anchor-scroll, .wb-agent-panel,
+    .wb-subtabs, .wb-drop, .wb-point-arrow, .wb-orb, .wb-bg,
+    .no-print, [data-no-print],
+    /* 显式按钮：打印时不需要「点击」这个动作 */
+    button, .btn, .btn-primary, .wb-glass-btn, .wb-glass-btn-sm, .wb-textbtn,
+    .history-item, .card-title, .qe-title, .dock-main, .dock-ghost,
+    #wbToast, .wb-toast-title, .wb-toast-main {
+        display: none !important;
+    }
+
+    /* 只打结果区：首页表单卡片、hero 头图、版本卡对纸质稿没有意义，
+       留着会把正文挤到第二页之后，还会带一堆输入框边框 */
+    .container > .card:not(#resultArea),
+    .hero, .result-hero, .version-card, .wb-hero-tech, .wb-hero-newbie,
+    .wb-scan, .progress-steps, .form-group, .wb-formgrid {
+        display: none !important;
+    }
+
+    /* 结果区去掉卡片化外观：纸面上不需要圆角、阴影、玻璃拟态 */
+    #resultArea, #resultArea * {
+        background: transparent !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+    }
+    #resultArea {
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    /* 结果区平时带内联 display:none（生成前、以及骨架屏阶段）。
+       有内容时 JS 会打上 body.wb-has-result，打印态才展开；
+       没内容就老老实实不出这一块，不硬塞一页空白。 */
+    body.wb-has-result #resultArea { display: block !important; }
+
+    /* 所有页签都展开打印：用户打印时想要的是「整份材料」，
+       只打当前页签会漏掉深度版的实施计划/社会价值等章节。 */
+    .tab-content,
+    #tab-analysis, #tab-deep, #tab-proposal, #tab-charts,
+    #tab-defense, #tab-export, #tab-kb, #tab-logs {
+        display: block !important;
+        page-break-before: auto;
+    }
+    .deep-only { display: block !important; }
+
+    /* 正文：白底黑字，标题层级靠字重和间距，不靠颜色 */
+    #resultArea h1, #resultArea h2, #resultArea h3, #resultArea h4,
+    .content-block h1, .content-block h2, .content-block h3, .content-block h4 {
+        color: #000 !important;
+        page-break-after: avoid;
+    }
+    #resultArea p, #resultArea li, #resultArea span, #resultArea div,
+    .content-block p, .content-block li {
+        color: #111 !important;
+    }
+    a, a:visited { color: #000 !important; text-decoration: underline; }
+    /* 外链补出地址：纸质稿看不到 href，评审想核出处就无从下手 */
+    a[href^="http"]::after {
+        content: " (" attr(href) ")";
+        font-size: 9pt;
+        color: #555 !important;
+        word-break: break-all;
+    }
+
+    /* 表格 / 代码 / 图：不许跨页断开 */
+    table { border-collapse: collapse !important; width: 100% !important; page-break-inside: avoid; }
+    th, td { border: 1px solid #999 !important; padding: 5px 7px !important; color: #111 !important; }
+    thead { display: table-header-group; }   /* 长表格跨页时每页都带表头 */
+    tr { page-break-inside: avoid; }
+    pre, blockquote, img, canvas, .chart-card, .wb-chart-box {
+        page-break-inside: avoid;
+        max-width: 100% !important;
+    }
+    pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6 !important; border: 1px solid #ddd !important; }
+    blockquote { border-left: 3px solid #bbb !important; padding-left: 10px !important; }
+
+    /* 流式光标、脉冲点这类装饰不进纸面 */
+    .streaming::after, .has-stream::after, .wb-pulse { display: none !important; }
+
+    /* 分页控制：一级标题另起一页（正文长文按章节断开更接近正式申报书） */
+    #resultArea h2 { page-break-before: auto; }
+    .content-block { page-break-inside: auto; }
+
+    /* 图片不因打印而撑破版心 */
+    img { max-width: 100% !important; height: auto !important; }
+}
+
+/* ===== 断网提示条（2026-11-25） =====
+   常驻 DOM 里、默认收起（height:0 + opacity:0），联网状态切换只改一个 class，
+   不动态插节点 —— 断网时插节点会让首屏有一次性重排，看起来像"页面卡了一下"。
+   用 position:sticky 而不是 fixed：滚动时它跟着内容走，不会永远压在顶部挡按钮。 */
+#wbOfflineBar {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 950;
+    margin: 0;
+    padding: 9px 16px;
+    background: var(--warn-bg);
+    border-bottom: 1px solid var(--warn-line);
+    color: var(--text);
+    font-size: 12.5px;
+    line-height: 1.6;
+    text-align: center;
+}
+body.wb-offline #wbOfflineBar { display: block; }
+body.wb-offline #wbOfflineBar .wb-offline-txt::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    margin-right: 8px;
+    border-radius: 50%;
+    background: var(--warn-text);
+    vertical-align: 1px;
+    animation: wbOfflinePulse 1.6s ease-in-out infinite;
+}
+@keyframes wbOfflinePulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .25; }
+}
+/* 离线时主 CTA 明确置灰：不拦着用户点（点了会走自己的错误处理），
+   但视觉上先告诉他"现在点也没用"，省一次白等 */
+body.wb-offline #startBtn {
+    opacity: .55;
+    cursor: not-allowed;
+    filter: grayscale(.35);
+}
+@media (prefers-reduced-motion: reduce) {
+    body.wb-offline #wbOfflineBar .wb-offline-txt::before { animation: none; }
+}
