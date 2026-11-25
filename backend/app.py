@@ -970,7 +970,7 @@ def _admin_guard():
     # 蒸馏接口：额外限流（未授权的请求不该消耗限流名额）
     if p.startswith("/api/distill"):
         if _distill_rate_limited(p):
-            resp = jsonify({"success": False, "error": "该类型蒸馏太频繁，请 10 分钟后再试"})
+            resp = jsonify({"success": False, "error": "这类提炼点得太频繁，请 10 分钟后再试"})
             resp.status_code = 429
             return resp
     return None
@@ -2912,7 +2912,7 @@ def admin_home():
         '<li><span class="t">#%s · %s · %s</span>%s</li>'
         % (r["id"], _html_escape(r["kind"] or ""), r["created_time"] or "",
            _html_escape(r["content"] or ""))
-        for r in open_issue_rows) or '<li class="e">暂无待处理问题</li>'
+        for r in open_issue_rows) or '<li class="e">暂无待处理的反馈</li>'
 
     return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2942,48 +2942,48 @@ h1{font-size:24px;margin:0 0 4px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 概览</a><a href="/admin/panel">📊 明细数据</a><a href="/admin/llm-usage">💸 模型花费</a><a href="/monitor">🟢 实时状态</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 管理后台</h1>
-<div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
+<div class="sub">关键数字都在这一页，想看得更细进「明细数据」或「实时状态」</div>
 <div class="hero">
-<div class="h"><div class="n">%d</div><div class="l">总生成次数</div></div>
-<div class="h"><div class="n">%d</div><div class="l">今日生成</div></div>
-<div class="h"><div class="n %s">%s/5分</div><div class="l">满意度平均分（%d 人打分）</div></div>
-<div class="h"><div class="n %s">%s%%</div><div class="l" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
-<div class="h"><div class="n %s">%d</div><div class="l">待处理工单</div></div>
+<div class="h"><div class="n">%d</div><div class="l">累计出稿</div></div>
+<div class="h"><div class="n">%d</div><div class="l">今天出稿</div></div>
+<div class="h"><div class="n %s">%s/5分</div><div class="l">用户评分（%d 人评过）</div></div>
+<div class="h"><div class="n %s">%s%%</div><div class="l" title="算的是「成功出稿」占「有过记录的生成」的比例">出稿成功率</div></div>
+<div class="h"><div class="n %s">%d</div><div class="l">待处理反馈</div></div>
 <div class="h"><div class="n">%d</div><div class="l">反馈总数</div></div>
 </div>
 <div class="cols">
-<div class="box"><h2>最近反馈</h2><ul>%s</ul></div>
-<div class="box"><h2>最近失败</h2><ul>%s</ul></div>
+<div class="box"><h2>最近的反馈</h2><ul>%s</ul></div>
+<div class="box"><h2>最近失败（为什么没出稿）</h2><ul>%s</ul></div>
 </div>
-<div class="box" style="margin-top:14px"><h2>待处理工单（%d）</h2><ul>%s</ul></div>
+<div class="box" style="margin-top:14px"><h2>待处理的反馈（%d）</h2><ul>%s</ul></div>
 <div class="more"><a href="/admin/panel">查看完整数据面板 →</a></div>
-<div class="box" style="margin-top:14px"><h2>📊 数据洞察（自动扫描）</h2>
-<div id="insightGaps" style="font-size:13px;color:#64748b">赛事资料缺口：加载中…</div>
-<div id="insightFeedback" style="font-size:13px;color:#64748b;margin-top:6px">反馈优先级：—</div>
-<div id="insightScore" style="font-size:13px;color:#64748b;margin-top:6px">评分弱项：—</div>
-<div id="insightFail" style="font-size:13px;color:#64748b;margin-top:6px">失败模式：—</div>
+<div class="box" style="margin-top:14px"><h2>🩺 系统自动体检</h2>
+<div id="insightGaps" style="font-size:13px;color:#64748b">还缺资料的赛事：加载中…</div>
+<div id="insightFeedback" style="font-size:13px;color:#64748b;margin-top:6px">反馈最多的类型：—</div>
+<div id="insightScore" style="font-size:13px;color:#64748b;margin-top:6px">最常丢分的地方：—</div>
+<div id="insightFail" style="font-size:13px;color:#64748b;margin-top:6px">最常见的失败原因：—</div>
 </div>
-<div class="box" style="margin-top:14px"><h2>📈 数据可视化</h2>
+<div class="box" style="margin-top:14px"><h2>📈 图表</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;" id="vizGrid">
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">生成趋势（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">每天出稿多少（近 14 天）</div><div id="vizTrend" style="height:210px;"></div></div>
 <div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">智能评分分布</div><div id="vizScore" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">反馈分类</div><div id="vizFeedback" style="height:210px;"></div></div>
-<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">用户评分（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">反馈类型</div><div id="vizFeedback" style="height:210px;"></div></div>
+<div><div style="font-size:12px;color:#64748b;margin-bottom:4px;">用户打星（1-5 星）</div><div id="vizRating" style="height:210px;"></div></div>
 </div>
-<div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败率：加载中…</div>
+<div id="vizFail" style="margin-top:10px;font-size:13px;color:#64748b;">失败比例：加载中…</div>
 </div>
 <script src="/static/echarts.min.js"></script>
 <script>
 var ADMIN_T=(new URLSearchParams(location.search)).get('token')||'';function AF(url,opts){opts=opts||{};opts.headers=opts.headers||{};if(ADMIN_T){opts.headers['X-Admin-Token']=ADMIN_T;}return fetch(url,opts);}
-function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='赛事资料缺口：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='赛事资料缺口：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈优先级：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈优先级：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='评分弱项：'+j.diagnosis_text;}else{el.textContent='评分弱项：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='失败模式：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='失败模式：暂无失败';}});}
+function loadInsights(){AF('/api/competition/gaps').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightGaps');if(j.success){el.textContent='还缺资料的赛事：'+j.summary;if(j.total>0){el.style.color='#d97706';}}else{el.textContent='还缺资料的赛事：读取失败';}});AF('/api/feedback/priority').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFeedback');if(j.success&&j.items&&j.items.length){el.textContent='反馈最多的类型：'+j.items.slice(0,3).map(function(x){return x.category+'('+x.count+'条)';}).join('、');}else{el.textContent='反馈最多的类型：暂无反馈';}});AF('/api/score/diagnosis').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightScore');if(j.success&&j.diagnosis_text){el.textContent='最常丢分的地方：'+j.diagnosis_text;}else{el.textContent='最常丢分的地方：暂无足够评分数据';}});AF('/api/failure/patterns').then(function(r){return r.json()}).then(function(j){var el=document.getElementById('insightFail');if(j.success&&j.patterns&&j.patterns.length){el.textContent='最常见的失败原因：'+j.patterns.slice(0,3).map(function(x){return x.code+'×'+x.count;}).join('、');}else{el.textContent='最常见的失败原因：暂无失败';}});}
 loadInsights();
 function loadViz(){
     AF('/api/admin/stats').then(function(r){return r.json()}).then(function(j){
         if(!j||!j.success)return;
         var el=document.getElementById('vizFail');
-        if(el)el.textContent='失败率：'+(j.failure?(''+j.failure.failed+'/'+j.failure.total+'（'+j.failure.rate+'%%）'):'—');
+        if(el)el.textContent='失败比例：'+(j.failure?(''+j.failure.failed+'/'+j.failure.total+'（'+j.failure.rate+'%%）'):'—');
         if(!window.echarts)return;
         var dark={color:['#818cf8','#c084fc','#22d3ee','#f59e0b','#f87171','#34d399']};
         // 生成趋势
@@ -3299,7 +3299,7 @@ def admin_dashboard():
             '<div>%s</div></li>'
             % (it["id"], kind_color, kind_label, it["created_time"] or "",
                _html_escape(it["content"] or "")))
-    issues_html = "".join(issue_items) or '<li class="empty">暂无待处理问题</li>'
+    issues_html = "".join(issue_items) or '<li class="empty">暂无待处理的反馈</li>'
 
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -3374,39 +3374,39 @@ li.empty{color:#6b7280;text-align:center;padding:22px}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 概览</a><a href="/admin/panel" class="active">📊 明细数据</a><a href="/admin/llm-usage">💸 模型花费</a><a href="/monitor">🟢 实时状态</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 %s
 <div class="cards">
-<div class="card"><div class="num">%d</div><div class="label">总生成次数</div></div>
-<div class="card"><div class="num">%d</div><div class="label">今日生成</div></div>
-<div class="card"><div class="num">%d</div><div class="label">今日剩余额度</div></div>
+<div class="card"><div class="num">%d</div><div class="label">累计出稿</div></div>
+<div class="card"><div class="num">%d</div><div class="label">今天出稿</div></div>
+<div class="card"><div class="num">%d</div><div class="label">今天还能出稿</div></div>
 <div class="card"><div class="num">%s/5分</div><div class="label">满意度平均分（%d 人打分）</div></div>
 <div class="card"><div class="num">%d</div><div class="label">反馈总数</div></div>
-<div class="card"><div class="num">%ss</div><div class="label">平均生成耗时</div></div>
+<div class="card"><div class="num">%ss</div><div class="label">平均一份要多久</div></div>
 <div class="card"><div class="num">%s%%</div><div class="label" title="成功率 = 成功记录数 ÷（成功记录数 + 未处理失败数）">生成成功率</div></div>
 <div class="card"><div class="num">%s/100分</div><div class="label">评审引擎平均分</div></div>
 </div>
 <div class="box">
-<h2 style="margin-top:0">满意度分布</h2>
+<h2 style="margin-top:0">用户打星分布</h2>
 %s
 </div>
 <div class="box">
-<h2 style="margin-top:0">生成趋势（最近 7 天）</h2>
+<h2 style="margin-top:0">每天出稿多少（最近 7 天）</h2>
 <div class="trend">%s</div>
 </div>
 <div class="box comp-dist">
-<h2 style="margin-top:0">赛事分布（Top 8）</h2>
+<h2 style="margin-top:0">各赛事出稿量</h2>
 %s
 <div style="font-size:11px;color:#6b7280;margin-top:8px">注：「未指定赛事」为历史记录中未选择赛事的数据，不计入具体赛事。</div>
 </div>
 <div class="box">
-<h2 style="margin-top:0">反馈分类</h2>
+<h2 style="margin-top:0">反馈类型</h2>
 %s
 </div>
 <div class="box">
-<h2 style="margin-top:0">待处理问题工单（自动路由给前端 / 后端）</h2>
+<h2 style="margin-top:0">待处理的反馈（按内容自动分给前端 / 后端）</h2>
 <ul>%s</ul>
 </div>
 <h2 style="margin-top:0">%s</h2>
@@ -3503,7 +3503,7 @@ def monitor():
     return _inject_role_badge("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="15">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>科创赛事助手 · 动态监视</title>
+<title>科创赛事助手 · 实时状态</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0f1535;color:#e9eefc;margin:0;padding:26px 18px;line-height:1.6}
 .wrap{max-width:860px;margin:0 auto}
@@ -3522,17 +3522,17 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
 .nav a.active{background:#22d3ee;color:#0b1026}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
-<h1>🔴 科创赛事助手 · 动态监视</h1>
-<div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 概览</a><a href="/admin/panel">📊 明细数据</a><a href="/admin/llm-usage">💸 模型花费</a><a href="/monitor" class="active">🟢 实时状态</a><a href="/">↩ 主站</a></nav>
+<h1>🟢 科创赛事助手 · 实时状态</h1>
+<div class="sub">每 15 秒自动刷新 · 已运行 %d 小时 %d 分（数据直接读自服务器）</div>
 <div>
-<div class="stat"><b>%d</b><span>总生成</span></div>
+<div class="stat"><b>%d</b><span>累计出稿</span></div>
 <div class="stat"><b class="%s">%d</b><span>失败</span></div>
-<div class="stat"><b>%d / %d</b><span>今日额度</span></div>
+<div class="stat"><b>%d / %d</b><span>今天还能出稿</span></div>
 </div>
-<h2>最近生成</h2>
-<table><tr><th>赛事</th><th>档位</th><th>状态</th><th>耗时</th></tr>%s</table>
-<h2>最近失败</h2>
+<h2>最近出的稿</h2>
+<table><tr><th>赛事</th><th>版本</th><th>状态</th><th>耗时</th></tr>%s</table>
+<h2>最近失败（为什么没出稿）</h2>
 <table><tr><th>时间</th><th>错误</th></tr>%s</table>
 </div></body></html>""" % (up_h, up_m, total_gen,
                               "red" if fail_total else "green", fail_total,
@@ -3640,7 +3640,7 @@ def issue_status(issue_id):
     row = c.execute("SELECT id FROM issues WHERE id=?", (issue_id,)).fetchone()
     if not row:
         conn.close()
-        return jsonify({"success": False, "error": "工单不存在"}), 404
+        return jsonify({"success": False, "error": "这条反馈不存在"}), 404
     _now = datetime.now().strftime("%Y-%m-%d %H:%M")
     if status == 'resolved':
         c.execute("UPDATE issues SET status='resolved', resolved_time=?, resolution=?, reply=? WHERE id=?",
@@ -6042,13 +6042,13 @@ h1{font-size:22px;margin:0 0 18px;color:#fff}
 button{background:#22d3ee;color:#050816;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body>
 <div class="wrap">
-<h1>科创赛事助手 · 测试数据报告</h1>
+<h1>科创赛事助手 · 测试数据</h1>
 <div class="cards">
-<div class="card"><div class="num">""" + str(total) + """</div><div class="label">总生成次数</div></div>
+<div class="card"><div class="num">""" + str(total) + """</div><div class="label">累计出稿</div></div>
 <div class="card"><div class="num">""" + str(mode_bd.get("fast", 0)) + """</div><div class="label">简洁版</div></div>
 <div class="card"><div class="num">""" + str(mode_bd.get("deep", 0)) + """</div><div class="label">深度版</div></div>
-<div class="card"><div class="num">""" + str(avg_duration) + """s</div><div class="label">平均耗时</div></div>
-<div class="card"><div class="num">""" + str(success_rate) + """%</div><div class="label">成功率</div></div>
+<div class="card"><div class="num">""" + str(avg_duration) + """s</div><div class="label">平均一份要多久</div></div>
+<div class="card"><div class="num">""" + str(success_rate) + """%</div><div class="label">出稿成功率（样本有限）</div></div>
 </div>
 <div class="bar"><button onclick="window.print()">打印 / 存 PDF</button></div>
 <div id="scoreChart" class="chart"></div>
@@ -6060,7 +6060,7 @@ var FEEDBACK = """ + feedback_json + """;
 var MODE = """ + mode_json + """;
 function bar(id, title, data, color){var c=echarts.init(document.getElementById(id));c.setOption({title:{text:title,textStyle:{color:'#e5e7eb',fontSize:14}},grid:{left:40,right:20,top:40,bottom:30},xAxis:{type:'category',data:data.map(function(d){return d.range||d.name;}),axisLabel:{color:'#64748b'}},yAxis:{type:'value',axisLabel:{color:'#64748b'}},series:[{type:'bar',data:data.map(function(d){return d.count||d.value;}),itemStyle:{color:color||'#22d3ee'}}]});}
 bar('scoreChart','智能评分分布',SCORE,'#22d3ee');
-bar('feedbackChart','反馈分类',FEEDBACK,'#a78bfa');
+bar('feedbackChart','反馈类型',FEEDBACK,'#a78bfa');
 </script>
 </body></html>"""
     return _inject_role_badge(html)
@@ -6780,9 +6780,9 @@ def alert_status():
     conn.close()
     _fr = fail / (succ + fail) if (succ + fail) else 0
     return jsonify({"success": True, "alerts": {
-        "quota_low": {"triggered": _ratio >= 0.9, "detail": "今日额度剩余 %.0f%%" % max(0, (1 - _ratio) * 100)},
-        "fail_rate_high": {"triggered": _fr > 0.2, "detail": "失败率 %.1f%%" % (_fr * 100)},
-        "issue_stale": {"triggered": stale > 0, "detail": "%d 条工单滞留超 48 小时" % stale}}})
+        "quota_low": {"triggered": _ratio >= 0.9, "detail": "今天还能出稿，只剩 %.0f%% 的量" % max(0, (1 - _ratio) * 100)},
+        "fail_rate_high": {"triggered": _fr > 0.2, "detail": "最近的生成里有 %.1f%% 没成功" % (_fr * 100)},
+        "issue_stale": {"triggered": stale > 0, "detail": "%d 条反馈压了超过 48 小时" % stale}}})
 
 
 @app.route('/api/admin/diagnose')
@@ -9122,7 +9122,7 @@ td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#475569;font-siz
   .filters{width:100%}
 }
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 概览</a><a href="/admin/panel">📊 明细数据</a><a href="/admin/vulns" class="active">🐞 漏洞库</a><a href="/">↩ 主站</a></nav>
 <h1>🐞 漏洞库</h1>
 <div id="pageMsg" class="msg"></div>
 <div id="gate" class="gate" hidden>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Token 用量 | 科创赛事助手</title>
+  <title>模型花费 | 科创赛事助手</title>
   <style>
     :root{font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;color:#17212b;background:#f4f7f8}
     *{box-sizing:border-box}body{margin:0;padding:24px 16px 48px}
@@ -36,12 +36,12 @@
 <body>
 <main>
   <nav class="nav" aria-label="管理导航">
-    <a href="/admin">总览</a><a href="/admin/panel">数据面板</a><a href="/admin/llm-usage" aria-current="page">Token 用量</a><a href="/monitor">动态监视</a><a href="/">主站</a>
+    <a href="/admin">总览</a><a href="/admin/panel">数据面板</a><a href="/admin/llm-usage" aria-current="page">模型花费</a><a href="/monitor">动态监视</a><a href="/">主站</a>
   </nav>
-  <h1>模型用量</h1>
-  <p class="sub">只统计调用元数据与 Token 数；用户标识已脱敏，不保存提示词和生成正文。</p>
+  <h1>模型花了多少</h1>
+  <p class="sub">只记录调了几次模型、用了多少字。不保存你填的内容，也不保存生成出来的稿子。</p>
   <div class="toolbar">
-    <label for="range">统计周期</label>
+    <label for="range">看多久</label>
     <select id="range">
       <option value="7">最近 7 天</option><option value="30" selected>最近 30 天</option><option value="90">最近 90 天</option>
     </select>
@@ -49,26 +49,26 @@
     <span id="state" class="state" role="status" aria-live="polite"></span>
   </div>
   <section class="grid" aria-label="用量汇总">
-    <div class="metric"><div class="label">调用次数</div><div id="calls" class="value">—</div></div>
-    <div class="metric"><div class="label">总 Token</div><div id="total" class="value">—</div></div>
-    <div class="metric"><div class="label">输入 Token</div><div id="prompt" class="value">—</div></div>
-    <div class="metric"><div class="label">输出 Token</div><div id="completion" class="value">—</div></div>
-    <div class="metric"><div class="label">单次均值</div><div id="average" class="value">—</div></div>
-    <div class="metric"><div class="label">7 日预测</div><div id="forecast" class="value">—</div></div>
+    <div class="metric"><div class="label">总共调了几次</div><div id="calls" class="value">—</div></div>
+    <div class="metric"><div class="label">总共用了多少</div><div id="total" class="value">—</div></div>
+    <div class="metric"><div class="label">发出去的字</div><div id="prompt" class="value">—</div></div>
+    <div class="metric"><div class="label">收回来的字</div><div id="completion" class="value">—</div></div>
+    <div class="metric"><div class="label">平均每次</div><div id="average" class="value">—</div></div>
+    <div class="metric"><div class="label">照这速度一周</div><div id="forecast" class="value">—</div></div>
   </section>
-  <section class="section"><h2>每日用量</h2><div id="daily" class="bars"></div></section>
+  <section class="section"><h2>每天用了多少</h2><div id="daily" class="bars"></div></section>
   <div class="tables">
-    <section class="section"><h2>按任务/章节</h2><div id="sections"></div></section>
+    <section class="section"><h2>按环节</h2><div id="sections"></div></section>
     <section class="section"><h2>按模型</h2><div id="models"></div></section>
   </div>
-  <section class="section"><h2>单次生成成本</h2>
+  <section class="section"><h2>一份稿子花多少</h2>
     <div id="genmetrics" class="grid" aria-label="单次生成汇总"></div>
     <div id="genmodes" style="margin-top:12px"></div>
     <div id="gentasks" style="margin-top:12px"></div>
     <p class="note" id="gennote"></p>
   </section>
-  <section class="section"><h2>高用量任务</h2><div id="tasks"></div></section>
-  <section class="section"><h2>高用量匿名用户</h2><div id="users"></div><p class="note">用户列为不可逆摘要，不可用于还原账号身份。</p></section>
+  <section class="section"><h2>最费钱的几次生成</h2><div id="tasks"></div></section>
+  <section class="section"><h2>用得最多的人</h2><div id="users"></div><p class="note">这一列是加密后的编号，看不出是谁。</p></section>
 </main>
 <script>
 (function(){
@@ -110,27 +110,27 @@
     var note=document.getElementById('gennote');
     var s=(d&&d.summary)||{};
     if(!s.task_count){
-      note.textContent='最近 '+((s.days)||'')+' 天没有可归属的生成记录（记录从本次改动后开始累积）。';
+      note.textContent='最近 '+((s.days)||'')+' 天还没有能对上号的记录（从这次改动之后才开始记）。';
       table('genmodes',[],[]);table('gentasks',[],[]);
       return;
     }
     var c=s.calls||{},t=s.total_tokens||{},du=s.duration_ms||{};
-    metric(host,'样本量',fmt(s.task_count)+' 次生成');
-    metric(host,'单次调用',fmt(c.p50)+' / '+fmt(c.p90)+' 次');
-    metric(host,'单次 Token 均值',fmt(t.mean));
-    metric(host,'单次 Token p90',fmt(t.p90));
-    metric(host,'单次耗时均值',fmtDur(du.mean));
-    metric(host,'单次耗时 p90',fmtDur(du.p90));
-    note.textContent='口径：只统计带任务 id 的调用；p50 代表典型任务，p90 代表最坏情况（深度版长尾）。';
-    var modes=[];Object.keys(s.by_mode||{}).forEach(function(k){var b=s.by_mode[k];modes.push({mode:k==='未标记'?'未标记（改动前）':k,task_count:b.task_count,calls:b.avg_calls,total_tokens:b.avg_tokens});});
-    table('genmodes',modes,[{key:'mode',label:'版本'},{key:'task_count',label:'生成数',numeric:true,format:fmt},{key:'calls',label:'次均调用',numeric:true,format:fmt},{key:'total_tokens',label:'次均 Token',numeric:true,format:fmt}]);
+    metric(host,'统计范围',fmt(s.task_count)+' 份稿子');
+    metric(host,'每份调用',fmt(c.p50)+'（常见）· '+fmt(c.p90)+'（最多）');
+    metric(host,'每份用量（平均）',fmt(t.mean));
+    metric(host,'每份用量（偏多）',fmt(t.p90));
+    metric(host,'每份耗时（平均）',fmtDur(du.mean));
+    metric(host,'每份耗时（偏长）',fmtDur(du.p90));
+    note.textContent='「常见」是一半情况不超过这个数；「最多 / 偏多 / 偏长」是按最费的那一批算，深度版通常落在这里。';
+    var modes=[];Object.keys(s.by_mode||{}).forEach(function(k){var b=s.by_mode[k];modes.push({mode:k==='未标记'?'早期记录':k,task_count:b.task_count,calls:b.avg_calls,total_tokens:b.avg_tokens});});
+    table('genmodes',modes,[{key:'mode',label:'版本'},{key:'task_count',label:'份数',numeric:true,format:fmt},{key:'calls',label:'每份调用',numeric:true,format:fmt},{key:'total_tokens',label:'每份用量',numeric:true,format:fmt}]);
     var rows=(d.tasks||[]).map(function(r){
       return {started_at:(r.started_at||'').slice(5,16),mode:r.mode||'未标记',calls:r.calls,total_tokens:r.total_tokens,dur:fmtDur(r.duration_ms),stages:(r.stages||'').split(',').filter(Boolean).join(' · ')};
     });
     var host2=document.getElementById('gentasks');host2.replaceChildren();
     if(!rows.length){host2.textContent='暂无记录';return;}
     var tb=document.createElement('table'),hd=document.createElement('thead'),hr=document.createElement('tr');
-    [['开始',''],['版本',''],['调用','num'],['Token','num'],['耗时','num'],['覆盖环节','']].forEach(function(x){
+    [['开始时间',''],['版本',''],['调用次数','num'],['用量','num'],['耗时','num'],['经过的环节','']].forEach(function(x){
       var th=document.createElement('th');th.textContent=x[0];if(x[1])th.className=x[1];hr.appendChild(th);});
     hd.appendChild(hr);tb.appendChild(hd);
     var bd=document.createElement('tbody');

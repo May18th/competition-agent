@@ -64,5 +64,5 @@ def competition_gap_report():
         if scoring_gap or section_gap:
             issues = [g for g in (scoring_gap, section_gap) if g]
             gaps.append({"competition": comp, "issues": issues, "chars": len(content)})
-    summary = ("共扫描 %d 个赛事，%d 个存在资料缺口。" % (len([f for f in os.listdir(DATA_DIR) if f.endswith('.txt')]), len(gaps)))
+    summary = ("看了 %d 个赛事，%d 个还没收齐官方资料。" % (len([f for f in os.listdir(DATA_DIR) if f.endswith('.txt')]), len(gaps)))
     return {"gaps": gaps, "total": len(gaps), "summary": summary}
