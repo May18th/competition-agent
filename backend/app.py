@@ -899,7 +899,8 @@ def _upload_rate_limited():
 
 
 # 后台/管理接口统一鉴权范围（194 轮 H14/C1：全部管理/内部路由必须登录，杜绝裸奔）
-_ADMIN_PAGE_PATHS = {"/admin", "/admin/panel", "/monitor", "/admin/report"}
+_ADMIN_PAGE_PATHS = {"/admin", "/admin/panel", "/admin/report", "/monitor",
+                     "/admin/llm-usage"}
 _ADMIN_API_EXACT = {
     "/api/feedback/export",
     "/api/feedback/priority",
@@ -2941,7 +2942,7 @@ h1{font-size:24px;margin:0 0 4px}
 .more{margin-top:18px;font-size:14px}
 .more a{color:#4f46e5;text-decoration:none;font-weight:600}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin" class="active">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 管理后台</h1>
 <div class="sub">一眼掌握整体运行情况，详细数据进「数据面板」或「动态监视」</div>
 <div class="hero">
@@ -3373,7 +3374,7 @@ li.empty{color:#6b7280;text-align:center;padding:22px}
 .nav a{background:#fff;color:#374151;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .nav a.active{background:#2563eb;color:#fff}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel" class="active">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>科创赛事助手 · 后台数据</h1>
 <div class="banner">🟢 服务运行正常</div>
 %s
@@ -3521,7 +3522,7 @@ th{background:#1b2650;color:#93a0c4;font-weight:600}
 .nav a{background:#18224a;color:#93a0c4;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:14px}
 .nav a.active{background:#22d3ee;color:#0b1026}
 <link rel="stylesheet" href="/static/wbbtn-admin.css?v=20260929an"></style></head><body><div class="wrap">
-<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
+<nav class="nav"><img src="/static/logo.png" alt="科创赛事助手" style="height:26px;vertical-align:middle;margin-right:8px"><a href="/admin">🏠 总览</a><a href="/admin/panel">📊 数据面板</a><a href="/admin/llm-usage">🧮 Token 用量</a><a href="/monitor" class="active">🔴 动态监视</a><a href="/">↩ 主站</a></nav>
 <h1>🔴 科创赛事助手 · 动态监视</h1>
 <div class="sub">每 15 秒自动刷新 · 运行时长 %d 小时 %d 分 · 本页由后端实时读库</div>
 <div>
@@ -5650,6 +5651,12 @@ def admin_quota():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/admin/llm-usage')
+def admin_llm_usage_page():
+    """Token 用量看板（数据来自 /api/admin/llm-usage 与 .../per-generation）。"""
+    return app.send_static_file('admin-llm-usage.html')
 
 
 @app.route('/api/admin/llm-usage')
