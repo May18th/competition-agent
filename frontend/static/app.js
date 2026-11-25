@@ -22,9 +22,8 @@
         }
 
         /* ---------- 统一请求层兜底（渐进改造 1/3） ----------
-           api.js 是新增文件：若线上只更新了 app.js 没同步 static/api.js（或浏览器用了旧缓存），
-           直接调 WB.api 会 ReferenceError，整页功能全挂——改造本身变成故障源。
-           这里做一层退化：有 WB.api 就用，没有就退回原生 fetch + 手工解析，
+           api.js 是新增文件：若只更新了 app.js 没同步 static/api.js（或浏览器用了旧缓存），
+           直接调 WB.api 会 ReferenceError，整页功能全挂。这里退化为原生 fetch，
            最坏结果是超时/提示这些增强失效，功能照常。 */
         var _wbApiRef = (window.WB && typeof window.WB.api === 'function') ? window.WB.api : null;
         function wbApi(url, opt) {
@@ -1295,10 +1294,9 @@
         }
 
         /* ---------- 统一请求层的错误出口（渐进改造 1/3） ----------
-           只接管经 WB.api 发出的请求，旧 fetch 调用点行为不变；
-           迁移到哪一处，提示就规范到哪一处，不存在"改了一半行为不一致"的中间态。
-           分档规则：422 是业务拒绝（质量门不达标等），后端文案本来就是给用户看的，原样透出；
-           5xx 与超时统一成人话，不把 "服务返回 500" 丢给学生。 */
+           只接管经 WB.api 发出的请求，旧 fetch 调用点行为不变。
+           422 是业务拒绝（质量门不达标等），后端文案本来就是给用户看的，原样透出；
+           5xx 与超时统一成人话。 */
         (function () {
             if (!window.WB || typeof WB.api !== 'function') return;
             WB.api.onError(function (err, url) {
@@ -6954,8 +6952,8 @@
         }
         // 打开一条历史记录：把服务器上存的结果回填到各 Tab
         // （之前列表只有「删除」按钮，点不开内容，历史记录等于没法用）
-        /* 2026-11-25 回植：一键演示。预置样例直接渲染结果页，不调生成接口、不耗额度，
-           供评委演示/功能预览用（线上这套删掉了，本地保留）。 */
+        /* 2026-11-25：一键演示。预置样例直接渲染结果页，不调生成接口、不耗额度，
+           供评委演示/功能预览用。 */
         window.wbOpenDemo = async function () {
             try {
                 var res = await fetch('/static/demo_sample.json', { cache: 'no-store' });
@@ -6968,12 +6966,31 @@
                 window.__wbDemoData = payload;
                 wbToast('已载入预置样例（不调用模型、不耗额度）', { type: 'info' });
                 await openHistory(0);
+                wbDemoZipGuard(true);
             } catch (e) {
                 try { wbToast('演示样例加载失败：' + ((e && e.message) || e), { type: 'error' }); } catch (e2) {}
             } finally {
                 setTimeout(function () { try { window.__wbDemoData = null; } catch (e) {} }, 0);
             }
         };
+
+        /* 演示样例的字段不全（缺规则解析/同质化报告），「打包全部」会被质量闸门拦成
+           422「zip 文件数不足 11 < 12」。与其让评委演示时点出红字，不如把这个按钮置灰并说明，
+           切回真实记录时自动恢复——所以判断只写在 openHistory 这一处，不散落。 */
+        function wbDemoZipGuard(on) {
+            try {
+                var dock = document.getElementById('wbExportDock');
+                if (!dock) return;
+                var bs = dock.querySelectorAll('button');
+                for (var i = 0; i < bs.length; i++) {
+                    if ((bs[i].innerText || '').indexOf('打包') < 0) continue;
+                    bs[i].disabled = !!on;
+                    bs[i].title = on ? '演示样例只用于预览，打包全部需要真实生成一次' : '';
+                    bs[i].style.opacity = on ? '.45' : '';
+                    bs[i].style.cursor = on ? 'not-allowed' : '';
+                }
+            } catch (e) {}
+        }
 
         async function openHistory(id) {
             var modal = document.getElementById('historyModal');
@@ -7081,10 +7098,10 @@
                 // 打开历史后默认切到「申报与评审」，让用户第一眼看到申报书正文，而不是只看到前期分析
                 try { switchTab(null, 'proposal'); } catch (e) {}
                 if (modal) modal.style.display = 'none';
-                // 演示模式不报「历史记录 #0」，改成明确说明这是预置样例
                 if (window.__wbDemoData) {
                     wbToast('演示样例已就绪，可直接看评分、正文与导出', { type: 'ok', ms: 2800 });
                 } else {
+                    wbDemoZipGuard(false);
                     wbToast('已打开历史记录 #' + id + '，可以继续导出', { type: 'ok', ms: 2800 });
                 }
             } catch (e) {

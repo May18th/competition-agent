@@ -649,10 +649,14 @@
                 <button id="startBtn" class="btn-primary" onclick="startWork()">
                     <svg class="wb-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#wb-i-rocket"/></svg> 开始生成
                 </button>
-                <!-- 2026-11-25 回植：预置样例直达结果页，不耗额度；描边次级样式，避免被当成真实生成 -->
-                <button id="wbDemoBtn" class="btn-ghost" onclick="wbOpenDemo()"
-                        title="用预置样例直接看完整结果页，不消耗额度、无需等待"
-                        style="margin-left:10px;">🎬 一键演示</button>
+                <!-- 2026-11-25：预置样例直达结果页，不耗额度。做成主 CTA 下方一行安静的文字动作：
+                     不用 .btn-ghost（线上 CSS 里没有这个类），也不与主按钮抢同一行的视觉权重。 -->
+                <button id="wbDemoBtn" type="button" onclick="wbOpenDemo()"
+                        title="用预置样例直接看完整结果页：不调用模型、不消耗额度、无需等待"
+                        style="display:block; width:min(520px,100%); margin:6px auto 0; padding:8px 0; min-height:38px;
+                               background:transparent; border:0; -webkit-appearance:none; appearance:none;
+                               color:var(--text-dim); font-size:12.5px; letter-spacing:.3px; cursor:pointer;
+                               text-decoration:underline; text-underline-offset:3px;">🎬 一键演示 · 不耗额度</button>
             </div>
             <div id="progressSteps" class="progress-steps" style="display: none;">
                 <!-- 简洁版进度条 -->
@@ -1627,10 +1631,10 @@
         };
     })();
     </script>
-    <!-- 统一请求层：必须早于 wbchat.js / app.js，后两者的请求走 WB.api -->
+    <!-- 统一请求层：必须早于 wbchat.js / app.js -->
     <script src="/static/api.js?v=20261125a"></script>
     <script src="/static/wbchat.js?v=20261125b"></script>
-    <script src="/static/app.js?v=20261125a"></script>
+    <script src="/static/app.js?v=20261125b"></script>
     <script src="/static/scorecard-online.js?v=20261124b" defer></script>
 <!-- 全局提示容器 -->
 <div id="wbToast" role="status" aria-live="polite"></div>
