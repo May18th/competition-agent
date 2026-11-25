@@ -16,6 +16,20 @@
 (function (g) {
     'use strict';
 
+    /* 统一请求层（渐进改造 1/3 第三批）：本文件 defer 加载，api.js 正常已就绪；
+       缺失时退化为原生 fetch，评分自查面板不因一个脚本没同步而整块失效。 */
+    function api(url, opt) {
+        if (g.WB && typeof g.WB.api === 'function') return g.WB.api(url, opt);
+        var o = opt || {};
+        var init = { method: o.method || 'GET', credentials: 'same-origin' };
+        if (o.headers) init.headers = o.headers;
+        if (o.body !== undefined && o.body !== null) {
+            if (typeof o.body === 'string') init.body = o.body;
+            else { init.body = JSON.stringify(o.body); init.headers = { 'Content-Type': 'application/json' }; }
+        }
+        return fetch(url, init).then(function (r) { return r.json(); });
+    }
+
     var S = { root: null, obs: null, loadedHid: null, raf: 0, locked: false, started: false,
               busy: false };
 
@@ -131,11 +145,10 @@
             btn.disabled = true;
             btn.textContent = '正在补写…';
             if (out) out.innerHTML = '<div class="wbsc-hint">只改缺分章节，通常 20~40 秒；原稿不会被覆盖</div>';
-            fetch('/api/scorecard/patch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ history_id: hid, limit: 2 })
-            }).then(function (r) { return r.json(); })
+            api('/api/scorecard/patch', {
+                method: 'POST', timeout: 120000,   // 只改缺口章节，实测 20~40s，给足余量
+                body: { history_id: hid, limit: 2 }
+            })
                 .then(function (j) {
                     if (!j || !j.success) throw new Error((j && j.error) || '接口无响应');
                     var res = j.result || {};
@@ -181,11 +194,10 @@
             return;
         }
         S.root.innerHTML = emptyState('正在按官方评分项核对');
-        fetch('/api/scorecard', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ history_id: hid })
-        }).then(function (r) { return r.json(); })
+        api('/api/scorecard', {
+            method: 'POST', timeout: 90000,        // 逐项核对较慢，默认 30s 不够
+            body: { history_id: hid }
+        })
             .then(function (j) {
                 if (!j || !j.success) throw new Error((j && j.error) || '');
                 var dd = j.diag || {};

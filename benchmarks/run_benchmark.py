@@ -50,6 +50,11 @@ def peer(name):
 CASES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cases.json")
 BASE_URL = os.getenv("BENCH_BASE_URL", "http://127.0.0.1:8080")
 ARMS = ("baseline", "fast", "deep")
+# 补充对照：简洁版的产物是 1800 字摘要稿，拿它跟「裸写全文」比是错配——
+# 官方维度自查看的是覆盖面，长文天然占优。所以要有一条「裸写也写 1800 字摘要」的
+# 对照臂，才能回答「简洁版到底比裸写强在哪」。它不进盲评包（盲评只放三个可比稿）。
+EXTRA_ARMS = ("baseline_slim",)
+ALL_ARMS = ARMS + EXTRA_ARMS
 
 BASELINE_PROMPT = """你是{competition}的参赛大学生。请根据下面这一句项目创意，写一份可以直接提交的参赛项目申报书。
 
@@ -57,6 +62,16 @@ BASELINE_PROMPT = """你是{competition}的参赛大学生。请根据下面这�
 
 要求：
 1. 结构完整，含项目背景、痛点、方案、创新点、市场与商业模式、团队；
+2. 有具体数字、具体场景、具体技术名词；
+3. 中文全角标点；不要出现任何【】占位符。
+"""
+
+BASELINE_SLIM_PROMPT = """你是{competition}的参赛大学生。请根据下面这一句项目创意，写一份**精简版**申报书（摘要稿）。
+
+项目创意：{idea}
+
+要求：
+1. 全文不超过 1800 字，章节按背景、痛点、方案、创新点、市场与商业模式、团队组织，每章一个自然段；
 2. 有具体数字、具体场景、具体技术名词；
 3. 中文全角标点；不要出现任何【】占位符。
 """
@@ -76,16 +91,21 @@ def load_cases(ids=None, limit=None):
 
 
 # ---------------- 三组生成 ----------------
-def run_baseline(case):
-    """通用模型裸写：不注入赛事规则、不给范文、不做质检。"""
+def run_baseline(case, slim=False):
+    """通用模型裸写：不注入赛事规则、不给范文、不做质检。
+
+    slim=True 时只要求 1800 字摘要稿，与简洁版同体量——用来做同体量对照。
+    """
     sr = peer("stage_reporter")
     llm = peer("competition_agents").llm
     from langchain_core.messages import HumanMessage
 
-    prompt = BASELINE_PROMPT.format(competition=case["competition"], idea=case["idea"])
+    tpl = BASELINE_SLIM_PROMPT if slim else BASELINE_PROMPT
+    prompt = tpl.format(competition=case["competition"], idea=case["idea"])
     started = time.time()
     # 用独立 task_id 包裹：用量能单独统计，也不会和真实用户的数据混在一起
-    sr.set_current_task("bench-%s-baseline" % case["id"], "benchmark", "baseline")
+    sr.set_current_task("bench-%s-%s" % (case["id"], "baseline_slim" if slim else "baseline"),
+                        "benchmark", "baseline_slim" if slim else "baseline")
     try:
         resp = llm.invoke([HumanMessage(content=prompt)])
         text = (resp.content or "").strip()
@@ -140,11 +160,26 @@ def run_system(case, arm, poll_timeout=900):
         "task_id": task_id,
         "proposal_chars": data.get("proposal_chars"),
         "reasons_gate": (data.get("completeness") or {}).get("missing") or [],
+        # 富媒体是否产出：深度版会生成图表/表格/路演PPT，但正文里没有。
+        # 不记下来的话，自查会把「没图表」扣分算到深度版头上（实测 c11/c14 因此反被判低），
+        # 那是评测口径问题，不是内容问题。
+        "rich_charts": bool(data.get("rich_charts")),
+        "rich_tables": bool(data.get("rich_tables")),
+        "rich_deck": bool(data.get("rich_deck")),
     }
 
 
 # ---------------- 机器打分 ----------------
-def diagnose_score(text, arm, case):
+def _rec(text, media=None):
+    """组装打分用的记录。media 里带 rich_charts/tables/deck，缺省就是没有。"""
+    rec = {"proposal": text, "completeness": {"missing": []}}
+    for k in ("rich_charts", "rich_tables", "rich_deck"):
+        if media and media.get(k):
+            rec[k] = media[k]
+    return rec
+
+
+def diagnose_score(text, arm, case, media=None):
     """按赛事官方评分维度自查（与产品内「评分项自查」同一套判据）。
 
     这是第三把尺子：机器分只看硬伤、区分不出好坏（实测三组都 92），
@@ -154,7 +189,7 @@ def diagnose_score(text, arm, case):
     scorecard = peer("scorecard")
     mode = "deep" if arm == "deep" else "fast"
     try:
-        diag = scorecard.diagnose({"proposal": text}, case["competition"], None, mode)
+        diag = scorecard.diagnose(_rec(text, media), case["competition"], None, mode)
     except Exception as exc:
         return {"diag_total": None, "diag_note": "自查失败：%s" % str(exc)[:80]}
     gaps = [g.get("gap", "").split("：")[0] for g in (diag.get("top_gaps") or [])]
@@ -163,7 +198,7 @@ def diagnose_score(text, arm, case):
             "diag_top_gaps": gaps}
 
 
-def machine_score(text, arm, case):
+def machine_score(text, arm, case, media=None):
     """用系统自己的导出质检规则算分，记录 5 维度与否决项。
 
     记两列：
@@ -174,7 +209,7 @@ def machine_score(text, arm, case):
     score_export = peer("quality_gate").score_export
 
     mode = "deep" if arm == "deep" else "fast"
-    rec = {"proposal": text, "completeness": {"missing": []}}
+    rec = _rec(text, media)
     strict_out = score_export(rec, mode)
     soft_score, dims, reasons = score_export(rec, mode, strict=False)
     return {"score": strict_out[0], "score_soft": soft_score,
@@ -249,7 +284,7 @@ def build_blind(run_dir, cases):
 def write_summary(run_dir, cases):
     rows = []
     for case in cases:
-        for arm in ARMS:
+        for arm in ALL_ARMS:
             p = os.path.join(run_dir, "%s_%s.meta.json" % (case["id"], arm))
             if not os.path.exists(p):
                 continue
@@ -286,13 +321,13 @@ def write_summary(run_dir, cases):
         a["sec"] += r["耗时秒"] or 0
     lines = ["# 评测基准报告", "",
              "生成时间：%s" % datetime.now().strftime("%Y-%m-%d %H:%M"),
-             "题目数：%d，组别：%s" % (len(cases), "、".join(ARMS)), "",
+             "题目数：%d，组别：%s" % (len(cases), "、".join(ALL_ARMS)), "",
              "## 分组均值（三把尺子都只看相对差异，主证据仍是人工盲评）", "",
              "> 注意：各组题数不等时（例如中途配额/余额中断），这张表的均值不可直接横比。"
              "先看下方逐题明细里「三组都齐」的题号，再下结论。", "",
              "| 组 | 题数 | 机器分(生产口径) | 机器分(评测口径) | 官方维度自查 | 平均字数 | 平均耗时(秒) |",
              "|---|---|---|---|---|---|---|"]
-    for arm in ARMS:
+    for arm in ALL_ARMS:
         a = agg.get(arm)
         if not a:
             continue
@@ -317,7 +352,11 @@ def write_summary(run_dir, cases):
               "能区分「创新点有没有集中列出 / 数字有没有 / 有没有对标」，但同样带系统侧偏向。",
               "- **主证据是人工盲评**：`blind/` 下每题有 A/B/C 三份匿名正文与 `blind_scores.csv` "
               "打分表，按该赛事官方评分维度逐项 1-10 分填写；填完用 `--score-only` 或直接汇总。",
-              "- 盲评映射在 `blind/<case>_map.json`，评分前不要打开。"]
+              "- 盲评映射在 `blind/<case>_map.json`，评分前不要打开。",
+              "- **`baseline_slim` 是同体量对照**：要求裸写也只出 1800 字摘要稿。"
+              "简洁版的产物本来就是摘要稿，拿它跟「裸写全文」比是错配（官方自查看覆盖面，"
+              "长文天然占优）；要判断简洁版有没有价值，看 `fast` vs `baseline_slim`。"
+              "它不进盲评包，避免四份混评时被卷长差异带偏。"]
     report = os.path.join(run_dir, "report.md")
     with open(report, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -329,12 +368,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids", default="", help="逗号分隔的题号，默认全部")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--arms", default=",".join(ARMS))
+    ap.add_argument("--arms", default=",".join(ALL_ARMS))
     ap.add_argument("--out", default="", help="输出目录，默认 benchmarks/runs/<时间戳>")
     ap.add_argument("--score-only", default="", help="只对已有结果重新打分")
     args = ap.parse_args()
 
-    arms = [a.strip() for a in args.arms.split(",") if a.strip() in ARMS]
+    arms = [a.strip() for a in args.arms.split(",") if a.strip() in ALL_ARMS]
     cases = load_cases(args.ids or None, args.limit or None)
 
     if args.score_only:
@@ -348,14 +387,14 @@ def main():
             meta_path = os.path.join(run_dir, fn)
             case_id, _, arm = fn[:-len(".meta.json")].partition("_")
             md_path = os.path.join(run_dir, fn[:-len(".meta.json")] + ".md")
-            if arm not in ARMS or case_id not in by_id or not os.path.exists(md_path):
+            if arm not in ALL_ARMS or case_id not in by_id or not os.path.exists(md_path):
                 continue
             with open(meta_path, encoding="utf-8") as f:
                 meta = json.load(f)
             with open(md_path, encoding="utf-8") as f:
                 text = f.read()
-            meta.update(machine_score(text, arm, by_id[case_id]))
-            meta.update(diagnose_score(text, arm, by_id[case_id]))
+            meta.update(machine_score(text, arm, by_id[case_id], meta))
+            meta.update(diagnose_score(text, arm, by_id[case_id], meta))
             meta["chars"] = len(text)
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False, indent=2)
@@ -378,8 +417,8 @@ def main():
                     continue
                 print("  跑 %s / %s ..." % (case["id"], arm), flush=True)
                 try:
-                    if arm == "baseline":
-                        text, meta = run_baseline(case)
+                    if arm in ("baseline", "baseline_slim"):
+                        text, meta = run_baseline(case, slim=(arm == "baseline_slim"))
                     else:
                         text, meta = run_system(case, arm)
                 except Exception as exc:
@@ -387,8 +426,8 @@ def main():
                     continue
                 with open(md_path, "w", encoding="utf-8") as f:
                     f.write(text)
-                meta.update(machine_score(text, arm, case))
-                meta.update(diagnose_score(text, arm, case))
+                meta.update(machine_score(text, arm, case, meta))
+                meta.update(diagnose_score(text, arm, case, meta))
                 meta["chars"] = len(text)
                 meta["arm"] = arm
                 meta["case"] = case["id"]

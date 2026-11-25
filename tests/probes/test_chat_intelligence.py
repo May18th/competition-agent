@@ -102,28 +102,45 @@ class ChatIntelligenceTests(unittest.TestCase):
         self.assertIsNone(app_module._chat_load_owned_record("alice", 2))
 
     def test_generation_uses_the_project_idea_from_the_page_and_waits_for_success(self):
-        started = []
         data = {
             "message": "帮我生成申报书",
             "context": {
                 "competition": "示例创新赛",
+                "competition_selected": True,     # 真实前端在用户选过赛事时会带这个标记
                 "idea": "校园实验室设备预约与冲突检测工具",
                 "mode": "deep",
             },
         }
-        with patch.object(app_module, "_current_uid", return_value="alice"), \
-             patch.object(app_module, "_detect_competition", return_value=("示例创新赛", 100)), \
-             patch.object(app_module, "_start_generation", side_effect=lambda payload: (
-                 started.append(payload) or ("task-1", None)
-             )):
+        # 2026-11-25 与线上对齐后：生成必须先给「确认卡」，不能一句话直接开跑。
+        # 第一步只发 generation_confirmation（带上页面里的创意），不发 generation。
+        with patch.object(app_module, "_current_uid", return_value="alice"):
             response = self.client.post("/api/chat", json=data, buffered=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "text/event-stream")
         self.assertEqual(response.headers.get("X-Accel-Buffering"), "no")
-        self.assertEqual(started[0]["idea"], data["context"]["idea"])
+        body = response.get_data(as_text=True)
+        self.assertIn("generation_confirmation", body)
+        self.assertNotIn('"event":"generation"', body)
+        self.assertIn(data["context"]["idea"], body)
         profile = chat_store.get_profile(app_module._CHAT_DB_PATH, "alice")
         self.assertNotIn("done_generation", profile)
+
+    def test_generation_event_only_after_explicit_confirmation(self):
+        ctx = {
+            "competition": "示例创新赛",
+            "idea": "校园实验室设备预约与冲突检测工具",
+            "mode": "deep",
+            "competition_selected": True,
+        }
+        with patch.object(app_module, "_current_uid", return_value="alice"):
+            self.client.post("/api/chat",
+                             json={"message": "帮我生成申报书", "context": ctx}, buffered=True)
+            confirmed = self.client.post("/api/chat",
+                                         json={"message": "确认生成", "context": ctx}, buffered=True)
+        body = confirmed.get_data(as_text=True)
+        self.assertIn('"event":"generation"', body)
+        self.assertIn(ctx["idea"], body)
 
     def test_defense_status_is_marked_only_after_successful_sse_completion(self):
         self._save_proposal("alice", "申报书中包含可运行原型与测试记录。")
