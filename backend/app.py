@@ -494,36 +494,64 @@ _fb_rate_hits = {}
 
 
 def _client_ip():
-    """取客户端 IP，优先信任反代传入的 X-Forwarded-For 首地址。"""
-    fwd = (request.headers.get('X-Forwarded-For') or '').strip()
-    if fwd:
-        return fwd.split(',')[0].strip()
-    return (request.remote_addr or 'unknown').strip()
+    """取客户端真实 IP。
+
+    只在本机反代（nginx）转发时才采信 X-Real-IP —— 这个头由 nginx 用 $remote_addr
+    覆盖写入，客户端自己发无效。X-Forwarded-For 一律不采信：nginx 用的是
+    $proxy_add_x_forwarded_for（追加语义），客户端伪造的值会排在最前面，
+    直接取首地址等于把限流键交给攻击者（2026-11-25 实测：伪造该头可完全绕过限流）。
+    """
+    remote = (request.remote_addr or '').strip()
+    if remote in ('127.0.0.1', '::1', 'localhost'):
+        real = (request.headers.get('X-Real-IP') or '').strip()
+        if real:
+            return real
+    return remote or 'unknown'
 
 
-def _rate_limited():
-    """检查并记录一次生成请求；超过限流返回 True，否则返回 False。
-    键优先用匿名用户 uid（cookie），其次才退回 IP——校级活动几百人常走同一个
-    校园网 NAT 出口，按 IP 限 5 次/分会把正常用户成片误伤。"""
-    try:
-        key = _current_uid() or _client_ip()
-    except Exception:
-        key = _client_ip()
+def _rate_hit(name, key, limit, window):
+    """通用滑动窗口计数：返回 True 表示该桶已超限。"""
     now = time.time()
     with _rate_lock:
-        hits = [t for t in _rate_hits.get(key, []) if now - t < _RATE_WINDOW_SEC]
-        if len(hits) >= _RATE_LIMIT:
-            _rate_hits[key] = hits
+        bucket = _rate_hits.setdefault(name, {})
+        hits = [t for t in bucket.get(key, []) if now - t < window]
+        if len(hits) >= limit:
+            bucket[key] = hits
             return True
         hits.append(now)
-        _rate_hits[key] = hits
-        # 键过多时顺手清理，避免内存缓慢增长
-        if len(_rate_hits) > 5000:
-            for k in list(_rate_hits.keys()):
-                _rate_hits[k] = [t for t in _rate_hits[k] if now - t < _RATE_WINDOW_SEC]
-                if not _rate_hits[k]:
-                    del _rate_hits[k]
+        bucket[key] = hits
+        # 桶过多时顺手清理，避免内存缓慢增长
+        if len(bucket) > 5000:
+            for k in [k for k in list(bucket) if not [t for t in bucket[k] if now - t < window]]:
+                bucket.pop(k, None)
         return False
+
+
+def _rate_limited(name='gen', limit=_RATE_LIMIT, window=_RATE_WINDOW_SEC, ip_limit=None):
+    """双桶限流：用户桶 + IP 桶，任一超限即拒；超限返回 True，否则 False。
+
+    为什么必须双桶：只用 uid 桶，清掉 cookie 就重置计数（2026-11-25 实测：
+    换 cookie 连打 6 次生成接口全部通过）；只用 IP 桶，校园网 NAT 后几百人共用
+    一个出口会成片误伤。两桶都过、且 IP 桶阈值放宽（默认 uid 的 12 倍，不低于 60），
+    既能挡住换 cookie 的脚本，也不牵连共享出口的正常用户。
+    """
+    if ip_limit is None:
+        ip_limit = max(limit * 20, 60)
+    try:
+        uid = _current_uid()
+    except Exception:
+        uid = ''
+    # 无 cookie 时 _current_uid 会退回 request.remote_addr —— 经 nginx 反代后这个值
+    # 永远是 127.0.0.1，所有匿名请求会挤进同一个桶、凑够 limit 次后全部被拒。
+    # 这里换成真实出口 IP 建桶，让无 cookie 的请求按各自 IP 分开计。
+    if uid in ('', 'anon', '127.0.0.1', '::1', 'localhost'):
+        uid = 'ip:' + _client_ip()
+    if uid and _rate_hit(name + ':u', uid, limit, window):
+        return True
+    ip = _client_ip()
+    if ip and _rate_hit(name + ':i', ip, ip_limit, window):
+        return True
+    return False
 
 
 def _feedback_rate_limited():
@@ -4799,6 +4827,8 @@ def revise_chapter():
     if _admin_session_role() == 'readonly':
         return jsonify({"success": False, "error_code": "demo_readonly"}), 403
     data = request.get_json(silent=True) or {}
+    if _rate_limited('revise', 6, 60):
+        return jsonify({"success": False, "error": "修订太频繁，请 1 分钟后再试"}), 429
     uid = _current_uid()
     try:
         hid = int(data.get("history_id"))
@@ -5248,6 +5278,34 @@ def export_original_format():
         return jsonify({"success": False, "error": f"导出失败：{str(e)}"})
 
 
+_MAX_UNZIPPED_BYTES = 200 * 1024 * 1024   # 解压后上限 200MB
+
+
+def _check_zip_bomb(raw):
+    """docx/xlsx 本质是 zip：20MB 的上传可以声明解压出几个 GB，把 worker 内存打爆。
+
+    解析前先读清单里的「解压后总大小」和压缩比，超限直接拒——这一步只读中央目录，
+    不真正解压，代价是毫秒级。返回错误文案，或 None（通过）。
+    """
+    import io as _io
+    import zipfile
+    try:
+        with zipfile.ZipFile(_io.BytesIO(raw)) as zf:
+            infos = zf.infolist()
+            total = sum(i.file_size for i in infos)
+            if total > _MAX_UNZIPPED_BYTES:
+                return ("文件解压后约 %.0fMB，超出安全上限（%dMB）；"
+                        "如果里面有大量截图，请另存为 PDF 后上传"
+                        % (total / 1024.0 / 1024.0, _MAX_UNZIPPED_BYTES // 1024 // 1024))
+            # 不按「压缩比」判炸弹：纯文字的 docx 压缩比本来就上百倍（60MB 正文压到
+            # 几十 KB 很常见），按比例判会误伤正常文档。总量上限已足够覆盖典型炸弹。
+    except zipfile.BadZipFile:
+        return "文件不是有效的 Office 文档（zip 结构损坏）"
+    except Exception:
+        return None
+    return None
+
+
 @app.route('/api/upload_file', methods=['POST'])
 def upload_file():
     _a = _require_uid()
@@ -5277,7 +5335,8 @@ def upload_file():
     except Exception:
         _size = 0
     if _size > _MAX_UPLOAD_BYTES:
-        return jsonify({"success": False, "error": "文件过大，最大支持 10MB"}), 413
+        return jsonify({"success": False,
+                        "error": "文件太大，最大支持 %dMB" % (_MAX_UPLOAD_BYTES // 1024 // 1024)}), 413
     
     try:
         if ext == 'pdf':
@@ -5303,7 +5362,11 @@ def upload_file():
         elif ext in ['xlsx', 'xlsm']:
             import openpyxl
             import io
-            wb = openpyxl.load_workbook(io.BytesIO(file.read()), data_only=True)
+            _raw = file.read()
+            _zb = _check_zip_bomb(_raw)
+            if _zb:
+                return jsonify({"success": False, "error": _zb}), 413
+            wb = openpyxl.load_workbook(io.BytesIO(_raw), data_only=True)
             for ws in wb.worksheets:
                 text += f"\n[工作表：{ws.title}]\n"
                 for row in ws.iter_rows(values_only=True):
@@ -5313,7 +5376,11 @@ def upload_file():
         elif ext == 'docx':
             from docx import Document
             import io
-            doc = Document(io.BytesIO(file.read()))
+            _raw = file.read()
+            _zb = _check_zip_bomb(_raw)
+            if _zb:
+                return jsonify({"success": False, "error": _zb}), 413
+            doc = Document(io.BytesIO(_raw))
             for para in doc.paragraphs:
                 t = para.text.strip()
                 if not t:
@@ -6468,6 +6535,9 @@ def scorecard():
     两种用法：传 history_id 直接诊断一次生成结果；或传 proposal + competition_name。
     """
     data = request.get_json(silent=True) or {}
+    # 纯规则计算不调模型，但会读整份正文并做多维度打分，仍给一档宽松限流。
+    if _rate_limited('scorecard', 30, 60):
+        return jsonify({"success": False, "error": "查询太频繁，请稍后再试"}), 429
     try:
         from backend.scorecard import diagnose, diagnose_history
         track = (data.get('track') or '').strip() or None
@@ -6496,6 +6566,9 @@ def scorecard_patch_api():
     不写历史库、不覆盖原稿，只把「补写前后对比 + 补写后正文」返回给调用方。
     """
     data = request.get_json(silent=True) or {}
+    # 单次补写要调模型 10~40 秒，卡紧一点：5 次/分钟。
+    if _rate_limited('scpatch', 5, 60):
+        return jsonify({"success": False, "error": "补写太频繁，请 1 分钟后再试"}), 429
     try:
         from backend.scorecard_patch import patch_until_clean
         track = (data.get('track') or '').strip() or None
@@ -6621,6 +6694,8 @@ def rewrite_text():
         return jsonify({"success": False, "error": "请先选中要改写的文字"}), 400
     if len(text) > 1500:
         text = text[:1500]
+    if _rate_limited('rewrite', 10, 60):
+        return jsonify({"success": False, "error": "改写太频繁，请稍后再试"}), 429
     try:
         from backend.competition_agents import llm
         from langchain_core.messages import HumanMessage
@@ -7739,6 +7814,8 @@ def chat_apply_proofread():
         return jsonify({"success": False, "error_code": "demo_readonly"}), 403
 
     data = request.get_json(silent=True) or {}
+    if _rate_limited('proofread', 10, 60):
+        return jsonify({"success": False, "error": "操作太频繁，请稍后再试"}), 429
     uid = _current_uid()
     try:
         hid = int(data.get("history_id"))
@@ -7941,6 +8018,11 @@ def chat():
         return jsonify({"success": False, "error": "请输入问题"}), 400
     if len(msg) > 1500:
         msg = msg[:1500]
+    # 对话是最容易被脚本刷的模型入口：用户桶 20 次/分 + 更宽的 IP 桶。
+    # 空消息在上面已经挡掉，不计入配额。
+    if _rate_limited('chat', 20, 60):
+        return jsonify({"success": False, "error": "问得有点密集，歇一分钟再聊～",
+                        "code": "rate_limited"}), 429
     style = _chat_style_key(data.get('style'))
     uid = _current_uid()
     identity_answer = _chat_identity_answer(msg)
