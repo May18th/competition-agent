@@ -2059,7 +2059,11 @@
             var step = COACH_STEPS[_coachIdx];
             var el = document.getElementById(step.id);
             if (!el) { _coachIdx++; coachShow(); return; }
-            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+            // 只滚最小必要距离。原来按 center 滚，首屏第一站（赛事名称）会被居中，
+            // 页面直接下移 444px（手机端 763px），用户一进站先看到表单中段、主标题整块被推出视口。
+            // nearest 的语义是「已可见就不滚，不可见就滚到刚好露出」——桌面实测只滚 17px，标题保留。
+            try { el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+            catch (e) { try { el.scrollIntoView(); } catch (e2) {} }
             setTimeout(function () {
                 // 竞态守卫：scrollIntoView 的延迟窗口内用户可能已打开使用说明/历史等弹窗
                 //（showIntro 里的 coachEnd 会清场），此时不能再重建遮罩——否则气泡压在弹窗上、
