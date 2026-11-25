@@ -118,19 +118,20 @@ def main():
                 window.paintPartial({proposal: t2});
                 log.steps.push('paint2');
 
-                // ④ 收尾
-                if (typeof window.streamFinish === 'function') { window.streamFinish(); log.steps.push('finish'); }
-                else { log.steps.push('finish-missing'); }
-
-                // ⑤ 等打字机把字逐帧揭示完（rAF 分帧，不是同步写 DOM）
+                // ④ 先等打字机把字揭示出来，**再收尾**。
+                //    顺序不能反：streamFinish 会撤掉流式占位并交给最终渲染，
+                //    先 finish 再查 DOM 时占位已被撤，必然判空（本探针原先就这么写的）。
                 var el0 = document.getElementById('proposalText');
                 for (var w = 0; w < 40; w++) {
                     await new Promise(function(res){ setTimeout(res, 100); });
                     if (el0 && (el0.innerText || '').indexOf('第一段') >= 0) break;
                 }
-                var anyText = el0 ? (el0.innerText || '').indexOf('第一段') >= 0 : false;
-                log.domHasText = anyText;
+                log.domHasText = el0 ? (el0.innerText || '').indexOf('第一段') >= 0 : false;
                 log.domLen = el0 ? (el0.innerText || '').length : -1;
+
+                // ⑤ 收尾
+                if (typeof window.streamFinish === 'function') { window.streamFinish(); log.steps.push('finish'); }
+                else { log.steps.push('finish-missing'); }
             } catch(e) {
                 log.err = String(e);
             } finally {
