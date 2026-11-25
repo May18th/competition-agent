@@ -2074,7 +2074,9 @@
                     veil.id = 'wbCoachVeil';
                     // 遮罩盖住整屏，用户第一次点顶栏（背景/历史/使用说明）会被它吃掉，
                     // 体感就是「点了没反应」。这里做穿透：先临时让遮罩不接收事件，
-                    // 看落点底下是不是顶栏里的按钮 —— 是就结束引导并把这个点击转给它。
+                    // 看落点底下是不是可点的按钮 —— 是就结束引导并把这个点击转给它。
+                    // 2026-11-25 巡检补：原来只放行 #wbTopTools，导致首访点「一键演示」「开始生成」
+                    // 第一次被吃掉（评委最容易先点的就是这两个），误以为按钮坏了。
                     veil.addEventListener('click', function (ev) {
                         var under = null;
                         try {
@@ -2083,7 +2085,8 @@
                         } catch (e) {}
                         finally { veil.style.pointerEvents = ''; }
                         try {
-                            if (under && under !== veil && under.closest && under.closest('#wbTopTools')) {
+                            if (under && under !== veil && under.closest
+                                && under.closest('#wbTopTools, #wbDemoBtn, #startBtn')) {
                                 coachEnd();
                                 under.click();
                                 return;
