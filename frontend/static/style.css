@@ -519,7 +519,7 @@ body:not(.light) .hero .wb-hero-logo{
 .deep-only.deep-hl > h3::after{
     content: '深度版专属';
     display: inline-block; margin-left: 8px; padding: 2px 7px;
-    font-size: 11px; font-weight: 500; color: var(--c-a);
+    font-size: 12px; font-weight: 500; color: var(--c-a);
     background: var(--c-a-soft); border-radius: 4px; vertical-align: middle;
 }
 /* 简化版升级钩子：关键模块底部的浅色一行提示，指明深度版在此处能多给什么 */
@@ -1678,7 +1678,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
     .btn-primary { padding: 16px 20px; font-size: 17px; }
     .wb-theme-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .wb-theme-thumb { height: 62px; }
-    .wb-theme-name { font-size: 11px; }
+    .wb-theme-name { font-size: 12px; }
     .version-card { padding: 14px !important; }
     #wbFabMain { width: 52px; height: 52px; font-size: 12px; }
     #wbFab { right: 10px; bottom: 10px; }
@@ -1711,7 +1711,7 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
 /* 164 轮：档位徽标统一规格（原来「推荐」是内联样式，两版风格不一致） */
 .wb-tier-flag {
     display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 4px;
-    font-size: 11px; font-weight: 500; line-height: 1.5; vertical-align: 2px;
+    font-size: 12px; font-weight: 500; line-height: 1.5; vertical-align: 2px;
 }
 .wb-tier-hot { background: var(--c-a); color: #fff; }
 .wb-tier-new { background: var(--c-a-soft); color: var(--c-a); border: 1px solid var(--c-a-line, var(--line)); }
@@ -1836,8 +1836,8 @@ body.light #budgetChart, body.light #marketChart, body.light #timelineChart { bo
         }
 /* ---------- 字段旁「?」说明图标：长提示收进来，点/悬停才展开 ---------- */
 .wb-tip { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
-          width: 14px; height: 14px; margin-left: 5px; border: 1px solid var(--line); border-radius: 50%;
-          background: var(--surface-2); color: var(--text-mute); font-size: 10px; line-height: 1;
+          width: 18px; height: 18px; margin-left: 5px; border: 1px solid var(--line); border-radius: 50%;
+          background: var(--surface-2); color: var(--text-mute); font-size: 12px; line-height: 1;
           cursor: pointer; user-select: none; vertical-align: middle; }
 .wb-tip:hover { color: var(--c-a); border-color: var(--c-a); }
 
@@ -1914,9 +1914,19 @@ body.light .btn-primary:hover:not(:disabled) {
     .hero .wb-hero-logo { width: 56px; height: auto; margin-bottom: 5px; border-radius: 9px; }
     .hero h1 { font-size: 23px; margin-bottom: 3px; }
     .hero p { font-size: 12.5px; }
-    .hero p.wb-hero-tech { font-size: 11px; margin-top: 3px; }
+    .hero p.wb-hero-tech { font-size: 12px; margin-top: 3px; }
     /* 顶排工具按钮（使用说明/历史/背景）贴紧 hero，别在首屏占独立一行 */
     #wbTopTools { margin: 0 4px 4px !important; }
+}
+
+/* ---------- 触摸设备可点区域下限（2026-11-25）----------
+   手指点击目标业界下限 44px / 48dp；实测「加一章」「恢复默认」26px、
+   「?」说明图标 14px、顶栏按钮 35px，手机上点不中。
+   只对 coarse pointer 生效，鼠标端布局完全不变。 ---------- */
+@media (pointer: coarse) {
+    button, [role="button"], summary { min-height: 40px; }
+    .wb-tip { width: 20px; height: 20px; }
+    .wb-subtab { min-height: 34px; }
 }
 
 /* ---------- 打印样式（第八十七轮【低】）----------

@@ -860,6 +860,11 @@
             try { done = _wbStoreGet('wbCoachDone') === '1'; } catch (e) {}
             if (!done) { try { done = document.cookie.indexOf('wbCoachDone=1') >= 0; } catch (e) {} }
             if (done) return;
+            // 手机端不自动弹：768px 以下首屏放不下「标题 + 三步表单」，引导要把赛事输入框
+            // 滚进视口，必然把站点名和价值主张整块推出屏幕（实测 390x844 滚 213px、
+            // 360x640 滚 484px，标题完全不可见）。第一印象比引导重要，手机上只留常驻的
+            // 三步卡片，完整引导走「使用说明」按需打开。
+            try { if (window.innerWidth < 768) return; } catch (e) {}
             setTimeout(function () { try { coachStart(); } catch (e) {} }, 900);
         })();
         // 三步引导卡片的打勾状态与折叠（做过的步骤自动打勾，全做完收成一行）
